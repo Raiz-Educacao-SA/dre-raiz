@@ -766,14 +766,16 @@ const DREView: React.FC<DREViewProps> = ({
   }, [currentYear, selectedMarcas, selectedFiliais, selectedTags01]);
   */
 
-  // 🚀 Fetch inicial APENAS na montagem do componente
+  // 🚫 FETCH INICIAL DESABILITADO - Só carrega quando usuário interagir
+  // Motivo: Prevenir loop de carregamento automático
   useEffect(() => {
     const mountCount = (window as any).__dreMountCount = ((window as any).__dreMountCount || 0) + 1;
     console.log('═══════════════════════════════════════════════════════');
-    console.log('🚀 [MOUNT] COMPONENTE MONTADO (Mount #' + mountCount + ') - iniciando fetch inicial');
+    console.log('🚀 [MOUNT] COMPONENTE MONTADO (Mount #' + mountCount + ')');
     console.log('   ⏰ Timestamp:', new Date().toISOString());
+    console.log('   ℹ️ Fetch automático DESABILITADO - clique em "Atualizar" ou mude um filtro');
     console.log('═══════════════════════════════════════════════════════');
-    fetchDREData();
+    // fetchDREData(); // 🚫 DESABILITADO para prevenir loop
 
     // Cleanup: detectar quando componente é desmontado
     return () => {
@@ -2653,6 +2655,29 @@ const DREView: React.FC<DREViewProps> = ({
 
             {/* Separador */}
             <div className="flex-1" />
+
+            {/* Botão ATUALIZAR - Buscar dados do servidor */}
+            <button
+              onClick={() => {
+                console.log('🔄 Usuário clicou em ATUALIZAR - buscando dados...');
+                fetchDREData();
+              }}
+              disabled={isLoadingData}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-md bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Buscar dados do servidor com os filtros atuais"
+            >
+              {isLoadingData ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Carregando...</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={14} strokeWidth={2.5} />
+                  <span>Atualizar</span>
+                </>
+              )}
+            </button>
 
             {/* Controle de Escopo EBITDA */}
             <button
