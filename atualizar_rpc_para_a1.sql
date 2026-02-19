@@ -114,8 +114,9 @@ AS $$
   LEFT JOIN tag0_map tm
     ON LOWER(TRIM(t.tag01)) = LOWER(TRIM(tm.tag1_norm))
   WHERE
-    (p_month_from   IS NULL OR t.date::text >= p_month_from   || '-01')
-    AND (p_month_to IS NULL OR t.date::text <= p_month_to     || '-31')
+    -- Filtra só por MÊS (ano irrelevante — A-1 é 2025, Real é 2026)
+    (p_month_from  IS NULL OR to_char(t.date, 'MM') >= substring(p_month_from, 6, 2))
+    AND (p_month_to IS NULL OR to_char(t.date, 'MM') <= substring(p_month_to, 6, 2))
     AND (p_marcas   IS NULL OR t.marca  = ANY(p_marcas))
     AND (p_nome_filiais IS NULL OR t.nome_filial = ANY(p_nome_filiais))
     AND (p_tags01   IS NULL OR t.tag01  = ANY(p_tags01))
@@ -158,10 +159,11 @@ RETURNS TABLE(
 LANGUAGE plpgsql STABLE
 AS $$
 DECLARE
-  v_table text;
-  v_date  text;
+  v_table      text;
+  v_date       text;
+  v_where_from text;
+  v_where_to   text;
 BEGIN
-  -- Validar nome da coluna para prevenir SQL injection
   IF p_dimension NOT IN (
     'tag01','tag02','tag03','category','marca','nome_filial',
     'vendor','ticket','responsavel'
@@ -169,13 +171,17 @@ BEGIN
     RAISE EXCEPTION 'Dimensão inválida: %', p_dimension;
   END IF;
 
-  -- Rotear para a tabela correta; cast de date necessário em transactions_ano_anterior
   IF p_scenario = 'A-1' THEN
-    v_table := 'transactions_ano_anterior';
-    v_date  := 't.date::text';
+    v_table      := 'transactions_ano_anterior';
+    v_date       := 't.date::text';
+    -- A-1: filtra só por MÊS (ano irrelevante)
+    v_where_from := 'to_char(t.date, ''MM'') >= substring($1, 6, 2)';
+    v_where_to   := 'to_char(t.date, ''MM'') <= substring($2, 6, 2)';
   ELSE
-    v_table := 'transactions';
-    v_date  := 't.date';
+    v_table      := 'transactions';
+    v_date       := 't.date';
+    v_where_from := 't.date >= $1 || ''-01''';
+    v_where_to   := 't.date <= $2 || ''-31''';
   END IF;
 
   RETURN QUERY EXECUTE format(
@@ -185,8 +191,8 @@ BEGIN
        SUM(t.amount)                      AS total_amount
      FROM %I t
      WHERE
-       ($1 IS NULL OR %s >= $1 || ''-01'')
-       AND ($2 IS NULL OR %s <= $2 || ''-31'')
+       ($1 IS NULL OR %s)
+       AND ($2 IS NULL OR %s)
        AND ($3 IS NULL OR t.conta_contabil = ANY($3))
        AND ($4 IS NULL OR t.scenario = $4)
        AND ($5 IS NULL OR t.marca = ANY($5))
@@ -197,13 +203,13 @@ BEGIN
      GROUP BY
        COALESCE(CAST(%I AS text), ''N/A''),
        substring(%s, 1, 7)',
-    p_dimension,  -- %I coluna SELECT
-    v_date,       -- %s date SELECT
-    v_table,      -- %I tabela FROM
-    v_date,       -- %s date WHERE from
-    v_date,       -- %s date WHERE to
-    p_dimension,  -- %I coluna GROUP BY
-    v_date        -- %s date GROUP BY
+    p_dimension,    -- %I coluna SELECT
+    v_date,         -- %s date SELECT
+    v_table,        -- %I tabela FROM
+    v_where_from,   -- %s WHERE from
+    v_where_to,     -- %s WHERE to
+    p_dimension,    -- %I coluna GROUP BY
+    v_date          -- %s date GROUP BY
   )
   USING
     p_month_from, p_month_to, p_conta_contabils, p_scenario,
