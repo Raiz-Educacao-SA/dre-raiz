@@ -98,11 +98,11 @@ AS $$
 
   UNION ALL
 
-  -- ── Cenário A-1 (transactions_ano_anterior) ──────────────────────────────
+  -- ── Cenário A-1 (transactions_ano_anterior) — date é tipo DATE, usa ::text ──
   SELECT
     'A-1'                                     AS scenario,
     t.conta_contabil,
-    substring(t.date, 1, 7)                   AS year_month,
+    substring(t.date::text, 1, 7)             AS year_month,
     COALESCE(tm.tag0, 'Sem Classificação')    AS tag0,
     COALESCE(t.tag01, 'Sem Subclassificação') AS tag01,
     COALESCE(t.tag02, 'Sem tag02')            AS tag02,
@@ -114,14 +114,14 @@ AS $$
   LEFT JOIN tag0_map tm
     ON LOWER(TRIM(t.tag01)) = LOWER(TRIM(tm.tag1_norm))
   WHERE
-    (p_month_from   IS NULL OR t.date >= p_month_from   || '-01')
-    AND (p_month_to IS NULL OR t.date <= p_month_to     || '-31')
+    (p_month_from   IS NULL OR t.date::text >= p_month_from   || '-01')
+    AND (p_month_to IS NULL OR t.date::text <= p_month_to     || '-31')
     AND (p_marcas   IS NULL OR t.marca  = ANY(p_marcas))
     AND (p_nome_filiais IS NULL OR t.nome_filial = ANY(p_nome_filiais))
     AND (p_tags01   IS NULL OR t.tag01  = ANY(p_tags01))
   GROUP BY
     t.conta_contabil,
-    substring(t.date, 1, 7),
+    substring(t.date::text, 1, 7),
     COALESCE(tm.tag0, 'Sem Classificação'),
     COALESCE(t.tag01, 'Sem Subclassificação'),
     COALESCE(t.tag02, 'Sem tag02'),
@@ -159,6 +159,7 @@ LANGUAGE plpgsql STABLE
 AS $$
 DECLARE
   v_table text;
+  v_date  text;
 BEGIN
   -- Validar nome da coluna para prevenir SQL injection
   IF p_dimension NOT IN (
@@ -168,22 +169,24 @@ BEGIN
     RAISE EXCEPTION 'Dimensão inválida: %', p_dimension;
   END IF;
 
-  -- Rotear para a tabela correta com base no cenário
+  -- Rotear para a tabela correta; cast de date necessário em transactions_ano_anterior
   IF p_scenario = 'A-1' THEN
     v_table := 'transactions_ano_anterior';
+    v_date  := 't.date::text';
   ELSE
     v_table := 'transactions';
+    v_date  := 't.date';
   END IF;
 
   RETURN QUERY EXECUTE format(
     'SELECT
        COALESCE(CAST(%I AS text), ''N/A'') AS dimension_value,
-       substring(t.date, 1, 7)            AS year_month,
+       substring(%s, 1, 7)                AS year_month,
        SUM(t.amount)                      AS total_amount
      FROM %I t
      WHERE
-       ($1 IS NULL OR t.date >= $1 || ''-01'')
-       AND ($2 IS NULL OR t.date <= $2 || ''-31'')
+       ($1 IS NULL OR %s >= $1 || ''-01'')
+       AND ($2 IS NULL OR %s <= $2 || ''-31'')
        AND ($3 IS NULL OR t.conta_contabil = ANY($3))
        AND ($4 IS NULL OR t.scenario = $4)
        AND ($5 IS NULL OR t.marca = ANY($5))
@@ -193,10 +196,14 @@ BEGIN
        AND ($9 IS NULL OR t.tag03 = ANY($9))
      GROUP BY
        COALESCE(CAST(%I AS text), ''N/A''),
-       substring(t.date, 1, 7)',
-    p_dimension,   -- %I coluna SELECT
-    v_table,       -- %I tabela FROM
-    p_dimension    -- %I coluna GROUP BY
+       substring(%s, 1, 7)',
+    p_dimension,  -- %I coluna SELECT
+    v_date,       -- %s date SELECT
+    v_table,      -- %I tabela FROM
+    v_date,       -- %s date WHERE from
+    v_date,       -- %s date WHERE to
+    p_dimension,  -- %I coluna GROUP BY
+    v_date        -- %s date GROUP BY
   )
   USING
     p_month_from, p_month_to, p_conta_contabils, p_scenario,
