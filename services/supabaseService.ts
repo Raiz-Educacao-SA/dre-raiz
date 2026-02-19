@@ -447,22 +447,41 @@ export const getDRESummary = async (params: {
 
   console.log('🔍 RPC params sendo enviados:', rpcParams);
 
-  const { data, error } = await supabase.rpc('get_dre_summary', rpcParams);
+  // ⏱️ Adicionar timeout de 30 segundos
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  if (error) {
-    console.error('❌ Erro ao buscar DRE summary:', error);
+  try {
+    const { data, error } = await supabase
+      .rpc('get_dre_summary', rpcParams)
+      .abortSignal(controller.signal);
+
+    clearTimeout(timeoutId);
+
+    if (error) {
+      console.error('❌ Erro ao buscar DRE summary:', error);
+      return [];
+    }
+
+    console.log(`✅ getDRESummary: ${data?.length || 0} linhas agregadas retornadas`);
+
+    // Se retornou 0 linhas com filtros, pode ser problema de matching
+    if (data?.length === 0 && (rpcParams.p_marcas || rpcParams.p_nome_filiais || rpcParams.p_tags01)) {
+      console.warn('⚠️ ATENÇÃO: Filtros aplicados mas nenhum resultado retornado!');
+      console.warn('🔍 Verifique se os valores dos filtros correspondem exatamente ao banco de dados');
+    }
+
+    return (data || []) as DRESummaryRow[];
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      console.error('❌ TIMEOUT: Consulta demorou mais de 30 segundos!');
+      alert('⏱️ Timeout: A consulta está demorando muito. Tente aplicar mais filtros (Marca ou Filial) para reduzir a quantidade de dados.');
+    } else {
+      console.error('❌ Erro ao buscar DRE summary:', err);
+    }
     return [];
   }
-
-  console.log(`✅ getDRESummary: ${data?.length || 0} linhas agregadas retornadas`);
-
-  // Se retornou 0 linhas com filtros, pode ser problema de matching
-  if (data?.length === 0 && (rpcParams.p_marcas || rpcParams.p_nome_filiais || rpcParams.p_tags01)) {
-    console.warn('⚠️ ATENÇÃO: Filtros aplicados mas nenhum resultado retornado!');
-    console.warn('🔍 Verifique se os valores dos filtros correspondem exatamente ao banco de dados');
-  }
-
-  return (data || []) as DRESummaryRow[];
 };
 
 /**
