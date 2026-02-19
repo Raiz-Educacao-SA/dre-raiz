@@ -244,7 +244,11 @@ const DREView: React.FC<DREViewProps> = ({
   onRegisterActions,
   onLoadingChange
 }) => {
-  // console.log('🚀 DREViewV2: Componente montado');
+  // 🔥 LOG CRÍTICO: Sempre dispara a cada render
+  console.log('🔥🔥🔥 [DREView] COMPONENTE RENDERIZADO!', {
+    timestamp: new Date().toISOString(),
+    renderCount: (window as any).__dreRenderCount = ((window as any).__dreRenderCount || 0) + 1
+  });
 
   // Estado para dados agregados do servidor
   const [summaryRows, setSummaryRows] = useState<DRESummaryRow[]>([]);
@@ -586,8 +590,10 @@ const DREView: React.FC<DREViewProps> = ({
     const filiais = selectedFiliaisRef.current;
     const tags01 = selectedTags01Ref.current;
 
+    const fetchCallCount = (window as any).__fetchDREDataCount = ((window as any).__fetchDREDataCount || 0) + 1;
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🚀🚀🚀 fetchDREData() CHAMADO!');
+    console.log('🚀🚀🚀 fetchDREData() CHAMADO! (Call #' + fetchCallCount + ')');
+    console.log('   ⏰ Timestamp:', new Date().toISOString());
     console.log('   🎯 selectedMarcas:', marcas);
     console.log('   🏢 selectedFiliais:', filiais);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -762,10 +768,19 @@ const DREView: React.FC<DREViewProps> = ({
 
   // 🚀 Fetch inicial APENAS na montagem do componente
   useEffect(() => {
+    const mountCount = (window as any).__dreMountCount = ((window as any).__dreMountCount || 0) + 1;
     console.log('═══════════════════════════════════════════════════════');
-    console.log('🚀 [MOUNT] COMPONENTE MONTADO - iniciando fetch inicial');
+    console.log('🚀 [MOUNT] COMPONENTE MONTADO (Mount #' + mountCount + ') - iniciando fetch inicial');
+    console.log('   ⏰ Timestamp:', new Date().toISOString());
     console.log('═══════════════════════════════════════════════════════');
     fetchDREData();
+
+    // Cleanup: detectar quando componente é desmontado
+    return () => {
+      const unmountCount = (window as any).__dreUnmountCount = ((window as any).__dreUnmountCount || 0) + 1;
+      console.log('💥💥💥 [UNMOUNT] COMPONENTE DESMONTADO! (Unmount #' + unmountCount + ')');
+      console.log('   ⏰ Timestamp:', new Date().toISOString());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Array vazio = executa apenas uma vez na montagem
 
