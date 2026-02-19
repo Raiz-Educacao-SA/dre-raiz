@@ -73,7 +73,10 @@
       "Bash(FIX_GET_DRE_SUMMARY_AGREGACAO_V2.sql:*)",
       "Bash(git mv:*)",
       "Bash(vercel:*)",
-      "Bash(git tag:*)"
+      "Bash(git tag:*)",
+      "Bash(py:*)",
+      "Bash(/c/Users/edmilson.serafim/AppData/Local/Programs/Python/Python311/python:*)",
+      "Bash(\"/c/Users/edmilson.serafim/AppData/Local/Programs/Python/Python311/python.exe\" -c \":*)"
     ]
   }
 }
