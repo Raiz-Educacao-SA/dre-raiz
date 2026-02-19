@@ -169,12 +169,21 @@ const MultiSelectFilter: React.FC<{
           {/* Header */}
           <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
             <span className="text-xs font-semibold text-gray-700">Selecione</span>
-            <button
-              onClick={clearAll}
-              className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
-            >
-              Limpar
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={selectAll}
+                className="text-[10px] text-green-600 hover:text-green-800 font-medium"
+              >
+                Todos
+              </button>
+              <span className="text-gray-300 text-[10px]">|</span>
+              <button
+                onClick={clearAll}
+                className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
+              >
+                Limpar
+              </button>
+            </div>
           </div>
 
           {/* Options list - interface limpa */}
