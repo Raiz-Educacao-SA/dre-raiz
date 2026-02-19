@@ -403,6 +403,7 @@ const DREView: React.FC<DREViewProps> = ({
   const exportRef = useRef<HTMLDivElement>(null);
   const isFirstMount = useRef<boolean>(true); // 🔧 Flag para evitar fetch duplicado na montagem
   const hasAutoSelectedTags = useRef<boolean>(false); // 🔧 Flag para garantir auto-select apenas uma vez
+  const autoSelectTriggeredRef = useRef<boolean>(false); // 🔧 Previne re-fetch após auto-select interno de tags01
 
   // 🔧 Refs para valores atuais dos filtros (evita recriar fetchDREData)
   const currentYearRef = useRef(currentYear);
@@ -545,6 +546,7 @@ const DREView: React.FC<DREViewProps> = ({
     ) {
       console.log('✅ Ativando todas as Tag01 por padrão (PRIMEIRA VEZ):', filterOptions.tags01);
       hasAutoSelectedTags.current = true; // Marcar como feito
+      autoSelectTriggeredRef.current = true; // Não re-fetch após auto-select interno
       setSelectedTags01(filterOptions.tags01);
     } else {
       console.log('⏭️ [useEffect AUTO-SELECT] PULADO - condições não atendidas');
@@ -728,17 +730,18 @@ const DREView: React.FC<DREViewProps> = ({
     }
   }, []); // 🔧 SEM DEPENDÊNCIAS - usa refs para valores atuais
 
-  // 🚫 DESABILITADO: useEffect automático causava loop infinito
-  // Agora o fetch só acontece:
-  // 1. Na montagem inicial (useEffect abaixo)
-  // 2. Quando usuário clica no botão "Atualizar"
-  //
-  // Se precisar reativar no futuro, investigar por que arrays estão mudando de referência
-  /*
+  // Fetch automático ao mudar filtros (marca, filial, tags01, ano)
+  // Só dispara por mudanças reais do usuário - auto-select interno é ignorado via autoSelectTriggeredRef
   useEffect(() => {
     if (isFirstMount.current) {
       isFirstMount.current = false;
-      console.log('🔧 [SKIP] Primeira montagem - aguardando inicialização de filtros...');
+      return; // Não busca na montagem - usuário deve clicar Atualizar ou mudar filtro
+    }
+
+    // Auto-select interno de tags01 não deve re-disparar fetch
+    if (autoSelectTriggeredRef.current) {
+      autoSelectTriggeredRef.current = false;
+      prevTags01Ref.current = [...selectedTags01];
       return;
     }
 
@@ -750,10 +753,7 @@ const DREView: React.FC<DREViewProps> = ({
     const tags01Changed = !arraysEqual(selectedTags01, prevTags01Ref.current);
     const yearChanged = currentYear !== prevYearRef.current;
 
-    if (!marcasChanged && !filiaisChanged && !tags01Changed && !yearChanged) {
-      console.log('⏭️ [SKIP] Valores não mudaram, pulando fetch');
-      return;
-    }
+    if (!marcasChanged && !filiaisChanged && !tags01Changed && !yearChanged) return;
 
     prevMarcasRef.current = [...selectedMarcas];
     prevFiliaisRef.current = [...selectedFiliais];
@@ -763,8 +763,7 @@ const DREView: React.FC<DREViewProps> = ({
     setSummaryRows([]);
     setDimensionCache({});
     fetchDREData();
-  }, [currentYear, selectedMarcas, selectedFiliais, selectedTags01]);
-  */
+  }, [currentYear, selectedMarcas, selectedFiliais, selectedTags01, fetchDREData]);
 
   // 🚫 FETCH INICIAL DESABILITADO - Só carrega quando usuário interagir
   // Motivo: Prevenir loop de carregamento automático
@@ -1306,16 +1305,21 @@ const DREView: React.FC<DREViewProps> = ({
     console.log('✅ Exportado layout hierárquico Excel com', exportData.length, 'linhas e formatação');
   };
 
-  // Registrar ações para uso externo (App.tsx) - DEPOIS das definições das funções
+  // Registrar ações para uso externo (App.tsx)
+  // exportTable/exportLayout usam refs para não causar re-registro infinito a cada render
+  const exportAsTableRef = useRef<() => void>(exportAsTable);
+  const exportCurrentLayoutRef = useRef<() => void>(exportCurrentLayout);
+  useEffect(() => { exportAsTableRef.current = exportAsTable; }, [exportAsTable]);
+  useEffect(() => { exportCurrentLayoutRef.current = exportCurrentLayout; }, [exportCurrentLayout]);
   useEffect(() => {
     if (onRegisterActions) {
       onRegisterActions({
         refresh: fetchDREData,
-        exportTable: exportAsTable,
-        exportLayout: exportCurrentLayout
+        exportTable: () => exportAsTableRef.current(),
+        exportLayout: () => exportCurrentLayoutRef.current(),
       });
     }
-  }, [onRegisterActions, fetchDREData, exportAsTable, exportCurrentLayout]); // 🔥 FIX: Adicionar funções para re-registrar quando mudarem
+  }, [onRegisterActions, fetchDREData]); // Apenas deps estáveis — evita loop de render
 
   // ========== CONSTRUIR dataMap E dreStructure A PARTIR DE summaryRows ==========
 
