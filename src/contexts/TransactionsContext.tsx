@@ -7,6 +7,8 @@ import { conflictHistory } from '../services/ConflictHistory';
 import { syncAuditLog } from '../services/SyncAuditLog';
 import * as supabaseService from '../../services/supabaseService';
 import { TransactionFilters } from '../../services/supabaseService';
+import * as transactionCache from '../../services/transactionCache';
+import { auth } from '../../firebase';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -84,23 +86,53 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
   }, []);
 
   /**
-   * Aplica filtros e busca transações do Supabase
+   * Aplica filtros e busca transações do Supabase.
+   * ⚡ OPÇÃO C: Stale-While-Revalidate com IndexedDB
+   *   1. Se cache válido (< 15min): serve imediatamente + atualiza em background
+   *   2. Se cache expirado/ausente: busca do Supabase normalmente + salva no cache
    */
   const applyFilters = useCallback(async (filters: TransactionFilters) => {
-    setIsLoading(true);
     setError(null);
     setCurrentFilters(filters);
 
-    try {
-      console.log('🔍 TransactionsContext: Aplicando filtros', filters);
-      const response = await supabaseService.getFilteredTransactions(filters);
+    const userId = auth.currentUser?.uid ?? 'anonymous';
+    const cacheKey = transactionCache.buildCacheKey(userId, filters as Record<string, unknown>);
 
-      // getFilteredTransactions retorna PaginatedResponse, não array direto
+    // Verificar cache
+    const cached = await transactionCache.getCached(cacheKey, userId);
+
+    if (cached) {
+      // ✅ Cache hit: serve imediatamente sem spinner
+      console.log(`⚡ [Cache] Hit — ${cached.length} transações do IndexedDB`);
+      setTransactions(cached);
+      setServerTransactions([...cached]);
+
+      // Atualiza em background (sem bloquear UI)
+      supabaseService.getFilteredTransactions(filters).then((response) => {
+        const fresh = response.data || [];
+        setTransactions(fresh);
+        setServerTransactions([...fresh]);
+        transactionCache.setCached(cacheKey, userId, fresh);
+        console.log(`🔄 [Cache] Background refresh: ${fresh.length} transações`);
+      }).catch(() => {
+        // Background falhou? dados do cache continuam na UI
+      });
+      return;
+    }
+
+    // Cache miss: busca normal com loading
+    setIsLoading(true);
+    try {
+      console.log('🔍 TransactionsContext: Aplicando filtros (sem cache)', filters);
+      const response = await supabaseService.getFilteredTransactions(filters);
       const results = response.data || [];
 
-      console.log(`✅ TransactionsContext: ${results.length} transações carregadas (total: ${response.totalCount || 0})`);
+      console.log(`✅ TransactionsContext: ${results.length} transações carregadas`);
       setTransactions(results);
-      setServerTransactions([...results]); // Cópia para detecção de conflitos
+      setServerTransactions([...results]);
+
+      // Salvar no cache para próximo F5
+      transactionCache.setCached(cacheKey, userId, results);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Erro ao buscar transações';
       console.error('❌ TransactionsContext: Erro ao aplicar filtros:', errorMsg);

@@ -27,6 +27,11 @@ interface DashboardEnhancedProps {
   availableBranches: string[];
   onMarcaChange: (brands: string[]) => void;
   onFilialChange: (branches: string[]) => void;
+  // Props adicionais opcionais (RLS + loading)
+  allowedMarcas?: string[];
+  allowedFiliais?: string[];
+  allowedCategories?: string[];
+  isLoading?: boolean;
 }
 
 export const DashboardEnhanced: React.FC<DashboardEnhancedProps> = (props) => {

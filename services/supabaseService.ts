@@ -424,6 +424,90 @@ export interface DREFilterOptions {
   tags01: string[];
 }
 
+// ─── Dashboard RPC ────────────────────────────────────────────────────────────
+
+/** Uma linha do retorno de get_dashboard_summary() */
+export interface DashboardSummaryRow {
+  marca: string;
+  filial: string;
+  scenario: string;
+  tag0: string;
+  tag01: string;
+  month: number;       // 0 = Jan … 11 = Dez
+  total_amount: number;
+}
+
+/**
+ * Busca dados agregados do Dashboard no servidor via RPC.
+ * Substitui o carregamento de 119k transações brutas por ~3-5k linhas agregadas.
+ * Resultado é convertido em Transaction[] sintéticas para compatibilidade com
+ * DashboardEnhanced sem necessidade de alterar o componente.
+ */
+export const getDashboardSummary = async (params: {
+  year?: number;
+  marcas?: string[];
+  filiais?: string[];
+}): Promise<DashboardSummaryRow[]> => {
+  const { data, error } = await supabase.rpc('get_dashboard_summary', {
+    p_year:    params.year    ?? new Date().getFullYear(),
+    p_marcas:  params.marcas  && params.marcas.length  > 0 ? params.marcas  : null,
+    p_filiais: params.filiais && params.filiais.length > 0 ? params.filiais : null,
+  });
+
+  if (error) {
+    console.error('❌ getDashboardSummary RPC error:', error);
+    throw error;
+  }
+
+  return (data as DashboardSummaryRow[]) || [];
+};
+
+/**
+ * Converte DashboardSummaryRow[] em Transaction[] sintéticas.
+ * Permite que o DashboardEnhanced receba dados agregados (RPC)
+ * sem necessidade de qualquer mudança no componente.
+ *
+ * Cada linha vira uma Transaction com:
+ *   - date  = primeiro dia do mês correspondente
+ *   - amount = total_amount já somado no servidor
+ *   - type  = inferido pelo prefixo de tag0
+ */
+export function dashboardSummaryToTransactions(
+  rows: DashboardSummaryRow[],
+  year: number = new Date().getFullYear()
+): Transaction[] {
+  return rows.map((row, idx) => {
+    const monthStr = String(row.month + 1).padStart(2, '0');
+    const date = `${year}-${monthStr}-01`;
+
+    // Mapear tag0 → TransactionType
+    let type: Transaction['type'] = 'FIXED_COST';
+    if (row.tag0.startsWith('01.'))      type = 'REVENUE';
+    else if (row.tag0.startsWith('02.')) type = 'VARIABLE_COST';
+    else if (row.tag0.startsWith('03.')) type = 'FIXED_COST';
+    else if (row.tag0.startsWith('04.')) type = 'SGA';
+    else if (row.tag0.startsWith('05.')) type = 'RATEIO';
+
+    return {
+      id: `synthetic-${idx}`,
+      date,
+      amount: row.total_amount,
+      type,
+      scenario: row.scenario,
+      marca: row.marca || undefined,
+      filial: row.filial || '',
+      tag0: row.tag0 || undefined,
+      tag01: row.tag01 || undefined,
+      description: '',
+      conta_contabil: '',
+      status: 'Normal',
+      updated_at: new Date().toISOString(),
+    } as Transaction;
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Buscar resumo DRE agregado no servidor (1 API call, ~500-2000 linhas)
  * Substitui o carregamento de 119k transações brutas

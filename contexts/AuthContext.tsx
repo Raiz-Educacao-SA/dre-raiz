@@ -3,6 +3,7 @@ import { User as FirebaseUser } from 'firebase/auth';
 import { auth, googleProvider, signInWithPopup, signOut as firebaseSignOut } from '../firebase';
 import * as supabaseService from '../services/supabaseService';
 import { setUserPermissions, clearUserPermissions } from '../services/permissionsService';
+import { clearAllCache } from '../services/transactionCache';
 
 interface User {
   uid: string;
@@ -207,6 +208,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       sessionStorage.removeItem('dreTags01');
       sessionStorage.removeItem('dreBrands');
       sessionStorage.removeItem('dreBranches');
+
+      // ⚡ OPÇÃO C: Limpar cache IndexedDB ao fazer logout
+      clearAllCache();
     } catch (error) {
       console.error('Erro ao fazer logout:', error);
       alert('Erro ao fazer logout. Tente novamente.');

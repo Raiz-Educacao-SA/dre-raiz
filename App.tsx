@@ -19,6 +19,7 @@ import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
 import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, RefreshCw, Download, ChevronDown } from 'lucide-react';
 import * as supabaseService from './services/supabaseService';
+import { getDashboardSummary, dashboardSummaryToTransactions } from './services/supabaseService';
 import { useAuth } from './contexts/AuthContext';
 import { usePermissions } from './hooks/usePermissions';
 import { useIsMobile } from './hooks/useIsMobile';
@@ -91,6 +92,11 @@ const App: React.FC = () => {
   const [searchedTransactions, setSearchedTransactions] = useState<Transaction[]>([]);
   const [hasSearchedTransactions, setHasSearchedTransactions] = useState(false);
 
+  // ⚡ OPÇÃO D: Transações agregadas do servidor para Dashboard (RPC)
+  const [dashboardTransactions, setDashboardTransactions] = useState<Transaction[]>([]);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+  const dashboardLoadedRef = React.useRef(false);
+
   // Helper para re-buscar dados do banco após operações de escrita
   const refreshData = React.useCallback(async () => {
     if (currentFilters) {
@@ -98,10 +104,33 @@ const App: React.FC = () => {
     }
   }, [applyFilters, currentFilters]);
 
-  // Loading combinado
+  // Loading combinado (Lançamentos/KPIs/outras views)
   const isLoading = isLoadingTransactions || permissionsLoading;
 
-  // ✅ ÚNICO useEffect: Carregar dados com permissões aplicadas
+  // ⚡ OPÇÃO D: Carregar Dashboard via RPC (dados agregados, < 1s)
+  useEffect(() => {
+    if (permissionsLoading || dashboardLoadedRef.current) return;
+    dashboardLoadedRef.current = true;
+
+    const year = 2026;
+    setIsLoadingDashboard(true);
+    getDashboardSummary({
+      year,
+      marcas:  allowedMarcas.length  > 0 ? allowedMarcas  : undefined,
+      filiais: allowedFiliais.length > 0 ? allowedFiliais : undefined,
+    })
+      .then((rows) => {
+        const syntheticTx = dashboardSummaryToTransactions(rows, year);
+        setDashboardTransactions(syntheticTx);
+        console.log(`⚡ [Dashboard RPC] ${rows.length} linhas agregadas → ${syntheticTx.length} transações sintéticas`);
+      })
+      .catch((err) => {
+        console.warn('⚠️ [Dashboard RPC] Falhou, Dashboard usará dados brutos quando carregarem:', err);
+      })
+      .finally(() => setIsLoadingDashboard(false));
+  }, [permissionsLoading, allowedMarcas, allowedFiliais]);
+
+  // ✅ ÚNICO useEffect: Carregar dados brutos com permissões (para Lançamentos, KPIs, etc.)
   const initialLoadRef = React.useRef(false);
   useEffect(() => {
     // Aguardar permissões carregarem antes de buscar dados
@@ -703,18 +732,8 @@ const App: React.FC = () => {
     return <PendingApprovalScreen />;
   }
 
-  // Tela de loading - dados
-  if (isLoading) {
-    return (
-      <div className="flex h-screen bg-[#fcfcfc] items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="animate-spin mx-auto mb-4 text-[#1B75BB]" size={48} />
-          <h2 className="text-xl font-bold text-gray-900">Carregando DRE RAIZ...</h2>
-          <p className="text-sm text-gray-500 mt-2">Conectando ao banco de dados</p>
-        </div>
-      </div>
-    );
-  }
+  // ⚡ OPÇÃO A: Sem bloqueio global — sidebar e header aparecem imediatamente.
+  // O loading fica apenas na área de conteúdo (ver abaixo).
 
   return (
     <div className="flex h-screen bg-[#fcfcfc] overflow-hidden">
@@ -915,11 +934,27 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className="px-3 md:px-4 lg:px-6 pb-3 md:pb-4 lg:pb-6">
+        <div className="px-3 md:px-4 lg:px-6 pb-3 md:pb-4 lg:pb-6 relative">
+          {/* ⚡ OPÇÃO A: loading overlay só na área de conteúdo */}
+          {isLoading && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl min-h-[200px]">
+              <div className="text-center">
+                <Loader2 className="animate-spin mx-auto mb-3 text-[#1B75BB]" size={40} />
+                <p className="text-sm font-semibold text-gray-700">Carregando dados...</p>
+                <p className="text-xs text-gray-400 mt-1">Conectando ao banco de dados</p>
+              </div>
+            </div>
+          )}
           {currentView === 'dashboard' && (
+            // ⚡ OPÇÃO D: Dashboard usa dados agregados do RPC (rápido).
+            // Fallback para filteredTransactions se RPC ainda não carregou.
             <DashboardEnhanced
               kpis={kpis}
-              transactions={filteredTransactions}
+              transactions={
+                dashboardTransactions.length > 0
+                  ? dashboardTransactions
+                  : filteredTransactions
+              }
               selectedMarca={selectedMarca}
               selectedFilial={selectedFilial}
               uniqueBrands={uniqueBrands}
@@ -929,6 +964,7 @@ const App: React.FC = () => {
               allowedMarcas={allowedMarcas}
               allowedFiliais={allowedFiliais}
               allowedCategories={allowedCategories}
+              isLoading={isLoadingDashboard}
             />
           )}
           {currentView === 'kpis' && (
