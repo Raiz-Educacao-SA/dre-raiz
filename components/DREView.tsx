@@ -255,7 +255,7 @@ const DREView: React.FC<DREViewProps> = ({
   const [filterOptions, setFilterOptions] = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
 
 
-  const [isLoadingDRE, setIsLoadingDRE] = useState(true);
+  const [isLoadingDRE, setIsLoadingDRE] = useState(false); // ✅ Começa false - só carrega quando usuário clicar
   const [dimensionCache, setDimensionCache] = useState<Record<string, DREDimensionRow[]>>({});
   const currentYear = dreYear || new Date().getFullYear();
   const fetchIdRef = useRef(0);  // Para evitar race conditions
