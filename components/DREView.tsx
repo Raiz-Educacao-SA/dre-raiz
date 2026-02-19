@@ -2662,11 +2662,11 @@ const DREView: React.FC<DREViewProps> = ({
                 console.log('🔄 Usuário clicou em ATUALIZAR - buscando dados...');
                 fetchDREData();
               }}
-              disabled={isLoadingData}
+              disabled={isLoadingDRE}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-md bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
               title="Buscar dados do servidor com os filtros atuais"
             >
-              {isLoadingData ? (
+              {isLoadingDRE ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
                   <span>Carregando...</span>
