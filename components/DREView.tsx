@@ -4729,7 +4729,8 @@ const DREView: React.FC<DREViewProps> = ({
                 const revenueCategories: string[] = [];        // 01.* = Receita
                 const variableCostCategories: string[] = [];   // 02.* = Custos Variáveis
                 const fixedCostCategories: string[] = [];      // 03.* = Custos Fixos
-                const allCostCategories: string[][] = [];      // Todos os custos (para EBITDA)
+                const sgaCostCategories: string[] = [];        // 04.* = SG&A
+                const allCostCategories: string[][] = [];      // Todos os custos (para EBITDA total)
 
                 entries.forEach(([, nivel1Data]) => {
                   // items agora é Record<tag01, contas[]> - flatten para pegar todas as contas
@@ -4745,12 +4746,16 @@ const DREView: React.FC<DREViewProps> = ({
                       variableCostCategories.push(...allCats);
                     } else if (label.startsWith('03.')) {
                       fixedCostCategories.push(...allCats);
+                    } else if (label.startsWith('04.')) {
+                      sgaCostCategories.push(...allCats);
                     }
                   }
                 });
 
                 // Encontrar o índice após "03. CUSTOS FIXOS" para inserir MARGEM
                 const margemAfterIdx = entries.findIndex(([, d]) => d.label.startsWith('03.'));
+                // Encontrar o índice após "04. SG&A" para inserir EBITDA (S/ RATEIO RAIZ CSC)
+                const ebitdaAfterIdx = entries.findIndex(([, d]) => d.label.startsWith('04.'));
 
                 // 🔍 DEBUG: Log para verificar se categories estão corretas
                 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -4797,12 +4802,20 @@ const DREView: React.FC<DREViewProps> = ({
                         <React.Fragment key={nivel1Code}>
                           {renderRow(nivel1Code, nivel1Data.label, 1, allCategories, true, {}, nivel1Code)}
 
-                          {/* MARGEM DE CONTRIBUIÇÃO: Receita - (Custos Var + Custos Fix), após grupo 03 */}
+                          {/* MARGEM DE CONTRIBUIÇÃO: Receita - (CV + CF), após grupo 03 */}
                           {showOnlyEbitda && entryIdx === margemAfterIdx && margemAfterIdx >= 0 && revenueCategories.length > 0 && renderCalculationLine(
                             'MARGEM DE CONTRIBUIÇÃO',
                             revenueCategories,
                             [variableCostCategories, fixedCostCategories].filter(c => c.length > 0),
                             'bg-[#F44C00]'
+                          )}
+
+                          {/* EBITDA (S/ RATEIO RAIZ CSC): Receita - (CV + CF + SG&A), após grupo 04 */}
+                          {showOnlyEbitda && entryIdx === ebitdaAfterIdx && ebitdaAfterIdx >= 0 && revenueCategories.length > 0 && renderCalculationLine(
+                            'EBITDA (S/ RATEIO RAIZ CSC)',
+                            revenueCategories,
+                            [variableCostCategories, fixedCostCategories, sgaCostCategories].filter(c => c.length > 0),
+                            'bg-[#1a6b4a]'
                           )}
                         </React.Fragment>
                       );
