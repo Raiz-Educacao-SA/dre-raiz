@@ -4815,7 +4815,7 @@ const DREView: React.FC<DREViewProps> = ({
                             'EBITDA (S/ RATEIO RAIZ CSC)',
                             revenueCategories,
                             [variableCostCategories, fixedCostCategories, sgaCostCategories].filter(c => c.length > 0),
-                            'bg-[#1a237e]'
+                            'bg-[#F44C00]'
                           )}
                         </React.Fragment>
                       );
@@ -4826,7 +4826,7 @@ const DREView: React.FC<DREViewProps> = ({
                       'EBITDA',
                       revenueCategories,
                       allCostCategories,
-                      'bg-[#1a237e]',
+                      'bg-[#F44C00]',
                       'border-t-2 border-yellow-400 h-8 text-xs'
                     )}
                   </>
