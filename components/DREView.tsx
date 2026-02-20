@@ -4827,7 +4827,7 @@ const DREView: React.FC<DREViewProps> = ({
                       revenueCategories,
                       allCostCategories,
                       'bg-[#F44C00]',
-                      'border-t-2 border-yellow-400 h-8 text-xs'
+                      'border-t-2 border-yellow-400'
                     )}
                   </>
                 );
