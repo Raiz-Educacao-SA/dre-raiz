@@ -134,10 +134,11 @@ GRANT EXECUTE ON FUNCTION get_dre_summary(text,text,text[],text[],text[]) TO aut
 GRANT EXECUTE ON FUNCTION get_dre_summary(text,text,text[],text[],text[]) TO anon;
 
 
--- ─── PASSO 4: Atualizar get_dre_dimension (rota condicional por cenário) ────────
+-- ─── PASSO 4: Atualizar get_dre_dimension (rota condicional + fallback tag0) ──
 
 DROP FUNCTION IF EXISTS get_dre_dimension(text, text, text[], text, text, text[], text[], text[]);
 DROP FUNCTION IF EXISTS get_dre_dimension(text, text, text[], text, text, text[], text[], text[], text[], text[]);
+DROP FUNCTION IF EXISTS get_dre_dimension(text, text, text[], text, text, text[], text[], text[], text[], text[], text);
 
 CREATE OR REPLACE FUNCTION get_dre_dimension(
   p_month_from      text    DEFAULT NULL,
@@ -149,7 +150,8 @@ CREATE OR REPLACE FUNCTION get_dre_dimension(
   p_nome_filiais    text[]  DEFAULT NULL,
   p_tags01          text[]  DEFAULT NULL,
   p_tags02          text[]  DEFAULT NULL,
-  p_tags03          text[]  DEFAULT NULL
+  p_tags03          text[]  DEFAULT NULL,
+  p_tag0            text    DEFAULT NULL  -- fallback: inclui contas vazias do mesmo tag0
 )
 RETURNS TABLE(
   dimension_value text,
@@ -174,7 +176,6 @@ BEGIN
   IF p_scenario = 'A-1' THEN
     v_table      := 'transactions_ano_anterior';
     v_date       := 't.date::text';
-    -- A-1: filtra só por MÊS (ano irrelevante)
     v_where_from := 'to_char(t.date, ''MM'') >= substring($1, 6, 2)';
     v_where_to   := 'to_char(t.date, ''MM'') <= substring($2, 6, 2)';
   ELSE
@@ -184,41 +185,79 @@ BEGIN
     v_where_to   := 't.date <= $2 || ''-31''';
   END IF;
 
-  RETURN QUERY EXECUTE format(
-    'SELECT
-       COALESCE(CAST(%I AS text), ''N/A'') AS dimension_value,
-       substring(%s, 1, 7)                AS year_month,
-       SUM(t.amount)                      AS total_amount
-     FROM %I t
-     WHERE
-       ($1 IS NULL OR %s)
-       AND ($2 IS NULL OR %s)
-       AND ($3 IS NULL OR t.conta_contabil = ANY($3))
-       AND ($4 IS NULL OR t.scenario = $4)
-       AND ($5 IS NULL OR t.marca = ANY($5))
-       AND ($6 IS NULL OR t.nome_filial = ANY($6))
-       AND ($7 IS NULL OR t.tag01 = ANY($7))
-       AND ($8 IS NULL OR t.tag02 = ANY($8))
-       AND ($9 IS NULL OR t.tag03 = ANY($9))
-     GROUP BY
-       COALESCE(CAST(%I AS text), ''N/A''),
-       substring(%s, 1, 7)',
-    p_dimension,    -- %I coluna SELECT
-    v_date,         -- %s date SELECT
-    v_table,        -- %I tabela FROM
-    v_where_from,   -- %s WHERE from
-    v_where_to,     -- %s WHERE to
-    p_dimension,    -- %I coluna GROUP BY
-    v_date          -- %s date GROUP BY
-  )
-  USING
-    p_month_from, p_month_to, p_conta_contabils, p_scenario,
-    p_marcas, p_nome_filiais, p_tags01, p_tags02, p_tags03;
+  IF p_scenario = 'A-1' THEN
+    -- A-1: inclui fallback para registros com conta_contabil vazia/nula
+    -- quando p_tag0 é fornecido, usa tag0_map JOIN para verificar o contexto
+    RETURN QUERY EXECUTE format(
+      'SELECT
+         COALESCE(CAST(%I AS text), ''N/A'') AS dimension_value,
+         substring(%s, 1, 7)                AS year_month,
+         SUM(t.amount)                      AS total_amount
+       FROM %I t
+       LEFT JOIN tag0_map tm ON LOWER(TRIM(t.tag01)) = LOWER(TRIM(tm.tag1_norm))
+       WHERE
+         ($1 IS NULL OR %s)
+         AND ($2 IS NULL OR %s)
+         AND (
+           $3 IS NULL
+           OR t.conta_contabil = ANY($3)
+           OR (
+             (t.conta_contabil IS NULL OR length(t.conta_contabil) = 0)
+             AND $10 IS NOT NULL
+             AND COALESCE(tm.tag0, t.type) = $10
+           )
+         )
+         AND ($4 IS NULL OR t.scenario = $4)
+         AND ($5 IS NULL OR t.marca = ANY($5))
+         AND ($6 IS NULL OR t.nome_filial = ANY($6))
+         AND ($7 IS NULL OR t.tag01 = ANY($7))
+         AND ($8 IS NULL OR t.tag02 = ANY($8))
+         AND ($9 IS NULL OR t.tag03 = ANY($9))
+       GROUP BY
+         COALESCE(CAST(%I AS text), ''N/A''),
+         substring(%s, 1, 7)',
+      p_dimension, v_date, v_table,
+      v_where_from, v_where_to,
+      p_dimension, v_date
+    )
+    USING
+      p_month_from, p_month_to, p_conta_contabils, p_scenario,
+      p_marcas, p_nome_filiais, p_tags01, p_tags02, p_tags03,
+      p_tag0;
+  ELSE
+    -- Real / Orçado: comportamento original sem JOIN tag0_map
+    RETURN QUERY EXECUTE format(
+      'SELECT
+         COALESCE(CAST(%I AS text), ''N/A'') AS dimension_value,
+         substring(%s, 1, 7)                AS year_month,
+         SUM(t.amount)                      AS total_amount
+       FROM %I t
+       WHERE
+         ($1 IS NULL OR %s)
+         AND ($2 IS NULL OR %s)
+         AND ($3 IS NULL OR t.conta_contabil = ANY($3))
+         AND ($4 IS NULL OR t.scenario = $4)
+         AND ($5 IS NULL OR t.marca = ANY($5))
+         AND ($6 IS NULL OR t.nome_filial = ANY($6))
+         AND ($7 IS NULL OR t.tag01 = ANY($7))
+         AND ($8 IS NULL OR t.tag02 = ANY($8))
+         AND ($9 IS NULL OR t.tag03 = ANY($9))
+       GROUP BY
+         COALESCE(CAST(%I AS text), ''N/A''),
+         substring(%s, 1, 7)',
+      p_dimension, v_date, v_table,
+      v_where_from, v_where_to,
+      p_dimension, v_date
+    )
+    USING
+      p_month_from, p_month_to, p_conta_contabils, p_scenario,
+      p_marcas, p_nome_filiais, p_tags01, p_tags02, p_tags03;
+  END IF;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION get_dre_dimension(text,text,text[],text,text,text[],text[],text[],text[],text[]) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_dre_dimension(text,text,text[],text,text,text[],text[],text[],text[],text[]) TO anon;
+GRANT EXECUTE ON FUNCTION get_dre_dimension(text,text,text[],text,text,text[],text[],text[],text[],text[],text) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_dre_dimension(text,text,text[],text,text,text[],text[],text[],text[],text[],text) TO anon;
 
 
 -- ─── PASSO 5: Verificação final ──────────────────────────────────────────────────

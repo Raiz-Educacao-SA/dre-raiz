@@ -1572,7 +1572,8 @@ const DREView: React.FC<DREViewProps> = ({
     categories: string[],
     dimensionKey: string,
     scenario: string,
-    accFilters: Record<string, string> = {}
+    accFilters: Record<string, string> = {},
+    tag0Context?: string
   ) => {
     // 🔧 Usar refs para obter valores atuais (evita recriar função)
     const year = currentYearRef.current;
@@ -1625,6 +1626,7 @@ const DREView: React.FC<DREViewProps> = ({
       tags01: mergedTags01,
       tags02: mergedTags02,
       tags03: mergedTags03,
+      tag0: tag0Context,
     });
 
     console.log('✅ DRILL-DOWN: Dados carregados', {
@@ -1664,7 +1666,8 @@ const DREView: React.FC<DREViewProps> = ({
     level: number,
     categories: string[],
     hasChildren: boolean = false,
-    accumulatedFilters: Record<string, string> = {}
+    accumulatedFilters: Record<string, string> = {},
+    tag0Context?: string
   ) => {
     // ✅ Apenas nível 1 (Tag0) expandido por padrão, demais níveis colapsados
     const isExpanded = expandedRows[id] ?? (level === 1);
@@ -2069,7 +2072,7 @@ const DREView: React.FC<DREViewProps> = ({
                   categories: categories.slice(0, 5),
                   accumulatedFilters
                 });
-                loadDimensionData(categories, currentDimKey, scenario, accumulatedFilters);
+                loadDimensionData(categories, currentDimKey, scenario, accumulatedFilters, tag0Context);
                 return <tr key={`loading-${id}`}><td colSpan={99} className="text-center text-gray-400 text-xs py-2"><Loader2 className="inline w-3 h-3 animate-spin mr-1" />Carregando...</td></tr>;
               }
             }
@@ -2114,7 +2117,7 @@ const DREView: React.FC<DREViewProps> = ({
               const nextId = `${id}-${currentDimKey}-${idx}`;
               const hasMoreLevels = dynamicPath.length > (dimIndex + 1);
               const nextFilters = { ...accumulatedFilters, [currentDimKey]: val };
-              return renderRow(nextId, val, level + 1, categories, hasMoreLevels, nextFilters);
+              return renderRow(nextId, val, level + 1, categories, hasMoreLevels, nextFilters, tag0Context);
             });
 
             console.log('✅ DRILL-DOWN: Linhas renderizadas com sucesso!', {
@@ -4730,7 +4733,16 @@ const DREView: React.FC<DREViewProps> = ({
                     {entries.map(([nivel1Code, nivel1Data], entryIdx) => {
                       // items é Record<tag01, contas[]> - flatten para pegar todas as contas
                       const tag01Items = nivel1Data.items as Record<string, string[]>;
-                      const allCategories = Object.values(tag01Items).flat();
+                      // União de conta_contabils de TODOS os cenários (Real, A-1, Orçado)
+                      // Garante que contas exclusivas de A-1 (ex: PDD) entrem no drill-down
+                      const allCategories = [
+                        ...new Set([
+                          ...Object.values(tag01Items).flat(),
+                          ...summaryRows
+                            .filter(r => r.tag0 === nivel1Code)
+                            .map(r => r.conta_contabil)
+                        ])
+                      ].filter((c): c is string => c != null && c !== '');
 
                       // 🔍 DEBUG: Verificar se as contas existem no dataMap
                       const contasNoDataMap = allCategories.filter(c => dataMap['Real'][c] !== undefined).length;
@@ -4753,7 +4765,7 @@ const DREView: React.FC<DREViewProps> = ({
 
                       return (
                         <React.Fragment key={nivel1Code}>
-                          {renderRow(nivel1Code, nivel1Data.label, 1, allCategories, true)}
+                          {renderRow(nivel1Code, nivel1Data.label, 1, allCategories, true, {}, nivel1Code)}
 
                           {/* MARGEM DE CONTRIBUIÇÃO: Receita - (Custos Var + Custos Fix), após grupo 03 */}
                           {showOnlyEbitda && entryIdx === margemAfterIdx && margemAfterIdx >= 0 && revenueCategories.length > 0 && renderCalculationLine(
