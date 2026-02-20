@@ -568,6 +568,39 @@ export const getDRESummary = async (params: {
   }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SomaTagsRow {
+  tag0: string;
+  tag01: string;
+  scenario: string;
+  total: number;
+}
+
+/**
+ * Busca soma por tag0+tag01+scenario (RPC leve para diagnóstico)
+ * Muito mais rápido que get_dre_summary pois agrupa menos colunas
+ */
+export const getSomaTags = async (year?: string): Promise<SomaTagsRow[]> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  try {
+    const { data, error } = await supabase
+      .rpc('get_soma_tags', { p_year: year || null })
+      .abortSignal(controller.signal);
+    clearTimeout(timeoutId);
+    if (error) {
+      console.error('❌ Erro ao buscar soma tags:', error);
+      return [];
+    }
+    return (data || []) as SomaTagsRow[];
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    console.error('❌ getSomaTags error:', err);
+    return [];
+  }
+};
+
 /**
  * Calcular Receita Líquida usando a mesma lógica da DRE
  * Soma todos os valores onde tag0 começa com "01." (Receita)

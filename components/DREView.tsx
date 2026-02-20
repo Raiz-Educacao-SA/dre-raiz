@@ -323,6 +323,7 @@ const DREView: React.FC<DREViewProps> = ({
       const filiaisValidas = selectedFiliais.filter(f => filiaisFiltradas.includes(f));
       if (filiaisValidas.length !== selectedFiliais.length) {
         console.log('⚠️ Filiais selecionadas não pertencem às marcas, limpando...');
+        filialCleanupRef.current = true; // 🔧 Marcar como limpeza interna — não deve re-disparar fetch
         setSelectedFiliais(filiaisValidas);
       }
     }
@@ -413,6 +414,7 @@ const DREView: React.FC<DREViewProps> = ({
   const isFirstMount = useRef<boolean>(true); // 🔧 Flag para evitar fetch duplicado na montagem
   const hasAutoSelectedTags = useRef<boolean>(false); // 🔧 Flag para garantir auto-select apenas uma vez
   const autoSelectTriggeredRef = useRef<boolean>(false); // 🔧 Previne re-fetch após auto-select interno de tags01
+  const filialCleanupRef = useRef<boolean>(false); // 🔧 Previne re-fetch após limpeza automática de filiais inválidas
 
   // 🔧 Refs para valores atuais dos filtros (evita recriar fetchDREData)
   const currentYearRef = useRef(currentYear);
@@ -744,6 +746,10 @@ const DREView: React.FC<DREViewProps> = ({
   useEffect(() => {
     if (isFirstMount.current) {
       isFirstMount.current = false;
+      // 🔧 Inicializar prevRefs com o estado atual — evita falsos positivos de "mudança"
+      prevMarcasRef.current = [...selectedMarcas];
+      prevFiliaisRef.current = [...selectedFiliais];
+      prevTags01Ref.current = [...selectedTags01];
       return; // Não busca na montagem - usuário deve clicar Atualizar ou mudar filtro
     }
 
@@ -751,6 +757,13 @@ const DREView: React.FC<DREViewProps> = ({
     if (autoSelectTriggeredRef.current) {
       autoSelectTriggeredRef.current = false;
       prevTags01Ref.current = [...selectedTags01];
+      return;
+    }
+
+    // 🔧 Limpeza interna de filiais inválidas não deve re-disparar fetch
+    if (filialCleanupRef.current) {
+      filialCleanupRef.current = false;
+      prevFiliaisRef.current = [...selectedFiliais];
       return;
     }
 
@@ -2060,9 +2073,10 @@ const DREView: React.FC<DREViewProps> = ({
                 cacheSize
               });
 
-              // ✅ CORREÇÃO: Carregar se não existe OU se está vazio
-              if (!dimensionCache[cacheKey] || dimensionCache[cacheKey].length === 0) {
-                console.log('⏳ DRILL-DOWN: Cache vazio ou não encontrado, carregando...', {
+              // ✅ CORREÇÃO: Carregar apenas se chave NÃO existe no cache
+              // IMPORTANTE: resultado vazio ([]) é válido — não deve re-fetch (causaria loop infinito)
+              if (!(cacheKey in dimensionCache)) {
+                console.log('⏳ DRILL-DOWN: Chave não encontrada no cache, carregando...', {
                   level,
                   currentDimKey,
                   scenario,
