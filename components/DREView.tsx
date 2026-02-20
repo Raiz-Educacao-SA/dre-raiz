@@ -4799,7 +4799,7 @@ const DREView: React.FC<DREViewProps> = ({
 
                           {/* MARGEM DE CONTRIBUIÇÃO: Receita - (Custos Var + Custos Fix), após grupo 03 */}
                           {showOnlyEbitda && entryIdx === margemAfterIdx && margemAfterIdx >= 0 && revenueCategories.length > 0 && renderCalculationLine(
-                            '04. MARGEM DE CONTRIBUIÇÃO',
+                            'MARGEM DE CONTRIBUIÇÃO',
                             revenueCategories,
                             [variableCostCategories, fixedCostCategories].filter(c => c.length > 0),
                             'bg-[#F44C00]'
