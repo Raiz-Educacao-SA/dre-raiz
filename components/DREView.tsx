@@ -2279,14 +2279,14 @@ const DREView: React.FC<DREViewProps> = ({
                   if (isPercentual) {
                     const deltaPerc = compareVal !== 0 ? ((baseVal - compareVal) / Math.abs(compareVal)) * 100 : 0;
                     return (
-                      <td key={`calc-delta-${element}-${i}`} className={`px-0.5 text-center text-[10px] font-black w-[70px] ${deltaPerc >= 0 ? 'text-emerald-600' : 'text-rose-600'} ${isLastMonth ? '' : 'border-l border-white/10'}`}>
+                      <td key={`calc-delta-${element}-${i}`} className={`px-0.5 text-center text-[10px] font-black w-[70px] ${deltaPerc >= 0 ? 'text-lime-300' : 'text-red-200'} ${isLastMonth ? '' : 'border-l border-white/10'}`}>
                         {deltaPerc === 0 ? '-' : `${deltaPerc > 0 ? '+' : ''}${deltaPerc.toFixed(0)}%`}
                       </td>
                     );
                   } else {
                     const deltaAbs = baseVal - compareVal;
                     return (
-                      <td key={`calc-delta-${element}-${i}`} className={`px-0.5 text-right font-mono text-[10px] font-black w-[85px] ${deltaAbs >= 0 ? 'text-emerald-600' : 'text-rose-600'} ${isLastMonth ? '' : 'border-l border-white/5'}`}>
+                      <td key={`calc-delta-${element}-${i}`} className={`px-0.5 text-right font-mono text-[10px] font-black w-[85px] ${deltaAbs >= 0 ? 'text-lime-300' : 'text-red-200'} ${isLastMonth ? '' : 'border-l border-white/5'}`}>
                         {deltaAbs === 0 ? '-' : `${deltaAbs > 0 ? '+' : ''}${Math.round(deltaAbs).toLocaleString()}`}
                       </td>
                     );
@@ -2295,11 +2295,11 @@ const DREView: React.FC<DREViewProps> = ({
 
                 {/* Delta YTD */}
                 {isPercentual ? (
-                  <td className={`px-0.5 text-center border-l border-white/20 border-r-2 border-r-gray-300 bg-black/10 text-[10px] font-black w-[100px] ${compareYTD !== 0 ? ((baseYTD - compareYTD) / Math.abs(compareYTD)) * 100 >= 0 ? 'text-emerald-600' : 'text-rose-600' : 'text-gray-400'}`}>
+                  <td className={`px-0.5 text-center border-l border-white/20 border-r-2 border-r-gray-300 bg-black/10 text-[10px] font-black w-[100px] ${compareYTD !== 0 ? ((baseYTD - compareYTD) / Math.abs(compareYTD)) * 100 >= 0 ? 'text-lime-300' : 'text-red-200' : 'text-gray-400'}`}>
                     {compareYTD === 0 ? '-' : `${((baseYTD - compareYTD) / Math.abs(compareYTD)) * 100 > 0 ? '+' : ''}${(((baseYTD - compareYTD) / Math.abs(compareYTD)) * 100).toFixed(0)}%`}
                   </td>
                 ) : (
-                  <td className={`px-0.5 text-right font-mono border-l border-white/20 border-r-2 border-r-gray-300 bg-black/10 text-[10px] font-black w-[100px] ${(baseYTD - compareYTD) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  <td className={`px-0.5 text-right font-mono border-l border-white/20 border-r-2 border-r-gray-300 bg-black/10 text-[10px] font-black w-[100px] ${(baseYTD - compareYTD) >= 0 ? 'text-lime-300' : 'text-red-200'}`}>
                     {(baseYTD - compareYTD) === 0 ? '-' : `${(baseYTD - compareYTD) > 0 ? '+' : ''}${Math.round(baseYTD - compareYTD).toLocaleString()}`}
                   </td>
                 )}
@@ -2358,14 +2358,14 @@ const DREView: React.FC<DREViewProps> = ({
                       if (isPercentual) {
                         const deltaPerc = compareVal !== 0 ? ((baseVal - compareVal) / Math.abs(compareVal)) * 100 : 0;
                         return (
-                          <td key={`calc-month-${monthIdx}-${element}`} className={`px-0.5 text-center text-[11px] font-black w-[70px] ${deltaPerc >= 0 ? 'text-emerald-600' : 'text-rose-600'} ${monthSeparator}`}>
+                          <td key={`calc-month-${monthIdx}-${element}`} className={`px-0.5 text-center text-[11px] font-black w-[70px] ${deltaPerc >= 0 ? 'text-lime-300' : 'text-red-200'} ${monthSeparator}`}>
                             {deltaPerc === 0 ? '-' : `${deltaPerc > 0 ? '+' : ''}${deltaPerc.toFixed(0)}%`}
                           </td>
                         );
                       } else {
                         const deltaAbs = baseVal - compareVal;
                         return (
-                          <td key={`calc-month-${monthIdx}-${element}`} className={`px-0.5 text-right font-mono text-[11px] font-black w-[85px] ${deltaAbs >= 0 ? 'text-emerald-600' : 'text-rose-600'} ${monthSeparator}`}>
+                          <td key={`calc-month-${monthIdx}-${element}`} className={`px-0.5 text-right font-mono text-[11px] font-black w-[85px] ${deltaAbs >= 0 ? 'text-lime-300' : 'text-red-200'} ${monthSeparator}`}>
                             {deltaAbs === 0 ? '-' : `${deltaAbs > 0 ? '+' : ''}${Math.round(deltaAbs).toLocaleString()}`}
                           </td>
                         );
@@ -2416,14 +2416,14 @@ const DREView: React.FC<DREViewProps> = ({
                 if (isPercentual) {
                   const deltaPerc = compareYTD !== 0 ? ((baseYTD - compareYTD) / Math.abs(compareYTD)) * 100 : 0;
                   return (
-                    <td key={`calc-ytd-${element}`} className={`px-0.5 text-center ${ytdSeparator} bg-black/10 text-[10px] font-black w-[100px] ${deltaPerc >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    <td key={`calc-ytd-${element}`} className={`px-0.5 text-center ${ytdSeparator} bg-black/10 text-[10px] font-black w-[100px] ${deltaPerc >= 0 ? 'text-lime-300' : 'text-red-200'}`}>
                       {deltaPerc === 0 ? '-' : `${deltaPerc > 0 ? '+' : ''}${deltaPerc.toFixed(0)}%`}
                     </td>
                   );
                 } else {
                   const deltaAbs = baseYTD - compareYTD;
                   return (
-                    <td key={`calc-ytd-${element}`} className={`px-0.5 text-right font-mono ${ytdSeparator} bg-black/10 text-[10px] font-black w-[100px] ${deltaAbs >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    <td key={`calc-ytd-${element}`} className={`px-0.5 text-right font-mono ${ytdSeparator} bg-black/10 text-[10px] font-black w-[100px] ${deltaAbs >= 0 ? 'text-lime-300' : 'text-red-200'}`}>
                       {deltaAbs === 0 ? '-' : `${deltaAbs > 0 ? '+' : ''}${Math.round(deltaAbs).toLocaleString()}`}
                     </td>
                   );
