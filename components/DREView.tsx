@@ -2166,7 +2166,7 @@ const DREView: React.FC<DREViewProps> = ({
     );
   };
 
-  const renderCalculationLine = (label: string, posCategories: string[], negCategories: string[][], color: string) => {
+  const renderCalculationLine = (label: string, posCategories: string[], negCategories: string[][], color: string, extraClass = '') => {
     // Calcular para todos os cenários
     const calcValues: Record<string, number[]> = {
       'Real': new Array(12).fill(0),
@@ -2213,7 +2213,7 @@ const DREView: React.FC<DREViewProps> = ({
     const varA1Perc = ytdA1 !== 0 ? ((ytdReal - ytdA1) / Math.abs(ytdA1)) * 100 : 0;
 
     return (
-      <tr className={`${color} text-white text-[10px] font-black h-6 shadow-sm group`}>
+      <tr className={`${color} text-white text-[10px] font-black h-6 shadow-sm group ${extraClass}`}>
         <td className="sticky left-0 bg-inherit z-30 border-r border-white/10 shadow-[2px_0_4px_rgba(0,0,0,0.2)] w-[280px] group-hover:bg-yellow-400 group-hover:text-black transition-colors">
           <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
             <Activity size={12} /> {label}
@@ -4823,10 +4823,11 @@ const DREView: React.FC<DREViewProps> = ({
 
                     {/* EBITDA: Receita - todos os custos (só renderiza se filtro EBITDA ativo) */}
                     {showOnlyEbitda && revenueCategories.length > 0 && allCostCategories.length > 0 && renderCalculationLine(
-                      'EBITDA OPERACIONAL',
+                      'EBITDA',
                       revenueCategories,
                       allCostCategories,
-                      'bg-[#152e55]'
+                      'bg-[#152e55]',
+                      'border-t-2 border-yellow-400 h-8 text-xs'
                     )}
                   </>
                 );
