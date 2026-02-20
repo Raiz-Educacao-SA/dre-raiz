@@ -4826,7 +4826,7 @@ const DREView: React.FC<DREViewProps> = ({
                       'EBITDA',
                       revenueCategories,
                       allCostCategories,
-                      'bg-[#152e55]',
+                      'bg-[#1a6b4a]',
                       'border-t-2 border-yellow-400 h-8 text-xs'
                     )}
                   </>
