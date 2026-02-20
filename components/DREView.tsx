@@ -1555,6 +1555,20 @@ const DREView: React.FC<DREViewProps> = ({
     return values;
   }, [dataMap, selectedMarcas, selectedFiliais]);
 
+  // getTag0Values: agrega direto de summaryRows por tag0+scenario (ignora conta_contabil)
+  // Usado no Level 1 para incluir contas com conta_contabil NULL (ex: PDD no A-1)
+  const getTag0Values = useCallback((scenario: string, tag0: string): number[] => {
+    const values = new Array(12).fill(0);
+    summaryRows.forEach(r => {
+      let sc = r.scenario || 'Real';
+      if (sc === 'Original') sc = 'Real';
+      if (sc !== scenario || r.tag0 !== tag0) return;
+      const monthIdx = parseInt(r.year_month.substring(5, 7), 10) - 1;
+      if (monthIdx >= 0 && monthIdx < 12) values[monthIdx] += Number(r.total_amount);
+    });
+    return values;
+  }, [summaryRows]);
+
   // getDynamicValues: usa cache de dimensões carregadas do servidor
   // Para o nível de dimensão dinâmica, os dados são pré-carregados via getDREDimension
   const getDynamicValues = (categories: string[], dimensionKey: string, dimensionValue: string, filters: Record<string, string>, scenario: string) => {
@@ -1688,15 +1702,17 @@ const DREView: React.FC<DREViewProps> = ({
     // Obter valores para todos os cenários
     // level 1-2: dados do summary (getValues), level 3+: drill-down dinâmico
     // 🔥 TESTE: level 1 usa getValues (Type fixo), level 2+ usa getDynamicValues (drill-down)
+    // Level 1 (tag0): agrega direto de summaryRows para incluir contas com conta_contabil NULL
+    // Isso garante que tag01s como PDD (sem conta_contabil no A-1) apareçam no agregado
     const scenarioValues: Record<string, number[]> = {
-      'Real': level <= 1
-        ? getValues('Real', categories)
+      'Real': level === 1
+        ? getTag0Values('Real', tag0Context || id)
         : getDynamicValues(categories, dynamicPath[level - 2], label, accumulatedFilters, 'Real'),
-      'Orçado': level <= 1
-        ? getValues('Orçado', categories)
+      'Orçado': level === 1
+        ? getTag0Values('Orçado', tag0Context || id)
         : getDynamicValues(categories, dynamicPath[level - 2], label, accumulatedFilters, 'Orçado'),
-      'A-1': level <= 1
-        ? getValues('A-1', categories)
+      'A-1': level === 1
+        ? getTag0Values('A-1', tag0Context || id)
         : getDynamicValues(categories, dynamicPath[level - 2], label, accumulatedFilters, 'A-1')
     };
 
