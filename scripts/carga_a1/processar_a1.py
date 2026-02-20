@@ -78,7 +78,7 @@ def get_type_from_tag0(tag0: str) -> str | None:
     if t.startswith("02."):  return "VARIABLE_COST"
     if t.startswith("03."):  return "FIXED_COST"
     if t.startswith("04."):  return "SGA"
-    if t.startswith("06."):  return "RATEIO"
+    if t.startswith("05."):  return "RATEIO"
     return None   # None = linha calculada ou desconhecida → ignorar
 
 

@@ -73,7 +73,7 @@ BEGIN
   -- REGRA 5: RATEIO RAIZ
   -- ============================================
   ELSIF p_tagorc LIKE '%RATEIO%' THEN
-    RETURN '06. RATEIO RAIZ';
+    RETURN '05. RATEIO RAIZ';
 
   -- ============================================
   -- REGRA 6: RESULTADO FINANCEIRO
