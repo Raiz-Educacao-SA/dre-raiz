@@ -83,7 +83,7 @@ export interface IAInsight {
   category: 'Driver Positivo' | 'Driver Negativo' | 'Ação Recomendada';
 }
 
-export type ViewType = 'dashboard' | 'kpis' | 'dre' | 'forecasting' | 'manual_changes' | 'movements' | 'admin' | 'analysis';
+export type ViewType = 'dashboard' | 'kpis' | 'dre' | 'forecasting' | 'manual_changes' | 'movements' | 'admin' | 'analysis' | 'soma_tags';
 
 // Chart Types for AI-Generated Visualizations
 export type ChartType = 'bar' | 'line' | 'waterfall' | 'composed' | 'heatmap';

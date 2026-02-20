@@ -39,6 +39,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
     { id: 'kpis', label: 'Indicadores e KPIs', icon: BarChart3 },
     { id: 'analysis', label: 'Análise Financeira', icon: FileText },
     { id: 'forecasting', label: 'Forecasting', icon: LineChart },
+    { id: 'soma_tags', label: 'Soma Tags', icon: BarChart3 },
     ...(isAdmin ? [
       { id: 'admin', label: 'Admin', icon: Shield }
     ] : []),
