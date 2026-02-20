@@ -8,7 +8,7 @@ const NIVEL_1_OPTIONS = [
   { code: '02', label: '02. CUSTOS VARIÁVEIS' },
   { code: '03', label: '03. CUSTOS FIXOS' },
   { code: '04', label: '04. DESPESAS ADM (SG&A)' },
-  { code: '05', label: '05. RATEIO CSC' }
+  { code: '06', label: '06. RATEIO RAIZ' }
 ];
 
 const DREHierarchyManager: React.FC = () => {

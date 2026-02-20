@@ -2987,7 +2987,7 @@ const DREView: React.FC<DREViewProps> = ({
                     const totalCards = Object.keys(dreStructure.data).length;
                     const ebitdaCards = Object.keys(dreStructure.data).filter(code => {
                       const node = dreStructure.data[code];
-                      const ebitdaPrefixes = ['01.', '02.', '03.', '04.', '05.'];
+                      const ebitdaPrefixes = ['01.', '02.', '03.', '04.', '06.'];
                       return ebitdaPrefixes.some(prefix => node.label.startsWith(prefix));
                     }).length;
                     const displayedCards = showOnlyEbitda ? ebitdaCards : totalCards;
@@ -3198,7 +3198,7 @@ const DREView: React.FC<DREViewProps> = ({
               .filter(({ node }) => {
                 if (!showOnlyEbitda) return true; // Mostrar todas
                 // Mostrar apenas tag0s que começam com 01., 02., 03., 04.
-                const ebitdaPrefixes = ['01.', '02.', '03.', '04.', '05.'];
+                const ebitdaPrefixes = ['01.', '02.', '03.', '04.', '06.'];
                 return ebitdaPrefixes.some(prefix => node.label.startsWith(prefix));
               })
               // Filtrar por tipo (positive/negative/all)
@@ -4715,7 +4715,7 @@ const DREView: React.FC<DREViewProps> = ({
               {/* Renderização dinâmica da hierarquia DRE baseada em tag0/tag01 */}
               {(() => {
                 // 🎯 Filtrar por EBITDA apenas se showOnlyEbitda estiver ativo
-                const ebitdaPrefixes = ['01.', '02.', '03.', '04.', '05.'];
+                const ebitdaPrefixes = ['01.', '02.', '03.', '04.', '06.'];
                 const entries = Object.entries(dreStructure.data)
                   .filter(([, nivel1Data]) => {
                     // Se showOnlyEbitda for false, mostrar todas as tag0
@@ -4799,7 +4799,7 @@ const DREView: React.FC<DREViewProps> = ({
 
                           {/* MARGEM DE CONTRIBUIÇÃO: Receita - (Custos Var + Custos Fix), após grupo 03 */}
                           {showOnlyEbitda && entryIdx === margemAfterIdx && margemAfterIdx >= 0 && revenueCategories.length > 0 && renderCalculationLine(
-                            '05. MARGEM DE CONTRIBUIÇÃO',
+                            '04. MARGEM DE CONTRIBUIÇÃO',
                             revenueCategories,
                             [variableCostCategories, fixedCostCategories].filter(c => c.length > 0),
                             'bg-[#F44C00]'
