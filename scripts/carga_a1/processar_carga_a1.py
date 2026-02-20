@@ -110,6 +110,13 @@ def safe_str_nn(val, max_len=500):
     r = safe_str(val, max_len)
     return r if r is not None else ""
 
+def safe_str_title(val, max_len=500):
+    """Igual a safe_str mas normaliza para Title Case (primeira maiuscula).
+    Evita duplicatas por diferenca de case: 'RECEITA' e 'Receita' viram 'Receita'.
+    """
+    r = safe_str(val, max_len)
+    return r.title() if r is not None else None
+
 def safe_float(val):
     try:
         f = float(val)
@@ -200,9 +207,9 @@ def carregar_planilha():
             "marca":         safe_str(row.get("marca"), 50),
             "filial":        safe_str_nn(row.get("FILIAL"), 50),
             "nome_filial":   safe_str(row.get("Nome_Filial"), 100),
-            "tag01":         safe_str(row.get("Tag1"), 200),
-            "tag02":         safe_str(row.get("Tag2"), 200),
-            "tag03":         safe_str(row.get("Tag3"), 200),
+            "tag01":         safe_str_title(row.get("Tag1"), 200),
+            "tag02":         safe_str_title(row.get("Tag2"), 200),
+            "tag03":         safe_str_title(row.get("Tag3"), 200),
             "vendor":        safe_str(row.get("vender"), 500),
             "ticket":        safe_str(row.get("TICKET"), 100),
             "chave_id":      safe_str(row.get("chave_id"), 100),
