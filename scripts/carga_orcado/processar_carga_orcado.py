@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-processar_carga_a1.py
-=====================
-Carrega a aba "CARGA" do arquivo Excel CARGA A-1.xlsx para a tabela
-transactions_ano_anterior no Supabase.
+processar_carga_orcado.py
+=========================
+Carrega a aba "CARGA" do arquivo Excel CARGA ORÇ.xlsx para a tabela
+transactions_orcado no Supabase.
 
 Fluxo:
   1. Le aba "CARGA" do Excel
-  2. Filtra: apenas 2025 + tipos 01-05 (exclui CAPEX, ADIANTAMENTO, etc.)
+  2. Filtra: apenas 2026 + tipos 01-05 (exclui CAPEX, ADIANTAMENTO, etc.)
   3. Mapeia colunas para o schema do Supabase
   4. Exibe resumo e pede confirmacao
-  5. Deleta todos os registros com scenario='A-1'
+  5. Deleta todos os registros de transactions_orcado
   6. Insere os novos registros em batches de 500 com barra de progresso
 """
 
@@ -39,9 +39,9 @@ except ImportError:
 # CONFIGURACOES
 # ══════════════════════════════════════════════════════════════════════════════
 
-EXCEL_PATH  = r"C:\Users\edmilson.serafim\OneDrive\IA\CARGA A-1.xlsx"
+EXCEL_PATH  = r"C:\Users\edmilson.serafim\OneDrive\IA\CARGA ORÇ.xlsx"
 SHEET_NAME  = "CARGA"
-ANO_A1      = 2025
+ANO_ORC     = 2026
 
 SUPABASE_URL     = "https://vafmufhlompwsdrlhkfz.supabase.co"
 SUPABASE_API_KEY = (
@@ -111,9 +111,7 @@ def safe_str_nn(val, max_len=500):
     return r if r is not None else ""
 
 def safe_str_title(val, max_len=500):
-    """Igual a safe_str mas normaliza para Title Case (primeira maiuscula).
-    Evita duplicatas por diferenca de case: 'RECEITA' e 'Receita' viram 'Receita'.
-    """
+    """Normaliza para Title Case para evitar duplicatas de case no SQL."""
     r = safe_str(val, max_len)
     return r.title() if r is not None else None
 
@@ -144,7 +142,7 @@ def clean_record(rec):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def carregar_planilha():
-    print_header(f"CARGA A-1 SUPABASE  —  Raiz Educacao  ({datetime.now():%d/%m/%Y %H:%M})")
+    print_header(f"CARGA ORCADO SUPABASE  —  Raiz Educacao  ({datetime.now():%d/%m/%Y %H:%M})")
 
     # ── verificar arquivo ──────────────────────────────────────────────────
     if not os.path.exists(EXCEL_PATH):
@@ -165,6 +163,10 @@ def carregar_planilha():
     if "date" not in df.columns:
         print_err("Coluna 'date' nao encontrada na aba CARGA!")
         print("         Adicione a coluna 'date' no formato YYYY-MM-DD e tente novamente.")
+        print()
+        print("         Colunas encontradas na planilha:")
+        for col in df.columns.tolist():
+            print(f"           - {col}")
         sys.exit(1)
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
@@ -174,10 +176,10 @@ def carregar_planilha():
 
     # ── filtrar ───────────────────────────────────────────────────────────
     print()
-    print_step(2, 5, f"Aplicando filtros  (ano={ANO_A1}  |  tipos 01-05)...")
+    print_step(2, 5, f"Aplicando filtros  (ano={ANO_ORC}  |  tipos 01-05)...")
 
     antes = len(df)
-    df = df[df["date"].dt.year == ANO_A1]
+    df = df[df["date"].dt.year == ANO_ORC]
     print_ok(f"Apos filtro de ano:               {len(df):>8,}  (removidos: {antes - len(df):,})")
 
     antes = len(df)
@@ -202,11 +204,11 @@ def carregar_planilha():
             "date":          date_str,
             "amount":        safe_float(row.get("amount")),
             "type":          safe_str(row.get("type"), 200),
-            "scenario":      "A-1",
+            "scenario":      "Orçado",
             # Campos NOT NULL no DB — garante "" ao inves de None
             "description":   safe_str_nn(row.get("description"), 500),
             "conta_contabil":safe_str_nn(row.get("conta_contabil"), 100),
-            "category":      safe_str_nn(row.get("category"), 200),   # NOT NULL no DB
+            "category":      safe_str_nn(row.get("category"), 200),
             # Campos opcionais (podem ser None)
             # Após normalização, todos os nomes de coluna estão em minúsculo
             "marca":         safe_str(row.get("marca"), 50),
@@ -239,11 +241,12 @@ HEADERS = {
 }
 
 
-def deletar_a1():
+def deletar_orcado():
     print()
-    print_step(4, 5, "Limpando transactions_ano_anterior (scenario=A-1)...")
-    url  = SUPABASE_URL + "/rest/v1/transactions_ano_anterior?scenario=eq.A-1"
-    resp = requests.delete(url, headers=HEADERS, timeout=60)
+    print_step(4, 5, "Limpando transactions_orcado...")
+    # Usa params dict para o requests encodar o 'ç' corretamente
+    url  = SUPABASE_URL + "/rest/v1/transactions_orcado"
+    resp = requests.delete(url, headers=HEADERS, params={"scenario": "eq.Orçado"}, timeout=60)
     if resp.status_code in (200, 204):
         print_ok("Tabela limpa com sucesso!")
     else:
@@ -255,15 +258,15 @@ def deletar_a1():
 def inserir_records(records):
     total   = len(records)
     batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
-    url     = SUPABASE_URL + "/rest/v1/transactions_ano_anterior"
+    url     = SUPABASE_URL + "/rest/v1/transactions_orcado"
 
     print()
     print_step(5, 5, f"Inserindo {total:,} registros em {batches} batches de {BATCH_SIZE}...")
     print()
 
-    erros       = 0
+    erros        = 0
     erros_detalhe = []
-    t_inicio    = time.time()
+    t_inicio     = time.time()
 
     for i in range(0, total, BATCH_SIZE):
         batch     = records[i : i + BATCH_SIZE]
@@ -273,7 +276,6 @@ def inserir_records(records):
         resp = requests.post(url, headers=HEADERS, data=payload.encode("utf-8"), timeout=120)
 
         if resp.status_code in (200, 201):
-            # Calcula ETA
             elapsed = time.time() - t_inicio
             rate    = batch_num / elapsed if elapsed > 0 else 1
             eta_s   = int((batches - batch_num) / rate) if rate > 0 else 0
@@ -309,9 +311,9 @@ def inserir_records(records):
             print(f"  {d}")
     else:
         print_header(
-            f"CARGA A-1 CONCLUIDA COM SUCESSO!  ({mins:02d}m {secs:02d}s)\n"
-            f"  {total:,} registros  |  Periodo: Jan-Dez/{ANO_A1}\n"
-            f"  Cenario: A-1  |  Tabela: transactions_ano_anterior"
+            f"CARGA ORCADO CONCLUIDA COM SUCESSO!  ({mins:02d}m {secs:02d}s)\n"
+            f"  {total:,} registros  |  Periodo: Jan-Dez/{ANO_ORC}\n"
+            f"  Cenario: Orcado  |  Tabela: transactions_orcado"
         )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -345,8 +347,8 @@ def main():
 
     print()
     print("    ATENCAO: Esta operacao ira:")
-    print("      1. DELETAR todos os registros A-1 no Supabase")
-    print(f"      2. INSERIR {len(records):,} novos registros de {ANO_A1}")
+    print("      1. DELETAR todos os registros de transactions_orcado")
+    print(f"      2. INSERIR {len(records):,} novos registros de {ANO_ORC}")
     print()
 
     resposta = input("    Confirma? Digite 's' para continuar: ").strip().lower()
@@ -355,7 +357,7 @@ def main():
         print("    Operacao cancelada.")
         sys.exit(0)
 
-    deletar_a1()
+    deletar_orcado()
     inserir_records(records)
 
 

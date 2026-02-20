@@ -2077,8 +2077,8 @@ const DREView: React.FC<DREViewProps> = ({
               totalChavesNoCache: Object.keys(dimensionCache).length
             });
 
-            // ✅ ATIVADO: Cenários Real e A-1 (transactions_ano_anterior populada)
-            for (const scenario of ['Real', 'A-1']) {
+            // ✅ ATIVADO: Cenários Real, Orçado e A-1
+            for (const scenario of ['Real', 'Orçado', 'A-1']) {
               const cacheKey = `${scenario}|${categories.sort().join(',')}|${currentDimKey}|${accFiltersKey}`;
               const cacheExists = !!dimensionCache[cacheKey];
               const cacheSize = dimensionCache[cacheKey]?.length || 0;
@@ -2108,9 +2108,9 @@ const DREView: React.FC<DREViewProps> = ({
             }
 
             // Extrair valores únicos de dimensão do cache
-            // ✅ ATIVADO: Cenários Real e A-1 (transactions_ano_anterior populada)
+            // ✅ ATIVADO: Cenários Real, Orçado e A-1
             const allDimensionValues = new Set<string>();
-            for (const scenario of ['Real', 'A-1']) {
+            for (const scenario of ['Real', 'Orçado', 'A-1']) {
               const cacheKey = `${scenario}|${categories.sort().join(',')}|${currentDimKey}|${accFiltersKey}`;
               const cachedRows = dimensionCache[cacheKey] || [];
               cachedRows.forEach(row => allDimensionValues.add(row.dimension_value));
