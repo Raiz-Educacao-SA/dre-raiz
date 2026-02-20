@@ -25,7 +25,7 @@ const SomaTagsView: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const data = await getSomaTags(year);
+      const data = await getSomaTags(`${year}-01`, `${year}-12`);
       setRows(data);
     } catch (e: any) {
       setError(String(e?.message || e));
