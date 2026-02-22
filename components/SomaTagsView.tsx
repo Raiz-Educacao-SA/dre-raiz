@@ -57,36 +57,36 @@ const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop }) => {
       </td>
 
       {/* Real */}
-      <td className="px-2 py-1.5 text-right font-mono">{fmt(real)}</td>
+      <td className="px-2 py-1.5 text-center font-mono">{fmt(real)}</td>
 
       {/* Orçado */}
-      <td className={`px-2 py-1.5 text-right font-mono ${hasOrc ? 'text-green-200' : 'text-orange-300'}`}>
+      <td className={`px-2 py-1.5 text-center font-mono ${hasOrc ? 'text-green-200' : 'text-orange-300'}`}>
         {hasOrc ? fmt(orcado) : '—'}
       </td>
 
       {/* Δ R−Orç */}
-      <td className={`px-2 py-1.5 text-right font-mono ${hasOrc ? deltaClass(dOrç, orcado, true) : 'text-orange-300'}`}>
+      <td className={`px-2 py-1.5 text-center font-mono ${hasOrc ? deltaClass(dOrç, orcado, true) : 'text-orange-300'}`}>
         {hasOrc ? fmt(dOrç) : '—'}
       </td>
 
       {/* Δ% Orç */}
-      <td className={`px-2 py-1.5 text-right font-mono border-r border-white/20
+      <td className={`px-2 py-1.5 text-center font-mono border-r border-white/20
                      ${hasOrc ? deltaClass(dOrç, orcado, true) : 'text-orange-300'}`}>
         {fmtPct(real, orcado)}
       </td>
 
       {/* A-1 */}
-      <td className={`px-2 py-1.5 text-right font-mono ${hasA1 ? 'text-yellow-200' : 'text-orange-300'}`}>
+      <td className={`px-2 py-1.5 text-center font-mono ${hasA1 ? 'text-yellow-200' : 'text-orange-300'}`}>
         {hasA1 ? fmt(a1) : '—'}
       </td>
 
       {/* Δ R−A-1 */}
-      <td className={`px-2 py-1.5 text-right font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>
+      <td className={`px-2 py-1.5 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>
         {hasA1 ? fmt(dA1) : '—'}
       </td>
 
       {/* Δ% A-1 */}
-      <td className={`px-2 py-1.5 text-right font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>
+      <td className={`px-2 py-1.5 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>
         {fmtPct(real, a1)}
       </td>
     </tr>
@@ -516,37 +516,37 @@ const SomaTagsView: React.FC = () => {
                   CONTAS GERENCIAIS
                 </th>
                 {/* Real */}
-                <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[130px]
+                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px]
                                bg-blue-700/80 border-r border-white/20">
                   Real
                 </th>
                 {/* Orçado */}
-                <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[130px]
+                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px]
                                bg-emerald-700/80">
                   Orçado
                 </th>
                 {/* Δ R−Orç */}
-                <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[120px]
+                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px]
                                bg-emerald-700/80">
                   Δ R−Orç
                 </th>
                 {/* Δ% Orç */}
-                <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[72px]
+                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px]
                                bg-emerald-700/80 border-r border-white/20">
                   Δ%
                 </th>
                 {/* A-1 */}
-                <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[130px]
+                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px]
                                bg-purple-700/80">
                   A-1
                 </th>
                 {/* Δ R−A-1 */}
-                <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[120px]
+                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px]
                                bg-purple-700/80">
                   Δ R−A-1
                 </th>
                 {/* Δ% A-1 */}
-                <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[72px]
+                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px]
                                bg-purple-700/80">
                   Δ%
                 </th>
@@ -581,32 +581,32 @@ const SomaTagsView: React.FC = () => {
                         {g.tag0}
                       </td>
                       {/* Real */}
-                      <td className="px-2 py-1 text-right font-mono font-black border-r border-white/10">
+                      <td className="px-2 py-1 text-center font-mono font-black border-r border-white/10">
                         {fmt(g.real)}
                       </td>
                       {/* Orçado */}
-                      <td className={`px-2 py-1 text-right font-mono font-black ${hasOrc ? '' : 'text-gray-500'}`}>
+                      <td className={`px-2 py-1 text-center font-mono font-black ${hasOrc ? '' : 'text-gray-500'}`}>
                         {hasOrc ? fmt(g.orcado) : '—'}
                       </td>
                       {/* Δ R−Orç */}
-                      <td className={`px-2 py-1 text-right font-mono font-black ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>
+                      <td className={`px-2 py-1 text-center font-mono font-black ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>
                         {hasOrc ? fmt(dOrç) : '—'}
                       </td>
                       {/* Δ% Orç */}
-                      <td className={`px-2 py-1 text-right font-mono font-black border-r border-white/10
+                      <td className={`px-2 py-1 text-center font-mono font-black border-r border-white/10
                                      ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>
                         {fmtPct(g.real, g.orcado)}
                       </td>
                       {/* A-1 */}
-                      <td className={`px-2 py-1 text-right font-mono font-black ${hasA1 ? '' : 'text-gray-500'}`}>
+                      <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? '' : 'text-gray-500'}`}>
                         {hasA1 ? fmt(g.a1) : '—'}
                       </td>
                       {/* Δ R−A-1 */}
-                      <td className={`px-2 py-1 text-right font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>
+                      <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>
                         {hasA1 ? fmt(dA1) : '—'}
                       </td>
                       {/* Δ% A-1 */}
-                      <td className={`px-2 py-1 text-right font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>
+                      <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>
                         {fmtPct(g.real, g.a1)}
                       </td>
                     </tr>
@@ -630,32 +630,32 @@ const SomaTagsView: React.FC = () => {
                             {r.tag01}
                           </td>
                           {/* Real */}
-                          <td className="px-2 py-1 text-right font-mono text-gray-900 border-r border-gray-100">
+                          <td className="px-2 py-1 text-center font-mono text-gray-900 border-r border-gray-100">
                             {fmt(r.real)}
                           </td>
                           {/* Orçado */}
-                          <td className={`px-2 py-1 text-right font-mono ${rHasOrc ? 'text-gray-700' : 'text-gray-300'}`}>
+                          <td className={`px-2 py-1 text-center font-mono ${rHasOrc ? 'text-gray-900' : 'text-gray-300'}`}>
                             {rHasOrc ? fmt(r.orcado) : '—'}
                           </td>
                           {/* Δ R−Orç */}
-                          <td className={`px-2 py-1 text-right font-mono ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>
+                          <td className={`px-2 py-1 text-center font-mono ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>
                             {rHasOrc ? fmt(rdOrç) : '—'}
                           </td>
                           {/* Δ% Orç */}
-                          <td className={`px-2 py-1 text-right font-mono border-r border-gray-200
+                          <td className={`px-2 py-1 text-center font-mono border-r border-gray-200
                                          ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>
                             {rHasOrc ? `${((rdOrç / Math.abs(r.orcado)) * 100).toFixed(1)}%` : '—'}
                           </td>
                           {/* A-1 */}
-                          <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? 'text-purple-700' : 'text-gray-300'}`}>
+                          <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? 'text-gray-900' : 'text-gray-300'}`}>
                             {rHasA1 ? fmt(r.a1) : '—'}
                           </td>
                           {/* Δ R−A-1 */}
-                          <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>
+                          <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>
                             {rHasA1 ? fmt(rdA1) : '—'}
                           </td>
                           {/* Δ% A-1 */}
-                          <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>
+                          <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>
                             {rHasA1 ? `${((rdA1 / Math.abs(r.a1)) * 100).toFixed(1)}%` : '—'}
                           </td>
                         </tr>
@@ -690,26 +690,26 @@ const SomaTagsView: React.FC = () => {
                                shadow-[2px_0_4px_rgba(0,0,0,0.3)] border-r border-white/10 w-[280px]">
                   TOTAL GERAL
                 </td>
-                <td className="px-2 py-2 text-right font-mono border-r border-white/10">
+                <td className="px-2 py-2 text-center font-mono border-r border-white/10">
                   {fmt(totals.real)}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono ${totals.orcado !== 0 ? '' : 'text-gray-500'}`}>
+                <td className={`px-2 py-2 text-center font-mono ${totals.orcado !== 0 ? '' : 'text-gray-500'}`}>
                   {totals.orcado !== 0 ? fmt(totals.orcado) : '—'}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>
+                <td className={`px-2 py-2 text-center font-mono ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>
                   {totals.orcado !== 0 ? fmt(totals.real - totals.orcado) : '—'}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono border-r border-white/10
+                <td className={`px-2 py-2 text-center font-mono border-r border-white/10
                                ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>
                   {fmtPct(totals.real, totals.orcado)}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono ${totals.a1 !== 0 ? '' : 'text-gray-500'}`}>
+                <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? '' : 'text-gray-500'}`}>
                   {totals.a1 !== 0 ? fmt(totals.a1) : '—'}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>
+                <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>
                   {totals.a1 !== 0 ? fmt(totals.real - totals.a1) : '—'}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>
+                <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>
                   {fmtPct(totals.real, totals.a1)}
                 </td>
               </tr>
