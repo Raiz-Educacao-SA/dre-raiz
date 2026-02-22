@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { getSomaTags, SomaTagsRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // ── Formatação ────────────────────────────────────────────────────────────────
@@ -109,7 +109,8 @@ const SomaTagsView: React.FC = () => {
   const [year,      setYear]      = useState('2026');
   const [monthFrom, setMonthFrom] = useState('01');
   const [monthTo,   setMonthTo]   = useState('12');
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsed,      setCollapsed]      = useState<Set<string>>(new Set());
+  const [showOnlyEbitda, setShowOnlyEbitda] = useState(true);
 
   const fetchData = async () => {
     setLoading(true); setError('');
@@ -160,6 +161,13 @@ const SomaTagsView: React.FC = () => {
     a1:     groups.reduce((s, g) => s + g.a1,     0),
   }), [groups]);
 
+  // ── Grupos exibidos (filtro Até EBITDA) ──────────────────────────────────
+  const EBITDA_PREFIXES = ['01.', '02.', '03.', '04.', '05.'];
+  const displayedGroups = useMemo(
+    () => showOnlyEbitda ? groups.filter(g => EBITDA_PREFIXES.some(p => g.tag0.startsWith(p))) : groups,
+    [groups, showOnlyEbitda],
+  );
+
   // ── Linhas calculadas ────────────────────────────────────────────────────
   const sumPfx = (pfxs: string[]): CalcData =>
     groups.filter(g => pfxs.some(p => g.tag0.startsWith(p)))
@@ -171,13 +179,13 @@ const SomaTagsView: React.FC = () => {
 
   const lastIdx = (pfx: string) => {
     let i = -1;
-    groups.forEach((g, idx) => { if (g.tag0.startsWith(pfx)) i = idx; });
+    displayedGroups.forEach((g, idx) => { if (g.tag0.startsWith(pfx)) i = idx; });
     return i;
   };
   const { lastIdx03, lastIdx04 } = useMemo(() => ({
     lastIdx03: lastIdx('03.'),
     lastIdx04: lastIdx('04.'),
-  }), [groups]);
+  }), [displayedGroups]);
 
   const toggleGroup = (tag0: string) =>
     setCollapsed(prev => {
@@ -191,7 +199,7 @@ const SomaTagsView: React.FC = () => {
     const wsData: any[][] = [
       ['Tag0', 'Tag01', 'Real', 'Orçado', 'Δ R−Orç', 'Δ% Orç', 'A-1', 'Δ R−A-1', 'Δ% A-1'],
     ];
-    groups.forEach((g, idx) => {
+    displayedGroups.forEach((g, idx) => {
       wsData.push([
         g.tag0, '— SUBTOTAL —',
         g.real, g.orcado,
@@ -236,8 +244,8 @@ const SomaTagsView: React.FC = () => {
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
-  const tag01Count = groups.reduce((s, g) => s + g.items.length, 0);
-  const hasOrcado  = groups.some(g => g.orcado !== 0);
+  const tag01Count = displayedGroups.reduce((s, g) => s + g.items.length, 0);
+  const hasOrcado  = displayedGroups.some(g => g.orcado !== 0);
 
   return (
     <div className="p-4 space-y-3">
@@ -273,6 +281,22 @@ const SomaTagsView: React.FC = () => {
                      hover:bg-[#1e3d6e] disabled:opacity-50 shadow-sm transition-colors uppercase tracking-wide">
           <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
           Atualizar
+        </button>
+
+        {/* Filtro Até EBITDA */}
+        <button
+          onClick={() => setShowOnlyEbitda(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold shadow-sm transition-all ${
+            showOnlyEbitda
+              ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white'
+              : 'bg-gradient-to-r from-gray-500 to-slate-600 text-white'
+          }`}
+          title={showOnlyEbitda ? 'Exibindo apenas até EBITDA (Tag0 01–05)' : 'Exibindo todas as Tag0'}
+        >
+          {showOnlyEbitda
+            ? <><CheckSquare size={13} strokeWidth={2.5} /><span>Até EBITDA</span></>
+            : <><Square      size={13} strokeWidth={2.5} /><span>Todas Tag0</span></>
+          }
         </button>
 
         {!loading && !error && groups.length > 0 && (
@@ -385,7 +409,7 @@ const SomaTagsView: React.FC = () => {
 
             {/* ══ BODY ══ */}
             <tbody className="bg-white">
-              {groups.map((g, idx) => {
+              {displayedGroups.map((g, idx) => {
                 const isOpen = !collapsed.has(g.tag0);
                 const hasA1  = g.a1     !== 0;
                 const hasOrc = g.orcado !== 0;
