@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, SomaTagsRow, DREFilterOptions } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
 
@@ -286,50 +286,54 @@ const SomaTagsView: React.FC = () => {
     XLSX.writeFile(wb, `soma_tags_${per}.xlsx`);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render helpers ────────────────────────────────────────────────────────
   const tag01Count = displayedGroups.reduce((s, g) => s + g.items.length, 0);
   const hasOrcado  = displayedGroups.some(g => g.orcado !== 0);
+  const hasAnyFilter = selectedMarcas.length > 0 || selectedFiliais.length > 0;
+
+  const QUARTERS = [
+    { label: 'Ano', from: '01', to: '12', title: 'Ano completo' },
+    { label: '1T',  from: '01', to: '03', title: '1º Trimestre (Jan–Mar)' },
+    { label: '2T',  from: '04', to: '06', title: '2º Trimestre (Abr–Jun)' },
+    { label: '3T',  from: '07', to: '09', title: '3º Trimestre (Jul–Set)' },
+    { label: '4T',  from: '10', to: '12', title: '4º Trimestre (Out–Dez)' },
+  ];
+  const isQuarterActive = (q: typeof QUARTERS[0]) => monthFrom === q.from && monthTo === q.to;
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="p-4 space-y-2">
 
-      {/* ── Controles ── */}
+      {/* ── Linha de título + info + Excel ── */}
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-base font-black text-[#152e55] uppercase tracking-tight">
-          Soma Tag0 / Tag01
+          📊 Soma Tags
         </h1>
+        {!loading && !error && groups.length > 0 && (
+          <>
+            <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+              {displayedGroups.length} grupos · {tag01Count} contas · {rows.length} registros
+              {!hasOrcado && <span className="ml-1 text-amber-600 font-semibold">· sem Orçado</span>}
+            </span>
+            <button onClick={exportExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-green-600
+                         text-white text-[11px] font-bold rounded-lg hover:from-emerald-700 hover:to-green-700
+                         shadow-md transition-all uppercase tracking-wide ml-auto">
+              <Download size={13} />
+              Exportar Excel
+            </button>
+          </>
+        )}
+      </div>
 
-        {/* Ano */}
-        <select value={year} onChange={e => setYear(e.target.value)}
-          className="border border-gray-300 rounded px-2 py-1 text-sm font-semibold text-gray-700 bg-white shadow-sm">
-          {['2024','2025','2026'].map(y => <option key={y}>{y}</option>)}
-        </select>
-
-        {/* Período */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-gray-500 font-semibold uppercase">De</span>
-          <select value={monthFrom} onChange={e => setMonthFrom(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm font-semibold text-gray-700 bg-white shadow-sm">
-            {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-          <span className="text-[11px] text-gray-500 font-semibold uppercase">até</span>
-          <select value={monthTo} onChange={e => setMonthTo(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm font-semibold text-gray-700 bg-white shadow-sm">
-            {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
-        </div>
-
-        <button onClick={fetchData} disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-[#152e55] text-white text-xs font-bold rounded
-                     hover:bg-[#1e3d6e] disabled:opacity-50 shadow-sm transition-colors uppercase tracking-wide">
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-          Atualizar
-        </button>
+      {/* ── Barra de filtros (estilo DRE Gerencial) ── */}
+      <div className="flex items-center gap-2 p-2 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50
+                      rounded-lg border border-blue-300 shadow-md overflow-x-auto">
+        <span className="text-base shrink-0">🎯</span>
 
         {/* Filtros Marca / Filial */}
         <MultiSelectFilter
           label="Marca"
-          icon={<Flag size={13} />}
+          icon={<Flag size={14} />}
           options={filterOptions.marcas}
           selected={selectedMarcas}
           onChange={setSelectedMarcas}
@@ -337,53 +341,121 @@ const SomaTagsView: React.FC = () => {
         />
         <MultiSelectFilter
           label="Filial"
-          icon={<Building2 size={13} />}
+          icon={<Building2 size={14} />}
           options={filiaisFiltradas}
           selected={selectedFiliais}
           onChange={setSelectedFiliais}
           colorScheme="blue"
         />
 
-        {/* Limpar filtros */}
-        {(selectedMarcas.length > 0 || selectedFiliais.length > 0) && (
-          <button
-            onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); }}
-            className="flex items-center gap-1 px-2 py-1.5 bg-red-50 border border-red-200 text-red-600
-                       text-xs font-bold rounded hover:bg-red-100 transition-colors"
-            title="Limpar filtros de Marca e Filial"
-          >
-            <FilterX size={13} />
-            Limpar
-          </button>
-        )}
+        {/* Separador */}
+        <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
 
-        {/* Filtro Até EBITDA */}
+        {/* Ano */}
+        <div className="flex items-center gap-1 bg-white border border-gray-200 px-2 py-1 rounded shadow-sm shrink-0">
+          <Calendar size={13} className="text-gray-500" />
+          <select
+            value={year}
+            onChange={e => setYear(e.target.value)}
+            className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer"
+          >
+            {['2024','2025','2026'].map(y => <option key={y}>{y}</option>)}
+          </select>
+        </div>
+
+        {/* Período */}
+        <div className="flex items-center gap-2 shrink-0">
+          <CalendarDays size={16} className="text-purple-600 shrink-0" />
+          <span className="text-[12px] font-bold text-gray-700 whitespace-nowrap">Período:</span>
+
+          {/* Atalhos de trimestre */}
+          <div className="flex gap-1">
+            {QUARTERS.map(q => (
+              <button
+                key={q.label}
+                onClick={() => { setMonthFrom(q.from); setMonthTo(q.to); }}
+                title={q.title}
+                className={`px-2 py-1 text-[11px] font-black uppercase rounded transition-all shadow-sm whitespace-nowrap ${
+                  isQuarterActive(q)
+                    ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+                }`}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Seletores De/Até */}
+          <div className="flex items-center gap-1.5 bg-white border border-purple-300 px-2.5 py-1 rounded shadow-sm">
+            <Calendar size={14} className="text-purple-600 shrink-0" />
+            <select
+              value={monthFrom}
+              onChange={e => {
+                setMonthFrom(e.target.value);
+                if (e.target.value > monthTo) setMonthTo(e.target.value);
+              }}
+              className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer"
+            >
+              {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <span className="text-[10px] text-gray-400 font-bold whitespace-nowrap">até</span>
+            <select
+              value={monthTo}
+              onChange={e => {
+                setMonthTo(e.target.value);
+                if (monthFrom > e.target.value) setMonthFrom(e.target.value);
+              }}
+              className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer"
+            >
+              {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Separador */}
+        <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
+
+        {/* Atualizar */}
+        <button onClick={fetchData} disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-md
+                     bg-gradient-to-r from-green-600 to-emerald-600 text-white
+                     hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
+          {loading
+            ? <><Loader2 size={14} className="animate-spin" /><span>Carregando...</span></>
+            : <><RefreshCw size={14} strokeWidth={2.5} /><span>Atualizar</span></>
+          }
+        </button>
+
+        {/* Até EBITDA */}
         <button
           onClick={() => setShowOnlyEbitda(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold shadow-sm transition-all ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-md shrink-0 ${
             showOnlyEbitda
               ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white'
-              : 'bg-gradient-to-r from-gray-500 to-slate-600 text-white'
+              : 'bg-gradient-to-r from-gray-600 to-slate-600 text-white'
           }`}
           title={showOnlyEbitda ? 'Exibindo apenas até EBITDA (Tag0 01–05)' : 'Exibindo todas as Tag0'}
         >
           {showOnlyEbitda
-            ? <><CheckSquare size={13} strokeWidth={2.5} /><span>Até EBITDA</span></>
-            : <><Square      size={13} strokeWidth={2.5} /><span>Todas Tag0</span></>
+            ? <><CheckSquare size={14} strokeWidth={2.5} /><span>Até EBITDA</span></>
+            : <><Square      size={14} strokeWidth={2.5} /><span>Todas Tag0</span></>
           }
         </button>
 
-        {!loading && !error && groups.length > 0 && (
+        {/* Limpar filtros (condicional) */}
+        {hasAnyFilter && (
           <>
-            <span className="text-[11px] text-gray-500">
-              {groups.length} tag0s · {tag01Count} tag01s · {rows.length} registros
-              {!hasOrcado && <span className="ml-2 text-amber-600 font-semibold">(sem Orçado neste período)</span>}
-            </span>
-            <button onClick={exportExcel}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded
-                         hover:bg-emerald-700 shadow-sm transition-colors uppercase tracking-wide">
-              <Download size={13} />
-              Exportar Excel
+            <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
+            <button
+              onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); }}
+              className="flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-1 rounded
+                         border border-rose-200 font-bold text-[9px] uppercase tracking-wider
+                         hover:bg-rose-100 transition-all shadow-sm shrink-0"
+              title="Limpar todos os filtros ativos"
+            >
+              <FilterX size={12} />
+              <span className="whitespace-nowrap">Limpar</span>
             </button>
           </>
         )}
