@@ -585,7 +585,7 @@ const SomaTagsView: React.FC = () => {
                         {fmt(g.real)}
                       </td>
                       {/* Orçado */}
-                      <td className={`px-2 py-1 text-right font-mono font-black ${hasOrc ? 'text-green-300' : 'text-gray-500'}`}>
+                      <td className={`px-2 py-1 text-right font-mono font-black ${hasOrc ? '' : 'text-gray-500'}`}>
                         {hasOrc ? fmt(g.orcado) : '—'}
                       </td>
                       {/* Δ R−Orç */}
@@ -598,7 +598,7 @@ const SomaTagsView: React.FC = () => {
                         {fmtPct(g.real, g.orcado)}
                       </td>
                       {/* A-1 */}
-                      <td className={`px-2 py-1 text-right font-mono font-black ${hasA1 ? 'text-yellow-300' : 'text-gray-500'}`}>
+                      <td className={`px-2 py-1 text-right font-mono font-black ${hasA1 ? '' : 'text-gray-500'}`}>
                         {hasA1 ? fmt(g.a1) : '—'}
                       </td>
                       {/* Δ R−A-1 */}
@@ -693,7 +693,7 @@ const SomaTagsView: React.FC = () => {
                 <td className="px-2 py-2 text-right font-mono border-r border-white/10">
                   {fmt(totals.real)}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono ${totals.orcado !== 0 ? 'text-green-300' : 'text-gray-500'}`}>
+                <td className={`px-2 py-2 text-right font-mono ${totals.orcado !== 0 ? '' : 'text-gray-500'}`}>
                   {totals.orcado !== 0 ? fmt(totals.orcado) : '—'}
                 </td>
                 <td className={`px-2 py-2 text-right font-mono ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>
@@ -703,7 +703,7 @@ const SomaTagsView: React.FC = () => {
                                ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>
                   {fmtPct(totals.real, totals.orcado)}
                 </td>
-                <td className={`px-2 py-2 text-right font-mono ${totals.a1 !== 0 ? 'text-yellow-300' : 'text-gray-500'}`}>
+                <td className={`px-2 py-2 text-right font-mono ${totals.a1 !== 0 ? '' : 'text-gray-500'}`}>
                   {totals.a1 !== 0 ? fmt(totals.a1) : '—'}
                 </td>
                 <td className={`px-2 py-2 text-right font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>
