@@ -234,13 +234,12 @@ interface DREViewProps {
 }
 
 const DRE_DIMENSIONS = [
-  { id: 'tag01', label: 'Tag01' },  // ✅ Adicionado Tag01 como dimensão
+  { id: 'tag01', label: 'Tag01' },
   { id: 'tag02', label: 'Tag02' },
   { id: 'tag03', label: 'Tag03' },
   { id: 'marca', label: 'Marca' },
   { id: 'nome_filial', label: 'Unidade' },
   { id: 'vendor', label: 'Fornecedor' },
-  { id: 'ticket', label: 'Ticket' },
 ];
 
 const DREView: React.FC<DREViewProps> = ({
@@ -254,11 +253,7 @@ const DREView: React.FC<DREViewProps> = ({
   onLoadingChange
 }) => {
   // 🔥 LOG CRÍTICO: Sempre dispara a cada render
-  console.log('🔥🔥🔥 [DREView] COMPONENTE RENDERIZADO!', {
-    timestamp: new Date().toISOString(),
-    renderCount: (window as any).__dreRenderCount = ((window as any).__dreRenderCount || 0) + 1
-  });
-
+  
   // Estado para dados agregados do servidor
   const [summaryRows, setSummaryRows] = useState<DRESummaryRow[]>([]);
   const [filterOptions, setFilterOptions] = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
@@ -322,8 +317,7 @@ const DREView: React.FC<DREViewProps> = ({
       // Remove filiais que não pertencem mais às marcas selecionadas
       const filiaisValidas = selectedFiliais.filter(f => filiaisFiltradas.includes(f));
       if (filiaisValidas.length !== selectedFiliais.length) {
-        console.log('⚠️ Filiais selecionadas não pertencem às marcas, limpando...');
-        filialCleanupRef.current = true; // 🔧 Marcar como limpeza interna — não deve re-disparar fetch
+                filialCleanupRef.current = true; // 🔧 Marcar como limpeza interna — não deve re-disparar fetch
         setSelectedFiliais(filiaisValidas);
       }
     }
@@ -505,8 +499,7 @@ const DREView: React.FC<DREViewProps> = ({
       XLSX.utils.book_append_sheet(wb, ws, 'Card DRE');
       XLSX.writeFile(wb, `DRE_${label.replace(/\//g, '-')}_${currentYear}.xlsx`);
 
-      console.log('✅ Card exportado:', label);
-    } catch (error) {
+          } catch (error) {
       console.error('❌ Erro ao exportar card:', error);
       alert('Erro ao exportar o card. Verifique o console para mais detalhes.');
     }
@@ -535,13 +528,7 @@ const DREView: React.FC<DREViewProps> = ({
 
   // ✅ NOVO: Selecionar todas as Tag01 por padrão quando carregar as opções (APENAS UMA VEZ)
   useEffect(() => {
-    console.log('🔍 [useEffect AUTO-SELECT] DISPARADO!', {
-      'filterOptions.tags01.length': filterOptions.tags01.length,
-      'selectedTags01.length': selectedTags01.length,
-      'hasAutoSelectedTags': hasAutoSelectedTags.current,
-      'timestamp': new Date().toISOString()
-    });
-
+    
     // Só ativar se:
     // 1. filterOptions.tags01 tiver dados (foi carregado do servidor)
     // 2. selectedTags01 estiver vazio (nenhuma seleção atual)
@@ -555,23 +542,17 @@ const DREView: React.FC<DREViewProps> = ({
       !savedTags &&
       !hasAutoSelectedTags.current
     ) {
-      console.log('✅ Ativando todas as Tag01 por padrão (PRIMEIRA VEZ):', filterOptions.tags01);
-      hasAutoSelectedTags.current = true; // Marcar como feito
+            hasAutoSelectedTags.current = true; // Marcar como feito
       autoSelectTriggeredRef.current = true; // Não re-fetch após auto-select interno
       setSelectedTags01(filterOptions.tags01);
     } else {
-      console.log('⏭️ [useEffect AUTO-SELECT] PULADO - condições não atendidas');
-    }
+          }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterOptions.tags01]); // Apenas filterOptions.tags01 - não incluir selectedTags01 para evitar loop
 
   // Notificar mudanças no loading
   useEffect(() => {
-    console.log('🔍 [useEffect LOADING] DISPARADO!', {
-      'isLoadingDRE': isLoadingDRE,
-      'timestamp': new Date().toISOString()
-    });
-    if (onLoadingChange) {
+        if (onLoadingChange) {
       onLoadingChange(isLoadingDRE);
     }
   }, [isLoadingDRE, onLoadingChange]);
@@ -603,14 +584,6 @@ const DREView: React.FC<DREViewProps> = ({
     const filiais = selectedFiliaisRef.current;
     const tags01 = selectedTags01Ref.current;
 
-    const fetchCallCount = (window as any).__fetchDREDataCount = ((window as any).__fetchDREDataCount || 0) + 1;
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🚀🚀🚀 fetchDREData() CHAMADO! (Call #' + fetchCallCount + ')');
-    console.log('   ⏰ Timestamp:', new Date().toISOString());
-    console.log('   🎯 selectedMarcas:', marcas);
-    console.log('   🏢 selectedFiliais:', filiais);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
     const fetchId = ++fetchIdRef.current;
     setIsLoadingDRE(true);
     setDimensionCache({});  // Limpar cache de dimensões
@@ -624,114 +597,31 @@ const DREView: React.FC<DREViewProps> = ({
       const finalFiliais = filiais.length > 0 ? filiais : undefined;
       const finalTags01 = tags01.length > 0 ? tags01 : undefined;
 
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('🔍 [DEBUG FILTROS]');
-      console.log('   marcas:', JSON.stringify(marcas), '(length:', marcas.length, ')');
-      console.log('   filiais:', JSON.stringify(filiais), '(length:', filiais.length, ')');
-      console.log('   finalMarcas:', finalMarcas);
-      console.log('   finalFiliais:', finalFiliais);
-      console.log('   finalTags01:', finalTags01);
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
+                                                
       const [summary, options] = await Promise.all([
         getDRESummary({
           monthFrom,
           monthTo,
           marcas: finalMarcas,
           nomeFiliais: finalFiliais,
-          tags01: finalTags01,
+          // tags01 removido: DRE summary deve trazer TODOS os dados (igual ao SomaTagsView)
+          // O filtro tags01 só se aplica ao drill-down (loadDimensionData)
         }),
         getDREFilterOptions({ monthFrom, monthTo })
       ]);
 
-      console.log('✅ Dados carregados:', summary?.length, 'linhas');
-
+      
       // Verificar se este fetch ainda é o mais recente
       if (fetchId !== fetchIdRef.current) {
-        console.log('⚠️ Fetch cancelado (race condition)');
-        return;
+                return;
       }
 
       // 🔴 ATUALIZAR ESTADO COM NOVOS DADOS
-      console.log('🔴 [SET STATE] Atualizando summaryRows com', summary.length, 'linhas');
-      console.log('🔍 [DEBUG] setFilterOptions será chamado com:', {
-        marcas: options.marcas.length,
-        filiais: options.nome_filiais.length,
-        tags01: options.tags01.length,
-        timestamp: new Date().toISOString()
-      });
-      // ⚡ CRIAR NOVO ARRAY para forçar React detectar mudança
+                  // ⚡ CRIAR NOVO ARRAY para forçar React detectar mudança
       setSummaryRows([...summary]);
       setFilterOptions(options);
-      console.log('✅ [SET STATE] setFilterOptions CHAMADO!');
-      // 🔄 Incrementar versão para forçar reconstrução de dataMap e dreStructure
+      // Incrementar versão para forçar reconstrução de dataMap e dreStructure
       setDataVersion(v => v + 1);
-      console.log('✅ [SET STATE] summaryRows atualizado! dataVersion:', dataVersion + 1);
-
-      const totalGeral = summary.reduce((acc, row) => acc + Number(row.total_amount), 0);
-      const linhasPorTag0 = summary.reduce((acc, row) => {
-        const tag = row.tag0 || 'Sem Tag0';
-        acc[tag] = (acc[tag] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('✅ DRE carregada:', summary.length, 'linhas agregadas');
-      console.log('💰 Total geral:', totalGeral.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-      console.log('📊 Linhas por Tag0:', linhasPorTag0);
-      console.log('🏷️ Filtro aplicado:', finalMarcas ? finalMarcas[0] : 'TODAS as marcas');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-      // 🔍 ANÁLISE: Mapear tag0 → tag01 e calcular totais de receita
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('🔍 ANÁLISE DRE - Mapeamento tag0 → tag01');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-      const tag0Map = new Map<string, { tag01s: Set<string>, total: number }>();
-
-      summary.forEach(row => {
-        const tag0 = row.tag0 || 'Sem Classificação';
-        const tag01 = row.tag01 || 'Sem Subclassificação';
-        const amount = Number(row.total_amount);
-
-        if (!tag0Map.has(tag0)) {
-          tag0Map.set(tag0, { tag01s: new Set(), total: 0 });
-        }
-
-        const entry = tag0Map.get(tag0)!;
-        entry.tag01s.add(tag01);
-        entry.total += amount;
-      });
-
-      // Ordenar tag0s
-      const sortedTag0s = Array.from(tag0Map.keys()).sort();
-
-      sortedTag0s.forEach(tag0 => {
-        const entry = tag0Map.get(tag0)!;
-        const tag01List = Array.from(entry.tag01s).sort();
-        console.log(`\n📦 ${tag0}`);
-        console.log(`   Total: R$ ${entry.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-        console.log(`   Tags01 (${tag01List.length}):`, tag01List);
-      });
-
-      // Calcular total de RECEITA (tags que começam com "01." ou contém "Receita" no nome)
-      let totalReceita = 0;
-      const receitaTags: string[] = [];
-
-      sortedTag0s.forEach(tag0 => {
-        if (tag0.match(/^01\./i) || tag0.toLowerCase().includes('receita')) {
-          const entry = tag0Map.get(tag0)!;
-          totalReceita += entry.total;
-          receitaTags.push(tag0);
-        }
-      });
-
-      console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('💰 RECEITA LÍQUIDA TOTAL (DRE)');
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log(`   📊 Total: R$ ${totalReceita.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-      console.log(`   📦 Tag0s de Receita (${receitaTags.length}):`, receitaTags);
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (error) {
       console.error('❌ Erro ao carregar dados DRE:', error);
     } finally {
@@ -787,25 +677,11 @@ const DREView: React.FC<DREViewProps> = ({
     fetchDREData();
   }, [currentYear, selectedMarcas, selectedFiliais, selectedTags01, fetchDREData]);
 
-  // 🚫 FETCH INICIAL DESABILITADO - Só carrega quando usuário interagir
-  // Motivo: Prevenir loop de carregamento automático
+  // Fetch automático na montagem — loop prevenido por autoSelectTriggeredRef e filialCleanupRef
   useEffect(() => {
-    const mountCount = (window as any).__dreMountCount = ((window as any).__dreMountCount || 0) + 1;
-    console.log('═══════════════════════════════════════════════════════');
-    console.log('🚀 [MOUNT] COMPONENTE MONTADO (Mount #' + mountCount + ')');
-    console.log('   ⏰ Timestamp:', new Date().toISOString());
-    console.log('   ℹ️ Fetch automático DESABILITADO - clique em "Atualizar" ou mude um filtro');
-    console.log('═══════════════════════════════════════════════════════');
-    // fetchDREData(); // 🚫 DESABILITADO para prevenir loop
-
-    // Cleanup: detectar quando componente é desmontado
-    return () => {
-      const unmountCount = (window as any).__dreUnmountCount = ((window as any).__dreUnmountCount || 0) + 1;
-      console.log('💥💥💥 [UNMOUNT] COMPONENTE DESMONTADO! (Unmount #' + unmountCount + ')');
-      console.log('   ⏰ Timestamp:', new Date().toISOString());
-    };
+    fetchDREData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Array vazio = executa apenas uma vez na montagem
+  }, []);
 
   // 🔄 REMOVIDO: ATIVADOR causava race condition
   // O dataVersion já é incrementado dentro do fetchDREData() após setSummaryRows
@@ -813,21 +689,14 @@ const DREView: React.FC<DREViewProps> = ({
 
   // 🎯 ANÁLISE AUTOMÁTICA: Calcular top desvios sempre que dados mudam
   useEffect(() => {
-    console.log('🔍 ANÁLISE DE DESVIOS:', {
-      summaryRowsLength: summaryRows?.length || 0,
-      analysisMode,
-      temDados: !!summaryRows && summaryRows.length > 0
-    });
-
+    
     if (!summaryRows || summaryRows.length === 0) {
-      console.warn('⚠️ Sem dados para analisar');
-      setTopDeviations([]);
+            setTopDeviations([]);
       return;
     }
 
     if (analysisMode === 'none') {
-      console.log('ℹ️ Modo "none" - análise desabilitada');
-      setTopDeviations([]);
+            setTopDeviations([]);
       return;
     }
 
@@ -841,14 +710,12 @@ const DREView: React.FC<DREViewProps> = ({
       if (row.scenario === 'A-1') a1Count++;
     });
 
-    console.log('📊 Cenários disponíveis:', { realCount, budgetCount, a1Count });
-
+    
     // 🎯 ANÁLISE ALTERNATIVA: Se só tem Real (sem Orçado/A-1), analisar por valor absoluto
     const hasComparison = budgetCount > 0 || a1Count > 0;
 
     if (!hasComparison && realCount > 0) {
-      console.log('ℹ️ Apenas dados Real - analisando por valor absoluto');
-
+      
       // Coletar todos os valores Real
       const realValues: Array<{
         label: string;
@@ -953,17 +820,10 @@ const DREView: React.FC<DREViewProps> = ({
 
     // Pegar top 10
     const top10 = deviations.slice(0, 10);
-    console.log('✅ Análise concluída:', {
-      totalDesvios: deviations.length,
-      top10Length: top10.length,
-      primeiroDesvio: top10[0] || null
-    });
-
+    
     if (top10.length > 0) {
-      console.log('🎯 Top 3 maiores desvios:', top10.slice(0, 3));
-    } else {
-      console.warn(`⚠️ Nenhum desvio ≥ ${deviationThreshold}% encontrado`);
-    }
+          } else {
+          }
 
     setTopDeviations(top10);
   }, [summaryRows, analysisMode, deviationThreshold]);
@@ -1036,8 +896,7 @@ const DREView: React.FC<DREViewProps> = ({
 
   const toggleFilter = (list: string[], setList: (v: string[]) => void, item: string) => {
     const newList = list.includes(item) ? list.filter(i => i !== item) : [...list, item];
-    console.log('🔄 toggleFilter:', { item, before: list, after: newList });
-    setList(newList);
+        setList(newList);
   };
 
   const selectAll = (list: string[], setList: (v: string[]) => void, allOptions: string[]) => {
@@ -1056,8 +915,7 @@ const DREView: React.FC<DREViewProps> = ({
   // ========== FUNÇÕES DE EXPORTAÇÃO ==========
 
   const exportAsTable = useCallback(() => {
-    console.log('📊 Exportando dados como tabela Excel...');
-
+    
     if (summaryRows.length === 0) {
       alert('Nenhum dado disponível para exportar');
       return;
@@ -1094,18 +952,10 @@ const DREView: React.FC<DREViewProps> = ({
     // Salvar arquivo
     XLSX.writeFile(wb, `DRE_Tabela_${currentYear}.xlsx`);
 
-    console.log('✅ Exportado', rows.length, 'linhas como Excel');
-  }, [summaryRows, currentYear]);
+      }, [summaryRows, currentYear]);
 
   const exportCurrentLayout = () => {
-    console.log('📊 Exportando layout atual como Excel formatado...');
-    console.log('🔍 [EXPORT DEBUG] currentYear:', currentYear);
-    console.log('🔍 [EXPORT DEBUG] selectedMonthStart:', selectedMonthStart);
-    console.log('🔍 [EXPORT DEBUG] selectedMonthEnd:', selectedMonthEnd);
-    console.log('🔍 [EXPORT DEBUG] summaryRows.length:', summaryRows.length);
-    console.log('🔍 [EXPORT DEBUG] dataMap Real keys:', Object.keys(dataMap.Real || {}).length);
-    console.log('🔍 [EXPORT DEBUG] dreStructure.data keys:', Object.keys(dreStructure.data || {}).length);
-
+                            
     if (!dreStructure || !dreStructure.data) {
       alert('Nenhum dado disponível para exportar');
       return;
@@ -1158,11 +1008,7 @@ const DREView: React.FC<DREViewProps> = ({
       const tag01Items = node.items as Record<string, string[]>;
       const categories = Object.values(tag01Items).flat();
 
-      console.log(`🔍 [EXPORT] Processando ${code} - ${node.label}`);
-      console.log(`   Tag01s count: ${Object.keys(tag01Items).length}`);
-      console.log(`   Total categories: ${categories.length}`);
-      console.log(`   Sample categories:`, categories.slice(0, 3));
-
+                        
       // Linha tag0 (Nível 1)
       const tag0Row: any[] = [node.label];
 
@@ -1170,9 +1016,7 @@ const DREView: React.FC<DREViewProps> = ({
         if (showReal) {
           const values = getValues('Real', categories);
           if (idx === selectedMonthStart) {
-            console.log(`   getValues('Real') for ${node.label}:`, values.slice(0, 3), '...');
-            console.log(`   values[${idx}]:`, values[idx]);
-          }
+                                  }
           tag0Row.push(values[idx] || 0);
         }
         if (showOrcado) {
@@ -1324,8 +1168,7 @@ const DREView: React.FC<DREViewProps> = ({
     // Salvar arquivo
     XLSX.writeFile(wb, `DRE_Layout_${currentYear}_${months[selectedMonthStart]}-${months[selectedMonthEnd]}.xlsx`);
 
-    console.log('✅ Exportado layout hierárquico Excel com', exportData.length, 'linhas e formatação');
-  };
+      };
 
   // Registrar ações para uso externo (App.tsx)
   // exportTable/exportLayout usam refs para não causar re-registro infinito a cada render
@@ -1346,120 +1189,37 @@ const DREView: React.FC<DREViewProps> = ({
   // ========== CONSTRUIR dataMap E dreStructure A PARTIR DE summaryRows ==========
 
   const dataMap = useMemo(() => {
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🗺️ [MEMO] dataMap sendo RECONSTRUÍDO!');
-    console.log('📊 summaryRows.length:', summaryRows.length);
-    console.log('🎯 Filtros aplicados:', {
-      marca: selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS',
-      filial: selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS',
-      dataVersion: dataVersion
-    });
-
+                
     // 🔍 DEBUG: Mostrar quais marcas e filiais existem nos dados
     const marcasNosdados = [...new Set(summaryRows.map(r => r.marca))];
     const filiaisNosdados = [...new Set(summaryRows.map(r => r.nome_filial))];
-    console.log('🏷️ Marcas ÚNICAS nos dados:', marcasNosdados);
-    console.log('🏢 Filiais ÚNICAS nos dados:', filiaisNosdados);
-    console.log('🎯 Marca selecionada:', selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS');
-    console.log('🎯 Filial selecionada:', selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS');
-
+                
     // ✅ DADOS JÁ VÊM FILTRADOS DO RPC - não precisa filtrar localmente!
     // O RPC getDRESummary() já aplica os filtros de marca, filial e tags01 no servidor
-    const filteredRows = summaryRows;
-
-    console.log(`📊 [DADOS DO RPC] Marca: ${selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS'}, Filial: ${selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS'}`);
-    console.log(`📊 Total de linhas recebidas: ${filteredRows.length}`);
-
     const map: Record<string, Record<string, number[]>> = { Real: {}, Orçado: {}, 'A-1': {} };
 
-    // 🔍 DEBUG: Contar quantas linhas por conta para detectar agregação
-    const contasPorConta: Record<string, number> = {};
-    filteredRows.forEach(row => {
-      const key = row.conta_contabil;
-      contasPorConta[key] = (contasPorConta[key] || 0) + 1;
-    });
-
-    // Mostrar contas com múltiplas linhas (agregação)
-    const contasAgregadas = Object.entries(contasPorConta)
-      .filter(([_, count]) => count > 1)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
-    if (contasAgregadas.length > 0) {
-      console.log('🔍 [AGREGAÇÃO] Contas com múltiplas linhas (top 5):');
-      contasAgregadas.forEach(([conta, count]) => {
-        console.log(`   ${conta}: ${count} linhas`);
-      });
-    }
-
-    filteredRows.forEach(row => {
-      // Normalizar scenario
+    summaryRows.forEach(row => {
       let scenario = row.scenario || 'Real';
       if (scenario === 'Original') scenario = 'Real';
 
-      // Extrair mês do year_month (YYYY-MM)
       const monthIdx = parseInt(row.year_month.substring(5, 7), 10) - 1;
       const key = row.conta_contabil;
 
       if (!map[scenario]) map[scenario] = {};
       if (!map[scenario][key]) map[scenario][key] = new Array(12).fill(0);
 
-      // 🔍 DEBUG: Log antes e depois da soma para a primeira conta agregada
-      const isFirstAgregada = contasAgregadas.length > 0 && key === contasAgregadas[0][0];
-      if (isFirstAgregada && map[scenario][key][monthIdx] > 0) {
-        console.log(`   🔍 [SOMA] ${key} mês ${monthIdx}: ${map[scenario][key][monthIdx]} + ${row.total_amount} = ${map[scenario][key][monthIdx] + Number(row.total_amount)}`);
-      }
-
       map[scenario][key][monthIdx] += Number(row.total_amount);
     });
 
-    // Calcular totais por cenário para debug (usando dados filtrados)
-    const totais = {
-      Real: Object.values(map.Real).reduce((sum, arr) => sum + arr.reduce((s, v) => s + v, 0), 0),
-      Orçado: Object.values(map.Orçado).reduce((sum, arr) => sum + arr.reduce((s, v) => s + v, 0), 0),
-      'A-1': Object.values(map['A-1']).reduce((sum, arr) => sum + arr.reduce((s, v) => s + v, 0), 0)
-    };
-
-    // Verificação: totais devem bater com dados filtrados
-    const totalFiltrado = filteredRows.reduce((sum, r) => sum + Number(r.total_amount), 0);
-    console.log(`✅ Total nos dados filtrados: ${totalFiltrado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`);
-
-    console.log('✅ [DATAMAP] Criado com totais por cenário:');
-    console.log('   Real:', Object.keys(map.Real).length, 'contas →', totais.Real.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-    console.log('   Orçado:', Object.keys(map.Orçado).length, 'contas →', totais.Orçado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-    console.log('   A-1:', Object.keys(map['A-1']).length, 'contas →', totais['A-1'].toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
-    console.log('   🏷️ Filtros ativos - Marca:', selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS', '| Filial:', selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS');
-    console.log('   📌 dataVersion:', dataVersion);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
     return map;
-  }, [summaryRows, selectedMarcas, selectedFiliais, currentYear, dataVersion]);
+  }, [summaryRows]);
 
   // Construir hierarquia DRE a partir de summaryRows (tag0 → tag01 → conta_contabil)
   const dreStructure = useMemo(() => {
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('🏗️ [MEMO] dreStructure sendo RECONSTRUÍDO!');
-    console.log('📊 summaryRows.length:', summaryRows.length);
+    // Hierarquia: tag0 → tag01 → conta_contabil (dados já filtrados pelo RPC)
+    const tag0Map = new Map<string, Map<string, Set<string>>>();
 
-    // Contar transações por marca para debug
-    const porMarca = summaryRows.reduce((acc, row) => {
-      const m = row.marca || 'Sem Marca';
-      acc[m] = (acc[m] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    console.log('📦 Linhas por marca:', porMarca);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-    // ✅ Hierarquia ORIGINAL: tag0 → tag01 → conta_contabil
-    const tag0Map = new Map<string, Map<string, Set<string>>>(); // tag0 → tag01 → contas
-
-    // ✅ DADOS JÁ VÊM FILTRADOS DO RPC - não precisa filtrar localmente!
-    const filteredRows = summaryRows;
-
-    console.log(`📊 [DADOS DO RPC] Marca: ${selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS'}, Filial: ${selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS'}`);
-    console.log(`📊 Total de linhas recebidas: ${filteredRows.length}`);
-
-    // Agrupar por tag0 → tag01 → conta_contabil (hierarquia completa)
-    filteredRows.forEach(row => {
+    summaryRows.forEach(row => {
       const tag0 = row.tag0 || 'Sem Tag0';
       const tag01 = row.tag01 || 'Sem Tag01';
       const conta = row.conta_contabil;
@@ -1504,56 +1264,21 @@ const DREView: React.FC<DREViewProps> = ({
       };
     });
 
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log(`✅ [HIERARQUIA ORIGINAL] tag0 → tag01 → conta_contabil`);
-    console.log(`   📊 Total de tag0s: ${sortedTag0s.length}`);
-    sortedTag0s.forEach(tag0 => {
-      const nivel = data[tag0];
-      const totalTag01s = Object.keys(nivel.items).length;
-      const totalContas = Object.values(nivel.items as Record<string, string[]>).reduce((acc, arr) => acc + arr.length, 0);
-      console.log(`   ${tag0}: ${totalTag01s} tag01s, ${totalContas} contas`);
-    });
-    console.log('   🏷️ Filtro de marca ativo:', selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS');
-    console.log('   🏢 Filtro de filial ativo:', selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS');
-    console.log('   📌 dataVersion:', dataVersion);
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     return { source: 'data', data };
-  }, [summaryRows, selectedMarcas, selectedFiliais, currentYear, dataVersion]);
+  }, [summaryRows]);
 
   const getValues = useCallback((scenario: string, categories: string[]) => {
     const values = new Array(12).fill(0);
     const scenarioMap = dataMap[scenario] || {};
 
-    // 🔍 DEBUG: Contar quantas contas existem vs quantas têm valores
-    let contasComValor = 0;
-    let totalSomado = 0;
-
-    // 🔥 LOG CRÍTICO: Verificar qual dataMap está sendo usado
-    const totalContasNoDataMap = Object.keys(scenarioMap).length;
-    const totalValueNoDataMap = Object.values(scenarioMap).reduce((sum, arr) => sum + arr.reduce((s, v) => s + v, 0), 0);
-
     categories.forEach(cat => {
       if (scenarioMap[cat]) {
-        contasComValor++;
-        const somaCategoria = scenarioMap[cat].reduce((s, v) => s + v, 0);
-        totalSomado += somaCategoria;
         scenarioMap[cat].forEach((v, i) => values[i] += v);
       }
     });
 
-    // 🔥 LOG SEMPRE para Tag01 (categories.length < 100 = nível 2)
-    if (categories.length < 100 && categories.length > 1) {
-      console.log(`🔥 getValues(${scenario}):`);
-      console.log(`   📊 Total contas no dataMap[${scenario}]: ${totalContasNoDataMap}`);
-      console.log(`   💰 Valor total no dataMap[${scenario}]: R$ ${totalValueNoDataMap.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-      console.log(`   📋 Contas pedidas: ${categories.length}`);
-      console.log(`   ✅ Contas encontradas: ${contasComValor}`);
-      console.log(`   💵 Valor somado: R$ ${totalSomado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-      console.log(`   🎯 Filtros: Marca=${selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS'}, Filial=${selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS'}`);
-    }
-
     return values;
-  }, [dataMap, selectedMarcas, selectedFiliais]);
+  }, [dataMap]);
 
   // getTag0Values: agrega direto de summaryRows por tag0+scenario (ignora conta_contabil)
   // Usado no Level 1 para incluir contas com conta_contabil NULL (ex: PDD no A-1)
@@ -1628,24 +1353,21 @@ const DREView: React.FC<DREViewProps> = ({
       : (filiais.length > 0 ? filiais : undefined);
 
     // Merge filtros de TAG01, TAG02 e TAG03 (prioriza accFilters do drill-down)
+    // Quando dimensionKey === 'tag01', NÃO usar selectedTags01 como filtro:
+    // isso excluiria tag01s não selecionadas (ex: "Receitas Não Operacionais")
+    // Apenas usar o filtro acumulado do drill-down (accFilters.tag01)
     const mergedTags01 = accFilters.tag01
       ? [accFilters.tag01]
-      : (tags01.length > 0 ? tags01 : undefined);
+      : (dimensionKey !== 'tag01' && tags01.length > 0 ? tags01 : undefined);
     const mergedTags02 = accFilters.tag02 ? [accFilters.tag02] : undefined;
     const mergedTags03 = accFilters.tag03 ? [accFilters.tag03] : undefined;
-
-    console.log('🔍 [DRILL-DOWN] Usando filtros:', {
-      accFilters,
-      marcas,
-      filiais,
-      mergedMarcas,
-      mergedFiliais
-    });
 
     const rows = await getDREDimension({
       monthFrom,
       monthTo,
-      contaContabils: categories,
+      // Para dimensão tag01: NÃO filtrar por conta_contabil (inclui NULL contas)
+      // Rows com conta_contabil=NULL (ex: "Receitas Não Operacionais") ficam incluídas
+      contaContabils: dimensionKey === 'tag01' ? undefined : categories,
       scenario,
       dimension: dimensionKey,
       marcas: mergedMarcas,
@@ -1656,22 +1378,10 @@ const DREView: React.FC<DREViewProps> = ({
       tag0: tag0Context,
     });
 
-    console.log('✅ DRILL-DOWN: Dados carregados', {
-      cacheKey,
-      dimensionKey,
-      scenario,
-      linhasRetornadas: rows.length,
-      primeiraLinha: rows[0],
-      valoresUnicos: [...new Set(rows.map(r => r.dimension_value))].length
-    });
-
+    
     setDimensionCache(prev => {
       const newCache = { ...prev, [cacheKey]: rows };
-      console.log('✅ DRILL-DOWN: Cache atualizado', {
-        totalChaves: Object.keys(newCache).length,
-        chaveAdicionada: cacheKey
-      });
-      return newCache;
+            return newCache;
     });
   }, []); // 🔧 SEM DEPENDÊNCIAS - usa refs + setState callback
 
@@ -2053,56 +1763,23 @@ const DREView: React.FC<DREViewProps> = ({
             const dimIndex = level - 1;  // level 1 → index 0, level 2 → index 1, etc.
             const currentDimKey = dynamicPath[dimIndex];
 
-            console.log('🚀 DRILL-DOWN: Iniciando expansão dinâmica', {
-              id,
-              label,
-              level,
-              dimIndex,
-              currentDimKey,
-              dynamicPath,
-              categoriesCount: categories.length,
-              primeirasCategories: categories.slice(0, 5),
-              accumulatedFilters
-            });
-
+            
             // Carregar dados de dimensão do servidor (sob demanda)
             // accumulatedFilters contém filtros dos níveis anteriores (ex: { marca: 'QI' })
             const accFiltersKey = Object.entries(accumulatedFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
 
-            console.log('🔍 DRILL-DOWN: Verificando cache...', {
-              level,
-              currentDimKey,
-              accFiltersKey,
-              categories: categories.slice(0, 3),
-              totalChavesNoCache: Object.keys(dimensionCache).length
-            });
-
+            
             // ✅ ATIVADO: Cenários Real, Orçado e A-1
             for (const scenario of ['Real', 'Orçado', 'A-1']) {
               const cacheKey = `${scenario}|${categories.sort().join(',')}|${currentDimKey}|${accFiltersKey}`;
               const cacheExists = !!dimensionCache[cacheKey];
               const cacheSize = dimensionCache[cacheKey]?.length || 0;
 
-              console.log(`🔍 DRILL-DOWN: Verificando ${scenario}`, {
-                cacheKey: cacheKey.slice(0, 80) + '...',
-                cacheExists,
-                cacheSize
-              });
-
+              
               // ✅ CORREÇÃO: Carregar apenas se chave NÃO existe no cache
               // IMPORTANTE: resultado vazio ([]) é válido — não deve re-fetch (causaria loop infinito)
               if (!(cacheKey in dimensionCache)) {
-                console.log('⏳ DRILL-DOWN: Chave não encontrada no cache, carregando...', {
-                  level,
-                  currentDimKey,
-                  scenario,
-                  cacheKey: cacheKey.slice(0, 100),
-                  cacheExists,
-                  cacheSize,
-                  categories: categories.slice(0, 5),
-                  accumulatedFilters
-                });
-                loadDimensionData(categories, currentDimKey, scenario, accumulatedFilters, tag0Context);
+                                loadDimensionData(categories, currentDimKey, scenario, accumulatedFilters, tag0Context);
                 return <tr key={`loading-${id}`}><td colSpan={99} className="text-center text-gray-400 text-xs py-2"><Loader2 className="inline w-3 h-3 animate-spin mr-1" />Carregando...</td></tr>;
               }
             }
@@ -2116,14 +1793,7 @@ const DREView: React.FC<DREViewProps> = ({
               cachedRows.forEach(row => allDimensionValues.add(row.dimension_value));
             }
 
-            console.log('🎯 DRILL-DOWN: Renderizando nível dinâmico', {
-              level,
-              currentDimKey,
-              accFiltersKey,
-              valoresUnicos: allDimensionValues.size,
-              valores: Array.from(allDimensionValues).slice(0, 5)
-            });
-
+            
             // Ordenar valores conforme o modo selecionado
             let sortedValues = Array.from(allDimensionValues);
             if (dimensionSort === 'alpha') {
@@ -2150,13 +1820,7 @@ const DREView: React.FC<DREViewProps> = ({
               return renderRow(nextId, val, level + 1, categories, hasMoreLevels, nextFilters, tag0Context);
             });
 
-            console.log('✅ DRILL-DOWN: Linhas renderizadas com sucesso!', {
-              level,
-              currentDimKey,
-              totalLinhas: renderedRows.length,
-              labels: sortedValues.slice(0, 5)
-            });
-
+            
             return renderedRows;
           }
 
@@ -2484,8 +2148,7 @@ const DREView: React.FC<DREViewProps> = ({
       <div ref={refObj} className="relative">
         <button
           onClick={() => {
-            console.log(`🖱️ Clicou no filtro ${label}, isOpen:`, isOpen, '→', !isOpen, 'options:', options.length);
-            setOpen(!isOpen);
+                        setOpen(!isOpen);
           }}
           className={`flex items-center gap-3 bg-white px-3 md:px-4 py-2.5 rounded-2xl border-2 transition-all min-w-[160px] md:min-w-[200px] shadow-sm hover:shadow-md cursor-pointer ${
             isOpen
@@ -2542,15 +2205,7 @@ const DREView: React.FC<DREViewProps> = ({
   };
 
   // 🔍 DEBUG: Verificar se dados estão carregados
-  console.log('🎨 [RENDER DREViewV2]', {
-    marcas: filterOptions.marcas.length,
-    filiais: filterOptions.nome_filiais.length,
-    tags01: filterOptions.tags01.length,
-    isMarcaFilterOpen,
-    isFilialFilterOpen,
-    isTagFilterOpen
-  });
-
+  
   return (
     <div key={componentKey} className="space-y-2 animate-in fade-in duration-500 pb-2">
       {/* Linha de Filtros */}
@@ -2564,8 +2219,7 @@ const DREView: React.FC<DREViewProps> = ({
               options={filterOptions.marcas}
               selected={selectedMarcas}
               onChange={(newSelection) => {
-                console.log('🎯 Marcas selecionadas:', newSelection);
-                setSelectedMarcas(newSelection);
+                                setSelectedMarcas(newSelection);
               }}
               colorScheme="orange"
             />
@@ -2577,8 +2231,7 @@ const DREView: React.FC<DREViewProps> = ({
               options={filiaisFiltradas}
               selected={selectedFiliais}
               onChange={(newSelection) => {
-                console.log('🏢 Filiais selecionadas:', newSelection);
-                setSelectedFiliais(newSelection);
+                                setSelectedFiliais(newSelection);
               }}
               colorScheme="blue"
             />
@@ -2590,8 +2243,7 @@ const DREView: React.FC<DREViewProps> = ({
               options={filterOptions.tags01}
               selected={selectedTags01}
               onChange={(newSelection) => {
-                console.log('🏷️ Tags01 selecionadas:', newSelection);
-                setSelectedTags01(newSelection);
+                                setSelectedTags01(newSelection);
               }}
               colorScheme="purple"
             />
@@ -2705,8 +2357,7 @@ const DREView: React.FC<DREViewProps> = ({
             {/* Botão ATUALIZAR - Buscar dados do servidor */}
             <button
               onClick={() => {
-                console.log('🔄 Usuário clicou em ATUALIZAR - buscando dados...');
-                fetchDREData();
+                                fetchDREData();
               }}
               disabled={isLoadingDRE}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-md bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -3358,8 +3009,7 @@ const DREView: React.FC<DREViewProps> = ({
 
                           // Debug: Log para verificar valores (remover depois)
                           if (idx === 0) {
-                            console.log(`📊 Card ${code} - Real: ${realVal}, Orçado: ${orcadoVal}, Heights: R=${realHeight}%, O=${orcadoHeight}%`);
-                          }
+                                                      }
 
                           const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
                           const monthName = months[selectedMonthStart + idx] || `M${idx + 1}`;
@@ -4758,45 +4408,17 @@ const DREView: React.FC<DREViewProps> = ({
                 const ebitdaAfterIdx = entries.findIndex(([, d]) => d.label.startsWith('04.'));
 
                 // 🔍 DEBUG: Log para verificar se categories estão corretas
-                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.log('🎨 [RENDERIZAÇÃO] Renderizando tag0 → tag01 → contas');
-                console.log('   Filtros ativos:', { marca: selectedMarcas.length > 0 ? selectedMarcas.join(', ') : 'TODAS', filial: selectedFiliais.length > 0 ? selectedFiliais.join(', ') : 'TODAS' });
-                console.log('   Total de tag0s a renderizar:', entries.length);
-
+                                                                
                 return (
                   <>
                     {entries.map(([nivel1Code, nivel1Data], entryIdx) => {
                       // items é Record<tag01, contas[]> - flatten para pegar todas as contas
                       const tag01Items = nivel1Data.items as Record<string, string[]>;
-                      // União de conta_contabils de TODOS os cenários (Real, A-1, Orçado)
-                      // Garante que contas exclusivas de A-1 (ex: PDD) entrem no drill-down
-                      const allCategories = [
-                        ...new Set([
-                          ...Object.values(tag01Items).flat(),
-                          ...summaryRows
-                            .filter(r => r.tag0 === nivel1Code)
-                            .map(r => r.conta_contabil)
-                        ])
-                      ].filter((c): c is string => c != null && c !== '');
+                      // dreStructure já agrega todas as contas de todos os cenários a partir de summaryRows
+                      const allCategories = Object.values(tag01Items)
+                        .flat()
+                        .filter((c): c is string => c != null && c !== '');
 
-                      // 🔍 DEBUG: Verificar se as contas existem no dataMap
-                      const contasNoDataMap = allCategories.filter(c => dataMap['Real'][c] !== undefined).length;
-                      const valorTotal = allCategories.reduce((sum, c) => {
-                        const vals = dataMap['Real'][c] || new Array(12).fill(0);
-                        return sum + vals.reduce((s, v) => s + v, 0);
-                      }, 0);
-
-                      // Log para todos os tag0s
-                      console.log(`   📊 ${nivel1Data.label} (${nivel1Code}):`);
-                      console.log(`      - Total tag01s: ${Object.keys(tag01Items).length}`);
-                      console.log(`      - Total contas: ${allCategories.length}`);
-                      console.log(`      - Contas no dataMap: ${contasNoDataMap}`);
-                      console.log(`      - Valor total Real: R$ ${valorTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-
-                      // Verificar YTD que será exibido na tela
-                      const valoresReal = getValues('Real', allCategories);
-                      const ytdCalculado = valoresReal.reduce((a, b) => a + b, 0);
-                      console.log(`      - YTD que será exibido: R$ ${ytdCalculado.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
 
                       return (
                         <React.Fragment key={nivel1Code}>
