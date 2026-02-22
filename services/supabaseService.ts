@@ -581,12 +581,22 @@ export interface SomaTagsRow {
  * Busca soma por tag0+tag01+scenario (RPC leve para diagnóstico)
  * Muito mais rápido que get_dre_summary pois agrupa menos colunas
  */
-export const getSomaTags = async (monthFrom?: string, monthTo?: string): Promise<SomaTagsRow[]> => {
+export const getSomaTags = async (
+  monthFrom?: string,
+  monthTo?: string,
+  marcas?: string[],
+  nomeFiliais?: string[],
+): Promise<SomaTagsRow[]> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
     const { data, error } = await supabase
-      .rpc('get_soma_tags', { p_month_from: monthFrom || null, p_month_to: monthTo || null })
+      .rpc('get_soma_tags', {
+        p_month_from:   monthFrom   || null,
+        p_month_to:     monthTo     || null,
+        p_marcas:       marcas      && marcas.length      > 0 ? marcas      : null,
+        p_nome_filiais: nomeFiliais && nomeFiliais.length > 0 ? nomeFiliais : null,
+      })
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
     if (error) {

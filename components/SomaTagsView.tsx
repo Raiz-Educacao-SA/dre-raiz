@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { getSomaTags, SomaTagsRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square } from 'lucide-react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { getSomaTags, getDREFilterOptions, SomaTagsRow, DREFilterOptions } from '../services/supabaseService';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import MultiSelectFilter from './MultiSelectFilter';
 
 // ── Formatação ────────────────────────────────────────────────────────────────
 const fmt = (v: number) =>
@@ -112,21 +113,63 @@ const SomaTagsView: React.FC = () => {
   const [collapsed,      setCollapsed]      = useState<Set<string>>(new Set());
   const [showOnlyEbitda, setShowOnlyEbitda] = useState(true);
 
-  const fetchData = async () => {
+  // ── Filtros Marca / Filial ────────────────────────────────────────────────
+  const [filterOptions,   setFilterOptions]   = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
+  const [selectedMarcas,  setSelectedMarcas]  = useState<string[]>([]);
+  const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
+  const filialCleanupRef = useRef(false);
+
+  // Cascata: filtra filiais disponíveis conforme marcas selecionadas
+  const filiaisFiltradas = useMemo(() => {
+    if (selectedMarcas.length === 0) return filterOptions.nome_filiais;
+    return filterOptions.nome_filiais.filter(f =>
+      selectedMarcas.some(m => f.startsWith(m + ' - ') || f.startsWith(m + '-'))
+    );
+  }, [selectedMarcas, filterOptions.nome_filiais]);
+
+  // Limpa filiais inválidas ao trocar marca
+  useEffect(() => {
+    if (selectedFiliais.length > 0 && selectedMarcas.length > 0) {
+      const validas = selectedFiliais.filter(f => filiaisFiltradas.includes(f));
+      if (validas.length !== selectedFiliais.length) {
+        filialCleanupRef.current = true;
+        setSelectedFiliais(validas);
+      }
+    }
+  }, [selectedMarcas, filiaisFiltradas]);
+
+  // ── Fetch ────────────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const from = monthFrom <= monthTo ? monthFrom : monthTo;
-      const to   = monthFrom <= monthTo ? monthTo   : monthFrom;
-      const data = await getSomaTags(`${year}-${from}`, `${year}-${to}`);
+      const from   = monthFrom <= monthTo ? monthFrom : monthTo;
+      const to     = monthFrom <= monthTo ? monthTo   : monthFrom;
+      const mFrom  = `${year}-${from}`;
+      const mTo    = `${year}-${to}`;
+      const marcas  = selectedMarcas.length  > 0 ? selectedMarcas  : undefined;
+      const filiais = selectedFiliais.length > 0 ? selectedFiliais : undefined;
+
+      const [data, opts] = await Promise.all([
+        getSomaTags(mFrom, mTo, marcas, filiais),
+        getDREFilterOptions({ monthFrom: mFrom, monthTo: mTo }),
+      ]);
       setRows(data);
+      setFilterOptions(opts);
     } catch (e: any) {
       setError(String(e?.message || e));
     } finally {
       setLoading(false);
     }
-  };
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais]);
 
+  // Re-fetch ao mudar período
   useEffect(() => { fetchData(); }, [year, monthFrom, monthTo]);
+
+  // Re-fetch ao mudar filtros (ignora limpeza interna de filiais)
+  useEffect(() => {
+    if (filialCleanupRef.current) { filialCleanupRef.current = false; return; }
+    fetchData();
+  }, [selectedMarcas, selectedFiliais]);
 
   // ── Agrupamento ───────────────────────────────────────────────────────────
   const groups = useMemo((): Tag0Group[] => {
@@ -283,6 +326,37 @@ const SomaTagsView: React.FC = () => {
           Atualizar
         </button>
 
+        {/* Filtros Marca / Filial */}
+        <MultiSelectFilter
+          label="Marca"
+          icon={<Flag size={13} />}
+          options={filterOptions.marcas}
+          selected={selectedMarcas}
+          onChange={setSelectedMarcas}
+          colorScheme="orange"
+        />
+        <MultiSelectFilter
+          label="Filial"
+          icon={<Building2 size={13} />}
+          options={filiaisFiltradas}
+          selected={selectedFiliais}
+          onChange={setSelectedFiliais}
+          colorScheme="blue"
+        />
+
+        {/* Limpar filtros */}
+        {(selectedMarcas.length > 0 || selectedFiliais.length > 0) && (
+          <button
+            onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); }}
+            className="flex items-center gap-1 px-2 py-1.5 bg-red-50 border border-red-200 text-red-600
+                       text-xs font-bold rounded hover:bg-red-100 transition-colors"
+            title="Limpar filtros de Marca e Filial"
+          >
+            <FilterX size={13} />
+            Limpar
+          </button>
+        )}
+
         {/* Filtro Até EBITDA */}
         <button
           onClick={() => setShowOnlyEbitda(v => !v)}
@@ -367,7 +441,7 @@ const SomaTagsView: React.FC = () => {
                 <th className="px-2 py-1 font-black text-[9px] uppercase tracking-wider sticky left-8 z-[60]
                                bg-gradient-to-r from-slate-700 to-slate-600 w-[280px]
                                border-r border-white/10 shadow-[2px_0_4px_rgba(0,0,0,0.2)]">
-                  Tag0 / Tag01
+                  CONTAS GERENCIAIS
                 </th>
                 {/* Real */}
                 <th className="px-2 py-1 text-right font-black text-[9px] uppercase w-[130px]
