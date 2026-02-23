@@ -1,6 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════
 -- fix_get_soma_tags_v7_tags01.sql
 -- Adiciona parâmetro p_tags01 para filtrar por permissão de tag01
+-- SECURITY DEFINER: bypassa RLS das tabelas; acesso controlado pelos parâmetros
 -- ═══════════════════════════════════════════════════════════════════
 
 DROP FUNCTION IF EXISTS get_soma_tags(text, text, text[], text[], text[]);
@@ -15,7 +16,7 @@ CREATE OR REPLACE FUNCTION get_soma_tags(
   p_tags01       text[] DEFAULT NULL
 )
 RETURNS TABLE(tag0 text, tag01 text, scenario text, month text, total numeric)
-LANGUAGE sql STABLE
+LANGUAGE sql STABLE SECURITY DEFINER
 AS $$
 
   -- 1. Real
