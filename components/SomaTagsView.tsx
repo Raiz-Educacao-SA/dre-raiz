@@ -1,25 +1,21 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { getSomaTags, getDREFilterOptions, SomaTagsRow, DREFilterOptions } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity } from 'lucide-react';
+import { getSomaTags, getDREFilterOptions, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
 
 // ── Formatação ────────────────────────────────────────────────────────────────
 const fmt = (v: number) =>
-  v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+  v === 0 ? '—' : Math.round(v).toLocaleString('pt-BR');
 
-// Formato compacto para visões mensais (muitas colunas)
-const fmtK = (v: number): string => {
-  if (v === 0) return '—';
-  const abs = Math.abs(v);
-  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000)     return `${Math.round(v / 1_000)}K`;
-  return String(Math.round(v));
-};
+// Mesmo formato para visões mensais (igual ao DRE Gerencial)
+const fmtK = (v: number): string =>
+  v === 0 ? '—' : Math.round(v).toLocaleString('pt-BR');
 
 const fmtPct = (real: number, base: number): string => {
   if (base === 0) return '—';
-  return `${(((real - base) / Math.abs(base)) * 100).toFixed(1)}%`;
+  const pct = ((real - base) / Math.abs(base)) * 100;
+  return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
 };
 
 const deltaClass = (delta: number, base: number, onCalc = false): string => {
@@ -69,12 +65,10 @@ const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols }) => {
   const hasOrc = orcado !== 0;
   const hasA1  = a1     !== 0;
   return (
-    <tr className={`group bg-[#F44C00] text-white font-black text-[11px] h-6 shadow-sm
+    <tr className={`group bg-[#F44C00] text-white font-black text-[10px] h-6 shadow-sm
                    ${borderTop ? 'border-t-2 border-yellow-400' : ''}`}>
       <td colSpan={2}
-          className="sticky left-0 bg-inherit z-20 border-r border-white/10
-                     shadow-[2px_0_4px_rgba(0,0,0,0.2)]
-                     group-hover:bg-yellow-400 group-hover:text-black transition-colors">
+          className="sticky left-0 bg-[#F44C00] z-20 group-hover:bg-yellow-400 group-hover:text-black transition-colors">
         <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
           <Activity size={12} /> {label}
         </div>
@@ -100,7 +94,13 @@ const calcXlsxRow = (label: string, d: CalcData) => [
 ];
 
 // ── Componente principal ──────────────────────────────────────────────────────
-const SomaTagsView: React.FC = () => {
+interface SomaTagsViewProps {
+  onRegisterActions?: (actions: { refresh: () => void; exportExcel: () => void }) => void;
+  onLoadingChange?: (loading: boolean) => void;
+  onDataChange?: (hasData: boolean) => void;
+}
+
+const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange }) => {
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
@@ -128,6 +128,25 @@ const SomaTagsView: React.FC = () => {
   const [selectionOrder, setSelectionOrder] = useState<string[]>([
     'Real', 'Orçado', 'DeltaAbsOrcado', 'DeltaPercOrcado', 'A1', 'DeltaAbsA1', 'DeltaPercA1',
   ]);
+
+  // ── Drill-down ────────────────────────────────────────────────────────────
+  const [dimensionCache,    setDimensionCache]    = useState<Record<string, DREDimensionRow[]>>({});
+  const [expandedTag01s,    setExpandedTag01s]    = useState<Record<string, boolean>>({});
+  const [expandedDrillRows, setExpandedDrillRows] = useState<Record<string, boolean>>({});
+  const [drillDimensions,   setDrillDimensions]   = useState<string[]>([]);
+  const [dimensionSort,     setDimensionSort]     = useState<'alpha' | 'desc' | 'asc'>('desc');
+
+  // Refs para evitar closure stale em loadDrillData (useCallback sem deps)
+  const yearRef       = useRef(year);
+  const monthFromRef  = useRef(monthFrom);
+  const monthToRef    = useRef(monthTo);
+  const marcasRef     = useRef(selectedMarcas);
+  const filiaisRef    = useRef(selectedFiliais);
+  useEffect(() => { yearRef.current      = year;            }, [year]);
+  useEffect(() => { monthFromRef.current = monthFrom;       }, [monthFrom]);
+  useEffect(() => { monthToRef.current   = monthTo;         }, [monthTo]);
+  useEffect(() => { marcasRef.current    = selectedMarcas;  }, [selectedMarcas]);
+  useEffect(() => { filiaisRef.current   = selectedFiliais; }, [selectedFiliais]);
 
   const toggleElement = useCallback(
     (element: string, currentState: boolean, setState: (v: boolean) => void) => {
@@ -181,6 +200,25 @@ const SomaTagsView: React.FC = () => {
     }
   }, [selectedMarcas, filiaisFiltradas]);
 
+  // ── loadDrillData ────────────────────────────────────────────────────────
+  const loadDrillData = useCallback(async (
+    tag01: string, tag0: string, scenario: string, dim: string, accFilters: Record<string, string> = {}
+  ) => {
+    const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
+    const cacheKey   = `${scenario}|${tag01}|${dim}|${filtersKey}`;
+    const mf = `${yearRef.current}-${monthFromRef.current}`;
+    const mt = `${yearRef.current}-${monthToRef.current}`;
+    const marcas  = accFilters.marca       ? [accFilters.marca]       : (marcasRef.current.length  > 0 ? marcasRef.current  : undefined);
+    const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
+    const rows = await getDREDimension({
+      monthFrom: mf, monthTo: mt,
+      scenario, dimension: dim,
+      tags01: [tag01], tag0,
+      marcas, nomeFiliais: filiais,
+    });
+    setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
+  }, []);
+
   // ── Fetch ────────────────────────────────────────────────────────────────
   const fetchData = useCallback(async () => {
     setLoading(true); setError('');
@@ -209,6 +247,13 @@ const SomaTagsView: React.FC = () => {
     if (filialCleanupRef.current) { filialCleanupRef.current = false; return; }
     fetchData();
   }, [selectedMarcas, selectedFiliais]);
+
+  // Limpa cache de drill ao trocar filtros
+  useEffect(() => {
+    setDimensionCache({});
+    setExpandedTag01s({});
+    setExpandedDrillRows({});
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais]);
 
   // ── Agrupamento Consolidado ───────────────────────────────────────────────
   const groups = useMemo((): Tag0Group[] => {
@@ -358,6 +403,35 @@ const SomaTagsView: React.FC = () => {
     lastIdx04M: lastIdxM('04.'),
   }), [displayedMonthlyGroups]);
 
+  // ── Helpers de drill-down ────────────────────────────────────────────────
+  const SOMA_SCENARIOS = ['Real', 'Orçado', 'A-1'];
+  const SOMA_DIMENSIONS = [
+    { id: 'marca',       label: 'Marca' },
+    { id: 'nome_filial', label: 'Filial' },
+    { id: 'vendor',      label: 'Fornecedor' },
+    { id: 'tag01',       label: 'Tag 01' },
+    { id: 'tag02',       label: 'Tag 02' },
+    { id: 'tag03',       label: 'Tag 03' },
+  ];
+
+  const getDrillTotal = (tag01: string, dim: string, scenario: string, dimVal: string, accFilters: Record<string, string> = {}): number => {
+    const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
+    const key = `${scenario}|${tag01}|${dim}|${filtersKey}`;
+    return (dimensionCache[key] || [])
+      .filter(r => r.dimension_value === dimVal)
+      .reduce((s, r) => s + Number(r.total_amount), 0);
+  };
+
+  const getDrillMonthData = (tag01: string, dim: string, scenario: string, dimVal: string, accFilters: Record<string, string> = {}): Record<string, number> => {
+    const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
+    const key = `${scenario}|${tag01}|${dim}|${filtersKey}`;
+    const out: Record<string, number> = {};
+    (dimensionCache[key] || [])
+      .filter(r => r.dimension_value === dimVal)
+      .forEach(r => { out[r.year_month] = (out[r.year_month] || 0) + Number(r.total_amount); });
+    return out;
+  };
+
   const toggleGroup = (tag0: string) =>
     setCollapsed(prev => {
       const n = new Set(prev);
@@ -366,7 +440,7 @@ const SomaTagsView: React.FC = () => {
     });
 
   // ── Exportar Excel ────────────────────────────────────────────────────────
-  const exportExcel = () => {
+  const exportExcel = useCallback(() => {
     const wsData: any[][] = [
       ['Tag0', 'Tag01', 'Real', 'Orçado', 'Δ R−Orç', 'Δ% Orç', 'A-1', 'Δ R−A-1', 'Δ% A-1'],
     ];
@@ -395,7 +469,18 @@ const SomaTagsView: React.FC = () => {
     const per = monthFrom === '01' && monthTo === '12' ? year : `${year}_${monthFrom}-${monthTo}`;
     XLSX.utils.book_append_sheet(wb, ws, `SomaTags_${per}`);
     XLSX.writeFile(wb, `soma_tags_${per}.xlsx`);
-  };
+  }, [displayedGroups, lastIdx03, lastIdx04, margemData, ebitdaData, totals, year, monthFrom, monthTo]);
+
+  // Registra ações no App.tsx (header) — deve ficar após exportExcel e fetchData
+  useEffect(() => {
+    onRegisterActions?.({ refresh: fetchData, exportExcel });
+  }, [onRegisterActions, fetchData, exportExcel]);
+
+  // Sincroniza loading com App.tsx
+  useEffect(() => { onLoadingChange?.(loading); }, [loading, onLoadingChange]);
+
+  // Sincroniza presença de dados com App.tsx
+  useEffect(() => { onDataChange?.(groups.length > 0); }, [groups.length, onDataChange]);
 
   // ── Render helpers ────────────────────────────────────────────────────────
   const tag01Count   = displayedGroups.reduce((s, g) => s + g.items.length, 0);
@@ -428,19 +513,198 @@ const SomaTagsView: React.FC = () => {
     'A-1':  'bg-gradient-to-r from-purple-600 to-purple-500',
   };
   const scenarioSubBg: Record<string, string> = {
-    Real:   'bg-blue-700/80',
-    Orçado: 'bg-emerald-700/80',
-    'A-1':  'bg-purple-700/80',
+    Real:   'bg-gradient-to-br from-blue-500 to-blue-600',
+    Orçado: 'bg-gradient-to-br from-emerald-500 to-emerald-600',
+    'A-1':  'bg-gradient-to-br from-purple-500 to-purple-600',
+  };
+
+  // ── renderDrillRows (hierárquico — recursivo por nível) ─────────────────
+  const renderDrillRows = (
+    tag01: string, tag0: string,
+    dimIndex: number = 0,
+    accFilters: Record<string, string> = {},
+    depth: number = 0,
+  ): React.ReactNode => {
+    if (drillDimensions.length === 0 || dimIndex >= drillDimensions.length) return null;
+
+    const dim         = drillDimensions[dimIndex];
+    const hasChildren = dimIndex < drillDimensions.length - 1;
+    const filtersKey  = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
+    const indentPx    = 40 + depth * 20; // 40px base + 20px per depth
+
+    // Verifica/dispara carregamento para cada cenário
+    let allLoaded = true;
+    for (const sc of SOMA_SCENARIOS) {
+      const cacheKey = `${sc}|${tag01}|${dim}|${filtersKey}`;
+      if (!(cacheKey in dimensionCache)) {
+        allLoaded = false;
+        loadDrillData(tag01, tag0, sc, dim, accFilters);
+      }
+    }
+
+    if (!allLoaded) {
+      return (
+        <tr key={`drill-loading-${tag01}-${dim}-${depth}-${filtersKey}`} className="bg-yellow-50">
+          <td colSpan={100} className="py-1 text-[9px] text-gray-500 italic" style={{ paddingLeft: `${indentPx}px` }}>
+            Carregando...
+          </td>
+        </tr>
+      );
+    }
+
+    // Valores únicos consolidados dos 3 cenários
+    const allVals = new Set<string>();
+    for (const sc of SOMA_SCENARIOS) {
+      const cacheKey = `${sc}|${tag01}|${dim}|${filtersKey}`;
+      (dimensionCache[cacheKey] || []).forEach(r => { if (r.dimension_value) allVals.add(r.dimension_value); });
+    }
+    let vals = Array.from(allVals);
+
+    if (dimensionSort === 'alpha') {
+      vals.sort((a, b) => a.localeCompare(b));
+    } else if (dimensionSort === 'desc') {
+      vals.sort((a, b) => getDrillTotal(tag01, dim, 'Real', b, accFilters) - getDrillTotal(tag01, dim, 'Real', a, accFilters));
+    } else {
+      vals.sort((a, b) => getDrillTotal(tag01, dim, 'Real', a, accFilters) - getDrillTotal(tag01, dim, 'Real', b, accFilters));
+    }
+
+    if (vals.length === 0) {
+      return (
+        <tr key={`drill-empty-${tag01}-${dim}-${depth}-${filtersKey}`} className="bg-yellow-50">
+          <td colSpan={100} className="py-1 text-[9px] text-gray-400 italic" style={{ paddingLeft: `${indentPx}px` }}>Sem dados</td>
+        </tr>
+      );
+    }
+
+    // Cores por profundidade
+    const bgBase    = depth === 0 ? 'bg-amber-50/60' : depth === 1 ? 'bg-blue-50/40' : 'bg-gray-50';
+    const markerClr = depth === 0 ? 'text-amber-500'  : 'text-blue-400';
+    const marker    = depth === 0 ? '◆' : '◇';
+
+    return vals.map(val => {
+      const drillKey   = `${tag01}|${dim}|${val}|${filtersKey}`;
+      const isExpanded = hasChildren && !!expandedDrillRows[drillKey];
+
+      const real   = getDrillTotal(tag01, dim, 'Real',   val, accFilters);
+      const orcado = getDrillTotal(tag01, dim, 'Orçado', val, accFilters);
+      const a1     = getDrillTotal(tag01, dim, 'A-1',    val, accFilters);
+      const dOrç = real - orcado; const dA1 = real - a1;
+      const rHasOrc = orcado !== 0; const rHasA1 = a1 !== 0;
+
+      const labelContent = (
+        <div className="flex items-center gap-0.5" style={{ paddingLeft: `${indentPx - 8}px` }}>
+          {hasChildren
+            ? <button onClick={() => setExpandedDrillRows(prev => ({ ...prev, [drillKey]: !prev[drillKey] }))}
+                className="shrink-0 text-gray-400 hover:text-gray-700 mr-0.5">
+                {isExpanded ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+              </button>
+            : <span className="inline-block w-[9px] shrink-0" />
+          }
+          <span className={`${markerClr} shrink-0`}>{marker}</span>
+          <span className="ml-0.5 truncate">{val}</span>
+        </div>
+      );
+
+      const children = hasChildren && isExpanded
+        ? renderDrillRows(tag01, tag0, dimIndex + 1, { ...accFilters, [dim]: val }, depth + 1)
+        : null;
+
+      const trCls   = `group ${bgBase} border-b border-amber-100 hover:bg-yellow-50 transition-colors`;
+      const col1Cls = `px-2 py-0.5 w-8 sticky left-0 z-20 ${bgBase} group-hover:bg-yellow-50 transition-colors`;
+      const col2Cls = `py-0.5 pr-2 text-gray-700 font-semibold truncate sticky left-8 z-20 w-[280px] text-[9px] ${bgBase} group-hover:bg-yellow-50 transition-colors`;
+
+      if (viewMode === 'consolidado') {
+        return (
+          <React.Fragment key={`drill-frag-${dim}-${tag01}-${val}-${filtersKey}`}>
+            <tr className={trCls}>
+              <td className={col1Cls} />
+              <td className={col2Cls}>{labelContent}</td>
+              {cols.real            && <td className="px-2 py-0.5 text-right font-mono text-gray-800 text-[10px] border-r border-gray-100">{fmt(real)}</td>}
+              {cols.orcado          && <td className={`px-2 py-0.5 text-right font-mono text-[10px] ${rHasOrc ? 'text-gray-800' : 'text-gray-300'}`}>{rHasOrc ? fmt(orcado) : '—'}</td>}
+              {cols.deltaAbsOrcado  && <td className={`px-2 py-0.5 text-right font-mono text-[10px] ${rHasOrc ? deltaClass(dOrç, orcado) : 'text-gray-300'}`}>{rHasOrc ? fmt(dOrç) : '—'}</td>}
+              {cols.deltaPercOrcado && <td className={`px-2 py-0.5 text-right font-mono text-[10px] border-r border-gray-200 ${rHasOrc ? deltaClass(dOrç, orcado) : 'text-gray-300'}`}>{rHasOrc ? fmtPct(real, orcado) : '—'}</td>}
+              {cols.a1              && <td className={`px-2 py-0.5 text-right font-mono text-[10px] ${rHasA1 ? 'text-gray-800' : 'text-gray-300'}`}>{rHasA1 ? fmt(a1) : '—'}</td>}
+              {cols.deltaAbsA1      && <td className={`px-2 py-0.5 text-right font-mono text-[10px] ${rHasA1 ? deltaClass(dA1, a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(dA1) : '—'}</td>}
+              {cols.deltaPercA1     && <td className={`px-2 py-0.5 text-right font-mono text-[10px] ${rHasA1 ? deltaClass(dA1, a1) : 'text-gray-300'}`}>{rHasA1 ? fmtPct(real, a1) : '—'}</td>}
+            </tr>
+            {children}
+          </React.Fragment>
+        );
+      }
+
+      if (viewMode === 'cenario') {
+        const realByM = getDrillMonthData(tag01, dim, 'Real',   val, accFilters);
+        const orcByM  = getDrillMonthData(tag01, dim, 'Orçado', val, accFilters);
+        const a1ByM   = getDrillMonthData(tag01, dim, 'A-1',    val, accFilters);
+        const dOrçT = real - orcado; const dA1T = real - a1;
+        const hOrc = orcado !== 0; const hA1 = a1 !== 0;
+        return (
+          <React.Fragment key={`drill-frag-${dim}-${tag01}-${val}-${filtersKey}`}>
+            <tr className={trCls}>
+              <td className={col1Cls} />
+              <td className={col2Cls}>{labelContent}</td>
+              {showReal   && <>{monthsToShow.map(m => { const v = realByM[m] || 0; return <td key={`r-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-800 text-[10px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-800 text-[10px] bg-blue-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(real)}</td></>}
+              {showOrcado && <>{monthsToShow.map(m => { const v = orcByM[m]  || 0; return <td key={`o-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-800 text-[10px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-800 text-[10px] bg-emerald-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(orcado)}</td></>}
+              {showA1     && <>{monthsToShow.map(m => { const v = a1ByM[m]   || 0; return <td key={`a-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-800 text-[10px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-800 text-[10px] bg-purple-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(a1)}</td></>}
+              {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const rv = realByM[m]||0; const ov = orcByM[m]||0; const d = rv-ov; const h = ov!==0; return <td key={`dao-${m}`} className={`px-1 py-0.5 text-right font-mono text-[10px] w-[70px] ${h ? deltaClass(d,ov) : 'text-gray-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] bg-emerald-50 border-l border-gray-200 w-[80px] ${hOrc ? deltaClass(dOrçT,orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
+              {showDeltaPercOrcado && <>{monthsToShow.map(m => { const rv = realByM[m]||0; const ov = orcByM[m]||0; const d = rv-ov; const h = ov!==0; return <td key={`dpo-${m}`} className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${h ? deltaClass(d,ov) : 'text-gray-300'}`}>{h ? fmtPct(rv,ov) : '—'}</td>; })}<td className={`px-1 py-0.5 text-center text-[9px] bg-emerald-50 border-l border-gray-200 w-[80px] ${hOrc ? deltaClass(dOrçT,orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(real,orcado) : '—'}</td></>}
+              {showDeltaAbsA1      && <>{monthsToShow.map(m => { const rv = realByM[m]||0; const av = a1ByM[m]||0; const d = rv-av; const h = av!==0; return <td key={`da1-${m}`} className={`px-1 py-0.5 text-right font-mono text-[10px] w-[70px] ${h ? deltaClass(d,av) : 'text-gray-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] bg-purple-50 border-l border-gray-200 w-[80px] ${hA1 ? deltaClass(dA1T,a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
+              {showDeltaPercA1     && <>{monthsToShow.map(m => { const rv = realByM[m]||0; const av = a1ByM[m]||0; const d = rv-av; const h = av!==0; return <td key={`dp1-${m}`} className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${h ? deltaClass(d,av) : 'text-gray-300'}`}>{h ? fmtPct(rv,av) : '—'}</td>; })}<td className={`px-1 py-0.5 text-center text-[9px] bg-purple-50 border-l border-gray-200 w-[80px] ${hA1 ? deltaClass(dA1T,a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(real,a1) : '—'}</td></>}
+            </tr>
+            {children}
+          </React.Fragment>
+        );
+      }
+
+      if (viewMode === 'mes') {
+        const realByM = getDrillMonthData(tag01, dim, 'Real',   val, accFilters);
+        const orcByM  = getDrillMonthData(tag01, dim, 'Orçado', val, accFilters);
+        const a1ByM   = getDrillMonthData(tag01, dim, 'A-1',    val, accFilters);
+        const dOrçT = real - orcado; const dA1T = real - a1;
+        const hOrc = orcado !== 0; const hA1 = a1 !== 0;
+        return (
+          <React.Fragment key={`drill-frag-${dim}-${tag01}-${val}-${filtersKey}`}>
+            <tr className={trCls}>
+              <td className={col1Cls} />
+              <td className={col2Cls}>{labelContent}</td>
+              {monthsToShow.map(m => {
+                const rv = realByM[m]||0; const ov = orcByM[m]||0; const av = a1ByM[m]||0;
+                const dOrçM = rv-ov; const dA1M = rv-av;
+                return (
+                  <React.Fragment key={m}>
+                    {showReal            && <td className={`px-1 py-0.5 text-right font-mono text-gray-800 text-[10px] w-[80px] ${mesFirstCol==='real'?'border-l-2 border-l-gray-200':''}`}>{rv!==0?fmtK(rv):<span className="text-gray-300">—</span>}</td>}
+                    {showOrcado          && <td className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[10px] w-[80px] ${mesFirstCol==='orcado'?'border-l-2 border-l-gray-200':''}`}>{ov!==0?fmtK(ov):<span className="text-gray-300">—</span>}</td>}
+                    {showDeltaAbsOrcado  && <td className={`px-0.5 py-0.5 text-right font-mono text-[10px] w-[85px] ${ov!==0?deltaClass(dOrçM,ov):'text-gray-300'} ${mesFirstCol==='deltaAbsOrcado'?'border-l-2 border-l-gray-200':''}`}>{ov!==0?fmtK(dOrçM):'—'}</td>}
+                    {showDeltaPercOrcado && <td className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${ov!==0?deltaClass(dOrçM,ov):'text-gray-300'} ${mesFirstCol==='deltaPercOrcado'?'border-l-2 border-l-gray-200':''}`}>{ov!==0?fmtPct(rv,ov):'—'}</td>}
+                    {showA1              && <td className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[10px] w-[80px] ${mesFirstCol==='a1'?'border-l-2 border-l-gray-200':''}`}>{av!==0?fmtK(av):<span className="text-gray-300">—</span>}</td>}
+                    {showDeltaAbsA1      && <td className={`px-0.5 py-0.5 text-right font-mono text-[10px] w-[85px] ${av!==0?deltaClass(dA1M,av):'text-gray-300'} ${mesFirstCol==='deltaAbsA1'?'border-l-2 border-l-gray-200':''}`}>{av!==0?fmtK(dA1M):'—'}</td>}
+                    {showDeltaPercA1     && <td className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${av!==0?deltaClass(dA1M,av):'text-gray-300'}`}>{av!==0?fmtPct(rv,av):'—'}</td>}
+                  </React.Fragment>
+                );
+              })}
+              {showReal            && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-blue-50 text-[#152e55] ${mesFirstCol==='real'?'border-l-2 border-l-gray-200':''}`}>{fmtK(real)}</td>}
+              {showOrcado          && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-green-50 text-green-900 ${mesFirstCol==='orcado'?'border-l-2 border-l-gray-200':''}`}>{fmtK(orcado)}</td>}
+              {showDeltaAbsOrcado  && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-green-50 ${mesFirstCol==='deltaAbsOrcado'?'border-l-2 border-l-gray-200':''} ${hOrc?deltaClass(dOrçT,orcado):'text-gray-300'}`}>{hOrc?fmtK(dOrçT):'—'}</td>}
+              {showDeltaPercOrcado && <td className={`px-1 py-0.5 text-center text-[9px] w-[100px] bg-green-50 ${mesFirstCol==='deltaPercOrcado'?'border-l-2 border-l-gray-200':''} ${hOrc?deltaClass(dOrçT,orcado):'text-gray-300'}`}>{hOrc?fmtPct(real,orcado):'—'}</td>}
+              {showA1              && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-purple-50 text-purple-900 ${mesFirstCol==='a1'?'border-l-2 border-l-gray-200':''}`}>{fmtK(a1)}</td>}
+              {showDeltaAbsA1      && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-purple-50 ${mesFirstCol==='deltaAbsA1'?'border-l-2 border-l-gray-200':''} ${hA1?deltaClass(dA1T,a1):'text-gray-300'}`}>{hA1?fmtK(dA1T):'—'}</td>}
+              {showDeltaPercA1     && <td className={`px-1 py-0.5 text-center text-[9px] w-[100px] bg-purple-50 ${hA1?deltaClass(dA1T,a1):'text-gray-300'}`}>{hA1?fmtPct(real,a1):'—'}</td>}
+            </tr>
+            {children}
+          </React.Fragment>
+        );
+      }
+
+      return null;
+    });
   };
 
   // Helper: linha de CalcRow mensal (Cenário e Mês usam a mesma estrutura)
   const renderMonthlyCalcRow = (label: string, byMonth: Record<string, MonthData>, totData: CalcData, borderTop: boolean) => (
-    <tr className={`group bg-[#F44C00] text-white font-black text-[11px] h-6 shadow-sm
+    <tr className={`group bg-[#F44C00] text-white font-black text-[10px] h-6 shadow-sm
                    ${borderTop ? 'border-t-2 border-yellow-400' : ''}`}>
       <td colSpan={2}
-          className="sticky left-0 bg-inherit z-20 border-r border-white/10
-                     shadow-[2px_0_4px_rgba(0,0,0,0.2)]
-                     group-hover:bg-yellow-400 group-hover:text-black transition-colors">
+          className="sticky left-0 bg-[#F44C00] z-20 group-hover:bg-yellow-400 group-hover:text-black transition-colors">
         <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
           <Activity size={12} /> {label}
         </div>
@@ -453,10 +717,10 @@ const SomaTagsView: React.FC = () => {
             {showReal   && <>{monthsToShow.map(m => { const v = byMonth[m]?.real   || 0; return <td key={`r-${m}`} className="px-1 text-right font-mono w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 text-right font-mono font-black border-l border-white/20 bg-black/10 w-[80px]">{fmtK(totData.real)}</td></>}
             {showOrcado && <>{monthsToShow.map(m => { const v = byMonth[m]?.orcado || 0; return <td key={`o-${m}`} className="px-1 text-right font-mono w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 text-right font-mono font-black border-l border-white/20 bg-black/10 w-[80px]">{fmtK(totData.orcado)}</td></>}
             {showA1     && <>{monthsToShow.map(m => { const v = byMonth[m]?.a1     || 0; return <td key={`a-${m}`} className="px-1 text-right font-mono w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 text-right font-mono font-black border-l border-white/20 bg-black/10 w-[80px]">{fmtK(totData.a1)}</td></>}
-            {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dao-${m}`} className={`px-1 text-right font-mono text-[11px] w-[70px] ${h ? deltaClass(d, md.orcado, true) : 'text-orange-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 text-right font-mono font-black border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
-            {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 text-center text-[11px] w-[70px] ${h ? deltaClass(d, md.orcado, true) : 'text-orange-300'}`}>{h ? fmtPct(md.real, md.orcado) : '—'}</td>; })}<td className={`px-0.5 text-center text-[11px] border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{hOrc ? fmtPct(totData.real, totData.orcado) : '—'}</td></>}
-            {showDeltaAbsA1      && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`da1-${m}`} className={`px-1 text-right font-mono text-[11px] w-[70px] ${h ? deltaClass(d, md.a1, true) : 'text-orange-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 text-right font-mono font-black border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
-            {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 text-center text-[11px] w-[70px] ${h ? deltaClass(d, md.a1, true) : 'text-orange-300'}`}>{h ? fmtPct(md.real, md.a1) : '—'}</td>; })}<td className={`px-0.5 text-center text-[11px] border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{hA1 ? fmtPct(totData.real, totData.a1) : '—'}</td></>}
+            {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dao-${m}`} className={`px-1 text-right font-mono text-[10px] w-[70px] ${h ? deltaClass(d, md.orcado, true) : 'text-orange-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 text-right font-mono font-black border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
+            {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 text-center text-[9px] w-[70px] ${h ? deltaClass(d, md.orcado, true) : 'text-orange-300'}`}>{h ? fmtPct(md.real, md.orcado) : '—'}</td>; })}<td className={`px-0.5 text-center text-[9px] border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{hOrc ? fmtPct(totData.real, totData.orcado) : '—'}</td></>}
+            {showDeltaAbsA1      && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`da1-${m}`} className={`px-1 text-right font-mono text-[10px] w-[70px] ${h ? deltaClass(d, md.a1, true) : 'text-orange-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 text-right font-mono font-black border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
+            {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 text-center text-[9px] w-[70px] ${h ? deltaClass(d, md.a1, true) : 'text-orange-300'}`}>{h ? fmtPct(md.real, md.a1) : '—'}</td>; })}<td className={`px-0.5 text-center text-[9px] border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{hA1 ? fmtPct(totData.real, totData.a1) : '—'}</td></>}
           </>
         );
       })()}
@@ -469,11 +733,11 @@ const SomaTagsView: React.FC = () => {
               <React.Fragment key={m}>
                 {showReal            && <td className={`px-1 text-right font-mono w-[80px] hover:bg-yellow-100/40 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtK(md.real)}</td>}
                 {showOrcado          && <td className={`px-1 text-right font-mono w-[80px] hover:bg-yellow-100/40 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtK(md.orcado)}</td>}
-                {showDeltaAbsOrcado  && <td className={`px-0.5 text-right font-mono text-[11px] font-black w-[85px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-orange-300'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/30' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : '—'}</td>}
-                {showDeltaPercOrcado && <td className={`px-0.5 text-center text-[11px] font-black w-[70px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-orange-300'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtPct(md.real, md.orcado)}</td>}
+                {showDeltaAbsOrcado  && <td className={`px-0.5 text-right font-mono text-[10px] font-black w-[85px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-orange-300'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/30' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : '—'}</td>}
+                {showDeltaPercOrcado && <td className={`px-0.5 text-center text-[9px] w-[70px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-orange-300'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtPct(md.real, md.orcado)}</td>}
                 {showA1              && <td className={`px-1 text-right font-mono w-[80px] hover:bg-yellow-100/40 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtK(md.a1)}</td>}
-                {showDeltaAbsA1      && <td className={`px-0.5 text-right font-mono text-[11px] font-black w-[85px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1, true) : 'text-orange-300'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/30' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : '—'}</td>}
-                {showDeltaPercA1     && <td className="px-0.5 text-center text-[11px] font-black w-[70px] text-orange-300">{fmtPct(md.real, md.a1)}</td>}
+                {showDeltaAbsA1      && <td className={`px-0.5 text-right font-mono text-[10px] font-black w-[85px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1, true) : 'text-orange-300'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/30' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : '—'}</td>}
+                {showDeltaPercA1     && <td className="px-0.5 text-center text-[9px] w-[70px] text-orange-300">{fmtPct(md.real, md.a1)}</td>}
               </React.Fragment>
             );
           })}
@@ -483,11 +747,11 @@ const SomaTagsView: React.FC = () => {
             return (<>
               {showReal            && <td className={`px-1 text-right font-mono font-black w-[100px] bg-black/10 hover:bg-yellow-200 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtK(totData.real)}</td>}
               {showOrcado          && <td className={`px-1 text-right font-mono font-black w-[100px] bg-black/10 hover:bg-yellow-200 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtK(totData.orcado)}</td>}
-              {showDeltaAbsOrcado  && <td className={`px-0.5 text-right font-mono text-[11px] font-black w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/30' : ''} ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>}
-              {showDeltaPercOrcado && <td className={`px-0.5 text-center text-[11px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/30' : ''} ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{fmtPct(totData.real, totData.orcado)}</td>}
+              {showDeltaAbsOrcado  && <td className={`px-0.5 text-right font-mono text-[10px] font-black w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/30' : ''} ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>}
+              {showDeltaPercOrcado && <td className={`px-0.5 text-center text-[9px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/30' : ''} ${hOrc ? deltaClass(dOrçT, totData.orcado, true) : 'text-orange-300'}`}>{fmtPct(totData.real, totData.orcado)}</td>}
               {showA1              && <td className={`px-1 text-right font-mono font-black w-[100px] bg-black/10 hover:bg-yellow-200 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/30' : ''}`}>{fmtK(totData.a1)}</td>}
-              {showDeltaAbsA1      && <td className={`px-0.5 text-right font-mono text-[11px] font-black w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/30' : ''} ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>}
-              {showDeltaPercA1     && <td className={`px-0.5 text-center text-[11px] w-[100px] bg-black/10 ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{fmtPct(totData.real, totData.a1)}</td>}
+              {showDeltaAbsA1      && <td className={`px-0.5 text-right font-mono text-[10px] font-black w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/30' : ''} ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>}
+              {showDeltaPercA1     && <td className={`px-0.5 text-center text-[9px] w-[100px] bg-black/10 ${hA1 ? deltaClass(dA1T, totData.a1, true) : 'text-orange-300'}`}>{fmtPct(totData.real, totData.a1)}</td>}
             </>);
           })()}
         </>
@@ -498,31 +762,31 @@ const SomaTagsView: React.FC = () => {
   // ── Estilos de linha compartilhados ──────────────────────────────────────
   const TAG0_TR   = 'group bg-[#152e55] text-white font-black cursor-pointer hover:bg-[#1e3d6e] transition-colors h-7';
   const TAG0_STICKY = 'sticky left-0 z-30 bg-[#152e55] group-hover:bg-[#1e3d6e] transition-colors';
-  const TAG0_LABEL  = `px-2 py-1 font-black uppercase tracking-tight text-[11px] truncate sticky left-8 z-30 bg-[#152e55] group-hover:bg-[#1e3d6e] transition-colors shadow-[2px_0_4px_rgba(0,0,0,0.2)] border-r border-white/10 w-[280px]`;
+  const TAG0_LABEL  = `px-2 py-1 font-black uppercase tracking-tight text-[9px] truncate sticky left-8 z-30 bg-[#152e55] group-hover:bg-[#1e3d6e] transition-colors w-[280px]`;
 
   // ── Render: Cabeçalho de Cenário ──────────────────────────────────────────
   const renderCenarioHeader = () => (
     <thead className="sticky top-0 z-50 shadow-lg whitespace-nowrap">
       <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white h-7">
-        <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] shadow-lg border-r border-white/10 align-middle">
+        <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle">
           CONTAS GERENCIAIS
         </th>
-        {showReal   && <th colSpan={monthsToShow.length + 1} className={`px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-r border-white/20 ${scenarioHeaderBg['Real']}`}>REAL</th>}
-        {showOrcado && <th colSpan={monthsToShow.length + 1} className={`px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-r border-white/20 ${scenarioHeaderBg['Orçado']}`}>ORÇADO</th>}
-        {showA1     && <th colSpan={monthsToShow.length + 1} className={`px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-r border-white/20 ${scenarioHeaderBg['A-1']}`}>A-1</th>}
-        {showDeltaAbsOrcado  && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 bg-gradient-to-r from-emerald-800 to-emerald-700">ΔR$ Orç</th>}
-        {showDeltaPercOrcado && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 bg-gradient-to-r from-emerald-800 to-emerald-700">Δ% Orç</th>}
-        {showDeltaAbsA1      && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 bg-gradient-to-r from-purple-800 to-purple-700">ΔR$ A-1</th>}
-        {showDeltaPercA1     && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 bg-gradient-to-r from-purple-800 to-purple-700">Δ% A-1</th>}
+        {showReal   && <th colSpan={monthsToShow.length + 1} className={`px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-r border-white/20 shadow-sm ${scenarioHeaderBg['Real']}`}>REAL</th>}
+        {showOrcado && <th colSpan={monthsToShow.length + 1} className={`px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-r border-white/20 shadow-sm ${scenarioHeaderBg['Orçado']}`}>ORÇADO</th>}
+        {showA1     && <th colSpan={monthsToShow.length + 1} className={`px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-r border-white/20 shadow-sm ${scenarioHeaderBg['A-1']}`}>A-1</th>}
+        {showDeltaAbsOrcado  && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 shadow-sm bg-gradient-to-r from-teal-700 to-teal-600">ΔR$ Orç</th>}
+        {showDeltaPercOrcado && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 shadow-sm bg-gradient-to-r from-teal-700 to-teal-600">Δ% Orç</th>}
+        {showDeltaAbsA1      && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 shadow-sm bg-gradient-to-r from-violet-700 to-violet-600">ΔR$ A-1</th>}
+        {showDeltaPercA1     && <th colSpan={monthsToShow.length + 1} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider border-l border-white/20 shadow-sm bg-gradient-to-r from-violet-700 to-violet-600">Δ% A-1</th>}
       </tr>
       <tr className="bg-gradient-to-r from-slate-700 to-slate-600 text-white h-6">
         {showReal   && <>{monthsToShow.map(m => <th key={`r-${m}`} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] ${scenarioSubBg['Real']}`}>{getML(m)}</th>)}<th className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 ${scenarioSubBg['Real']}`}>Total</th></>}
         {showOrcado && <>{monthsToShow.map(m => <th key={`o-${m}`} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] ${scenarioSubBg['Orçado']}`}>{getML(m)}</th>)}<th className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 ${scenarioSubBg['Orçado']}`}>Total</th></>}
         {showA1     && <>{monthsToShow.map(m => <th key={`a-${m}`} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] ${scenarioSubBg['A-1']}`}>{getML(m)}</th>)}<th className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 ${scenarioSubBg['A-1']}`}>Total</th></>}
-        {showDeltaAbsOrcado  && <>{monthsToShow.map(m => <th key={`dao-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-emerald-900/80">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-emerald-900/80">Total</th></>}
-        {showDeltaPercOrcado && <>{monthsToShow.map(m => <th key={`dpo-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-emerald-900/80">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-emerald-900/80">Total</th></>}
-        {showDeltaAbsA1      && <>{monthsToShow.map(m => <th key={`da1-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-purple-900/80">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-purple-900/80">Total</th></>}
-        {showDeltaPercA1     && <>{monthsToShow.map(m => <th key={`dp1-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-purple-900/80">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 bg-purple-900/80">Total</th></>}
+        {showDeltaAbsOrcado  && <>{monthsToShow.map(m => <th key={`dao-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-teal-500 to-teal-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-gradient-to-br from-teal-500 to-teal-600">Total</th></>}
+        {showDeltaPercOrcado && <>{monthsToShow.map(m => <th key={`dpo-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-teal-500 to-teal-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-gradient-to-br from-teal-500 to-teal-600">Total</th></>}
+        {showDeltaAbsA1      && <>{monthsToShow.map(m => <th key={`da1-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-violet-500 to-violet-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-gradient-to-br from-violet-500 to-violet-600">Total</th></>}
+        {showDeltaPercA1     && <>{monthsToShow.map(m => <th key={`dp1-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-violet-500 to-violet-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 bg-gradient-to-br from-violet-500 to-violet-600">Total</th></>}
       </tr>
     </thead>
   );
@@ -531,15 +795,15 @@ const SomaTagsView: React.FC = () => {
   const renderMesHeader = () => (
     <thead className="sticky top-0 z-50 shadow-lg whitespace-nowrap">
       <tr className="text-white h-7">
-        <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-[#152e55] px-3 py-0.5 text-[9px] font-black uppercase tracking-wider w-[320px] shadow-lg border-r border-white/10 align-middle">
+        <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-[#152e55] px-3 py-0.5 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle">
           CONTAS GERENCIAIS
         </th>
         {monthsToShow.map(m => (
-          <th key={m} colSpan={mesColCount} className="px-1.5 py-0.5 text-center text-[9px] font-black uppercase tracking-widest border-l-2 border-l-white/20 border-b border-white/10 bg-[#1B75BB]">
+          <th key={m} colSpan={mesColCount} className="px-1.5 py-0.5 text-center text-[9px] font-black uppercase tracking-widest border-l-2 border-l-white/20 border-b border-white/10 bg-[#1B75BB] shadow-sm">
             {getML(m)}
           </th>
         ))}
-        <th colSpan={mesColCount} className="px-1.5 py-0.5 text-center text-[9px] font-black uppercase tracking-widest border-l-2 border-l-white/20 border-b border-white/10 bg-[#152e55]">
+        <th colSpan={mesColCount} className="px-1.5 py-0.5 text-center text-[9px] font-black uppercase tracking-widest border-l-2 border-l-white/20 border-b border-white/10 bg-[#152e55] shadow-sm">
           Total
         </th>
       </tr>
@@ -588,13 +852,13 @@ const SomaTagsView: React.FC = () => {
                 const hOrc = gTot.orcado !== 0; const hA1 = gTot.a1 !== 0;
                 return (
                   <>
-                    {showReal   && <>{monthsToShow.map(m => { const v = g.byMonth[m]?.real   || 0; return <td key={`r-${m}`} className="px-1 py-1 text-right font-mono font-black text-[11px] w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 py-1 text-right font-mono font-black text-[11px] border-l border-white/20 bg-blue-900/30 w-[80px]">{fmtK(gTot.real)}</td></>}
-                    {showOrcado && <>{monthsToShow.map(m => { const v = g.byMonth[m]?.orcado || 0; return <td key={`o-${m}`} className="px-1 py-1 text-right font-mono font-black text-[11px] w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 py-1 text-right font-mono font-black text-[11px] border-l border-white/20 bg-emerald-900/30 w-[80px]">{fmtK(gTot.orcado)}</td></>}
-                    {showA1     && <>{monthsToShow.map(m => { const v = g.byMonth[m]?.a1     || 0; return <td key={`a-${m}`} className="px-1 py-1 text-right font-mono font-black text-[11px] w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 py-1 text-right font-mono font-black text-[11px] border-l border-white/20 bg-purple-900/30 w-[80px]">{fmtK(gTot.a1)}</td></>}
-                    {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dao-${m}`} className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 py-1 text-right font-mono font-black text-[11px] border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, gTot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
-                    {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 py-1 text-center text-[11px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.orcado) : '—'}</td>; })}<td className={`px-0.5 py-1 text-center text-[11px] border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, gTot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(gTot.real, gTot.orcado) : '—'}</td></>}
-                    {showDeltaAbsA1      && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`da1-${m}`} className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 py-1 text-right font-mono font-black text-[11px] border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, gTot.a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
-                    {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 py-1 text-center text-[11px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.a1) : '—'}</td>; })}<td className={`px-0.5 py-1 text-center text-[11px] border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, gTot.a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(gTot.real, gTot.a1) : '—'}</td></>}
+                    {showReal   && <>{monthsToShow.map(m => { const v = g.byMonth[m]?.real   || 0; return <td key={`r-${m}`} className="px-1 py-1 text-right font-mono font-black text-[10px] w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 py-1 text-right font-mono font-black text-[10px] border-l border-white/20 bg-blue-900/30 w-[80px]">{fmtK(gTot.real)}</td></>}
+                    {showOrcado && <>{monthsToShow.map(m => { const v = g.byMonth[m]?.orcado || 0; return <td key={`o-${m}`} className="px-1 py-1 text-right font-mono font-black text-[10px] w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 py-1 text-right font-mono font-black text-[10px] border-l border-white/20 bg-emerald-900/30 w-[80px]">{fmtK(gTot.orcado)}</td></>}
+                    {showA1     && <>{monthsToShow.map(m => { const v = g.byMonth[m]?.a1     || 0; return <td key={`a-${m}`} className="px-1 py-1 text-right font-mono font-black text-[10px] w-[70px]">{fmtK(v)}</td>; })}<td className="px-1 py-1 text-right font-mono font-black text-[10px] border-l border-white/20 bg-purple-900/30 w-[80px]">{fmtK(gTot.a1)}</td></>}
+                    {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dao-${m}`} className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 py-1 text-right font-mono font-black text-[10px] border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, gTot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
+                    {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 py-1 text-center text-[9px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.orcado) : '—'}</td>; })}<td className={`px-0.5 py-1 text-center text-[9px] border-l border-white/20 bg-black/10 w-[80px] ${hOrc ? deltaClass(dOrçT, gTot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(gTot.real, gTot.orcado) : '—'}</td></>}
+                    {showDeltaAbsA1      && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`da1-${m}`} className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 py-1 text-right font-mono font-black text-[10px] border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, gTot.a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
+                    {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = g.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 py-1 text-center text-[9px] w-[70px] bg-white/10 ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.a1) : '—'}</td>; })}<td className={`px-0.5 py-1 text-center text-[9px] border-l border-white/20 bg-black/10 w-[80px] ${hA1 ? deltaClass(dA1T, gTot.a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(gTot.real, gTot.a1) : '—'}</td></>}
                   </>
                 );
               })()}
@@ -609,23 +873,23 @@ const SomaTagsView: React.FC = () => {
                       const dOrçM = md.real - md.orcado; const dA1M = md.real - md.a1;
                       return (
                         <React.Fragment key={m}>
-                          {showReal            && <td className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[80px] cursor-pointer hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.real)}</td>}
-                          {showOrcado          && <td className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[80px] cursor-pointer hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.orcado)}</td>}
-                          {showDeltaAbsOrcado  && <td className={`px-0.5 py-1 text-right font-mono font-black text-[11px] w-[85px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : '—'}</td>}
-                          {showDeltaPercOrcado && <td className={`px-0.5 py-1 text-center text-[11px] w-[70px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtPct(md.real, md.orcado)}</td>}
-                          {showA1              && <td className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[80px] cursor-pointer hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.a1)}</td>}
-                          {showDeltaAbsA1      && <td className={`px-0.5 py-1 text-right font-mono font-black text-[11px] w-[85px] bg-white/10 ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : '—'}</td>}
-                          {showDeltaPercA1     && <td className="px-0.5 py-1 text-center text-[11px] w-[70px] bg-white/10 text-gray-300">{fmtPct(md.real, md.a1)}</td>}
+                          {showReal            && <td className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[80px] cursor-pointer hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.real)}</td>}
+                          {showOrcado          && <td className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[80px] cursor-pointer hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.orcado)}</td>}
+                          {showDeltaAbsOrcado  && <td className={`px-0.5 py-1 text-right font-mono font-black text-[10px] w-[85px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : '—'}</td>}
+                          {showDeltaPercOrcado && <td className={`px-0.5 py-1 text-center text-[9px] w-[70px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtPct(md.real, md.orcado)}</td>}
+                          {showA1              && <td className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[80px] cursor-pointer hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.a1)}</td>}
+                          {showDeltaAbsA1      && <td className={`px-0.5 py-1 text-right font-mono font-black text-[10px] w-[85px] bg-white/10 ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : '—'}</td>}
+                          {showDeltaPercA1     && <td className="px-0.5 py-1 text-center text-[9px] w-[70px] bg-white/10 text-gray-300">{fmtPct(md.real, md.a1)}</td>}
                         </React.Fragment>
                       );
                     })}
-                    {showReal            && <td className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[100px] bg-[#1B75BB] hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(gTot.real)}</td>}
-                    {showOrcado          && <td className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[100px] bg-green-600 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(gTot.orcado)}</td>}
-                    {showDeltaAbsOrcado  && <td className={`px-0.5 py-1 text-right font-mono font-black text-[11px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''} ${hOrc ? deltaClass(dOrçT, gTot.orcado, true) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>}
-                    {showDeltaPercOrcado && <td className={`px-0.5 py-1 text-center text-[11px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''} ${hOrc ? deltaClass(dOrçT, gTot.orcado, true) : 'text-gray-300'}`}>{fmtPct(gTot.real, gTot.orcado)}</td>}
-                    {showA1              && <td className={`px-1 py-1 text-right font-mono font-black text-[11px] w-[100px] bg-purple-600 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(gTot.a1)}</td>}
-                    {showDeltaAbsA1      && <td className={`px-0.5 py-1 text-right font-mono font-black text-[11px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''} ${hA1 ? deltaClass(dA1T, gTot.a1, true) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>}
-                    {showDeltaPercA1     && <td className={`px-0.5 py-1 text-center text-[11px] w-[100px] bg-black/10 ${hA1 ? deltaClass(dA1T, gTot.a1, true) : 'text-gray-300'}`}>{fmtPct(gTot.real, gTot.a1)}</td>}
+                    {showReal            && <td className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[100px] bg-[#1B75BB] hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(gTot.real)}</td>}
+                    {showOrcado          && <td className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[100px] bg-green-600 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(gTot.orcado)}</td>}
+                    {showDeltaAbsOrcado  && <td className={`px-0.5 py-1 text-right font-mono font-black text-[10px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''} ${hOrc ? deltaClass(dOrçT, gTot.orcado, true) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>}
+                    {showDeltaPercOrcado && <td className={`px-0.5 py-1 text-center text-[9px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''} ${hOrc ? deltaClass(dOrçT, gTot.orcado, true) : 'text-gray-300'}`}>{fmtPct(gTot.real, gTot.orcado)}</td>}
+                    {showA1              && <td className={`px-1 py-1 text-right font-mono font-black text-[10px] w-[100px] bg-purple-600 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(gTot.a1)}</td>}
+                    {showDeltaAbsA1      && <td className={`px-0.5 py-1 text-right font-mono font-black text-[10px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''} ${hA1 ? deltaClass(dA1T, gTot.a1, true) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>}
+                    {showDeltaPercA1     && <td className={`px-0.5 py-1 text-center text-[9px] w-[100px] bg-black/10 ${hA1 ? deltaClass(dA1T, gTot.a1, true) : 'text-gray-300'}`}>{fmtPct(gTot.real, gTot.a1)}</td>}
                   </>
                 );
               })()}
@@ -633,10 +897,19 @@ const SomaTagsView: React.FC = () => {
 
             {/* Tag01 */}
             {isOpen && g.items.map((r, i) => {
+              const rowKey = `${g.tag0}|${r.tag01}`;
+              const isDrillExpanded = expandedTag01s[rowKey];
               return (
-                <tr key={r.tag01} className="group bg-gray-100 border-b border-gray-200 hover:bg-yellow-100/60 transition-colors">
-                  <td className="px-2 py-1 w-8 sticky left-0 z-20 bg-inherit group-hover:bg-yellow-100/60 transition-colors"></td>
-                  <td className="px-2 py-1 pl-6 text-gray-950 font-extrabold truncate sticky left-8 z-20 border-r border-gray-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-[280px] bg-inherit group-hover:bg-yellow-100/60 transition-colors">
+                <React.Fragment key={r.tag01}>
+                <tr className="group bg-gray-100 border-b border-gray-200 hover:bg-yellow-100/60 transition-colors">
+                  <td className="px-2 py-1 w-8 sticky left-0 z-20 bg-gray-100 group-hover:bg-yellow-100 transition-colors">
+                    {drillDimensions.length > 0 && (
+                      <button onClick={() => setExpandedTag01s(prev => ({ ...prev, [rowKey]: !prev[rowKey] }))} className="text-gray-400 hover:text-amber-600 transition-colors">
+                        {isDrillExpanded ? <ChevronDown size={10} className="inline" /> : <ChevronRight size={10} className="inline" />}
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-2 py-1 pl-6 text-gray-950 font-extrabold truncate sticky left-8 z-20 w-[280px] bg-gray-100 group-hover:bg-yellow-100 transition-colors">
                     {r.tag01}
                   </td>
                   {viewMode === 'cenario' && (() => {
@@ -645,13 +918,13 @@ const SomaTagsView: React.FC = () => {
                     const hOrc = tot.orcado !== 0; const hA1 = tot.a1 !== 0;
                     return (
                       <>
-                        {showReal   && <>{monthsToShow.map(m => { const v = r.byMonth[m]?.real   || 0; return <td key={`r-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-900 text-[11px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-900 text-[11px] bg-blue-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(tot.real)}</td></>}
-                        {showOrcado && <>{monthsToShow.map(m => { const v = r.byMonth[m]?.orcado || 0; return <td key={`o-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-900 text-[11px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-900 text-[11px] bg-emerald-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(tot.orcado)}</td></>}
-                        {showA1     && <>{monthsToShow.map(m => { const v = r.byMonth[m]?.a1     || 0; return <td key={`a-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-900 text-[11px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-900 text-[11px] bg-purple-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(tot.a1)}</td></>}
-                        {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dao-${m}`} className={`px-1 py-0.5 text-right font-mono text-[11px] w-[70px] ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtK(d) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-right font-mono font-semibold text-[11px] bg-emerald-50 border-l border-gray-200 w-[80px] ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
-                        {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 py-0.5 text-center text-[11px] w-[70px] ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.orcado) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-center text-[11px] bg-emerald-50 border-l border-gray-200 w-[80px] ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(tot.real, tot.orcado) : '—'}</td></>}
-                        {showDeltaAbsA1      && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`da1-${m}`} className={`px-1 py-0.5 text-right font-mono text-[11px] w-[70px] ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtK(d) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-right font-mono font-semibold text-[11px] bg-purple-50 border-l border-gray-200 w-[80px] ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
-                        {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 py-0.5 text-center text-[11px] w-[70px] ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.a1) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-center text-[11px] bg-purple-50 border-l border-gray-200 w-[80px] ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(tot.real, tot.a1) : '—'}</td></>}
+                        {showReal   && <>{monthsToShow.map(m => { const v = r.byMonth[m]?.real   || 0; return <td key={`r-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-900 text-[10px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-900 text-[10px] bg-blue-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(tot.real)}</td></>}
+                        {showOrcado && <>{monthsToShow.map(m => { const v = r.byMonth[m]?.orcado || 0; return <td key={`o-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-900 text-[10px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-900 text-[10px] bg-emerald-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(tot.orcado)}</td></>}
+                        {showA1     && <>{monthsToShow.map(m => { const v = r.byMonth[m]?.a1     || 0; return <td key={`a-${m}`} className="px-1 py-0.5 text-right font-mono text-gray-900 text-[10px] w-[70px]">{v !== 0 ? fmtK(v) : <span className="text-gray-300">—</span>}</td>; })}<td className="px-1 py-0.5 text-right font-mono text-gray-900 text-[10px] bg-purple-50 border-l border-gray-200 font-semibold w-[80px]">{fmtK(tot.a1)}</td></>}
+                        {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dao-${m}`} className={`px-1 py-0.5 text-right font-mono text-[10px] w-[70px] ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtK(d) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] bg-emerald-50 border-l border-gray-200 w-[80px] ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
+                        {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${h ? deltaClass(d, md.orcado) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.orcado) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-center text-[9px] bg-emerald-50 border-l border-gray-200 w-[80px] ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(tot.real, tot.orcado) : '—'}</td></>}
+                        {showDeltaAbsA1      && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`da1-${m}`} className={`px-1 py-0.5 text-right font-mono text-[10px] w-[70px] ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtK(d) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] bg-purple-50 border-l border-gray-200 w-[80px] ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
+                        {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = r.byMonth[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${h ? deltaClass(d, md.a1) : 'text-gray-300'}`}>{h ? fmtPct(md.real, md.a1) : <span className="text-gray-300">—</span>}</td>; })}<td className={`px-1 py-0.5 text-center text-[9px] bg-purple-50 border-l border-gray-200 w-[80px] ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(tot.real, tot.a1) : '—'}</td></>}
                       </>
                     );
                   })()}
@@ -666,27 +939,29 @@ const SomaTagsView: React.FC = () => {
                           const dOrçM = md.real - md.orcado; const dA1M = md.real - md.a1;
                           return (
                             <React.Fragment key={m}>
-                              {showReal            && <td className={`px-1 py-0.5 text-right font-mono text-gray-900 text-[11px] w-[80px] hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.real   !== 0 ? fmtK(md.real)   : <span className="text-gray-300">—</span>}</td>}
-                              {showOrcado          && <td className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[11px] w-[80px] hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtK(md.orcado) : <span className="text-gray-300">—</span>}</td>}
-                              {showDeltaAbsOrcado  && <td className={`px-0.5 py-0.5 text-right font-mono text-[11px] w-[85px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : <span className="text-gray-300">—</span>}</td>}
-                              {showDeltaPercOrcado && <td className={`px-0.5 py-0.5 text-center text-[11px] w-[70px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtPct(md.real, md.orcado) : <span className="text-gray-300">—</span>}</td>}
-                              {showA1              && <td className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[11px] w-[80px] hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.a1 !== 0 ? fmtK(md.a1) : <span className="text-gray-300">—</span>}</td>}
-                              {showDeltaAbsA1      && <td className={`px-0.5 py-0.5 text-right font-mono text-[11px] w-[85px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : <span className="text-gray-300">—</span>}</td>}
-                              {showDeltaPercA1     && <td className={`px-0.5 py-0.5 text-center text-[11px] w-[70px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'}`}>{md.a1 !== 0 ? fmtPct(md.real, md.a1) : <span className="text-gray-300">—</span>}</td>}
+                              {showReal            && <td className={`px-1 py-0.5 text-right font-mono text-gray-900 text-[10px] w-[80px] hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.real   !== 0 ? fmtK(md.real)   : <span className="text-gray-300">—</span>}</td>}
+                              {showOrcado          && <td className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[10px] w-[80px] hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtK(md.orcado) : <span className="text-gray-300">—</span>}</td>}
+                              {showDeltaAbsOrcado  && <td className={`px-0.5 py-0.5 text-right font-mono text-[10px] w-[85px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : <span className="text-gray-300">—</span>}</td>}
+                              {showDeltaPercOrcado && <td className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtPct(md.real, md.orcado) : <span className="text-gray-300">—</span>}</td>}
+                              {showA1              && <td className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[10px] w-[80px] hover:bg-yellow-100/60 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.a1 !== 0 ? fmtK(md.a1) : <span className="text-gray-300">—</span>}</td>}
+                              {showDeltaAbsA1      && <td className={`px-0.5 py-0.5 text-right font-mono text-[10px] w-[85px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : <span className="text-gray-300">—</span>}</td>}
+                              {showDeltaPercA1     && <td className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'}`}>{md.a1 !== 0 ? fmtPct(md.real, md.a1) : <span className="text-gray-300">—</span>}</td>}
                             </React.Fragment>
                           );
                         })}
-                        {showReal            && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[11px] w-[100px] bg-blue-50 text-[#152e55] hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''}`}>{fmtK(tot.real)}</td>}
-                        {showOrcado          && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[11px] w-[100px] bg-green-50 text-green-900 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{fmtK(tot.orcado)}</td>}
-                        {showDeltaAbsOrcado  && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[11px] w-[100px] bg-green-50 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-gray-200' : ''} ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>}
-                        {showDeltaPercOrcado && <td className={`px-1 py-0.5 text-center text-[11px] w-[100px] bg-green-50 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-gray-200' : ''} ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(tot.real, tot.orcado) : '—'}</td>}
-                        {showA1              && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[11px] w-[100px] bg-purple-50 text-purple-900 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''}`}>{fmtK(tot.a1)}</td>}
-                        {showDeltaAbsA1      && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[11px] w-[100px] bg-purple-50 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-gray-200' : ''} ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>}
-                        {showDeltaPercA1     && <td className={`px-1 py-0.5 text-center text-[11px] w-[100px] bg-purple-50 ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(tot.real, tot.a1) : '—'}</td>}
+                        {showReal            && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-blue-50 text-[#152e55] hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''}`}>{fmtK(tot.real)}</td>}
+                        {showOrcado          && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-green-50 text-green-900 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{fmtK(tot.orcado)}</td>}
+                        {showDeltaAbsOrcado  && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-green-50 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-gray-200' : ''} ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>}
+                        {showDeltaPercOrcado && <td className={`px-1 py-0.5 text-center text-[9px] w-[100px] bg-green-50 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-gray-200' : ''} ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(tot.real, tot.orcado) : '—'}</td>}
+                        {showA1              && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-purple-50 text-purple-900 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''}`}>{fmtK(tot.a1)}</td>}
+                        {showDeltaAbsA1      && <td className={`px-1 py-0.5 text-right font-mono font-semibold text-[10px] w-[100px] bg-purple-50 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-gray-200' : ''} ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>}
+                        {showDeltaPercA1     && <td className={`px-1 py-0.5 text-center text-[9px] w-[100px] bg-purple-50 ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(tot.real, tot.a1) : '—'}</td>}
                       </>
                     );
                   })()}
                 </tr>
+                {drillDimensions.length > 0 && isDrillExpanded && renderDrillRows(r.tag01, g.tag0)}
+                </React.Fragment>
               );
             })}
 
@@ -705,8 +980,8 @@ const SomaTagsView: React.FC = () => {
     const footerLabel = showOnlyEbitda ? 'EBITDA TOTAL' : 'TOTAL GERAL';
     return (
       <tfoot className="sticky bottom-0 z-40">
-        <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white font-black text-[11px] shadow-[0_-2px_6px_rgba(0,0,0,0.3)] border-t-2 border-yellow-400">
-          <td colSpan={2} className="py-2 uppercase tracking-tight font-black sticky left-0 z-50 bg-gradient-to-r from-slate-800 to-slate-700 shadow-[2px_0_4px_rgba(0,0,0,0.3)] border-r border-white/10">
+        <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white font-black text-[10px] shadow-[0_-2px_6px_rgba(0,0,0,0.3)] border-t-2 border-yellow-400">
+          <td colSpan={2} className="py-2 uppercase tracking-tight font-black sticky left-0 z-50 bg-gradient-to-r from-slate-800 to-slate-700 ">
             <div className="flex items-center gap-1 px-2">
               {showOnlyEbitda && <Activity size={12} />}
               <span>{footerLabel}</span>
@@ -721,9 +996,9 @@ const SomaTagsView: React.FC = () => {
                 {showOrcado && <>{monthsToShow.map(m => <td key={`o-${m}`} className="px-1 py-2 text-right font-mono w-[70px]">{fmtK(monthlyTotals[m]?.orcado || 0)}</td>)}<td className="px-1 py-2 text-right font-mono font-black border-l border-white/20 bg-emerald-900/30 w-[80px]">{fmtK(totals.orcado)}</td></>}
                 {showA1     && <>{monthsToShow.map(m => <td key={`a-${m}`} className="px-1 py-2 text-right font-mono w-[70px]">{fmtK(monthlyTotals[m]?.a1     || 0)}</td>)}<td className="px-1 py-2 text-right font-mono font-black border-l border-white/20 bg-purple-900/30 w-[80px]">{fmtK(totals.a1)}</td></>}
                 {showDeltaAbsOrcado  && <>{monthsToShow.map(m => { const md = monthlyTotals[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dao-${m}`} className={`px-1 py-2 text-right font-mono w-[70px] ${h ? deltaClass(d, md.orcado) : 'text-white/40'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 py-2 text-right font-mono font-black border-l border-white/20 bg-emerald-900/30 w-[80px] ${hOrc ? deltaClass(dOrçT, totals.orcado) : 'text-white/40'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td></>}
-                {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = monthlyTotals[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 py-2 text-center text-[11px] w-[70px] ${h ? deltaClass(d, md.orcado) : 'text-white/40'}`}>{h ? fmtPct(md.real, md.orcado) : '—'}</td>; })}<td className={`px-0.5 py-2 text-center text-[11px] border-l border-white/20 bg-emerald-900/30 w-[80px] ${hOrc ? deltaClass(dOrçT, totals.orcado) : 'text-white/40'}`}>{hOrc ? fmtPct(totals.real, totals.orcado) : '—'}</td></>}
+                {showDeltaPercOrcado && <>{monthsToShow.map(m => { const md = monthlyTotals[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.orcado; const h = md.orcado !== 0; return <td key={`dpo-${m}`} className={`px-0.5 py-2 text-center text-[9px] w-[70px] ${h ? deltaClass(d, md.orcado) : 'text-white/40'}`}>{h ? fmtPct(md.real, md.orcado) : '—'}</td>; })}<td className={`px-0.5 py-2 text-center text-[9px] border-l border-white/20 bg-emerald-900/30 w-[80px] ${hOrc ? deltaClass(dOrçT, totals.orcado) : 'text-white/40'}`}>{hOrc ? fmtPct(totals.real, totals.orcado) : '—'}</td></>}
                 {showDeltaAbsA1      && <>{monthsToShow.map(m => { const md = monthlyTotals[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`da1-${m}`} className={`px-1 py-2 text-right font-mono w-[70px] ${h ? deltaClass(d, md.a1) : 'text-white/40'}`}>{h ? fmtK(d) : '—'}</td>; })}<td className={`px-0.5 py-2 text-right font-mono font-black border-l border-white/20 bg-purple-900/30 w-[80px] ${hA1 ? deltaClass(dA1T, totals.a1) : 'text-white/40'}`}>{hA1 ? fmtK(dA1T) : '—'}</td></>}
-                {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = monthlyTotals[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 py-2 text-center text-[11px] w-[70px] ${h ? deltaClass(d, md.a1) : 'text-white/40'}`}>{h ? fmtPct(md.real, md.a1) : '—'}</td>; })}<td className={`px-0.5 py-2 text-center text-[11px] border-l border-white/20 bg-purple-900/30 w-[80px] ${hA1 ? deltaClass(dA1T, totals.a1) : 'text-white/40'}`}>{hA1 ? fmtPct(totals.real, totals.a1) : '—'}</td></>}
+                {showDeltaPercA1     && <>{monthsToShow.map(m => { const md = monthlyTotals[m] || {real:0,orcado:0,a1:0}; const d = md.real - md.a1; const h = md.a1 !== 0; return <td key={`dp1-${m}`} className={`px-0.5 py-2 text-center text-[9px] w-[70px] ${h ? deltaClass(d, md.a1) : 'text-white/40'}`}>{h ? fmtPct(md.real, md.a1) : '—'}</td>; })}<td className={`px-0.5 py-2 text-center text-[9px] border-l border-white/20 bg-purple-900/30 w-[80px] ${hA1 ? deltaClass(dA1T, totals.a1) : 'text-white/40'}`}>{hA1 ? fmtPct(totals.real, totals.a1) : '—'}</td></>}
               </>
             );
           })()}
@@ -739,21 +1014,21 @@ const SomaTagsView: React.FC = () => {
                     <React.Fragment key={m}>
                       {showReal            && <td className={`px-1 py-2 text-right font-mono w-[80px] ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.real)}</td>}
                       {showOrcado          && <td className={`px-1 py-2 text-right font-mono w-[80px] ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.orcado)}</td>}
-                      {showDeltaAbsOrcado  && <td className={`px-0.5 py-2 text-right font-mono text-[11px] font-black w-[85px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-gray-400'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : '—'}</td>}
-                      {showDeltaPercOrcado && <td className={`px-0.5 py-2 text-center text-[11px] w-[70px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-gray-400'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{md.orcado !== 0 ? fmtPct(md.real, md.orcado) : '—'}</td>}
+                      {showDeltaAbsOrcado  && <td className={`px-0.5 py-2 text-right font-mono text-[10px] font-black w-[85px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-gray-400'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : '—'}</td>}
+                      {showDeltaPercOrcado && <td className={`px-0.5 py-2 text-center text-[9px] w-[70px] bg-white/10 ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado, true) : 'text-gray-400'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>{md.orcado !== 0 ? fmtPct(md.real, md.orcado) : '—'}</td>}
                       {showA1              && <td className={`px-1 py-2 text-right font-mono w-[80px] ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(md.a1)}</td>}
-                      {showDeltaAbsA1      && <td className={`px-0.5 py-2 text-right font-mono text-[11px] font-black w-[85px] bg-white/10 ${md.a1 !== 0 ? deltaClass(dA1M, md.a1, true) : 'text-gray-400'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : '—'}</td>}
-                      {showDeltaPercA1     && <td className="px-0.5 py-2 text-center text-[11px] w-[70px] bg-white/10 text-gray-400">{md.a1 !== 0 ? fmtPct(md.real, md.a1) : '—'}</td>}
+                      {showDeltaAbsA1      && <td className={`px-0.5 py-2 text-right font-mono text-[10px] font-black w-[85px] bg-white/10 ${md.a1 !== 0 ? deltaClass(dA1M, md.a1, true) : 'text-gray-400'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : '—'}</td>}
+                      {showDeltaPercA1     && <td className="px-0.5 py-2 text-center text-[9px] w-[70px] bg-white/10 text-gray-400">{md.a1 !== 0 ? fmtPct(md.real, md.a1) : '—'}</td>}
                     </React.Fragment>
                   );
                 })}
                 {showReal            && <td className={`px-1 py-2 text-right font-mono font-black w-[100px] bg-[#1B75BB] hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(totals.real)}</td>}
                 {showOrcado          && <td className={`px-1 py-2 text-right font-mono font-black w-[100px] bg-green-600 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(totals.orcado)}</td>}
                 {showDeltaAbsOrcado  && <td className={`px-0.5 py-2 text-right font-mono font-black w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''} ${hOrc ? deltaClass(dOrçT, totals.orcado, true) : 'text-gray-400'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>}
-                {showDeltaPercOrcado && <td className={`px-0.5 py-2 text-center text-[11px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''} ${hOrc ? deltaClass(dOrçT, totals.orcado, true) : 'text-gray-400'}`}>{hOrc ? fmtPct(totals.real, totals.orcado) : '—'}</td>}
+                {showDeltaPercOrcado && <td className={`px-0.5 py-2 text-center text-[9px] w-[100px] bg-black/10 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''} ${hOrc ? deltaClass(dOrçT, totals.orcado, true) : 'text-gray-400'}`}>{hOrc ? fmtPct(totals.real, totals.orcado) : '—'}</td>}
                 {showA1              && <td className={`px-1 py-2 text-right font-mono font-black w-[100px] bg-purple-600 hover:bg-yellow-200/40 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>{fmtK(totals.a1)}</td>}
                 {showDeltaAbsA1      && <td className={`px-0.5 py-2 text-right font-mono font-black w-[100px] bg-black/10 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''} ${hA1 ? deltaClass(dA1T, totals.a1, true) : 'text-gray-400'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>}
-                {showDeltaPercA1     && <td className={`px-0.5 py-2 text-center text-[11px] w-[100px] bg-black/10 ${hA1 ? deltaClass(dA1T, totals.a1, true) : 'text-gray-400'}`}>{fmtPct(totals.real, totals.a1)}</td>}
+                {showDeltaPercA1     && <td className={`px-0.5 py-2 text-center text-[9px] w-[100px] bg-black/10 ${hA1 ? deltaClass(dA1T, totals.a1, true) : 'text-gray-400'}`}>{fmtPct(totals.real, totals.a1)}</td>}
               </>
             );
           })()}
@@ -766,20 +1041,14 @@ const SomaTagsView: React.FC = () => {
   return (
     <div className="p-4 space-y-2 bg-gradient-to-br from-gray-50 to-white min-h-screen">
 
-      {/* ── Título + Excel ── */}
+      {/* ── Título + Ações ── */}
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-base font-black text-[#152e55] uppercase tracking-tight">📊 Soma Tags</h1>
         {!loading && !error && groups.length > 0 && (
-          <>
-            <span className="text-[11px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-              {displayedGroups.length} grupos · {tag01Count} contas · {rows.length} registros
-              {!hasOrcado && <span className="ml-1 text-amber-600 font-semibold">· sem Orçado</span>}
-            </span>
-            <button onClick={exportExcel}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-green-600 text-white text-[11px] font-bold rounded-lg hover:from-emerald-700 hover:to-green-700 shadow-md transition-all uppercase tracking-wide ml-auto">
-              <Download size={13} /> Exportar Excel
-            </button>
-          </>
+          <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+            {displayedGroups.length} grupos · {tag01Count} contas · {rows.length} registros
+            {!hasOrcado && <span className="ml-1 text-amber-600 font-semibold">· sem Orçado</span>}
+          </span>
         )}
       </div>
 
@@ -789,19 +1058,13 @@ const SomaTagsView: React.FC = () => {
         <MultiSelectFilter label="Marca" icon={<Flag size={14} />} options={filterOptions.marcas} selected={selectedMarcas} onChange={setSelectedMarcas} colorScheme="orange" />
         <MultiSelectFilter label="Filial" icon={<Building2 size={14} />} options={filiaisFiltradas} selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue" />
         <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
-        <div className="flex items-center gap-1 bg-white border border-gray-200 px-2 py-1 rounded shadow-sm shrink-0">
-          <Calendar size={13} className="text-gray-500" />
-          <select value={year} onChange={e => setYear(e.target.value)} className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer">
-            {['2024','2025','2026'].map(y => <option key={y}>{y}</option>)}
-          </select>
-        </div>
         <div className="flex items-center gap-2 shrink-0">
           <CalendarDays size={16} className="text-purple-600 shrink-0" />
           <span className="text-[12px] font-bold text-gray-700 whitespace-nowrap">Período:</span>
           <div className="flex gap-1">
             {QUARTERS.map(q => (
               <button key={q.label} onClick={() => { setMonthFrom(q.from); setMonthTo(q.to); }} title={q.title}
-                className={`px-2 py-1 text-[11px] font-black uppercase rounded transition-all shadow-sm whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
+                className={`px-2 py-1 text-[10px] font-black uppercase rounded transition-all shadow-sm whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
                 {q.label}
               </button>
             ))}
@@ -818,12 +1081,8 @@ const SomaTagsView: React.FC = () => {
           </div>
         </div>
         <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
-        <button onClick={fetchData} disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-md bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shrink-0">
-          {loading ? <><Loader2 size={14} className="animate-spin" /><span>Carregando...</span></> : <><RefreshCw size={14} strokeWidth={2.5} /><span>Atualizar</span></>}
-        </button>
         <button onClick={() => setShowOnlyEbitda(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-md shrink-0 ${showOnlyEbitda ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'bg-gradient-to-r from-gray-600 to-slate-600 text-white'}`}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-md shrink-0 ${showOnlyEbitda ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'bg-gradient-to-r from-gray-600 to-slate-600 text-white'}`}
           title={showOnlyEbitda ? 'Exibindo apenas até EBITDA (Tag0 01–05)' : 'Exibindo todas as Tag0'}>
           {showOnlyEbitda ? <><CheckSquare size={14} strokeWidth={2.5} /><span>Até EBITDA</span></> : <><Square size={14} strokeWidth={2.5} /><span>Todas Tag0</span></>}
         </button>
@@ -904,6 +1163,47 @@ const SomaTagsView: React.FC = () => {
                 {' '}{vm.charAt(0).toUpperCase() + vm.slice(1)}
               </button>
             ))}
+
+            {/* Separador + Drill Dimension (multi-select) */}
+            <div className="h-4 w-px bg-gray-300" />
+            <div className="flex items-center gap-1">
+              <div className="p-0.5 rounded bg-amber-500 text-white"><Layers size={10} /></div>
+              <span className="text-[8px] font-black text-gray-700 uppercase">Drill</span>
+            </div>
+            {SOMA_DIMENSIONS.map(d => {
+              const order = drillDimensions.indexOf(d.id);
+              const active = order >= 0;
+              return (
+                <button key={d.id}
+                  onClick={() => {
+                    setDrillDimensions(prev =>
+                      prev.includes(d.id) ? prev.filter(x => x !== d.id) : [...prev, d.id]
+                    );
+                    setDimensionCache({});
+                    setExpandedTag01s({});
+                    setExpandedDrillRows({});
+                  }}
+                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all text-[8px] font-black uppercase ${active ? 'bg-amber-500 text-white border-amber-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400'}`}>
+                  {d.label}
+                  {active && <span className="ml-0.5 bg-white/30 px-0.5 rounded text-[7px]">{order + 1}º</span>}
+                </button>
+              );
+            })}
+            {drillDimensions.length > 0 && (
+              <>
+                <div className="h-4 w-px bg-gray-300" />
+                {/* Botão de ordenação */}
+                <button onClick={() => setDimensionSort(s => s === 'desc' ? 'asc' : s === 'asc' ? 'alpha' : 'desc')}
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-gray-200 bg-white text-gray-600 hover:border-amber-400 transition-all text-[8px] font-black uppercase"
+                  title={dimensionSort === 'desc' ? 'Maior → Menor' : dimensionSort === 'asc' ? 'Menor → Maior' : 'A → Z'}>
+                  {dimensionSort === 'alpha' ? 'A→Z' : dimensionSort === 'desc' ? '↓Val' : '↑Val'}
+                </button>
+                {/* X limpar tudo */}
+                <button onClick={() => { setDrillDimensions([]); setDimensionCache({}); setExpandedTag01s({}); setExpandedDrillRows({}); }}
+                  className="flex items-center px-1 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all text-[8px] font-black"
+                  title="Desativar drill-down">✕</button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -916,27 +1216,27 @@ const SomaTagsView: React.FC = () => {
           <span className="text-sm">Carregando...</span>
         </div>
       ) : (
-        <div className="overflow-auto max-h-[calc(100vh-190px)] rounded-lg shadow-md border border-gray-200 dre-scrollbar">
-          <table className="border-separate border-spacing-0 text-left table-auto min-w-full text-[11px]">
+        <div className="overflow-auto max-h-[calc(100vh-190px)] rounded-2xl shadow-2xl border-2 border-gray-200 dre-scrollbar">
+          <table className="border-separate border-spacing-0 text-left table-auto min-w-full text-[10px]">
 
             {/* ══ CONSOLIDADO ══ */}
             {viewMode === 'consolidado' && (
               <>
                 <thead className="sticky top-0 z-50 shadow-lg whitespace-nowrap">
                   <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white h-7">
-                    <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] shadow-lg border-r border-white/10 align-middle">CONTAS GERENCIAIS</th>
-                    {cols.real   && <th className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-blue-600 to-blue-500 border-r border-white/20">REAL</th>}
-                    {orcGrpCols > 0 && <th colSpan={orcGrpCols} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 to-emerald-500 border-r border-white/20">REAL vs ORÇADO</th>}
-                    {a1GrpCols  > 0 && <th colSpan={a1GrpCols}  className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-purple-600 to-purple-500">REAL vs A-1</th>}
+                    <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle">CONTAS GERENCIAIS</th>
+                    {cols.real   && <th className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-blue-600 to-blue-500 border-r border-white/20 shadow-sm">REAL</th>}
+                    {orcGrpCols > 0 && <th colSpan={orcGrpCols} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 to-emerald-500 border-r border-white/20 shadow-sm">REAL vs ORÇADO</th>}
+                    {a1GrpCols  > 0 && <th colSpan={a1GrpCols}  className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-purple-600 to-purple-500 shadow-sm">REAL vs A-1</th>}
                   </tr>
                   <tr className="bg-gradient-to-r from-slate-700 to-slate-600 text-white h-6">
-                    {cols.real            && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-blue-700/80 border-r border-white/20">Real</th>}
-                    {cols.orcado          && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-emerald-700/80">Orçado</th>}
-                    {cols.deltaAbsOrcado  && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-emerald-700/80">Δ R−Orç</th>}
-                    {cols.deltaPercOrcado && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-emerald-700/80 border-r border-white/20">Δ%</th>}
-                    {cols.a1              && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-purple-700/80">A-1</th>}
-                    {cols.deltaAbsA1      && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-purple-700/80">Δ R−A-1</th>}
-                    {cols.deltaPercA1     && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-purple-700/80">Δ%</th>}
+                    {cols.real            && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-blue-500 to-blue-600 border-r border-white/20">Real</th>}
+                    {cols.orcado          && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-emerald-500 to-emerald-600">Orçado</th>}
+                    {cols.deltaAbsOrcado  && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-gradient-to-br from-emerald-500 to-emerald-600">Δ R−Orç</th>}
+                    {cols.deltaPercOrcado && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-emerald-500 to-emerald-600 border-r border-white/20">Δ%</th>}
+                    {cols.a1              && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-purple-500 to-purple-600">A-1</th>}
+                    {cols.deltaAbsA1      && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-gradient-to-br from-purple-500 to-purple-600">Δ R−A-1</th>}
+                    {cols.deltaPercA1     && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-purple-500 to-purple-600">Δ%</th>}
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -960,18 +1260,29 @@ const SomaTagsView: React.FC = () => {
                         {isOpen && g.items.map((r, i) => {
                           const rHasOrc = r.orcado !== 0; const rHasA1 = r.a1 !== 0;
                           const rdOrç = r.real - r.orcado; const rdA1 = r.real - r.a1;
+                          const rowKey = `${g.tag0}|${r.tag01}`;
+                          const isDrillExpanded = expandedTag01s[rowKey];
                           return (
-                            <tr key={r.tag01} className="group bg-gray-100 border-b border-gray-200 hover:bg-yellow-100/60 transition-colors">
-                              <td className="px-2 py-1 w-8 sticky left-0 z-20 bg-inherit group-hover:bg-yellow-100/60 transition-colors"></td>
-                              <td className="px-2 py-1 pl-6 text-gray-950 font-extrabold truncate sticky left-8 z-20 border-r border-gray-200 shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-[280px] bg-inherit group-hover:bg-yellow-100/60 transition-colors">{r.tag01}</td>
-                              {cols.real            && <td className="px-2 py-1 text-right font-mono text-gray-900 border-r border-gray-100">{fmt(r.real)}</td>}
-                              {cols.orcado          && <td className={`px-2 py-1 text-right font-mono ${rHasOrc ? 'text-gray-900' : 'text-gray-300'}`}>{rHasOrc ? fmt(r.orcado) : '—'}</td>}
-                              {cols.deltaAbsOrcado  && <td className={`px-2 py-1 text-right font-mono ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? fmt(rdOrç) : '—'}</td>}
-                              {cols.deltaPercOrcado && <td className={`px-2 py-1 text-right font-mono border-r border-gray-200 ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? `${((rdOrç / Math.abs(r.orcado)) * 100).toFixed(1)}%` : '—'}</td>}
-                              {cols.a1              && <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? 'text-gray-900' : 'text-gray-300'}`}>{rHasA1 ? fmt(r.a1) : '—'}</td>}
-                              {cols.deltaAbsA1      && <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(rdA1) : '—'}</td>}
-                              {cols.deltaPercA1     && <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? `${((rdA1 / Math.abs(r.a1)) * 100).toFixed(1)}%` : '—'}</td>}
-                            </tr>
+                            <React.Fragment key={r.tag01}>
+                              <tr className="group bg-gray-100 border-b border-gray-200 hover:bg-yellow-100/60 transition-colors">
+                                <td className="px-2 py-1 w-8 sticky left-0 z-20 bg-gray-100 group-hover:bg-yellow-100 transition-colors">
+                                  {drillDimensions.length > 0 && (
+                                    <button onClick={() => setExpandedTag01s(prev => ({ ...prev, [rowKey]: !prev[rowKey] }))} className="text-gray-400 hover:text-amber-600 transition-colors">
+                                      {isDrillExpanded ? <ChevronDown size={10} className="inline" /> : <ChevronRight size={10} className="inline" />}
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="px-2 py-1 pl-6 text-gray-950 font-extrabold truncate sticky left-8 z-20 w-[280px] bg-gray-100 group-hover:bg-yellow-100 transition-colors">{r.tag01}</td>
+                                {cols.real            && <td className="px-2 py-1 text-right font-mono text-gray-900 border-r border-gray-100">{fmt(r.real)}</td>}
+                                {cols.orcado          && <td className={`px-2 py-1 text-right font-mono ${rHasOrc ? 'text-gray-900' : 'text-gray-300'}`}>{rHasOrc ? fmt(r.orcado) : '—'}</td>}
+                                {cols.deltaAbsOrcado  && <td className={`px-2 py-1 text-right font-mono ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? fmt(rdOrç) : '—'}</td>}
+                                {cols.deltaPercOrcado && <td className={`px-2 py-1 text-right font-mono border-r border-gray-200 ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? `${((rdOrç / Math.abs(r.orcado)) * 100).toFixed(1)}%` : '—'}</td>}
+                                {cols.a1              && <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? 'text-gray-900' : 'text-gray-300'}`}>{rHasA1 ? fmt(r.a1) : '—'}</td>}
+                                {cols.deltaAbsA1      && <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(rdA1) : '—'}</td>}
+                                {cols.deltaPercA1     && <td className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? `${((rdA1 / Math.abs(r.a1)) * 100).toFixed(1)}%` : '—'}</td>}
+                              </tr>
+                              {drillDimensions.length > 0 && isDrillExpanded && renderDrillRows(r.tag01, g.tag0)}
+                            </React.Fragment>
                           );
                         })}
                         {idx === lastIdx03 && <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} />}
@@ -982,8 +1293,8 @@ const SomaTagsView: React.FC = () => {
                   })}
                 </tbody>
                 <tfoot className="sticky bottom-0 z-40">
-                  <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white font-black text-[11px] shadow-[0_-2px_6px_rgba(0,0,0,0.3)] border-t-2 border-yellow-400">
-                    <td colSpan={2} className="py-2 uppercase tracking-tight font-black sticky left-0 z-50 bg-gradient-to-r from-slate-800 to-slate-700 shadow-[2px_0_4px_rgba(0,0,0,0.3)] border-r border-white/10">
+                  <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white font-black text-[10px] shadow-[0_-2px_6px_rgba(0,0,0,0.3)] border-t-2 border-yellow-400">
+                    <td colSpan={2} className="py-2 uppercase tracking-tight font-black sticky left-0 z-50 bg-gradient-to-r from-slate-800 to-slate-700 ">
                       <div className="flex items-center gap-1 px-2">
                         {showOnlyEbitda && <Activity size={12} />}
                         <span>{showOnlyEbitda ? 'EBITDA TOTAL' : 'TOTAL GERAL'}</span>

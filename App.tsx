@@ -85,6 +85,14 @@ const App: React.FC = () => {
   const [isDreLoading, setIsDreLoading] = useState(false);
   const [isDreExportOpen, setIsDreExportOpen] = useState(false);
 
+  // Estados para ações do Soma Tags
+  const [somaTagsActions, setSomaTagsActions] = useState<{
+    refresh?: () => void;
+    exportExcel?: () => void;
+  }>({});
+  const [isSomaTagsLoading, setIsSomaTagsLoading] = useState(false);
+  const [hasSomaTagsData, setHasSomaTagsData] = useState(false);
+
   // Usar transactions do Context em vez de estado local
   const transactions = contextTransactions;
   const [manualChanges, setManualChanges] = useState<ManualChange[]>([]);
@@ -926,6 +934,39 @@ const App: React.FC = () => {
                 </button>
               </>
             )}
+
+            {/* Botões de Ação Soma Tags */}
+            {currentView === 'soma_tags' && (
+              <>
+                <button
+                  onClick={() => somaTagsActions.exportExcel?.()}
+                  disabled={!hasSomaTagsData || isSomaTagsLoading}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-[10px] uppercase tracking-wider shadow-md"
+                  title="Exportar Excel do Soma Tags"
+                >
+                  <Download size={14} />
+                  <span className="whitespace-nowrap">Exportar Excel</span>
+                </button>
+                <button
+                  onClick={() => somaTagsActions.refresh?.()}
+                  disabled={isSomaTagsLoading}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-[10px] uppercase tracking-wider shadow-md"
+                  title="Atualizar dados do Soma Tags"
+                >
+                  {isSomaTagsLoading ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span className="whitespace-nowrap">Atualizando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={14} />
+                      <span className="whitespace-nowrap">Atualizar</span>
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
 
           {showGlobalFilters && (
@@ -1046,7 +1087,11 @@ const App: React.FC = () => {
           )}
           {currentView === 'soma_tags' && (
             <Suspense fallback={<LoadingSpinner message="Carregando Soma Tags..." />}>
-              <SomaTagsView />
+              <SomaTagsView
+                onRegisterActions={setSomaTagsActions}
+                onLoadingChange={setIsSomaTagsLoading}
+                onDataChange={setHasSomaTagsData}
+              />
             </Suspense>
           )}
           {currentView === 'admin' && (
