@@ -387,14 +387,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     return result;
   }, [year, monthFrom, monthTo]);
 
-  const totals = useMemo(() => ({
-    real:   groups.reduce((s, g) => s + g.real,   0),
-    orcado: groups.reduce((s, g) => s + g.orcado, 0),
-    a1:     groups.reduce((s, g) => s + g.a1,     0),
-  }), [groups]);
-
   // ── Grupos exibidos (filtro Até EBITDA) ──────────────────────────────────
-  const EBITDA_PREFIXES = ['01.', '02.', '03.', '04.', '05.'];
+  // '06.' incluído: Rateio Raiz faz parte do EBITDA TOTAL
+  const EBITDA_PREFIXES = ['01.', '02.', '03.', '04.', '05.', '06.'];
   const displayedGroups = useMemo(
     () => showOnlyEbitda ? groups.filter(g => EBITDA_PREFIXES.some(p => g.tag0.startsWith(p))) : groups,
     [groups, showOnlyEbitda],
@@ -403,6 +398,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     () => showOnlyEbitda ? monthlyGroups.filter(g => EBITDA_PREFIXES.some(p => g.tag0.startsWith(p))) : monthlyGroups,
     [monthlyGroups, showOnlyEbitda],
   );
+
+  // totals usa displayedGroups → TOTAL do rodapé sempre bate com a soma dos meses exibidos
+  const totals = useMemo(() => ({
+    real:   displayedGroups.reduce((s, g) => s + g.real,   0),
+    orcado: displayedGroups.reduce((s, g) => s + g.orcado, 0),
+    a1:     displayedGroups.reduce((s, g) => s + g.a1,     0),
+  }), [displayedGroups]);
 
   // ── Cards executivos ──────────────────────────────────────────────────────
   const execCards = useMemo(() => {
