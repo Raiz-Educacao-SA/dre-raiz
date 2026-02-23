@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
 
@@ -111,10 +111,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [showOnlyEbitda, setShowOnlyEbitda] = useState(true);
   const [viewMode,       setViewMode]       = useState<ViewMode>('consolidado');
 
-  // ── Filtros Marca / Filial ────────────────────────────────────────────────
+  // ── Filtros Marca / Filial / Tag01 ───────────────────────────────────────
   const [filterOptions,   setFilterOptions]   = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
   const [selectedMarcas,  setSelectedMarcas]  = useState<string[]>([]);
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
+  const [selectedTags01,  setSelectedTags01]  = useState<string[]>([]);
   const filialCleanupRef = useRef(false);
 
   // ── Visibilidade de colunas ───────────────────────────────────────────────
@@ -255,10 +256,16 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setExpandedDrillRows({});
   }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais]);
 
+  // ── Filtro client-side por Tag01 ─────────────────────────────────────────
+  const filteredRows = useMemo(
+    () => selectedTags01.length > 0 ? rows.filter(r => selectedTags01.includes(r.tag01)) : rows,
+    [rows, selectedTags01],
+  );
+
   // ── Agrupamento Consolidado ───────────────────────────────────────────────
   const groups = useMemo((): Tag0Group[] => {
     const map = new Map<string, Map<string, Tag01Row>>();
-    rows.forEach(r => {
+    filteredRows.forEach(r => {
       if (!map.has(r.tag0)) map.set(r.tag0, new Map());
       const m = map.get(r.tag0)!;
       if (!m.has(r.tag01)) m.set(r.tag01, { tag01: r.tag01, real: 0, orcado: 0, a1: 0 });
@@ -280,12 +287,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           items,
         };
       });
-  }, [rows]);
+  }, [filteredRows]);
 
   // ── Agrupamento Mensal ────────────────────────────────────────────────────
   const monthlyGroups = useMemo((): Tag0MonthlyGroup[] => {
     const map = new Map<string, Map<string, Record<string, MonthData>>>();
-    rows.forEach(r => {
+    filteredRows.forEach(r => {
       if (!map.has(r.tag0)) map.set(r.tag0, new Map());
       const t0 = map.get(r.tag0)!;
       if (!t0.has(r.tag01)) t0.set(r.tag01, {});
@@ -313,7 +320,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       result.push({ tag0, byMonth: tag0ByMonth, items });
     }
     return result.sort((a, b) => a.tag0.localeCompare(b.tag0));
-  }, [rows]);
+  }, [filteredRows]);
 
   // ── Meses a exibir ────────────────────────────────────────────────────────
   const monthsToShow = useMemo(() => {
@@ -485,7 +492,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // ── Render helpers ────────────────────────────────────────────────────────
   const tag01Count   = displayedGroups.reduce((s, g) => s + g.items.length, 0);
   const hasOrcado    = displayedGroups.some(g => g.orcado !== 0);
-  const hasAnyFilter = selectedMarcas.length > 0 || selectedFiliais.length > 0;
+  const hasAnyFilter = selectedMarcas.length > 0 || selectedFiliais.length > 0 || selectedTags01.length > 0;
   const scenarioCount = [showReal, showOrcado, showA1].filter(Boolean).length;
   // Contagem para Mês: inclui deltas quando ativos
   const mesColCount = [showReal, showOrcado, showDeltaAbsOrcado, showDeltaPercOrcado, showA1, showDeltaAbsA1, showDeltaPercA1].filter(Boolean).length;
@@ -1039,172 +1046,184 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="p-4 space-y-2 bg-gradient-to-br from-gray-50 to-white min-h-screen">
+    <div className="p-3 space-y-1.5 bg-gradient-to-br from-gray-50 to-white min-h-screen">
 
-      {/* ── Título + Ações ── */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-base font-black text-[#152e55] uppercase tracking-tight">📊 Soma Tags</h1>
-        {!loading && !error && groups.length > 0 && (
-          <span className="text-[10px] text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-            {displayedGroups.length} grupos · {tag01Count} contas · {rows.length} registros
-            {!hasOrcado && <span className="ml-1 text-amber-600 font-semibold">· sem Orçado</span>}
-          </span>
-        )}
-      </div>
-
-      {/* ── Filtros ── */}
-      <div className="flex items-center gap-2 p-2 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-lg border border-blue-300 shadow-md overflow-x-auto">
+      {/* ══ LINHA 1: Filtros ══ */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm overflow-x-auto">
         <span className="text-base shrink-0">🎯</span>
-        <MultiSelectFilter label="Marca" icon={<Flag size={14} />} options={filterOptions.marcas} selected={selectedMarcas} onChange={setSelectedMarcas} colorScheme="orange" />
-        <MultiSelectFilter label="Filial" icon={<Building2 size={14} />} options={filiaisFiltradas} selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue" />
-        <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
-        <div className="flex items-center gap-2 shrink-0">
-          <CalendarDays size={16} className="text-purple-600 shrink-0" />
-          <span className="text-[12px] font-bold text-gray-700 whitespace-nowrap">Período:</span>
+
+        {/* Filtros de dimensão */}
+        <MultiSelectFilter label="Marca"  icon={<Flag     size={14} />} options={filterOptions.marcas}      selected={selectedMarcas}  onChange={setSelectedMarcas}  colorScheme="orange" />
+        <MultiSelectFilter label="Filial" icon={<Building2 size={14} />} options={filiaisFiltradas}           selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue"   />
+        <MultiSelectFilter label="Tag01"  icon={<Layers   size={14} />} options={filterOptions.tags01}       selected={selectedTags01}  onChange={setSelectedTags01}  colorScheme="purple" />
+
+        <div className="h-8 w-px bg-blue-200 mx-0.5 shrink-0" />
+
+        {/* Período */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <CalendarDays size={14} className="text-purple-600 shrink-0" />
+          <span className="text-[10px] font-bold text-gray-600 whitespace-nowrap">Período:</span>
           <div className="flex gap-1">
             {QUARTERS.map(q => (
               <button key={q.label} onClick={() => { setMonthFrom(q.from); setMonthTo(q.to); }} title={q.title}
-                className={`px-2 py-1 text-[10px] font-black uppercase rounded transition-all shadow-sm whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
+                className={`px-2 py-1 text-[10px] font-black uppercase rounded transition-all whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
                 {q.label}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1.5 bg-white border border-purple-300 px-2.5 py-1 rounded shadow-sm">
-            <Calendar size={14} className="text-purple-600 shrink-0" />
-            <select value={monthFrom} onChange={e => { setMonthFrom(e.target.value); if (e.target.value > monthTo) setMonthTo(e.target.value); }} className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer">
+          <div className="flex items-center gap-1 bg-white border border-purple-200 px-2 py-1 rounded-lg shadow-sm">
+            <Calendar size={12} className="text-purple-500 shrink-0" />
+            <select value={monthFrom} onChange={e => { setMonthFrom(e.target.value); if (e.target.value > monthTo) setMonthTo(e.target.value); }}
+              className="bg-transparent text-[11px] font-bold text-gray-900 outline-none cursor-pointer">
               {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
-            <span className="text-[10px] text-gray-400 font-bold whitespace-nowrap">até</span>
-            <select value={monthTo} onChange={e => { setMonthTo(e.target.value); if (monthFrom > e.target.value) setMonthFrom(e.target.value); }} className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer">
+            <span className="text-[9px] text-gray-400 font-bold whitespace-nowrap">até</span>
+            <select value={monthTo} onChange={e => { setMonthTo(e.target.value); if (monthFrom > e.target.value) setMonthFrom(e.target.value); }}
+              className="bg-transparent text-[11px] font-bold text-gray-900 outline-none cursor-pointer">
               {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </div>
         </div>
-        <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
-        <button onClick={() => setShowOnlyEbitda(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-md shrink-0 ${showOnlyEbitda ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'bg-gradient-to-r from-gray-600 to-slate-600 text-white'}`}
-          title={showOnlyEbitda ? 'Exibindo apenas até EBITDA (Tag0 01–05)' : 'Exibindo todas as Tag0'}>
-          {showOnlyEbitda ? <><CheckSquare size={14} strokeWidth={2.5} /><span>Até EBITDA</span></> : <><Square size={14} strokeWidth={2.5} /><span>Todas Tag0</span></>}
-        </button>
+
+        {/* Espaçador */}
+        <div className="flex-1 min-w-2" />
+
+        {/* Limpar filtros */}
         {hasAnyFilter && (
-          <>
-            <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
-            <button onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); }}
-              className="flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-1 rounded border border-rose-200 font-bold text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all shadow-sm shrink-0"
-              title="Limpar todos os filtros ativos">
-              <FilterX size={12} /><span className="whitespace-nowrap">Limpar</span>
-            </button>
-          </>
+          <button onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); setSelectedTags01([]); }}
+            className="flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-1.5 rounded-lg border border-rose-200 font-bold text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all shadow-sm shrink-0"
+            title="Limpar filtros">
+            <FilterX size={11} /><span className="whitespace-nowrap">Limpar</span>
+          </button>
         )}
+
+        {/* Até EBITDA */}
+        <button onClick={() => setShowOnlyEbitda(v => !v)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-sm shrink-0 ${showOnlyEbitda ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:border-indigo-400'}`}
+          title={showOnlyEbitda ? 'Exibindo apenas até EBITDA' : 'Exibindo todas as Tag0'}>
+          {showOnlyEbitda ? <CheckSquare size={12} strokeWidth={2.5} /> : <Square size={12} strokeWidth={2.5} />}
+          <span>Até EBITDA</span>
+        </button>
       </div>
 
-      {/* ── Painel de Colunas + Visualização ── */}
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 px-2 py-1 rounded-lg border border-blue-100 shadow-sm">
-        <div className="flex items-center justify-between gap-1.5 flex-wrap">
-          <div className="flex items-center gap-1">
-            <div className="p-0.5 rounded bg-blue-500 text-white"><Columns size={10} /></div>
-            <h3 className="text-[9px] font-black text-gray-900 uppercase tracking-tight">Colunas</h3>
-          </div>
+      {/* ══ LINHA 2: Colunas + Visualização ══ */}
+      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl border border-blue-100 shadow-sm overflow-x-auto">
+        {/* Label */}
+        <div className="flex items-center gap-1 shrink-0">
+          <div className="p-0.5 rounded bg-blue-500 text-white"><Columns size={10} /></div>
+          <span className="text-[9px] font-black text-gray-700 uppercase tracking-tight whitespace-nowrap">Colunas</span>
+        </div>
+        <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
 
-          <div className="flex items-center gap-1 flex-wrap">
-            {/* Toggles de coluna */}
-            <button onClick={() => toggleElement('Real', showReal, setShowReal)}
-              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${showReal ? 'bg-blue-500 text-white border-blue-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
-              {showReal ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
-              <span className="text-[8px] font-black uppercase">Real</span>{showReal && badge('Real')}
+        {/* Column pills */}
+        <button onClick={() => toggleElement('Real', showReal, setShowReal)}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showReal ? 'bg-blue-500 text-white border-blue-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-blue-300'}`}>
+          <span>Real</span>{showReal && <>{badge('Real')}<span className="ml-0.5 opacity-60">×</span></>}
+        </button>
+        <button onClick={() => toggleElement('Orçado', showOrcado, setShowOrcado)}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showOrcado ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-emerald-300'}`}>
+          <span>Orçado</span>{showOrcado && <>{badge('Orçado')}<span className="ml-0.5 opacity-60">×</span></>}
+        </button>
+        <button onClick={() => toggleElement('A1', showA1, setShowA1)}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showA1 ? 'bg-purple-500 text-white border-purple-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-purple-300'}`}>
+          <span>A-1</span>{showA1 && <>{badge('A1')}<span className="ml-0.5 opacity-60">×</span></>}
+        </button>
+        <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
+        <button onClick={() => toggleElement('DeltaPercOrcado', showDeltaPercOrcado, setShowDeltaPercOrcado)} title="Δ% vs Orçado"
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaPercOrcado ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-orange-300'}`}>
+          <span>Δ% Orç</span>{showDeltaPercOrcado && <>{badge('DeltaPercOrcado')}<span className="ml-0.5 opacity-60">×</span></>}
+        </button>
+        <button onClick={() => toggleElement('DeltaPercA1', showDeltaPercA1, setShowDeltaPercA1)} title="Δ% vs A-1"
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaPercA1 ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-orange-400'}`}>
+          <span>Δ% A-1</span>{showDeltaPercA1 && <>{badge('DeltaPercA1')}<span className="ml-0.5 opacity-60">×</span></>}
+        </button>
+        <button onClick={() => toggleElement('DeltaAbsOrcado', showDeltaAbsOrcado, setShowDeltaAbsOrcado)} title="ΔR$ vs Orçado"
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaAbsOrcado ? 'bg-rose-500 text-white border-rose-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-rose-300'}`}>
+          <span>ΔR$ Orç</span>{showDeltaAbsOrcado && <>{badge('DeltaAbsOrcado')}<span className="ml-0.5 opacity-60">×</span></>}
+        </button>
+        <button onClick={() => toggleElement('DeltaAbsA1', showDeltaAbsA1, setShowDeltaAbsA1)} title="ΔR$ vs A-1"
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaAbsA1 ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-rose-400'}`}>
+          <span>ΔR$ A-1</span>{showDeltaAbsA1 && <>{badge('DeltaAbsA1')}<span className="ml-0.5 opacity-60">×</span></>}
+        </button>
+
+        {/* Espaçador */}
+        <div className="flex-1 min-w-2" />
+
+        {/* Visualização — botão de ciclo no canto direito */}
+        <div className="flex items-center gap-1 shrink-0">
+          {(['consolidado', 'cenario', 'mes'] as ViewMode[]).map(vm => (
+            <button key={vm} onClick={() => setViewMode(vm)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg border transition-all text-[8px] font-black uppercase ${viewMode === vm ? 'bg-gradient-to-r from-slate-700 to-slate-600 text-white border-slate-600 shadow-sm' : 'bg-white text-gray-500 border-gray-200 hover:border-slate-400'}`}>
+              {vm === 'consolidado' && <span>📦</span>}
+              {vm === 'cenario'     && <span>🎭</span>}
+              {vm === 'mes'         && <span>📅</span>}
+              <span>{vm === 'consolidado' ? 'Consolidado' : vm === 'cenario' ? 'Cenário' : 'Mês'}</span>
             </button>
-            <button onClick={() => toggleElement('Orçado', showOrcado, setShowOrcado)}
-              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${showOrcado ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'}`}>
-              {showOrcado ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
-              <span className="text-[8px] font-black uppercase">Orçado</span>{showOrcado && badge('Orçado')}
-            </button>
-            <button onClick={() => toggleElement('A1', showA1, setShowA1)}
-              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${showA1 ? 'bg-purple-500 text-white border-purple-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}>
-              {showA1 ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
-              <span className="text-[8px] font-black uppercase">A-1</span>{showA1 && badge('A1')}
-            </button>
+          ))}
+        </div>
+      </div>
 
-            {/* Deltas — visíveis em todos os modos */}
-            {(
-              <>
-                <div className="h-4 w-px bg-gray-300" />
-                <button onClick={() => toggleElement('DeltaAbsOrcado', showDeltaAbsOrcado, setShowDeltaAbsOrcado)} title="Variação R$ vs Orçado"
-                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${showDeltaAbsOrcado ? 'bg-rose-500 text-white border-rose-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-rose-300'}`}>
-                  {showDeltaAbsOrcado ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
-                  <span className="text-[8px] font-black uppercase">ΔR$ Orç</span>{showDeltaAbsOrcado && badge('DeltaAbsOrcado')}
-                </button>
-                <button onClick={() => toggleElement('DeltaPercOrcado', showDeltaPercOrcado, setShowDeltaPercOrcado)} title="Variação % vs Orçado"
-                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${showDeltaPercOrcado ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'}`}>
-                  {showDeltaPercOrcado ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
-                  <span className="text-[8px] font-black uppercase">Δ% Orç</span>{showDeltaPercOrcado && badge('DeltaPercOrcado')}
-                </button>
-                <button onClick={() => toggleElement('DeltaAbsA1', showDeltaAbsA1, setShowDeltaAbsA1)} title="Variação R$ vs A-1"
-                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${showDeltaAbsA1 ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-rose-400'}`}>
-                  {showDeltaAbsA1 ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
-                  <span className="text-[8px] font-black uppercase">ΔR$ A-1</span>{showDeltaAbsA1 && badge('DeltaAbsA1')}
-                </button>
-                <button onClick={() => toggleElement('DeltaPercA1', showDeltaPercA1, setShowDeltaPercA1)} title="Variação % vs A-1"
-                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${showDeltaPercA1 ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-orange-400'}`}>
-                  {showDeltaPercA1 ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
-                  <span className="text-[8px] font-black uppercase">Δ% A-1</span>{showDeltaPercA1 && badge('DeltaPercA1')}
-                </button>
-              </>
-            )}
+      {/* ══ LINHA 3: Drill-Down ══ */}
+      <div className="flex items-center gap-2 bg-gradient-to-r from-orange-50 to-red-50 px-2 py-1.5 rounded-lg border border-orange-200 shadow-sm overflow-x-auto">
 
-            <div className="h-4 w-px bg-gray-300" />
+        {/* Ícone dinâmico */}
+        <div className={`p-1 rounded-lg transition-colors shadow-sm shrink-0 ${drillDimensions.length > 0 ? 'bg-gradient-to-br from-orange-600 to-red-600 text-white' : 'bg-white text-gray-400 border border-gray-200'}`}>
+          <Layers size={12} />
+        </div>
 
-            {/* Seletor de Visualização */}
-            {(['consolidado', 'cenario', 'mes'] as ViewMode[]).map(vm => (
-              <button key={vm} onClick={() => setViewMode(vm)}
-                className={`flex items-center gap-0.5 px-2 py-0.5 rounded border transition-all text-[8px] font-black uppercase ${viewMode === vm ? 'bg-gradient-to-r from-slate-700 to-slate-600 text-white border-slate-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-slate-400'}`}>
-                {vm === 'consolidado' && '📦'}
-                {vm === 'cenario'     && '🎭'}
-                {vm === 'mes'         && '📅'}
-                {' '}{vm.charAt(0).toUpperCase() + vm.slice(1)}
+        {/* Label + sub-label */}
+        <div className="flex flex-col pr-2 mr-1 border-r border-orange-200 shrink-0">
+          <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider whitespace-nowrap">Drill-down</span>
+          <span className="text-[10px] font-black text-gray-900 uppercase whitespace-nowrap">
+            {drillDimensions.length === 0 ? 'Níveis' : `Níveis ${drillDimensions.length}`}
+          </span>
+        </div>
+
+        {/* Botões de dimensão */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {SOMA_DIMENSIONS.map(d => {
+            const order  = drillDimensions.indexOf(d.id);
+            const active = order >= 0;
+            return (
+              <button key={d.id}
+                onClick={() => {
+                  setDrillDimensions(prev => prev.includes(d.id) ? prev.filter(x => x !== d.id) : [...prev, d.id]);
+                  setDimensionCache({});
+                  setExpandedTag01s({});
+                  setExpandedDrillRows({});
+                }}
+                className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1.5 border shadow-sm ${
+                  active
+                    ? 'bg-gradient-to-br from-orange-600 to-red-600 text-white border-orange-500'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:bg-orange-50'
+                }`}>
+                {active && <span className="bg-white/30 px-1 py-0.5 rounded text-[8px] font-black">{order + 1}º</span>}
+                <span>{d.label}</span>
               </button>
-            ))}
+            );
+          })}
 
-            {/* Separador + Drill Dimension (multi-select) */}
-            <div className="h-4 w-px bg-gray-300" />
-            <div className="flex items-center gap-1">
-              <div className="p-0.5 rounded bg-amber-500 text-white"><Layers size={10} /></div>
-              <span className="text-[8px] font-black text-gray-700 uppercase">Drill</span>
-            </div>
-            {SOMA_DIMENSIONS.map(d => {
-              const order = drillDimensions.indexOf(d.id);
-              const active = order >= 0;
-              return (
-                <button key={d.id}
-                  onClick={() => {
-                    setDrillDimensions(prev =>
-                      prev.includes(d.id) ? prev.filter(x => x !== d.id) : [...prev, d.id]
-                    );
-                    setDimensionCache({});
-                    setExpandedTag01s({});
-                    setExpandedDrillRows({});
-                  }}
-                  className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all text-[8px] font-black uppercase ${active ? 'bg-amber-500 text-white border-amber-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400'}`}>
-                  {d.label}
-                  {active && <span className="ml-0.5 bg-white/30 px-0.5 rounded text-[7px]">{order + 1}º</span>}
-                </button>
-              );
-            })}
-            {drillDimensions.length > 0 && (
-              <>
-                <div className="h-4 w-px bg-gray-300" />
-                {/* Botão de ordenação */}
-                <button onClick={() => setDimensionSort(s => s === 'desc' ? 'asc' : s === 'asc' ? 'alpha' : 'desc')}
-                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-gray-200 bg-white text-gray-600 hover:border-amber-400 transition-all text-[8px] font-black uppercase"
-                  title={dimensionSort === 'desc' ? 'Maior → Menor' : dimensionSort === 'asc' ? 'Menor → Maior' : 'A → Z'}>
-                  {dimensionSort === 'alpha' ? 'A→Z' : dimensionSort === 'desc' ? '↓Val' : '↑Val'}
-                </button>
-                {/* X limpar tudo */}
-                <button onClick={() => { setDrillDimensions([]); setDimensionCache({}); setExpandedTag01s({}); setExpandedDrillRows({}); }}
-                  className="flex items-center px-1 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-all text-[8px] font-black"
-                  title="Desativar drill-down">✕</button>
-              </>
-            )}
-          </div>
+          {drillDimensions.length > 0 && (
+            <>
+              <div className="h-4 w-px bg-orange-200 mx-0.5" />
+              {/* Ordenação */}
+              <button
+                onClick={() => setDimensionSort(s => s === 'desc' ? 'asc' : s === 'asc' ? 'alpha' : 'desc')}
+                className="px-1.5 py-0.5 rounded-lg text-[8px] font-black uppercase transition-all flex items-center gap-1 border bg-[#1B75BB] text-white border-[#1B75BB] shadow-sm"
+                title={dimensionSort === 'desc' ? 'Maior → Menor' : dimensionSort === 'asc' ? 'Menor → Maior' : 'Alfabético (A-Z)'}>
+                {dimensionSort === 'desc'  && <><ArrowDown10 size={11} /> Maior→Menor</>}
+                {dimensionSort === 'asc'   && <><ArrowUp10   size={11} /> Menor→Maior</>}
+                {dimensionSort === 'alpha' && <><ArrowDownAZ size={11} /> A-Z</>}
+              </button>
+              {/* Limpar */}
+              <button
+                onClick={() => { setDrillDimensions([]); setDimensionCache({}); setExpandedTag01s({}); setExpandedDrillRows({}); }}
+                className="p-0.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                title="Desativar drill-down">
+                <X size={10} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
