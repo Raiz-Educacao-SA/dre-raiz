@@ -3,7 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Target, Users, ArrowUpRight, ArrowDownRight, ArrowRight, GraduationCap, CalendarDays, Droplets, Zap, Box, PartyPopper, Scissors, ShieldCheck, AlertCircle, PieChart, X, TrendingUp, Flag, Building2, ChevronDown, ChevronRight, Check, RefreshCw } from 'lucide-react';
 import { SchoolKPIs, Transaction } from '../types';
 import { BRANCHES, CATEGORIES, RECEITA_LIQUIDA_TAGS_SET } from '../constants';
-import { getReceitaLiquidaDRE, getDRESummary } from '../services/supabaseService';
+import { getReceitaLiquidaDRE, getDRESummary, SomaTagsRow } from '../services/supabaseService';
 import { filterTransactionsByPermissions } from '../services/permissionsService';
 import { toast } from 'sonner';
 
@@ -16,6 +16,7 @@ interface DashboardProps {
   availableBranches: string[];
   onMarcaChange: (brands: string[]) => void;
   onFilialChange: (branches: string[]) => void;
+  somaRows?: SomaTagsRow[];
 }
 
 export interface MonthRange {
@@ -31,7 +32,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   uniqueBrands,
   availableBranches,
   onMarcaChange,
-  onFilialChange
+  onFilialChange,
+  somaRows
 }) => {
   const [activeMetric, setActiveMetric] = useState<'revenue' | 'ebitda' | 'margin'>('ebitda');
   // ⚡ OTIMIZAÇÃO: Iniciar com mês atual (sincronizado com App.tsx)
@@ -125,126 +127,92 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [comparisonMode]);
 
 
-  // Buscar Receita Líquida usando a mesma lógica da DRE (tag0 "01.")
+  // Receita Líquida: calcula direto dos somaRows (mesma fonte do DRE Gerencial)
   useEffect(() => {
+    const compScenario = comparisonMode === 'budget' ? 'Orçado' : 'A-1';
+
+    // ⚡ Caminho rápido: somaRows já carregados — sem chamada extra ao Supabase
+    if (somaRows && somaRows.length > 0) {
+      const calcFromRows = (scenario: string) =>
+        somaRows
+          .filter(r => {
+            const m = parseInt(r.month.substring(5, 7), 10) - 1;
+            return r.scenario === scenario
+              && r.tag0.startsWith('01.')
+              && m >= selectedMonthStart
+              && m <= selectedMonthEnd;
+          })
+          .reduce((s, r) => s + Number(r.total), 0);
+
+      const real = calcFromRows('Real');
+      const comp = calcFromRows(compScenario);
+      setReceitaLiquidaReal(real);
+      setReceitaLiquidaComparison(comp);
+
+      // Breakdown por tag01 a partir dos somaRows
+      const bdMap = new Map<string, { real: number; orcado: number; a1: number }>();
+      somaRows.forEach(r => {
+        if (!r.tag0.startsWith('01.')) return;
+        const m = parseInt(r.month.substring(5, 7), 10) - 1;
+        if (m < selectedMonthStart || m > selectedMonthEnd) return;
+        const key = r.tag01 || 'Sem Subclassificação';
+        if (!bdMap.has(key)) bdMap.set(key, { real: 0, orcado: 0, a1: 0 });
+        const e = bdMap.get(key)!;
+        if (r.scenario === 'Real')   e.real   += Number(r.total);
+        else if (r.scenario === 'Orçado') e.orcado += Number(r.total);
+        else if (r.scenario === 'A-1')    e.a1     += Number(r.total);
+      });
+      setReceitaBreakdown(
+        Array.from(bdMap.entries())
+          .map(([tag01, v]) => ({ tag01, ...v, txCount: 0, tag02s: [] }))
+          .sort((a, b) => Math.abs(b.real) - Math.abs(a.real))
+      );
+
+      console.log(`💰 Receita Líquida (somaRows): Real=${real.toLocaleString('pt-BR')} | ${compScenario}=${comp.toLocaleString('pt-BR')}`);
+      return;
+    }
+
+    // Fallback: buscar via RPC quando somaRows não disponível
     const fetchReceitaLiquida = async () => {
       setIsLoadingReceita(true);
       try {
-        // Construir monthFrom e monthTo baseado no range selecionado
         const year = new Date().getFullYear();
         const monthFrom = `${year}-${String(selectedMonthStart + 1).padStart(2, '0')}`;
-        const monthTo = `${year}-${String(selectedMonthEnd + 1).padStart(2, '0')}`;
+        const monthTo   = `${year}-${String(selectedMonthEnd   + 1).padStart(2, '0')}`;
 
-        // Buscar Receita Real
-        const receitaReal = await getReceitaLiquidaDRE({
-          monthFrom,
-          monthTo,
-          marcas: selectedMarca.length > 0 ? selectedMarca : undefined,
-          nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined,
-          scenario: 'Real'
-        });
-
-        // Buscar Receita de Comparação (Orçado ou A-1)
-        const scenarioComparacao = comparisonMode === 'budget' ? 'Orçado' : 'A-1';
-        const receitaComp = await getReceitaLiquidaDRE({
-          monthFrom,
-          monthTo,
-          marcas: selectedMarca.length > 0 ? selectedMarca : undefined,
-          nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined,
-          scenario: scenarioComparacao
-        });
+        const [receitaReal, receitaComp] = await Promise.all([
+          getReceitaLiquidaDRE({ monthFrom, monthTo, marcas: selectedMarca.length > 0 ? selectedMarca : undefined, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined, scenario: 'Real' }),
+          getReceitaLiquidaDRE({ monthFrom, monthTo, marcas: selectedMarca.length > 0 ? selectedMarca : undefined, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined, scenario: compScenario }),
+        ]);
 
         setReceitaLiquidaReal(receitaReal);
         setReceitaLiquidaComparison(receitaComp);
 
-        // Buscar breakdown detalhado por tag01 para o modal
-        const summaryRows = await getDRESummary({
-          monthFrom,
-          monthTo,
-          marcas: selectedMarca.length > 0 ? selectedMarca : undefined,
-          nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined,
-        });
-
-        // Filtrar apenas linhas onde tag0 começa com "01." (Receita)
+        const summaryRows = await getDRESummary({ monthFrom, monthTo, marcas: selectedMarca.length > 0 ? selectedMarca : undefined, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined });
         const receitaRows = summaryRows.filter(row => row.tag0 && row.tag0.match(/^01\./i));
 
-        // Agrupar por tag01 → tag02 → cenário
-        const breakdownMap = new Map<string, {
-          real: number;
-          orcado: number;
-          a1: number;
-          txCount: number;
-          tag02s: Map<string, { real: number; orcado: number; a1: number; txCount: number }>;
-        }>();
-
+        const breakdownMap = new Map<string, { real: number; orcado: number; a1: number; txCount: number; tag02s: Map<string, { real: number; orcado: number; a1: number; txCount: number }> }>();
         receitaRows.forEach(row => {
           const tag01 = row.tag01 || 'Sem Subclassificação';
           const tag02 = row.tag02 || 'Sem tag02';
-
-          // Inicializar tag01 se não existir
-          if (!breakdownMap.has(tag01)) {
-            breakdownMap.set(tag01, {
-              real: 0,
-              orcado: 0,
-              a1: 0,
-              txCount: 0,
-              tag02s: new Map()
-            });
-          }
-
-          const tag01Entry = breakdownMap.get(tag01)!;
-          const amount = Number(row.total_amount);
-          const count = Number(row.tx_count);
-
-          // Agregar no nível tag01
-          if (row.scenario === 'Real') {
-            tag01Entry.real += amount;
-            tag01Entry.txCount += count;
-          } else if (row.scenario === 'Orçado') {
-            tag01Entry.orcado += amount;
-          } else if (row.scenario === 'A-1') {
-            tag01Entry.a1 += amount;
-          }
-
-          // Agregar no nível tag02
-          if (!tag01Entry.tag02s.has(tag02)) {
-            tag01Entry.tag02s.set(tag02, { real: 0, orcado: 0, a1: 0, txCount: 0 });
-          }
-
-          const tag02Entry = tag01Entry.tag02s.get(tag02)!;
-          if (row.scenario === 'Real') {
-            tag02Entry.real += amount;
-            tag02Entry.txCount += count;
-          } else if (row.scenario === 'Orçado') {
-            tag02Entry.orcado += amount;
-          } else if (row.scenario === 'A-1') {
-            tag02Entry.a1 += amount;
-          }
+          if (!breakdownMap.has(tag01)) breakdownMap.set(tag01, { real: 0, orcado: 0, a1: 0, txCount: 0, tag02s: new Map() });
+          const t1 = breakdownMap.get(tag01)!;
+          const amt = Number(row.total_amount); const cnt = Number(row.tx_count);
+          if (row.scenario === 'Real')        { t1.real += amt; t1.txCount += cnt; }
+          else if (row.scenario === 'Orçado') { t1.orcado += amt; }
+          else if (row.scenario === 'A-1')    { t1.a1 += amt; }
+          if (!t1.tag02s.has(tag02)) t1.tag02s.set(tag02, { real: 0, orcado: 0, a1: 0, txCount: 0 });
+          const t2 = t1.tag02s.get(tag02)!;
+          if (row.scenario === 'Real')        { t2.real += amt; t2.txCount += cnt; }
+          else if (row.scenario === 'Orçado') { t2.orcado += amt; }
+          else if (row.scenario === 'A-1')    { t2.a1 += amt; }
         });
 
-        // Converter para array e ordenar por valor Real (maior para menor)
-        const breakdown = Array.from(breakdownMap.entries())
-          .map(([tag01, values]) => ({
-            tag01,
-            real: values.real,
-            orcado: values.orcado,
-            a1: values.a1,
-            txCount: values.txCount,
-            tag02s: Array.from(values.tag02s.entries())
-              .map(([tag02, tag02Values]) => ({
-                tag02,
-                ...tag02Values
-              }))
-              .sort((a, b) => Math.abs(b.real) - Math.abs(a.real))
-          }))
-          .sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
-
-        setReceitaBreakdown(breakdown);
-
-        console.log('💰 Receita Líquida atualizada (lógica DRE):');
-        console.log(`   Real: R$ ${receitaReal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-        console.log(`   ${scenarioComparacao}: R$ ${receitaComp.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
-        console.log(`   Breakdown: ${breakdown.length} tags01 encontradas`);
+        setReceitaBreakdown(
+          Array.from(breakdownMap.entries())
+            .map(([tag01, v]) => ({ tag01, real: v.real, orcado: v.orcado, a1: v.a1, txCount: v.txCount, tag02s: Array.from(v.tag02s.entries()).map(([tag02, tv]) => ({ tag02, ...tv })).sort((a, b) => Math.abs(b.real) - Math.abs(a.real)) }))
+            .sort((a, b) => Math.abs(b.real) - Math.abs(a.real))
+        );
       } catch (error) {
         console.error('❌ Erro ao buscar Receita Líquida:', error);
         toast.error('❌ Erro ao carregar dados. Tente novamente.');
@@ -252,9 +220,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         setIsLoadingReceita(false);
       }
     };
-
     fetchReceitaLiquida();
-  }, [selectedMonthStart, selectedMonthEnd, selectedMarca, selectedFilial, comparisonMode, refreshTrigger]);
+  }, [selectedMonthStart, selectedMonthEnd, selectedMarca, selectedFilial, comparisonMode, refreshTrigger, somaRows]);
 
   // Filter transactions by selected month range
   const filteredByMonth = useMemo(() => {

@@ -1029,11 +1029,8 @@ const App: React.FC = () => {
             // Fallback para filteredTransactions se RPC ainda não carregou.
             <DashboardEnhanced
               kpis={kpis}
-              transactions={
-                dashboardTransactions.length > 0
-                  ? dashboardTransactions
-                  : filteredTransactions
-              }
+              somaRows={dashboardSomaRows}
+              transactions={filteredTransactions}
               selectedMarca={selectedMarca}
               selectedFilial={selectedFilial}
               uniqueBrands={uniqueBrands}

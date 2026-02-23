@@ -12,6 +12,7 @@ import {
 } from '../features/visualBlocks';
 import { SchoolKPIs, Transaction } from '../types';
 import { BRANCHES, RECEITA_LIQUIDA_TAGS_SET } from '../constants';
+import { SomaTagsRow } from '../services/supabaseService';
 import { EChartsOption } from 'echarts';
 import { useBranchData } from '../hooks/useBranchData';
 import { generateExecutiveSummary, ExecutiveSummaryContext, ExecutiveSummaryResponse } from '../services/anthropicService';
@@ -32,6 +33,7 @@ interface DashboardEnhancedProps {
   allowedFiliais?: string[];
   allowedCategories?: string[];
   isLoading?: boolean;
+  somaRows?: SomaTagsRow[];
 }
 
 export const DashboardEnhanced: React.FC<DashboardEnhancedProps> = (props) => {
