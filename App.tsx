@@ -50,6 +50,7 @@ const App: React.FC = () => {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasMountedDRE, setHasMountedDRE] = useState(false);
+  const [hasMountedSomaTags, setHasMountedSomaTags] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [preFullscreenSidebarState, setPreFullscreenSidebarState] = useState(true);
 
@@ -256,9 +257,10 @@ const App: React.FC = () => {
     }
   }, [drillDownActiveTab]);
 
-  // Manter DRE montada após primeira visita (preservar estado ao trocar guias)
+  // Manter DRE e SomaTags montadas após primeira visita (preservar estado ao trocar guias)
   useEffect(() => {
     if (currentView === 'dre') setHasMountedDRE(true);
+    if (currentView === 'soma_tags') setHasMountedSomaTags(true);
   }, [currentView]);
 
   // Contador de pendências para o Sidebar
@@ -1092,15 +1094,17 @@ const App: React.FC = () => {
               />
             </Suspense>
           )}
-          {currentView === 'soma_tags' && (
-            <Suspense fallback={<LoadingSpinner message="Carregando Soma Tags..." />}>
-              <SomaTagsView
-                onRegisterActions={setSomaTagsActions}
-                onLoadingChange={setIsSomaTagsLoading}
-                onDataChange={setHasSomaTagsData}
-                onDrillDown={handleDrillDown}
-              />
-            </Suspense>
+          {hasMountedSomaTags && (
+            <div style={{ display: currentView === 'soma_tags' ? undefined : 'none' }}>
+              <Suspense fallback={<LoadingSpinner message="Carregando Soma Tags..." />}>
+                <SomaTagsView
+                  onRegisterActions={setSomaTagsActions}
+                  onLoadingChange={setIsSomaTagsLoading}
+                  onDataChange={setHasSomaTagsData}
+                  onDrillDown={handleDrillDown}
+                />
+              </Suspense>
+            </div>
           )}
           {currentView === 'admin' && (
             <Suspense fallback={<LoadingSpinner message="Carregando painel admin..." />}>
