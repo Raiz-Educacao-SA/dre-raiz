@@ -293,28 +293,21 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setExpandedDrillRows({});
   }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais]);
 
-  // ── Filtro client-side por Tag01 / Tag02 ─────────────────────────────────
-  // Quando tag02 ativo: filtra por r.tag02 diretamente (dados já têm tag02 no retorno do RPC)
-  // Quando tag01 ativo: filtra por r.tag01
+  // ── Filtro client-side por Tag01 ─────────────────────────────────────────
   const filteredRows = useMemo(() => {
     let result = rows;
     if (selectedTags01.length > 0)
       result = result.filter(r => selectedTags01.includes(r.tag01));
-    if (selectedTags02.length > 0)
-      result = result.filter(r => r.tag02 !== null && selectedTags02.includes(r.tag02));
     return result;
-  }, [rows, selectedTags01, selectedTags02]);
+  }, [rows, selectedTags01]);
 
   // ── Agrupamento Consolidado ───────────────────────────────────────────────
-  // Quando tag02 ativo: agrupa por tag02 (mostra tag02 como linhas)
-  // Quando tag02 inativo: agrupa por tag01 (comportamento padrão)
   const groups = useMemo((): Tag0Group[] => {
-    const groupByTag02 = selectedTags02.length > 0;
     const map = new Map<string, Map<string, Tag01Row>>();
     filteredRows.forEach(r => {
       if (!map.has(r.tag0)) map.set(r.tag0, new Map());
       const m = map.get(r.tag0)!;
-      const key = groupByTag02 ? (r.tag02 || 'Sem Tag02') : r.tag01;
+      const key = r.tag01;
       if (!m.has(key)) m.set(key, { tag01: key, real: 0, orcado: 0, a1: 0 });
       const e = m.get(key)!;
       const v = Number(r.total) || 0;
@@ -334,16 +327,15 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           items,
         };
       });
-  }, [filteredRows, selectedTags02]);
+  }, [filteredRows]);
 
   // ── Agrupamento Mensal ────────────────────────────────────────────────────
   const monthlyGroups = useMemo((): Tag0MonthlyGroup[] => {
-    const groupByTag02 = selectedTags02.length > 0;
     const map = new Map<string, Map<string, Record<string, MonthData>>>();
     filteredRows.forEach(r => {
       if (!map.has(r.tag0)) map.set(r.tag0, new Map());
       const t0 = map.get(r.tag0)!;
-      const key = groupByTag02 ? (r.tag02 || 'Sem Tag02') : r.tag01;
+      const key = r.tag01;
       if (!t0.has(key)) t0.set(key, {});
       const t1 = t0.get(key)!;
       if (!t1[r.month]) t1[r.month] = { real: 0, orcado: 0, a1: 0 };
@@ -369,7 +361,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       result.push({ tag0, byMonth: tag0ByMonth, items });
     }
     return result.sort((a, b) => a.tag0.localeCompare(b.tag0));
-  }, [filteredRows, selectedTags02]);
+  }, [filteredRows]);
 
   // ── Meses a exibir ────────────────────────────────────────────────────────
   const monthsToShow = useMemo(() => {

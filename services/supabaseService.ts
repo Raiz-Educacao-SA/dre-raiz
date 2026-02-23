@@ -601,7 +601,6 @@ export const getDRESummary = async (params: {
 export interface SomaTagsRow {
   tag0: string;
   tag01: string;
-  tag02: string | null;
   scenario: string;
   month: string;   // 'YYYY-MM'
   total: number;
