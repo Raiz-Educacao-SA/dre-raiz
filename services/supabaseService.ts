@@ -587,6 +587,7 @@ export const getSomaTags = async (
   monthTo?: string,
   marcas?: string[],
   nomeFiliais?: string[],
+  tags02?: string[],
 ): Promise<SomaTagsRow[]> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
@@ -597,6 +598,7 @@ export const getSomaTags = async (
         p_month_to:     monthTo     || null,
         p_marcas:       marcas      && marcas.length      > 0 ? marcas      : null,
         p_nome_filiais: nomeFiliais && nomeFiliais.length > 0 ? nomeFiliais : null,
+        p_tags02:       tags02      && tags02.length      > 0 ? tags02      : null,
       })
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
