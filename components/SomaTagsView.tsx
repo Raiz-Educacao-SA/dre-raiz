@@ -1429,24 +1429,26 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
                   {/* Compact: barras finas por mês */}
                   {cardLayout === 'compact' && (
-                    <div className="flex items-end gap-px h-10">
-                      {monthsToShow.map(m => {
-                        const v   = card.byMonth[m]?.real || 0;
-                        const pct = maxBar > 0 ? (Math.abs(v) / maxBar) * 100 : 0;
-                        const bk  = `${card.tag0}|${m}`;
-                        return (
-                          <div key={m} className="relative flex-1 group/bar flex flex-col justify-end h-full"
-                            onMouseEnter={() => setHoveredBar(bk)} onMouseLeave={() => setHoveredBar(null)}>
-                            <div className={`w-full rounded-t transition-all ${v >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                              style={{ height: `${pct}%`, minHeight: pct > 0 ? '2px' : '0' }} />
-                            {hoveredBar === bk && (
-                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-gray-900 text-white text-[10px] font-bold rounded shadow-xl z-50 whitespace-nowrap">
-                                {getML(m)}: {fmtCard(v)}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                    <div className="relative h-8 mb-3">
+                      <div className="flex items-end gap-px h-full">
+                        {monthsToShow.map(m => {
+                          const v   = card.byMonth[m]?.real || 0;
+                          const pct = maxBar > 0 ? (Math.abs(v) / maxBar) * 100 : 0;
+                          const bk  = `${card.tag0}|${m}`;
+                          return (
+                            <div key={m} className="relative flex-1 group/bar flex flex-col justify-end h-full"
+                              onMouseEnter={() => setHoveredBar(bk)} onMouseLeave={() => setHoveredBar(null)}>
+                              <div className={`w-full rounded-t transition-all ${v >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                style={{ height: `${pct}%`, minHeight: pct > 0 ? '2px' : '0' }} />
+                              {hoveredBar === bk && (
+                                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-1 px-2 py-1 bg-gray-900 text-white text-[10px] font-bold rounded shadow-xl z-50 whitespace-nowrap">
+                                  {getML(m)}: {fmtCard(v)}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 
@@ -1457,7 +1459,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                         <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-sm bg-gradient-to-t from-blue-400 to-blue-600" /><span className="text-gray-600 font-bold">Real</span></div>
                         <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-sm bg-gradient-to-t from-purple-300/60 to-purple-500/60" /><span className="text-gray-600 font-bold">Orçado</span></div>
                       </div>
-                      <div className="flex items-end gap-1 h-16 px-1">
+                      <div className="relative h-16 mb-3">
+                      <div className="flex items-end gap-1 h-full px-1">
                         {monthsToShow.map(m => {
                           const md   = card.byMonth[m] || { real: 0, orcado: 0, a1: 0 };
                           const maxM = Math.max(Math.abs(md.real), Math.abs(md.orcado), 1);
@@ -1468,7 +1471,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                           return (
                             <div key={m} className="relative flex-1 group/month"
                               onMouseEnter={() => setHoveredBar(bk)} onMouseLeave={() => setHoveredBar(null)}>
-                              <div className="flex items-end gap-0.5 h-16">
+                              <div className="flex items-end gap-0.5 h-full">
                                 <div className="relative flex-1 flex items-end h-full">
                                   <div className={`w-full rounded-t transition-all duration-300 ${md.real >= 0 ? 'bg-gradient-to-t from-blue-400 to-blue-600 group-hover/month:from-blue-500 group-hover/month:to-blue-700' : 'bg-gradient-to-t from-rose-400 to-rose-600 group-hover/month:from-rose-500 group-hover/month:to-rose-700'}`}
                                     style={{ height: `${rPct}%` }} />
@@ -1498,6 +1501,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                           );
                         })}
                       </div>
+                      </div>
                       <div className="space-y-2 mt-3">
                         {deltaOrç !== null && (
                           <div className="flex items-center justify-between text-xs pt-1 border-t border-gray-100">
@@ -1526,7 +1530,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                     const gradId = `sg-${card.tag0.replace(/\W/g, '')}`;
                     const color  = isPos ? '#059669' : '#dc2626';
                     return (
-                      <div className="relative h-20 mt-2">
+                      <div className="relative h-20 mb-3">
                         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
                           <defs>
                             <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
