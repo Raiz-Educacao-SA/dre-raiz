@@ -338,16 +338,18 @@ const App: React.FC = () => {
 
     // Formatar mês usando ano dinâmico (não fixo 2024)
     const year = new Date().getFullYear();
-    const monthFilter = (filters.month as string) || (monthIdx !== undefined ? `${year}-${String(monthIdx + 1).padStart(2, '0')}` : '');
+    const singleMonth = (filters.month as string) || (monthIdx !== undefined ? `${year}-${String(monthIdx + 1).padStart(2, '0')}` : '');
+    const monthFilterFrom = singleMonth || (filters.monthFrom as string) || '';
+    const monthFilterTo   = singleMonth || (filters.monthTo   as string) || '';
 
     // Construir filtros para TransactionsView
     const drillFilters: any = {
       // conta_contabil: array de contas da linha clicada na DRE
       conta_contabil: categories || [],
 
-      // Data: passa o mês específico ou vazio
-      monthFrom: monthFilter,
-      monthTo: monthFilter,
+      // Data: mês único (clique em célula mensal) ou período do SomaTags
+      monthFrom: monthFilterFrom,
+      monthTo: monthFilterTo,
 
       // NÃO passa scenario aqui, pois a aba ativa vai cuidar disso
 
@@ -375,7 +377,8 @@ const App: React.FC = () => {
     console.log('🔵 Drill-down aplicado:', {
       categories,
       monthIdx,
-      monthFilter,
+      monthFilterFrom,
+      monthFilterTo,
       scenario,
       activeTab,
       filters,
