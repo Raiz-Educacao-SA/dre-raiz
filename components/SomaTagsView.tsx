@@ -319,7 +319,10 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     return Array.from(map.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([tag0, m]) => {
-        const items = Array.from(m.values()).sort((a, b) => a.tag01.localeCompare(b.tag01));
+        const items = Array.from(m.values());
+        if (dimensionSort === 'alpha') items.sort((a, b) => a.tag01.localeCompare(b.tag01));
+        else if (dimensionSort === 'desc') items.sort((a, b) => b.real - a.real);
+        else items.sort((a, b) => a.real - b.real);
         return {
           tag0,
           real:   items.reduce((s, i) => s + i.real,   0),
@@ -328,7 +331,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           items,
         };
       });
-  }, [filteredRows]);
+  }, [filteredRows, dimensionSort]);
 
   // ── Agrupamento Mensal ────────────────────────────────────────────────────
   const monthlyGroups = useMemo((): Tag0MonthlyGroup[] => {
@@ -358,11 +361,21 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         }
         items.push({ tag01: key, byMonth });
       }
-      items.sort((a, b) => a.tag01.localeCompare(b.tag01));
+      if (dimensionSort === 'alpha') items.sort((a, b) => a.tag01.localeCompare(b.tag01));
+      else if (dimensionSort === 'desc') items.sort((a, b) => {
+        const totalA = Object.values(a.byMonth).reduce((s, m) => s + m.real, 0);
+        const totalB = Object.values(b.byMonth).reduce((s, m) => s + m.real, 0);
+        return totalB - totalA;
+      });
+      else items.sort((a, b) => {
+        const totalA = Object.values(a.byMonth).reduce((s, m) => s + m.real, 0);
+        const totalB = Object.values(b.byMonth).reduce((s, m) => s + m.real, 0);
+        return totalA - totalB;
+      });
       result.push({ tag0, byMonth: tag0ByMonth, items });
     }
     return result.sort((a, b) => a.tag0.localeCompare(b.tag0));
-  }, [filteredRows]);
+  }, [filteredRows, dimensionSort]);
 
   // ── Meses a exibir ────────────────────────────────────────────────────────
   const monthsToShow = useMemo(() => {
@@ -1324,19 +1337,21 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             );
           })}
 
+          <div className="h-4 w-px bg-orange-200 mx-0.5" />
+          {/* Ordenação — afeta Tag01 e valores de drill-down */}
+          <button
+            onClick={() => setDimensionSort(s => s === 'desc' ? 'asc' : s === 'asc' ? 'alpha' : 'desc')}
+            className="px-1.5 py-0.5 rounded-lg text-[8px] font-black uppercase transition-all flex items-center gap-1 border bg-[#1B75BB] text-white border-[#1B75BB] shadow-sm"
+            title={dimensionSort === 'desc' ? 'Ordenar: Maior → Menor' : dimensionSort === 'asc' ? 'Ordenar: Menor → Maior' : 'Ordenar: Alfabético (A-Z)'}>
+            {dimensionSort === 'desc'  && <><ArrowDown10 size={11} /> Maior→Menor</>}
+            {dimensionSort === 'asc'   && <><ArrowUp10   size={11} /> Menor→Maior</>}
+            {dimensionSort === 'alpha' && <><ArrowDownAZ size={11} /> A-Z</>}
+          </button>
+
           {drillDimensions.length > 0 && (
             <>
               <div className="h-4 w-px bg-orange-200 mx-0.5" />
-              {/* Ordenação */}
-              <button
-                onClick={() => setDimensionSort(s => s === 'desc' ? 'asc' : s === 'asc' ? 'alpha' : 'desc')}
-                className="px-1.5 py-0.5 rounded-lg text-[8px] font-black uppercase transition-all flex items-center gap-1 border bg-[#1B75BB] text-white border-[#1B75BB] shadow-sm"
-                title={dimensionSort === 'desc' ? 'Maior → Menor' : dimensionSort === 'asc' ? 'Menor → Maior' : 'Alfabético (A-Z)'}>
-                {dimensionSort === 'desc'  && <><ArrowDown10 size={11} /> Maior→Menor</>}
-                {dimensionSort === 'asc'   && <><ArrowUp10   size={11} /> Menor→Maior</>}
-                {dimensionSort === 'alpha' && <><ArrowDownAZ size={11} /> A-Z</>}
-              </button>
-              {/* Limpar */}
+              {/* Limpar drill-down */}
               <button
                 onClick={() => { setDrillDimensions([]); setDimensionCache({}); setExpandedTag01s({}); setExpandedDrillRows({}); }}
                 className="p-0.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
