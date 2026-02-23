@@ -152,7 +152,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Restaura sessão Supabase para que RLS funcione (ex: reload de página)
         try {
           const idToken = await firebaseUser.getIdToken();
-          await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+          await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
         } catch (err) {
           console.warn('⚠️ Supabase signInWithIdToken falhou:', err);
         }
@@ -176,7 +176,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Assinar na sessão Supabase para que RLS funcione com auth.email()
       try {
         const idToken = await result.user.getIdToken();
-        await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+        await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
         console.log('✅ Sessão Supabase estabelecida');
       } catch (err) {
         console.warn('⚠️ Supabase signInWithIdToken falhou:', err);

@@ -130,6 +130,8 @@ const App: React.FC = () => {
       `${year}-01`, `${year}-12`,
       allowedMarcas.length  > 0 ? allowedMarcas  : undefined,
       allowedFiliais.length > 0 ? allowedFiliais : undefined,
+      undefined,
+      allowedTag01.length   > 0 ? allowedTag01   : undefined,
     )
       .then((rows) => {
         setDashboardSomaRows(rows);
@@ -682,9 +684,7 @@ const App: React.FC = () => {
   };
 
   const filteredTransactions = useMemo(() => {
-    // ⚠️ TESTE: PERMISSÕES DESABILITADAS
-    // const permissionFiltered = filterTransactions(transactions);
-    const permissionFiltered = transactions; // SEM FILTRO DE PERMISSÃO
+    const permissionFiltered = filterTransactions(transactions);
 
     // Depois, aplicar filtros de marca/filial selecionados
     if (currentView === 'movements' || currentView === 'dre') return permissionFiltered;
@@ -1128,6 +1128,7 @@ const App: React.FC = () => {
                   onLoadingChange={setIsSomaTagsLoading}
                   onDataChange={setHasSomaTagsData}
                   onDrillDown={handleDrillDown}
+                  allowedTag01={allowedTag01.length > 0 ? allowedTag01 : undefined}
                 />
               </Suspense>
             </div>

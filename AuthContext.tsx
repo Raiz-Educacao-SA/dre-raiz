@@ -1,12 +1,13 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  signOut, 
-  User as FirebaseUser 
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  User as FirebaseUser
 } from 'firebase/auth';
 import { auth, googleProvider } from './firebase';
+import { supabase } from './supabase';
 import { User } from './types';
 
 interface AuthContextType {
@@ -40,6 +41,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const isAuthorized = isDomainAllowed || isEmailAllowed || ALLOWED_DOMAIN === "@gmail.com";
 
         if (isAuthorized) {
+          // Sincroniza sessão com Supabase para que auth.email() funcione nas RLS policies
+          try {
+            const idToken = await firebaseUser.getIdToken();
+            await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
+          } catch (supabaseErr) {
+            console.error("Erro ao sincronizar sessão com Supabase:", supabaseErr);
+          }
           setUser({
             name: firebaseUser.displayName || "Usuário SAP",
             email: email,
@@ -83,6 +91,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     await signOut(auth);
+    await supabase.auth.signOut();
     setUser(null);
   };
 

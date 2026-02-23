@@ -106,9 +106,10 @@ interface SomaTagsViewProps {
   onLoadingChange?: (loading: boolean) => void;
   onDataChange?: (hasData: boolean) => void;
   onDrillDown?: (data: { categories: string[]; scenario?: string; filters?: Record<string, any> }) => void;
+  allowedTag01?: string[];
 }
 
-const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown }) => {
+const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01 }) => {
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
@@ -228,11 +229,14 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const mt = `${yearRef.current}-${monthToRef.current}`;
     const marcas  = accFilters.marca       ? [accFilters.marca]       : (marcasRef.current.length  > 0 ? marcasRef.current  : undefined);
     const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
+    const tags02  = accFilters.tag02 ? [accFilters.tag02] : undefined;
+    const tags03  = accFilters.tag03 ? [accFilters.tag03] : undefined;
     const rows = await getDREDimension({
       monthFrom: mf, monthTo: mt,
       scenario, dimension: dim,
       tags01: [tag01], tag0,
       marcas, nomeFiliais: filiais,
+      tags02, tags03,
     });
     setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
   }, []);
@@ -245,11 +249,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       const to     = monthFrom <= monthTo ? monthTo   : monthFrom;
       const mFrom  = `${year}-${from}`;
       const mTo    = `${year}-${to}`;
-      const marcas  = selectedMarcas.length  > 0 ? selectedMarcas  : undefined;
-      const filiais = selectedFiliais.length > 0 ? selectedFiliais : undefined;
-      const tags02  = selectedTags02.length  > 0 ? selectedTags02  : undefined;
+      const marcas   = selectedMarcas.length  > 0 ? selectedMarcas  : undefined;
+      const filiais  = selectedFiliais.length > 0 ? selectedFiliais : undefined;
+      const tags02   = selectedTags02.length  > 0 ? selectedTags02  : undefined;
+      const tags01Perm = allowedTag01 && allowedTag01.length > 0 ? allowedTag01 : undefined;
       const [data, opts, t02] = await Promise.all([
-        getSomaTags(mFrom, mTo, marcas, filiais, tags02),
+        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm),
         getDREFilterOptions({ monthFrom: mFrom, monthTo: mTo }),
         allTag02OptionsRef.current.length === 0 ? getTag02Options() : Promise.resolve(allTag02OptionsRef.current),
       ]);
@@ -264,7 +269,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     } finally {
       setLoading(false);
     }
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02]);
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, allowedTag01]);
 
   // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
   // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
