@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
 
@@ -152,6 +152,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [expandedDrillRows, setExpandedDrillRows] = useState<Record<string, boolean>>({});
   const [drillDimensions,   setDrillDimensions]   = useState<string[]>([]);
   const [dimensionSort,     setDimensionSort]     = useState<'alpha' | 'desc' | 'asc'>('desc');
+  const [isTableFullscreen, setIsTableFullscreen] = useState(false);
 
   // Refs para evitar closure stale em loadDrillData (useCallback sem deps)
   const yearRef       = useRef(year);
@@ -1271,6 +1272,16 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             </button>
           ))}
         </div>
+
+        {/* Fullscreen */}
+        {presentationMode === 'detailed' && (
+          <button
+            onClick={() => setIsTableFullscreen(v => !v)}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-slate-800 hover:text-white hover:border-slate-800 transition-all shadow-sm shrink-0"
+            title="Tela cheia">
+            <Maximize2 size={12} />
+          </button>
+        )}
       </div>
 
       {/* ══ LINHA 3: Drill-Down (apenas no modo detalhado) ══ */}
@@ -1625,7 +1636,22 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           <span className="text-sm">Carregando...</span>
         </div>
       ) : presentationMode === 'detailed' ? (
-        <div className="overflow-auto max-h-[calc(100vh-190px)] rounded-2xl shadow-2xl border-2 border-gray-200 dre-scrollbar">
+        <div className={isTableFullscreen
+          ? 'fixed inset-0 z-[100] flex flex-col bg-white'
+          : 'overflow-auto max-h-[calc(100vh-190px)] rounded-2xl shadow-2xl border-2 border-gray-200 dre-scrollbar'
+        }>
+          {/* Barra de saída do fullscreen */}
+          {isTableFullscreen && (
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-800 text-white shrink-0">
+              <span className="text-[11px] font-black uppercase tracking-wider">DRE Gerencial — Tela Cheia</span>
+              <button
+                onClick={() => setIsTableFullscreen(false)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-all">
+                <Minimize2 size={12} /> Sair
+              </button>
+            </div>
+          )}
+          <div className={isTableFullscreen ? 'overflow-auto flex-1 dre-scrollbar' : 'contents'}>
           <table className="border-separate border-spacing-0 text-left table-auto min-w-full text-[10px]">
 
             {/* ══ CONSOLIDADO ══ */}
@@ -1740,6 +1766,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             )}
 
           </table>
+          </div>
         </div>
       ) : null}
     </div>
