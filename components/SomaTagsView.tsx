@@ -269,18 +269,19 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   useEffect(() => {
     if (filialCleanupRef.current) { filialCleanupRef.current = false; return; }
     fetchData();
-  }, [selectedMarcas, selectedFiliais, selectedTags02]);
+  }, [selectedMarcas, selectedFiliais]);
+  // Tag02 tem efeito próprio — não passa pelo guarda filialCleanupRef
+  useEffect(() => { fetchData(); }, [selectedTags02]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cascata Tag02: quando Tag01 muda, atualiza opções de Tag02
+  // Cascata Tag02: quando Tag01 muda, atualiza opções disponíveis de Tag02
   useEffect(() => {
     if (selectedTags01.length === 0) {
+      // Restaura lista completa; NÃO limpa seleção de tag02 automaticamente
       setTag02Options(allTag02OptionsRef.current);
-      setSelectedTags02(prev =>
-        prev.length > 0 ? [] : prev
-      );
     } else {
       getTag02OptionsForTag01s(selectedTags01).then(opts => {
         setTag02Options(opts);
+        // Remove seleções de tag02 que não existem para os tag01s escolhidos
         setSelectedTags02(prev => prev.filter(t => opts.includes(t)));
       });
     }
