@@ -479,7 +479,6 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     { id: 'marca',       label: 'Marca' },
     { id: 'nome_filial', label: 'Filial' },
     { id: 'vendor',      label: 'Fornecedor' },
-    { id: 'tag01',       label: 'Tag 01' },
     { id: 'tag02',       label: 'Tag 02' },
     { id: 'tag03',       label: 'Tag 03' },
   ];
