@@ -286,6 +286,20 @@ export const getTag02Options = async (): Promise<string[]> => {
 };
 
 /**
+ * Retorna tag02 distintos apenas para os tag01s fornecidos (cascata)
+ */
+export const getTag02OptionsForTag01s = async (tags01: string[]): Promise<string[]> => {
+  if (tags01.length === 0) return [];
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('tag02')
+    .in('tag01', tags01)
+    .not('tag02', 'is', null);
+  if (error || !data) return [];
+  return [...new Set(data.map(r => r.tag02).filter(Boolean) as string[])].sort();
+};
+
+/**
  * Busca todas as opções de Tag03 disponíveis no banco
  * Retorna lista única e ordenada de TODOS os tag03 distintos
  */
