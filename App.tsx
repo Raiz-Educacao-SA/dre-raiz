@@ -345,14 +345,23 @@ const App: React.FC = () => {
     const monthFilterFrom = singleMonth || (filters.monthFrom as string) || '';
     const monthFilterTo   = singleMonth || (filters.monthTo   as string) || '';
 
+    // A-1: dre_agg armazena datas +1 ano para alinhar com o período atual.
+    // transactions_ano_anterior guarda as datas originais (2025), então subtraímos 1 ano.
+    const shiftYear = (yyyyMM: string, delta: number) => {
+      if (!yyyyMM) return yyyyMM;
+      const [y, m] = yyyyMM.split('-');
+      return `${parseInt(y) + delta}-${m}`;
+    };
+    const yearOffset = scenario === 'A-1' ? -1 : 0;
+
     // Construir filtros para TransactionsView
     const drillFilters: any = {
       // conta_contabil: array de contas da linha clicada na DRE
       conta_contabil: categories || [],
 
       // Data: mês único (clique em célula mensal) ou período do SomaTags
-      monthFrom: monthFilterFrom,
-      monthTo: monthFilterTo,
+      monthFrom: shiftYear(monthFilterFrom, yearOffset),
+      monthTo:   shiftYear(monthFilterTo,   yearOffset),
 
       // NÃO passa scenario aqui, pois a aba ativa vai cuidar disso
 
