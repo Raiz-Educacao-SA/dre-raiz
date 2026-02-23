@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
+import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
 import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
@@ -127,8 +127,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // ── Filtros Marca / Filial / Tag01 ───────────────────────────────────────
   const [filterOptions,   setFilterOptions]   = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
   const [selectedMarcas,  setSelectedMarcas]  = useState<string[]>([]);
-  const [selectedTags02,  setSelectedTags02]  = useState<string[]>([]);
-  const [tag02Options,    setTag02Options]    = useState<string[]>([]);
+  const [selectedTags02,      setSelectedTags02]      = useState<string[]>([]);
+  const [tag02Options,        setTag02Options]        = useState<string[]>([]);
+  const [tag02AllowedTag01s,  setTag02AllowedTag01s]  = useState<string[] | null>(null); // null = sem filtro
   const allTag02OptionsRef = useRef<string[]>([]);
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
   const [selectedTags01,  setSelectedTags01]  = useState<string[]>([]);
@@ -286,6 +287,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     }
   }, [selectedTags01]);
 
+  // Filtro client-side de rows por Tag02: busca quais tag01s pertencem às tag02s selecionadas
+  useEffect(() => {
+    if (selectedTags02.length === 0) {
+      setTag02AllowedTag01s(null);
+      return;
+    }
+    getTag01sForTag02s(selectedTags02).then(tag01s => {
+      setTag02AllowedTag01s(tag01s);
+    });
+  }, [selectedTags02]);
+
   // Limpa cache de drill ao trocar filtros
   useEffect(() => {
     setDimensionCache({});
@@ -293,11 +305,15 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setExpandedDrillRows({});
   }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais]);
 
-  // ── Filtro client-side por Tag01 ─────────────────────────────────────────
-  const filteredRows = useMemo(
-    () => selectedTags01.length > 0 ? rows.filter(r => selectedTags01.includes(r.tag01)) : rows,
-    [rows, selectedTags01],
-  );
+  // ── Filtro client-side por Tag01 e Tag02 ────────────────────────────────
+  const filteredRows = useMemo(() => {
+    let result = rows;
+    if (selectedTags01.length > 0)
+      result = result.filter(r => selectedTags01.includes(r.tag01));
+    if (tag02AllowedTag01s !== null)
+      result = result.filter(r => tag02AllowedTag01s.includes(r.tag01));
+    return result;
+  }, [rows, selectedTags01, tag02AllowedTag01s]);
 
   // ── Agrupamento Consolidado ───────────────────────────────────────────────
   const groups = useMemo((): Tag0Group[] => {

@@ -286,6 +286,20 @@ export const getTag02Options = async (): Promise<string[]> => {
 };
 
 /**
+ * Retorna tag01 distintos que possuem os tag02s fornecidos (cascata reversa)
+ */
+export const getTag01sForTag02s = async (tags02: string[]): Promise<string[]> => {
+  if (tags02.length === 0) return [];
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('tag01')
+    .in('tag02', tags02)
+    .not('tag01', 'is', null);
+  if (error || !data) return [];
+  return [...new Set(data.map(r => r.tag01).filter(Boolean) as string[])].sort();
+};
+
+/**
  * Retorna tag02 distintos apenas para os tag01s fornecidos (cascata)
  */
 export const getTag02OptionsForTag01s = async (tags01: string[]): Promise<string[]> => {
