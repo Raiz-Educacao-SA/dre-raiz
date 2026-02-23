@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, SomaTagsRow, DREFilterOptions } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
 
@@ -24,6 +24,10 @@ const deltaClass = (delta: number, base: number, onCalc = false): string => {
 interface Tag01Row  { tag01: string; real: number; orcado: number; a1: number }
 interface Tag0Group { tag0:  string; real: number; orcado: number; a1: number; items: Tag01Row[] }
 interface CalcData  { real:  number; orcado: number; a1: number }
+interface ColsVis {
+  real: boolean; orcado: boolean; deltaAbsOrcado: boolean; deltaPercOrcado: boolean;
+  a1: boolean;   deltaAbsA1: boolean; deltaPercA1: boolean;
+}
 
 const MONTHS = [
   { value: '01', label: 'Jan' }, { value: '02', label: 'Fev' },
@@ -34,10 +38,10 @@ const MONTHS = [
   { value: '11', label: 'Nov' }, { value: '12', label: 'Dez' },
 ];
 
-// ── Linha calculada (MARGEM / EBITDA) — estilo DRE Gerencial ─────────────────
-interface CalcRowProps { label: string; data: CalcData; borderTop?: boolean }
+// ── Linha calculada (MARGEM / EBITDA) ─────────────────────────────────────────
+interface CalcRowProps { label: string; data: CalcData; borderTop?: boolean; cols: ColsVis }
 
-const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop }) => {
+const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols }) => {
   const { real, orcado, a1 } = data;
   const dOrç  = real - orcado;
   const dA1   = real - a1;
@@ -45,50 +49,26 @@ const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop }) => {
   const hasA1  = a1     !== 0;
 
   return (
-    <tr className={`group bg-[#F44C00] text-white font-black text-[11px] shadow-sm
+    <tr className={`group bg-[#F44C00] text-white font-black text-[10px] h-6 shadow-sm
                    ${borderTop ? 'border-t-2 border-yellow-400' : ''}`}>
-      <td className="px-2 py-1.5 w-8"></td>
 
-      {/* Label */}
-      <td className="px-2 py-1.5 sticky left-0 bg-[#F44C00] group-hover:bg-yellow-400
-                     group-hover:text-black transition-colors z-20
-                     shadow-[2px_0_4px_rgba(0,0,0,0.2)] uppercase tracking-tight">
-        ▶ {label}
+      {/* Label — colSpan=2 para cobrir expand col + label col */}
+      <td colSpan={2}
+          className="sticky left-0 bg-inherit z-20 border-r border-white/10
+                     shadow-[2px_0_4px_rgba(0,0,0,0.2)]
+                     group-hover:bg-yellow-400 group-hover:text-black transition-colors">
+        <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
+          <Activity size={12} /> {label}
+        </div>
       </td>
 
-      {/* Real */}
-      <td className="px-2 py-1.5 text-center font-mono">{fmt(real)}</td>
-
-      {/* Orçado */}
-      <td className={`px-2 py-1.5 text-center font-mono ${hasOrc ? 'text-green-200' : 'text-orange-300'}`}>
-        {hasOrc ? fmt(orcado) : '—'}
-      </td>
-
-      {/* Δ R−Orç */}
-      <td className={`px-2 py-1.5 text-center font-mono ${hasOrc ? deltaClass(dOrç, orcado, true) : 'text-orange-300'}`}>
-        {hasOrc ? fmt(dOrç) : '—'}
-      </td>
-
-      {/* Δ% Orç */}
-      <td className={`px-2 py-1.5 text-center font-mono border-r border-white/20
-                     ${hasOrc ? deltaClass(dOrç, orcado, true) : 'text-orange-300'}`}>
-        {fmtPct(real, orcado)}
-      </td>
-
-      {/* A-1 */}
-      <td className={`px-2 py-1.5 text-center font-mono ${hasA1 ? 'text-yellow-200' : 'text-orange-300'}`}>
-        {hasA1 ? fmt(a1) : '—'}
-      </td>
-
-      {/* Δ R−A-1 */}
-      <td className={`px-2 py-1.5 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>
-        {hasA1 ? fmt(dA1) : '—'}
-      </td>
-
-      {/* Δ% A-1 */}
-      <td className={`px-2 py-1.5 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>
-        {fmtPct(real, a1)}
-      </td>
+      {cols.real           && <td className="px-2 py-1 text-center font-mono">{fmt(real)}</td>}
+      {cols.orcado         && <td className={`px-2 py-1 text-center font-mono ${hasOrc ? '' : 'text-orange-300'}`}>{hasOrc ? fmt(orcado) : '—'}</td>}
+      {cols.deltaAbsOrcado && <td className={`px-2 py-1 text-center font-mono ${hasOrc ? deltaClass(dOrç, orcado, true) : 'text-orange-300'}`}>{hasOrc ? fmt(dOrç) : '—'}</td>}
+      {cols.deltaPercOrcado && <td className={`px-2 py-1 text-center font-mono border-r border-white/20 ${hasOrc ? deltaClass(dOrç, orcado, true) : 'text-orange-300'}`}>{fmtPct(real, orcado)}</td>}
+      {cols.a1             && <td className={`px-2 py-1 text-center font-mono ${hasA1 ? '' : 'text-orange-300'}`}>{hasA1 ? fmt(a1) : '—'}</td>}
+      {cols.deltaAbsA1     && <td className={`px-2 py-1 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>{hasA1 ? fmt(dA1) : '—'}</td>}
+      {cols.deltaPercA1    && <td className={`px-2 py-1 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>{fmtPct(real, a1)}</td>}
     </tr>
   );
 };
@@ -118,6 +98,51 @@ const SomaTagsView: React.FC = () => {
   const [selectedMarcas,  setSelectedMarcas]  = useState<string[]>([]);
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
   const filialCleanupRef = useRef(false);
+
+  // ── Visibilidade de colunas ───────────────────────────────────────────────
+  const [showReal,            setShowReal]            = useState(true);
+  const [showOrcado,          setShowOrcado]          = useState(true);
+  const [showA1,              setShowA1]              = useState(true);
+  const [showDeltaAbsOrcado,  setShowDeltaAbsOrcado]  = useState(true);
+  const [showDeltaPercOrcado, setShowDeltaPercOrcado] = useState(true);
+  const [showDeltaAbsA1,      setShowDeltaAbsA1]      = useState(true);
+  const [showDeltaPercA1,     setShowDeltaPercA1]     = useState(true);
+  const [selectionOrder, setSelectionOrder] = useState<string[]>([
+    'Real', 'Orçado', 'DeltaAbsOrcado', 'DeltaPercOrcado', 'A1', 'DeltaAbsA1', 'DeltaPercA1',
+  ]);
+
+  const toggleElement = useCallback(
+    (element: string, currentState: boolean, setState: (v: boolean) => void) => {
+      if (!currentState) {
+        setSelectionOrder(prev => [...prev.filter(s => s !== element), element]);
+      } else {
+        setSelectionOrder(prev => prev.filter(s => s !== element));
+      }
+      setState(!currentState);
+    }, [],
+  );
+
+  const activeElements = useMemo(() => {
+    const active: string[] = [];
+    if (showReal)            active.push('Real');
+    if (showOrcado)          active.push('Orçado');
+    if (showDeltaAbsOrcado)  active.push('DeltaAbsOrcado');
+    if (showDeltaPercOrcado) active.push('DeltaPercOrcado');
+    if (showA1)              active.push('A1');
+    if (showDeltaAbsA1)      active.push('DeltaAbsA1');
+    if (showDeltaPercA1)     active.push('DeltaPercA1');
+    return active.sort((a, b) => selectionOrder.indexOf(a) - selectionOrder.indexOf(b));
+  }, [showReal, showOrcado, showA1, showDeltaAbsOrcado, showDeltaPercOrcado, showDeltaAbsA1, showDeltaPercA1, selectionOrder]);
+
+  const cols: ColsVis = useMemo(() => ({
+    real: showReal, orcado: showOrcado,
+    deltaAbsOrcado: showDeltaAbsOrcado, deltaPercOrcado: showDeltaPercOrcado,
+    a1: showA1, deltaAbsA1: showDeltaAbsA1, deltaPercA1: showDeltaPercA1,
+  }), [showReal, showOrcado, showA1, showDeltaAbsOrcado, showDeltaPercOrcado, showDeltaAbsA1, showDeltaPercA1]);
+
+  // ColSpans dinâmicos para grupos do cabeçalho
+  const orcGrpCols = [showOrcado, showDeltaAbsOrcado, showDeltaPercOrcado].filter(Boolean).length;
+  const a1GrpCols  = [showA1,     showDeltaAbsA1,     showDeltaPercA1].filter(Boolean).length;
 
   // Cascata: filtra filiais disponíveis conforme marcas selecionadas
   const filiaisFiltradas = useMemo(() => {
@@ -300,6 +325,13 @@ const SomaTagsView: React.FC = () => {
   ];
   const isQuarterActive = (q: typeof QUARTERS[0]) => monthFrom === q.from && monthTo === q.to;
 
+  // Helper para badge de ordem
+  const badge = (key: string) => {
+    const idx = activeElements.indexOf(key);
+    if (idx < 0) return null;
+    return <span className="ml-0.5 bg-white/30 px-0.5 rounded text-[7px]">{idx + 1}º</span>;
+  };
+
   return (
     <div className="p-4 space-y-2">
 
@@ -330,7 +362,6 @@ const SomaTagsView: React.FC = () => {
                       rounded-lg border border-blue-300 shadow-md overflow-x-auto">
         <span className="text-base shrink-0">🎯</span>
 
-        {/* Filtros Marca / Filial */}
         <MultiSelectFilter
           label="Marca"
           icon={<Flag size={14} />}
@@ -348,7 +379,6 @@ const SomaTagsView: React.FC = () => {
           colorScheme="blue"
         />
 
-        {/* Separador */}
         <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
 
         {/* Ano */}
@@ -368,7 +398,6 @@ const SomaTagsView: React.FC = () => {
           <CalendarDays size={16} className="text-purple-600 shrink-0" />
           <span className="text-[12px] font-bold text-gray-700 whitespace-nowrap">Período:</span>
 
-          {/* Atalhos de trimestre */}
           <div className="flex gap-1">
             {QUARTERS.map(q => (
               <button
@@ -386,7 +415,6 @@ const SomaTagsView: React.FC = () => {
             ))}
           </div>
 
-          {/* Seletores De/Até */}
           <div className="flex items-center gap-1.5 bg-white border border-purple-300 px-2.5 py-1 rounded shadow-sm">
             <Calendar size={14} className="text-purple-600 shrink-0" />
             <select
@@ -413,7 +441,6 @@ const SomaTagsView: React.FC = () => {
           </div>
         </div>
 
-        {/* Separador */}
         <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
 
         {/* Atualizar */}
@@ -443,7 +470,7 @@ const SomaTagsView: React.FC = () => {
           }
         </button>
 
-        {/* Limpar filtros (condicional) */}
+        {/* Limpar filtros */}
         {hasAnyFilter && (
           <>
             <div className="h-8 w-px bg-blue-300 mx-0.5 shrink-0" />
@@ -461,6 +488,102 @@ const SomaTagsView: React.FC = () => {
         )}
       </div>
 
+      {/* ── Painel de Seleção de Colunas ── */}
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 px-2 py-1 rounded-lg border border-blue-100 shadow-sm">
+        <div className="flex items-center justify-between gap-1.5">
+          {/* Título */}
+          <div className="flex items-center gap-1">
+            <div className="p-0.5 rounded bg-blue-500 text-white">
+              <Columns size={10} />
+            </div>
+            <h3 className="text-[9px] font-black text-gray-900 uppercase tracking-tight">Colunas</h3>
+          </div>
+
+          {/* Botões de toggle */}
+          <div className="flex items-center gap-1 flex-wrap">
+
+            {/* Real */}
+            <button onClick={() => toggleElement('Real', showReal, setShowReal)}
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${
+                showReal ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
+                         : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'}`}>
+              {showReal ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
+              <span className="text-[8px] font-black uppercase">Real</span>
+              {showReal && badge('Real')}
+            </button>
+
+            {/* Orçado */}
+            <button onClick={() => toggleElement('Orçado', showOrcado, setShowOrcado)}
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${
+                showOrcado ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
+                           : 'bg-white text-gray-600 border-gray-200 hover:border-emerald-300'}`}>
+              {showOrcado ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
+              <span className="text-[8px] font-black uppercase">Orçado</span>
+              {showOrcado && badge('Orçado')}
+            </button>
+
+            {/* Δ R$ vs Orçado */}
+            <button onClick={() => toggleElement('DeltaAbsOrcado', showDeltaAbsOrcado, setShowDeltaAbsOrcado)}
+              title="Variação R$ vs Orçado"
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${
+                showDeltaAbsOrcado ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
+                                   : 'bg-white text-gray-600 border-gray-200 hover:border-rose-300'}`}>
+              {showDeltaAbsOrcado ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
+              <span className="text-[8px] font-black uppercase">ΔR$ Orç</span>
+              {showDeltaAbsOrcado && badge('DeltaAbsOrcado')}
+            </button>
+
+            {/* Δ % vs Orçado */}
+            <button onClick={() => toggleElement('DeltaPercOrcado', showDeltaPercOrcado, setShowDeltaPercOrcado)}
+              title="Variação % vs Orçado"
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${
+                showDeltaPercOrcado ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                                    : 'bg-white text-gray-600 border-gray-200 hover:border-orange-300'}`}>
+              {showDeltaPercOrcado ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
+              <span className="text-[8px] font-black uppercase">Δ% Orç</span>
+              {showDeltaPercOrcado && badge('DeltaPercOrcado')}
+            </button>
+
+            {/* A-1 */}
+            <button onClick={() => toggleElement('A1', showA1, setShowA1)}
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${
+                showA1 ? 'bg-purple-500 text-white border-purple-500 shadow-sm'
+                       : 'bg-white text-gray-600 border-gray-200 hover:border-purple-300'}`}>
+              {showA1 ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
+              <span className="text-[8px] font-black uppercase">A-1</span>
+              {showA1 && badge('A1')}
+            </button>
+
+            {/* Δ R$ vs A-1 */}
+            <button onClick={() => toggleElement('DeltaAbsA1', showDeltaAbsA1, setShowDeltaAbsA1)}
+              title="Variação R$ vs A-1"
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${
+                showDeltaAbsA1 ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                               : 'bg-white text-gray-600 border-gray-200 hover:border-rose-400'}`}>
+              {showDeltaAbsA1 ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
+              <span className="text-[8px] font-black uppercase">ΔR$ A-1</span>
+              {showDeltaAbsA1 && badge('DeltaAbsA1')}
+            </button>
+
+            {/* Δ % vs A-1 */}
+            <button onClick={() => toggleElement('DeltaPercA1', showDeltaPercA1, setShowDeltaPercA1)}
+              title="Variação % vs A-1"
+              className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border transition-all ${
+                showDeltaPercA1 ? 'bg-orange-600 text-white border-orange-600 shadow-sm'
+                                : 'bg-white text-gray-600 border-gray-200 hover:border-orange-400'}`}>
+              {showDeltaPercA1 ? <CheckSquare size={8} strokeWidth={3} /> : <Square size={8} strokeWidth={3} />}
+              <span className="text-[8px] font-black uppercase">Δ% A-1</span>
+              {showDeltaPercA1 && badge('DeltaPercA1')}
+            </button>
+
+            {/* Aviso nenhuma coluna */}
+            {!showReal && !showOrcado && !showA1 && !showDeltaAbsOrcado && !showDeltaPercOrcado && !showDeltaAbsA1 && !showDeltaPercA1 && (
+              <span className="text-[8px] font-bold text-yellow-800 bg-yellow-50 px-1.5 py-0.5 rounded">⚠️ Selecione ao menos 1 coluna</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {error && (
         <div className="bg-red-50 border border-red-300 rounded p-2 text-xs text-red-800 font-semibold">
           ❌ {error}
@@ -473,7 +596,7 @@ const SomaTagsView: React.FC = () => {
           <span className="text-sm">Carregando...</span>
         </div>
       ) : (
-        <div className="overflow-auto max-h-[calc(100vh-130px)] rounded-lg shadow-md border border-gray-200">
+        <div className="overflow-auto max-h-[calc(100vh-175px)] rounded-lg shadow-md border border-gray-200">
           <table className="border-separate border-spacing-0 text-left table-auto min-w-full text-[11px]">
 
             {/* ══ CABEÇALHO ══ */}
@@ -487,23 +610,26 @@ const SomaTagsView: React.FC = () => {
                              w-[320px] shadow-lg border-r border-white/10">
                   CONTAS GERENCIAIS
                 </th>
-                {/* Real — apenas 1 coluna */}
-                <th className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider
-                               bg-gradient-to-r from-blue-600 to-blue-500 border-r border-white/20">
-                  REAL
-                </th>
-                {/* Real vs Orçado */}
-                <th colSpan={3}
-                  className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider
-                             bg-gradient-to-r from-emerald-600 to-emerald-500 border-r border-white/20">
-                  REAL vs ORÇADO
-                </th>
-                {/* Real vs A-1 */}
-                <th colSpan={3}
-                  className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider
-                             bg-gradient-to-r from-purple-600 to-purple-500">
-                  REAL vs A-1
-                </th>
+                {cols.real && (
+                  <th className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider
+                                 bg-gradient-to-r from-blue-600 to-blue-500 border-r border-white/20">
+                    REAL
+                  </th>
+                )}
+                {orcGrpCols > 0 && (
+                  <th colSpan={orcGrpCols}
+                    className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider
+                               bg-gradient-to-r from-emerald-600 to-emerald-500 border-r border-white/20">
+                    REAL vs ORÇADO
+                  </th>
+                )}
+                {a1GrpCols > 0 && (
+                  <th colSpan={a1GrpCols}
+                    className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider
+                               bg-gradient-to-r from-purple-600 to-purple-500">
+                    REAL vs A-1
+                  </th>
+                )}
               </tr>
 
               {/* Linha 2 — colunas individuais */}
@@ -515,41 +641,13 @@ const SomaTagsView: React.FC = () => {
                                border-r border-white/10 shadow-[2px_0_4px_rgba(0,0,0,0.2)]">
                   CONTAS GERENCIAIS
                 </th>
-                {/* Real */}
-                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px]
-                               bg-blue-700/80 border-r border-white/20">
-                  Real
-                </th>
-                {/* Orçado */}
-                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px]
-                               bg-emerald-700/80">
-                  Orçado
-                </th>
-                {/* Δ R−Orç */}
-                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px]
-                               bg-emerald-700/80">
-                  Δ R−Orç
-                </th>
-                {/* Δ% Orç */}
-                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px]
-                               bg-emerald-700/80 border-r border-white/20">
-                  Δ%
-                </th>
-                {/* A-1 */}
-                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px]
-                               bg-purple-700/80">
-                  A-1
-                </th>
-                {/* Δ R−A-1 */}
-                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px]
-                               bg-purple-700/80">
-                  Δ R−A-1
-                </th>
-                {/* Δ% A-1 */}
-                <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px]
-                               bg-purple-700/80">
-                  Δ%
-                </th>
+                {cols.real           && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-blue-700/80 border-r border-white/20">Real</th>}
+                {cols.orcado         && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-emerald-700/80">Orçado</th>}
+                {cols.deltaAbsOrcado && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-emerald-700/80">Δ R−Orç</th>}
+                {cols.deltaPercOrcado && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-emerald-700/80 border-r border-white/20">Δ%</th>}
+                {cols.a1             && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-purple-700/80">A-1</th>}
+                {cols.deltaAbsA1     && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-purple-700/80">Δ R−A-1</th>}
+                {cols.deltaPercA1    && <th className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-purple-700/80">Δ%</th>}
               </tr>
             </thead>
 
@@ -580,35 +678,13 @@ const SomaTagsView: React.FC = () => {
                           onClick={() => toggleGroup(g.tag0)}>
                         {g.tag0}
                       </td>
-                      {/* Real */}
-                      <td className="px-2 py-1 text-center font-mono font-black border-r border-white/10">
-                        {fmt(g.real)}
-                      </td>
-                      {/* Orçado */}
-                      <td className={`px-2 py-1 text-center font-mono font-black ${hasOrc ? '' : 'text-gray-500'}`}>
-                        {hasOrc ? fmt(g.orcado) : '—'}
-                      </td>
-                      {/* Δ R−Orç */}
-                      <td className={`px-2 py-1 text-center font-mono font-black ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>
-                        {hasOrc ? fmt(dOrç) : '—'}
-                      </td>
-                      {/* Δ% Orç */}
-                      <td className={`px-2 py-1 text-center font-mono font-black border-r border-white/10
-                                     ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>
-                        {fmtPct(g.real, g.orcado)}
-                      </td>
-                      {/* A-1 */}
-                      <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? '' : 'text-gray-500'}`}>
-                        {hasA1 ? fmt(g.a1) : '—'}
-                      </td>
-                      {/* Δ R−A-1 */}
-                      <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>
-                        {hasA1 ? fmt(dA1) : '—'}
-                      </td>
-                      {/* Δ% A-1 */}
-                      <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>
-                        {fmtPct(g.real, g.a1)}
-                      </td>
+                      {cols.real           && <td className="px-2 py-1 text-center font-mono font-black border-r border-white/10">{fmt(g.real)}</td>}
+                      {cols.orcado         && <td className={`px-2 py-1 text-center font-mono font-black ${hasOrc ? '' : 'text-gray-500'}`}>{hasOrc ? fmt(g.orcado) : '—'}</td>}
+                      {cols.deltaAbsOrcado && <td className={`px-2 py-1 text-center font-mono font-black ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>{hasOrc ? fmt(dOrç) : '—'}</td>}
+                      {cols.deltaPercOrcado && <td className={`px-2 py-1 text-center font-mono font-black border-r border-white/10 ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>{fmtPct(g.real, g.orcado)}</td>}
+                      {cols.a1             && <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? '' : 'text-gray-500'}`}>{hasA1 ? fmt(g.a1) : '—'}</td>}
+                      {cols.deltaAbsA1     && <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>{hasA1 ? fmt(dA1) : '—'}</td>}
+                      {cols.deltaPercA1    && <td className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>{fmtPct(g.real, g.a1)}</td>}
                     </tr>
 
                     {/* ── Tag01 — nível 2 ── */}
@@ -617,60 +693,36 @@ const SomaTagsView: React.FC = () => {
                       const rHasA1  = r.a1     !== 0;
                       const rdOrç   = r.real - r.orcado;
                       const rdA1    = r.real - r.a1;
+                      const bg      = i % 2 === 0 ? 'bg-gray-50' : 'bg-white';
                       return (
                         <tr key={r.tag01}
-                          className={`${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'} border-b border-gray-100
-                                     hover:bg-orange-50/30 transition-colors`}>
-                          <td className={`px-2 py-1 w-8 sticky left-0 z-20
-                                         ${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}></td>
+                          className={`${bg} border-b border-gray-100 hover:bg-orange-50/30 transition-colors`}>
+                          <td className={`px-2 py-1 w-8 sticky left-0 z-20 ${bg}`}></td>
                           <td className={`px-2 py-1 pl-6 text-gray-800 font-semibold truncate
                                          sticky left-8 z-20 border-r border-gray-200
-                                         shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-[280px]
-                                         ${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
+                                         shadow-[2px_0_4px_rgba(0,0,0,0.05)] w-[280px] ${bg}`}>
                             {r.tag01}
                           </td>
-                          {/* Real */}
-                          <td className="px-2 py-1 text-center font-mono text-gray-900 border-r border-gray-100">
-                            {fmt(r.real)}
-                          </td>
-                          {/* Orçado */}
-                          <td className={`px-2 py-1 text-center font-mono ${rHasOrc ? 'text-gray-900' : 'text-gray-300'}`}>
-                            {rHasOrc ? fmt(r.orcado) : '—'}
-                          </td>
-                          {/* Δ R−Orç */}
-                          <td className={`px-2 py-1 text-center font-mono ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>
-                            {rHasOrc ? fmt(rdOrç) : '—'}
-                          </td>
-                          {/* Δ% Orç */}
-                          <td className={`px-2 py-1 text-center font-mono border-r border-gray-200
-                                         ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>
-                            {rHasOrc ? `${((rdOrç / Math.abs(r.orcado)) * 100).toFixed(1)}%` : '—'}
-                          </td>
-                          {/* A-1 */}
-                          <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? 'text-gray-900' : 'text-gray-300'}`}>
-                            {rHasA1 ? fmt(r.a1) : '—'}
-                          </td>
-                          {/* Δ R−A-1 */}
-                          <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>
-                            {rHasA1 ? fmt(rdA1) : '—'}
-                          </td>
-                          {/* Δ% A-1 */}
-                          <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>
-                            {rHasA1 ? `${((rdA1 / Math.abs(r.a1)) * 100).toFixed(1)}%` : '—'}
-                          </td>
+                          {cols.real           && <td className="px-2 py-1 text-center font-mono text-gray-900 border-r border-gray-100">{fmt(r.real)}</td>}
+                          {cols.orcado         && <td className={`px-2 py-1 text-center font-mono ${rHasOrc ? 'text-gray-900' : 'text-gray-300'}`}>{rHasOrc ? fmt(r.orcado) : '—'}</td>}
+                          {cols.deltaAbsOrcado && <td className={`px-2 py-1 text-center font-mono ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? fmt(rdOrç) : '—'}</td>}
+                          {cols.deltaPercOrcado && <td className={`px-2 py-1 text-center font-mono border-r border-gray-200 ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? `${((rdOrç / Math.abs(r.orcado)) * 100).toFixed(1)}%` : '—'}</td>}
+                          {cols.a1             && <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? 'text-gray-900' : 'text-gray-300'}`}>{rHasA1 ? fmt(r.a1) : '—'}</td>}
+                          {cols.deltaAbsA1     && <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(rdA1) : '—'}</td>}
+                          {cols.deltaPercA1    && <td className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? `${((rdA1 / Math.abs(r.a1)) * 100).toFixed(1)}%` : '—'}</td>}
                         </tr>
                       );
                     })}
 
                     {/* ── Linhas calculadas ── */}
                     {idx === lastIdx03 && (
-                      <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop />
+                      <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} />
                     )}
                     {idx === lastIdx04 && (
-                      <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop />
+                      <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop cols={cols} />
                     )}
                     {idx === lastIdx03 && lastIdx04 === -1 && (
-                      <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} />
+                      <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} cols={cols} />
                     )}
 
                   </React.Fragment>
@@ -683,35 +735,22 @@ const SomaTagsView: React.FC = () => {
               <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800
                              text-white font-black text-[11px] shadow-[0_-2px_6px_rgba(0,0,0,0.3)]
                              border-t-2 border-yellow-400">
-                <td className="px-2 py-2 sticky left-0 z-50
-                               bg-gradient-to-r from-slate-800 to-slate-700"></td>
-                <td className="px-2 py-2 uppercase tracking-tight font-black
-                               sticky left-8 z-50 bg-gradient-to-r from-slate-800 to-slate-700
-                               shadow-[2px_0_4px_rgba(0,0,0,0.3)] border-r border-white/10 w-[280px]">
-                  TOTAL GERAL
+                <td colSpan={2}
+                    className="py-2 uppercase tracking-tight font-black
+                               sticky left-0 z-50 bg-gradient-to-r from-slate-800 to-slate-700
+                               shadow-[2px_0_4px_rgba(0,0,0,0.3)] border-r border-white/10">
+                  <div className="flex items-center gap-1 px-2">
+                    {showOnlyEbitda && <Activity size={12} />}
+                    <span>{showOnlyEbitda ? 'EBITDA TOTAL' : 'TOTAL GERAL'}</span>
+                  </div>
                 </td>
-                <td className="px-2 py-2 text-center font-mono border-r border-white/10">
-                  {fmt(totals.real)}
-                </td>
-                <td className={`px-2 py-2 text-center font-mono ${totals.orcado !== 0 ? '' : 'text-gray-500'}`}>
-                  {totals.orcado !== 0 ? fmt(totals.orcado) : '—'}
-                </td>
-                <td className={`px-2 py-2 text-center font-mono ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>
-                  {totals.orcado !== 0 ? fmt(totals.real - totals.orcado) : '—'}
-                </td>
-                <td className={`px-2 py-2 text-center font-mono border-r border-white/10
-                               ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>
-                  {fmtPct(totals.real, totals.orcado)}
-                </td>
-                <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? '' : 'text-gray-500'}`}>
-                  {totals.a1 !== 0 ? fmt(totals.a1) : '—'}
-                </td>
-                <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>
-                  {totals.a1 !== 0 ? fmt(totals.real - totals.a1) : '—'}
-                </td>
-                <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>
-                  {fmtPct(totals.real, totals.a1)}
-                </td>
+                {cols.real           && <td className="px-2 py-2 text-center font-mono border-r border-white/10">{fmt(totals.real)}</td>}
+                {cols.orcado         && <td className={`px-2 py-2 text-center font-mono ${totals.orcado !== 0 ? '' : 'text-gray-500'}`}>{totals.orcado !== 0 ? fmt(totals.orcado) : '—'}</td>}
+                {cols.deltaAbsOrcado && <td className={`px-2 py-2 text-center font-mono ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>{totals.orcado !== 0 ? fmt(totals.real - totals.orcado) : '—'}</td>}
+                {cols.deltaPercOrcado && <td className={`px-2 py-2 text-center font-mono border-r border-white/10 ${totals.orcado !== 0 ? deltaClass(totals.real - totals.orcado, totals.orcado, true) : 'text-gray-500'}`}>{fmtPct(totals.real, totals.orcado)}</td>}
+                {cols.a1             && <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? '' : 'text-gray-500'}`}>{totals.a1 !== 0 ? fmt(totals.a1) : '—'}</td>}
+                {cols.deltaAbsA1     && <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>{totals.a1 !== 0 ? fmt(totals.real - totals.a1) : '—'}</td>}
+                {cols.deltaPercA1    && <td className={`px-2 py-2 text-center font-mono ${totals.a1 !== 0 ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>{fmtPct(totals.real, totals.a1)}</td>}
               </tr>
             </tfoot>
 
