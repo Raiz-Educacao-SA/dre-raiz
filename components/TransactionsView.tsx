@@ -429,11 +429,18 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     setIsSearching(true);
     console.log('🔍 Iniciando busca com filtros:', colFilters);
 
+    // Rotear para a tabela correta conforme a aba ativa
+    const tableName =
+      activeTab === 'orcamento' ? 'transactions_orcado' :
+      activeTab === 'comparativo' ? 'transactions_ano_anterior' :
+      'transactions';
+
     try {
       const filters: TransactionFilters = {
         monthFrom: colFilters.monthFrom || undefined,
         monthTo: colFilters.monthTo || undefined,
-        scenario: activeTab === 'real' ? 'Real' : activeTab === 'orcamento' ? 'Orçamento' : undefined,
+        // Real: filtrar por scenario. Orçado/A-1: a tabela já é o filtro de cenário
+        scenario: activeTab === 'real' ? 'Real' : undefined,
         marca: colFilters.marca?.length > 0 ? colFilters.marca : undefined,
         nome_filial: colFilters.nome_filial?.length > 0 ? colFilters.nome_filial : undefined,
         tag0: colFilters.tag0?.length > 0 ? colFilters.tag0 : undefined,
@@ -510,7 +517,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       const pagination: PaginationParams = { pageNumber: page, pageSize: PAGE_SIZE };
 
-      const response = await getFilteredTransactions(filters, pagination);
+      const response = await getFilteredTransactions(filters, pagination, tableName);
 
       setSearchedTransactions(response.data);
       setTotalCount(response.totalCount);
@@ -518,7 +525,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       setCurrentPageNumber(page);
       setHasSearchedTransactions(true);
 
-      console.log(`✅ Busca concluída: ${response.data.length} registros retornados (página ${page})`);
+      console.log(`✅ Busca concluída [${tableName}]: ${response.data.length} registros retornados (página ${page})`);
       console.log(`📊 Total de registros: ${response.totalCount}, Mais páginas: ${response.hasMore}`);
     } catch (error) {
       console.error('❌ Erro ao buscar dados:', error);
@@ -557,12 +564,18 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     setSearchAllProgress({ current: 0, total: 0, loaded: 0 });
     console.log('🔍 Buscando TODOS os dados com filtros:', colFilters);
 
+    // Rotear para a tabela correta conforme a aba ativa
+    const tableNameAll =
+      activeTab === 'orcamento' ? 'transactions_orcado' :
+      activeTab === 'comparativo' ? 'transactions_ano_anterior' :
+      'transactions';
+
     try {
       // Passar TODOS os filtros para o servidor
       const filters: TransactionFilters = {
         monthFrom: colFilters.monthFrom || undefined,
         monthTo: colFilters.monthTo || undefined,
-        scenario: activeTab === 'real' ? 'Real' : activeTab === 'orcamento' ? 'Orçamento' : undefined,
+        scenario: activeTab === 'real' ? 'Real' : undefined,
         marca: colFilters.marca && colFilters.marca.length > 0 ? colFilters.marca : undefined,
         nome_filial: colFilters.nome_filial && colFilters.nome_filial.length > 0 ? colFilters.nome_filial : undefined,
         tag0: colFilters.tag0 && colFilters.tag0.length > 0 ? colFilters.tag0 : undefined,
@@ -640,7 +653,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       const firstResponse = await getFilteredTransactions(filters, {
         pageNumber: 1,
         pageSize: 1000
-      });
+      }, tableNameAll);
 
       if (firstResponse.data.length === 0) {
         console.log('⚠️ Nenhum dado encontrado');
@@ -675,7 +688,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
         const response = await getFilteredTransactions(filters, {
           pageNumber: page,
-          pageSize: 1000
+          pageSize: 1000,
+        }, tableNameAll
         });
 
         allData = [...allData, ...response.data];
@@ -741,16 +755,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           // Aceitar 'real' ou vazio (transações sem cenário definido são consideradas 'real')
           if (scenarioNormalized !== 'real' && scenarioNormalized !== '') return false;
         }
-
-        if (activeTab === 'orcamento') {
-          // TODO: ORÇAMENTO será configurado futuramente
-          return false;
-        }
-
-        if (activeTab === 'comparativo') {
-          // TODO: ANO ANTERIOR será configurado futuramente
-          return false;
-        }
+        // Orçado e A-1: dados já vêm das tabelas corretas (transactions_orcado / transactions_ano_anterior)
+        // Não é necessário filtrar por scenario aqui
 
         // 2. Aplicar filtros client-side (EXCETO período, que já foi aplicado no servidor)
         return Object.entries(colFilters).every(([key, value]) => {
@@ -794,37 +800,22 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
   // Contadores por aba
   const tabCounts = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const counts = {
-      real: 0,
-      orcamento: 0,
-      comparativo: 0  // TODO: Será configurado futuramente
-    };
+    const counts = { real: 0, orcamento: 0, comparativo: 0 };
 
-    // Debug: Ver quais cenários existem no banco
-    const uniqueScenarios = new Set<string>();
-
-    transactions.forEach(t => {
-      const tYear = new Date(t.date).getFullYear();
-      uniqueScenarios.add(t.scenario || 'undefined');
-
-      // Normalizar cenário para comparação
-      const scenarioNormalized = (t.scenario || '').toLowerCase().trim()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-      if (scenarioNormalized === 'real') counts.real++;
-      // TODO: Orçamento será configurado futuramente
-      // if (scenarioNormalized === 'orcamento') counts.orcamento++;
-      // TODO: Ano Anterior será configurado futuramente
-      // if (tYear === currentYear - 1) counts.comparativo++;
-    });
-
-    // Log para debug (temporário)
-    console.log('🔍 Cenários encontrados no banco:', Array.from(uniqueScenarios));
-    console.log('📊 Contadores:', counts);
+    // Orçado e A-1 vêm de tabelas separadas — todos os registros buscados pertencem ao cenário ativo
+    if (activeTab === 'orcamento') {
+      counts.orcamento = transactions.length;
+    } else if (activeTab === 'comparativo') {
+      counts.comparativo = transactions.length;
+    } else {
+      transactions.forEach(t => {
+        const s = (t.scenario || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (s === 'real' || s === '') counts.real++;
+      });
+    }
 
     return counts;
-  }, [transactions]);
+  }, [transactions, activeTab]);
 
   // Calculate summary metrics for filtered data
   const filteredSummary = useMemo(() => {

@@ -1000,7 +1000,8 @@ const applyTransactionFilters = (query: any, filters: TransactionFilters) => {
 
 export const getFilteredTransactions = async (
   filters: TransactionFilters,
-  pagination?: PaginationParams
+  pagination?: PaginationParams,
+  tableName: string = 'transactions'
 ): Promise<PaginatedResponse<Transaction>> => {
   console.log('🔍 Buscando transações com filtros:', filters);
 
@@ -1009,7 +1010,7 @@ export const getFilteredTransactions = async (
 
     // Iniciar query com contagem
     let query = supabase
-      .from('transactions')
+      .from(tableName)
       .select('*', { count: 'exact' });
 
     query = applyTransactionFilters(query, filters);
@@ -1073,7 +1074,7 @@ export const getFilteredTransactions = async (
 
   // Primeiro: obter contagem total
   let countQuery = supabase
-    .from('transactions')
+    .from(tableName)
     .select('*', { count: 'exact', head: true });
   countQuery = applyTransactionFilters(countQuery, filters);
   const { count: totalCountRaw, error: countError } = await countQuery;
@@ -1098,7 +1099,7 @@ export const getFilteredTransactions = async (
     const from = batchIdx * BATCH_SIZE;
     const to = from + BATCH_SIZE - 1;
 
-    let batchQuery = supabase.from('transactions').select('*');
+    let batchQuery = supabase.from(tableName).select('*');
     batchQuery = applyTransactionFilters(batchQuery, filters);
     batchQuery = batchQuery.order('date', { ascending: false }).order('id', { ascending: true });
     batchQuery = batchQuery.range(from, to);
