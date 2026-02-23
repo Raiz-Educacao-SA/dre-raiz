@@ -103,26 +103,6 @@ export const usePermissions = (): UsePermissionsReturn => {
     [permissions]
   );
 
-  // ⚠️ TESTE: DESABILITAR COMPLETAMENTE O SISTEMA DE PERMISSÕES
-  // SEMPRE retorna "sem permissões" (acesso total para todos)
-  console.log('⚠️ usePermissions: SISTEMA DE PERMISSÕES DESABILITADO - TODOS TÊM ACESSO TOTAL');
-  return {
-    permissions: [],
-    loading: false,
-    canAccess: () => true,
-    filterTransactions: (transactions) => {
-      console.log('⚠️ SEM FILTRO: Vendo todas as', transactions.length, 'transações');
-      return transactions;
-    },
-    hasPermissions: false,
-    allowedMarcas: [],
-    allowedFiliais: [],
-    allowedCategories: [],
-    allowedTag01: [],
-    allowedTag02: [],
-    allowedTag03: []
-  };
-
   // Verifica se o usuário tem permissões específicas configuradas
   const hasPermissions = permissions.length > 0;
 

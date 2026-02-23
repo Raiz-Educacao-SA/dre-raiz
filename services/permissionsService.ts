@@ -85,10 +85,6 @@ export const applyPermissionFilters = (query: any, options?: {
   skipTag03?: boolean;
   skipCategory?: boolean;
 }): any => {
-  // ⚠️ TESTE: DESABILITAR COMPLETAMENTE FILTROS DE PERMISSÃO
-  console.log('⚠️ applyPermissionFilters: DESABILITADO - Query sem filtros');
-  return query;
-
   const permissions = getUserPermissions();
 
   // Admin ou sem permissões = não aplica filtros
@@ -144,10 +140,6 @@ export const applyPermissionFilters = (query: any, options?: {
  * Usado em queries que já têm filtros customizados
  */
 export const addPermissionFiltersToObject = (filters: any): any => {
-  // ⚠️ TESTE: DESABILITAR COMPLETAMENTE FILTROS DE PERMISSÃO
-  console.log('⚠️ addPermissionFiltersToObject: DESABILITADO - Filtros inalterados');
-  return filters;
-
   const permissions = getUserPermissions();
 
   // Admin ou sem permissões = não modifica filtros
@@ -234,10 +226,6 @@ export const filterTransactionsByPermissions = <T extends {
   tag03?: string | null;
   category?: string | null;
 }>(transactions: T[]): T[] => {
-  // ⚠️ TESTE: DESABILITAR COMPLETAMENTE FILTROS DE PERMISSÃO
-  console.log('⚠️ filterTransactionsByPermissions: DESABILITADO - Retornando tudo');
-  return transactions;
-
   const permissions = getUserPermissions();
 
   // Admin ou sem permissões = retorna tudo
