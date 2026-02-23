@@ -265,13 +265,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     }
   }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02]);
 
-  useEffect(() => { fetchData(); }, [year, monthFrom, monthTo]);
+  // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
+  // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
   useEffect(() => {
     if (filialCleanupRef.current) { filialCleanupRef.current = false; return; }
     fetchData();
-  }, [selectedMarcas, selectedFiliais]);
-  // Tag02 tem efeito próprio — não passa pelo guarda filialCleanupRef
-  useEffect(() => { fetchData(); }, [selectedTags02]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchData]);
 
   // Cascata Tag02: quando Tag01 muda, atualiza opções disponíveis de Tag02
   useEffect(() => {
