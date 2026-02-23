@@ -574,6 +574,7 @@ export interface SomaTagsRow {
   tag0: string;
   tag01: string;
   scenario: string;
+  month: string;   // 'YYYY-MM'
   total: number;
 }
 
