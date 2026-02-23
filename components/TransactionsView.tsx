@@ -689,8 +689,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         const response = await getFilteredTransactions(filters, {
           pageNumber: page,
           pageSize: 1000,
-        }, tableNameAll
-        });
+        }, tableNameAll);
 
         allData = [...allData, ...response.data];
 

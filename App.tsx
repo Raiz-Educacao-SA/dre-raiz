@@ -20,7 +20,7 @@ import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
 import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, RefreshCw, Download, ChevronDown } from 'lucide-react';
 import * as supabaseService from './services/supabaseService';
-import { getDashboardSummary, dashboardSummaryToTransactions } from './services/supabaseService';
+import { getSomaTags, SomaTagsRow } from './services/supabaseService';
 import { useAuth } from './contexts/AuthContext';
 import { usePermissions } from './hooks/usePermissions';
 import { useIsMobile } from './hooks/useIsMobile';
@@ -104,8 +104,8 @@ const App: React.FC = () => {
   const [searchedTransactions, setSearchedTransactions] = useState<Transaction[]>([]);
   const [hasSearchedTransactions, setHasSearchedTransactions] = useState(false);
 
-  // ⚡ OPÇÃO D: Transações agregadas do servidor para Dashboard (RPC)
-  const [dashboardTransactions, setDashboardTransactions] = useState<Transaction[]>([]);
+  // ⚡ Dashboard — dados da mesma fonte do DRE Gerencial (getSomaTags)
+  const [dashboardSomaRows, setDashboardSomaRows] = useState<SomaTagsRow[]>([]);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
   const dashboardLoadedRef = React.useRef(false);
 
@@ -119,25 +119,24 @@ const App: React.FC = () => {
   // Loading combinado (Lançamentos/KPIs/outras views)
   const isLoading = isLoadingTransactions || permissionsLoading;
 
-  // ⚡ OPÇÃO D: Carregar Dashboard via RPC (dados agregados, < 1s)
+  // ⚡ Dashboard — carrega via getSomaTags (mesma fonte do DRE Gerencial)
   useEffect(() => {
     if (permissionsLoading || dashboardLoadedRef.current) return;
     dashboardLoadedRef.current = true;
 
     const year = 2026;
     setIsLoadingDashboard(true);
-    getDashboardSummary({
-      year,
-      marcas:  allowedMarcas.length  > 0 ? allowedMarcas  : undefined,
-      filiais: allowedFiliais.length > 0 ? allowedFiliais : undefined,
-    })
+    getSomaTags(
+      `${year}-01`, `${year}-12`,
+      allowedMarcas.length  > 0 ? allowedMarcas  : undefined,
+      allowedFiliais.length > 0 ? allowedFiliais : undefined,
+    )
       .then((rows) => {
-        const syntheticTx = dashboardSummaryToTransactions(rows, year);
-        setDashboardTransactions(syntheticTx);
-        console.log(`⚡ [Dashboard RPC] ${rows.length} linhas agregadas → ${syntheticTx.length} transações sintéticas`);
+        setDashboardSomaRows(rows);
+        console.log(`⚡ [Dashboard getSomaTags] ${rows.length} linhas agregadas`);
       })
       .catch((err) => {
-        console.warn('⚠️ [Dashboard RPC] Falhou, Dashboard usará dados brutos quando carregarem:', err);
+        console.warn('⚠️ [Dashboard getSomaTags] Falhou:', err);
       })
       .finally(() => setIsLoadingDashboard(false));
   }, [permissionsLoading, allowedMarcas, allowedFiliais]);
@@ -687,42 +686,63 @@ const App: React.FC = () => {
     });
   }, [transactions, selectedMarca, selectedFilial, currentView, filterTransactions]);
 
+  // Transações sintéticas para os gráficos do Dashboard (convertidas de SomaTagsRow)
+  const dashboardTransactions = useMemo((): Transaction[] =>
+    dashboardSomaRows.map((row, idx) => ({
+      id: `dash-${idx}`,
+      date: `${row.month}-01`,
+      amount: Number(row.total),
+      type: (row.tag0.startsWith('01.') ? 'REVENUE' :
+             row.tag0.startsWith('02.') ? 'VARIABLE_COST' :
+             row.tag0.startsWith('03.') ? 'FIXED_COST' : 'SGA') as Transaction['type'],
+      scenario: row.scenario,
+      tag0: row.tag0,
+      tag01: row.tag01,
+      description: '',
+      conta_contabil: '',
+      status: 'Normal',
+      updated_at: new Date().toISOString(),
+    } as Transaction))
+  , [dashboardSomaRows]);
+
+  // KPIs calculados direto das SomaTagsRows (Real) — consistente com o DRE Gerencial
   const kpis: SchoolKPIs = useMemo(() => {
-    const real = filteredTransactions.filter(t => t.scenario === 'Real');
-    const rev = real.filter(t => t.type === 'REVENUE').reduce((a, b) => a + b.amount, 0);
-    const exp = real.filter(t => t.type !== 'REVENUE').reduce((a, b) => a + b.amount, 0);
-    const ebitda = rev - exp;
-    const targetMargin = 25;
-    const targetEbitda = rev * (targetMargin / 100);
-    const diff = targetEbitda - ebitda;
-    const baseStudents = selectedMarca.length === 0 ? 5400 : selectedMarca.length * 850;
+    const real = dashboardSomaRows.filter(r => r.scenario === 'Real');
+    const sum  = (prefix: string) => real.filter(r => r.tag0.startsWith(prefix)).reduce((s, r) => s + Number(r.total), 0);
+
+    const rev    = sum('01.');
+    const cv     = sum('02.');  // negativo no banco
+    const cf     = sum('03.');  // negativo no banco
+    const rateio = sum('06.');  // negativo no banco
+    const ebitda = rev + cv + cf + rateio;
+
+    const baseStudents    = selectedMarca.length  === 0 ? 5400 : selectedMarca.length  * 850;
     const numberOfStudents = selectedFilial.length === 0 ? baseStudents : selectedFilial.length * 120;
-    const waterCost = real.filter(t => t.category === 'Água & Gás').reduce((acc, t) => acc + t.amount, 0);
-    const energyCost = real.filter(t => t.category === 'Energia').reduce((acc, t) => acc + t.amount, 0);
-    const consumptionMaterialCost = real.filter(t => t.category === 'Material de Consumo').reduce((acc, t) => acc + t.amount, 0);
-    const eventsCost = real.filter(t => t.category === 'Eventos Pedagógicos').reduce((acc, t) => acc + t.amount, 0);
+    const targetEbitda    = rev * 0.25;
+    const diff            = targetEbitda - ebitda;
+
     return {
-      totalRevenue: rev,
-      totalFixedCosts: real.filter(t => t.type === 'FIXED_COST').reduce((a, b) => a + b.amount, 0),
-      totalVariableCosts: real.filter(t => t.type === 'VARIABLE_COST').reduce((a, b) => a + b.amount, 0),
-      sgaCosts: real.filter(t => t.type === 'SGA').reduce((a, b) => a + b.amount, 0),
+      totalRevenue:      rev,
+      totalFixedCosts:   cf,
+      totalVariableCosts: cv,
+      sgaCosts:          0,
       ebitda,
-      netMargin: rev > 0 ? (ebitda / rev) * 100 : 0,
-      costPerStudent: numberOfStudents > 0 ? (exp / numberOfStudents) : 0,
-      revenuePerStudent: numberOfStudents > 0 ? (rev / numberOfStudents) : 0,
-      activeStudents: numberOfStudents,
-      breakEvenPoint: 0,
-      defaultRate: 8.5,
+      netMargin:         rev > 0 ? (ebitda / rev) * 100 : 0,
+      costPerStudent:    numberOfStudents > 0 ? Math.abs(cv + cf) / numberOfStudents : 0,
+      revenuePerStudent: numberOfStudents > 0 ? rev / numberOfStudents : 0,
+      activeStudents:    numberOfStudents,
+      breakEvenPoint:    0,
+      defaultRate:       8.5,
       targetEbitda,
       costReductionNeeded: diff > 0 ? diff : 0,
-      marginOfSafety: diff < 0 ? Math.abs(diff) : 0,
-      churnRate: 0,
-      waterPerStudent: waterCost / Math.max(1, numberOfStudents),
-      energyPerClassroom: energyCost / 20,
-      consumptionMaterialPerStudent: consumptionMaterialCost / Math.max(1, numberOfStudents),
-      eventsPerStudent: eventsCost / Math.max(1, numberOfStudents)
+      marginOfSafety:    diff < 0 ? Math.abs(diff) : 0,
+      churnRate:         0,
+      waterPerStudent:   0,
+      energyPerClassroom: 0,
+      consumptionMaterialPerStudent: 0,
+      eventsPerStudent:  0,
     };
-  }, [filteredTransactions, selectedMarca, selectedFilial]);
+  }, [dashboardSomaRows, selectedMarca, selectedFilial]);
 
   const showGlobalFilters = currentView !== 'dre' && currentView !== 'movements' && currentView !== 'dashboard';
 
