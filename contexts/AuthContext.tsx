@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User as FirebaseUser } from 'firebase/auth';
 import { auth, googleProvider, signInWithPopup, signOut as firebaseSignOut } from '../firebase';
 import * as supabaseService from '../services/supabaseService';
+import { supabase } from '../supabase';
 import { setUserPermissions, clearUserPermissions } from '../services/permissionsService';
 import { clearAllCache } from '../services/transactionCache';
 
@@ -148,6 +149,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
+        // Restaura sessão Supabase para que RLS funcione (ex: reload de página)
+        try {
+          const idToken = await firebaseUser.getIdToken();
+          await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+        } catch (err) {
+          console.warn('⚠️ Supabase signInWithIdToken falhou:', err);
+        }
         const userData = await fetchUserData(firebaseUser);
         setUser(userData);
       } else {
@@ -165,6 +173,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       console.log('🔐 Iniciando login com Google...');
       const result = await signInWithPopup(auth, googleProvider);
       console.log('✅ Login Google bem-sucedido:', result.user.email);
+      // Assinar na sessão Supabase para que RLS funcione com auth.email()
+      try {
+        const idToken = await result.user.getIdToken();
+        await supabase.auth.signInWithIdToken({ provider: 'google', token: idToken });
+        console.log('✅ Sessão Supabase estabelecida');
+      } catch (err) {
+        console.warn('⚠️ Supabase signInWithIdToken falhou:', err);
+      }
       const userData = await fetchUserData(result.user);
       console.log('✅ Dados do usuário carregados:', userData);
       setUser(userData);
@@ -192,6 +208,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signOut = async () => {
     try {
       await firebaseSignOut(auth);
+      await supabase.auth.signOut(); // Limpa sessão Supabase também
       setUser(null);
 
       // 🔐 LIMPAR PERMISSÕES
