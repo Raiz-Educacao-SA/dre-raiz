@@ -943,14 +943,14 @@ const App: React.FC = () => {
               </>
             )}
 
-            {/* Botões de Ação Soma Tags */}
+            {/* Botões de Ação DRE Gerencial */}
             {currentView === 'soma_tags' && (
               <>
                 <button
                   onClick={() => somaTagsActions.exportExcel?.()}
                   disabled={!hasSomaTagsData || isSomaTagsLoading}
                   className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-[10px] uppercase tracking-wider shadow-md"
-                  title="Exportar Excel do Soma Tags"
+                  title="Exportar Excel do DRE Gerencial"
                 >
                   <Download size={14} />
                   <span className="whitespace-nowrap">Exportar</span>
@@ -959,7 +959,7 @@ const App: React.FC = () => {
                   onClick={() => somaTagsActions.refresh?.()}
                   disabled={isSomaTagsLoading}
                   className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-[10px] uppercase tracking-wider shadow-md"
-                  title="Atualizar dados do Soma Tags"
+                  title="Atualizar dados do DRE Gerencial"
                 >
                   {isSomaTagsLoading ? (
                     <>
@@ -1045,7 +1045,7 @@ const App: React.FC = () => {
                 externalActiveTab={drillDownActiveTab}
                 clearGlobalFilters={clearGlobalFilters}
                 onBackToDRE={handleBackToDRE}
-                backToLabel={drillDownOriginView === 'soma_tags' ? 'Voltar para Soma Tags' : 'Voltar para DRE'}
+                backToLabel={drillDownOriginView === 'soma_tags' ? 'Voltar para DRE Gerencial' : 'Voltar para DRE'}
                 allowedMarcas={allowedMarcas}
                 allowedFiliais={allowedFiliais}
                 allowedCategories={allowedCategories}
@@ -1096,7 +1096,7 @@ const App: React.FC = () => {
           )}
           {hasMountedSomaTags && (
             <div style={{ display: currentView === 'soma_tags' ? undefined : 'none' }}>
-              <Suspense fallback={<LoadingSpinner message="Carregando Soma Tags..." />}>
+              <Suspense fallback={<LoadingSpinner message="Carregando DRE Gerencial..." />}>
                 <SomaTagsView
                   onRegisterActions={setSomaTagsActions}
                   onLoadingChange={setIsSomaTagsLoading}
