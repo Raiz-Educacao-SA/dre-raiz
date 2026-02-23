@@ -1061,7 +1061,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         <MultiSelectFilter label="Marca"  icon={<Flag     size={14} />} options={filterOptions.marcas}      selected={selectedMarcas}  onChange={setSelectedMarcas}  colorScheme="orange" />
         <MultiSelectFilter label="Filial" icon={<Building2 size={14} />} options={filiaisFiltradas}           selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue"   />
         <MultiSelectFilter label="Tag01"  icon={<Layers   size={14} />} options={filterOptions.tags01}  selected={selectedTags01}  onChange={setSelectedTags01}  colorScheme="purple" />
-        <MultiSelectFilter label="Tag02"  icon={<Layers   size={14} />} options={tag02Options}           selected={selectedTags02}  onChange={setSelectedTags02}  colorScheme="green"  />
+        <MultiSelectFilter label="Tag02"  icon={<Layers   size={14} />} options={tag02Options}           selected={selectedTags02}  onChange={setSelectedTags02}  colorScheme="purple" />
 
         <div className="h-8 w-px bg-blue-200 mx-0.5 shrink-0" />
 
