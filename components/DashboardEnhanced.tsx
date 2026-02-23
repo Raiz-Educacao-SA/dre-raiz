@@ -507,6 +507,18 @@ export const DashboardEnhanced: React.FC<DashboardEnhancedProps> = (props) => {
       format: (value: number) => `R$ ${value.toLocaleString('pt-BR')}`
     },
     {
+      id: 'rateio',
+      header: 'Rateio Raiz',
+      accessor: 'rateio',
+      align: 'right' as const,
+      sortable: true,
+      format: (value: number) => (
+        <span className={value < 0 ? 'text-orange-600' : 'text-gray-700'}>
+          R$ {value.toLocaleString('pt-BR')}
+        </span>
+      )
+    },
+    {
       id: 'ebitda',
       header: 'EBITDA',
       accessor: 'ebitda',

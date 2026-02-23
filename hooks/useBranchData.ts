@@ -9,6 +9,7 @@ export interface BranchDataItem {
   fixedCosts: number;
   variableCosts: number;
   sga: number;
+  rateio: number;
   ebitda: number;
   margin: number;
   students: number;
@@ -16,6 +17,7 @@ export interface BranchDataItem {
   fixedCostsVariation: number;
   variableCostsVariation: number;
   sgaVariation: number;
+  rateioVariation: number;
   ebitdaVariation: number;
   marginVariation: number;
 }
@@ -112,26 +114,21 @@ export const useBranchData = ({
       let rateioCosts = 0;
 
       for (const t of dimensionTrans) {
-        // RECEITA LÍQUIDA: tag01 específicas
-        if (t.tag01 && RECEITA_LIQUIDA_TAGS_SET.has(t.tag01)) {
-          revenue += t.amount;
-        }
-
-        // CUSTOS: Classificar por prefixo do tag0
         const tag0 = t.tag0 || '';
-        if (tag0.startsWith('02.')) {
-          variableCosts += t.amount; // 02. = Custos Variáveis
+        // Mesma lógica do EBITDA TOTAL do DRE Gerencial
+        if (tag0.startsWith('01.')) {
+          revenue += t.amount;       // 01. = Receita Bruta
+        } else if (tag0.startsWith('02.')) {
+          variableCosts += t.amount; // 02. = Custos Variáveis (negativo no DB)
         } else if (tag0.startsWith('03.')) {
-          fixedCosts += t.amount; // 03. = Custos Fixos
-        } else if (tag0.startsWith('04.')) {
-          sga += t.amount; // 04. = SG&A
-        } else if (tag0.startsWith('05.')) {
-          rateioCosts += t.amount; // 05. = Rateio (se existir)
+          fixedCosts += t.amount;    // 03. = Custos Fixos (negativo no DB)
+        } else if (tag0.startsWith('06.')) {
+          rateioCosts += t.amount;   // 06. = Rateio Raiz (negativo no DB)
         }
       }
 
-      const totalCosts = fixedCosts + variableCosts + sga + rateioCosts;
-      const ebitda = revenue - totalCosts;
+      // EBITDA = soma direta — custos já são negativos no banco
+      const ebitda = revenue + fixedCosts + variableCosts + rateioCosts;
       const margin = revenue > 0 ? (ebitda / revenue) * 100 : 0;
 
       // Dados de comparação
@@ -147,26 +144,19 @@ export const useBranchData = ({
       let compRateioCosts = 0;
 
       for (const t of compDimensionTrans) {
-        // RECEITA LÍQUIDA: tag01 específicas
-        if (t.tag01 && RECEITA_LIQUIDA_TAGS_SET.has(t.tag01)) {
-          compRevenue += t.amount;
-        }
-
-        // CUSTOS: Classificar por prefixo do tag0
         const tag0 = t.tag0 || '';
-        if (tag0.startsWith('02.')) {
-          compVariableCosts += t.amount; // 02. = Custos Variáveis
+        if (tag0.startsWith('01.')) {
+          compRevenue += t.amount;
+        } else if (tag0.startsWith('02.')) {
+          compVariableCosts += t.amount;
         } else if (tag0.startsWith('03.')) {
-          compFixedCosts += t.amount; // 03. = Custos Fixos
-        } else if (tag0.startsWith('04.')) {
-          compSga += t.amount; // 04. = SG&A
-        } else if (tag0.startsWith('05.')) {
-          compRateioCosts += t.amount; // 05. = Rateio
+          compFixedCosts += t.amount;
+        } else if (tag0.startsWith('06.')) {
+          compRateioCosts += t.amount;
         }
       }
 
-      const compTotalCosts = compFixedCosts + compVariableCosts + compSga + compRateioCosts;
-      const compEbitda = compRevenue - compTotalCosts;
+      const compEbitda = compRevenue + compFixedCosts + compVariableCosts + compRateioCosts;
       const compMargin = compRevenue > 0 ? (compEbitda / compRevenue) * 100 : 0;
 
       // Calcular variações
@@ -174,13 +164,14 @@ export const useBranchData = ({
       const fixedCostsVariation = compFixedCosts !== 0 ? ((fixedCosts - compFixedCosts) / Math.abs(compFixedCosts)) * 100 : 0;
       const variableCostsVariation = compVariableCosts !== 0 ? ((variableCosts - compVariableCosts) / Math.abs(compVariableCosts)) * 100 : 0;
       const sgaVariation = compSga !== 0 ? ((sga - compSga) / Math.abs(compSga)) * 100 : 0;
+      const rateioVariation = compRateioCosts !== 0 ? ((rateioCosts - compRateioCosts) / Math.abs(compRateioCosts)) * 100 : 0;
       const ebitdaVariation = compEbitda !== 0 ? ((ebitda - compEbitda) / Math.abs(compEbitda)) * 100 : 0;
       const marginVariation = margin - compMargin;
 
       // Calcular número de alunos estimado (proporcionalmente)
-      const totalRevenue = filteredTrans.filter(t =>
-        t.tag01 && RECEITA_LIQUIDA_TAGS_SET.has(t.tag01)
-      ).reduce((acc, t) => acc + t.amount, 0);
+      const totalRevenue = filteredTrans
+        .filter(t => (t.tag0 || '').startsWith('01.'))
+        .reduce((acc, t) => acc + t.amount, 0);
       const branchStudents = totalRevenue > 0 ? Math.round(activeStudents * (revenue / totalRevenue)) : 0;
 
       return {
@@ -189,6 +180,7 @@ export const useBranchData = ({
         fixedCosts,
         variableCosts,
         sga,
+        rateio: rateioCosts,
         ebitda,
         margin,
         students: branchStudents,
@@ -196,6 +188,7 @@ export const useBranchData = ({
         fixedCostsVariation,
         variableCostsVariation,
         sgaVariation,
+        rateioVariation,
         ebitdaVariation,
         marginVariation
       };
