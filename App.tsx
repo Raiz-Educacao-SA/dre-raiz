@@ -65,6 +65,8 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : undefined;
   });
 
+  const [drillDownOriginView, setDrillDownOriginView] = useState<ViewType>('dre');
+
   // Estado para controlar visualização da DRE (Executivo/Detalhado)
   const [presentationMode, setPresentationMode] = useState<'executive' | 'detailed'>(() => {
     const saved = sessionStorage.getItem('drePresentationMode');
@@ -387,6 +389,7 @@ const App: React.FC = () => {
 
     setDrillDownFilters(drillFilters);
     setDrillDownActiveTab(activeTab);
+    setDrillDownOriginView(currentView);
     setCurrentView('movements');
   };
 
@@ -665,7 +668,7 @@ const App: React.FC = () => {
   const handleBackToDRE = () => {
     setDrillDownFilters(null);
     setDrillDownActiveTab(undefined);
-    setCurrentView('dre');
+    setCurrentView(drillDownOriginView);
   };
 
   const filteredTransactions = useMemo(() => {
@@ -1040,6 +1043,7 @@ const App: React.FC = () => {
                 externalActiveTab={drillDownActiveTab}
                 clearGlobalFilters={clearGlobalFilters}
                 onBackToDRE={handleBackToDRE}
+                backToLabel={drillDownOriginView === 'soma_tags' ? 'Voltar para Soma Tags' : 'Voltar para DRE'}
                 allowedMarcas={allowedMarcas}
                 allowedFiliais={allowedFiliais}
                 allowedCategories={allowedCategories}

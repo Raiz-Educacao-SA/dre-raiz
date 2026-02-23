@@ -55,6 +55,7 @@ interface TransactionsViewProps {
   clearGlobalFilters?: () => void;
   externalActiveTab?: 'real' | 'orcamento' | 'comparativo';
   onBackToDRE?: () => void;
+  backToLabel?: string;
   // ✅ PERMISSÕES: Sempre aplicadas nas queries
   allowedMarcas?: string[];
   allowedFiliais?: string[];
@@ -105,6 +106,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   clearGlobalFilters,
   externalActiveTab,
   onBackToDRE,
+  backToLabel = 'Voltar para DRE',
   allowedMarcas,
   allowedFiliais,
   allowedCategories,
@@ -1105,7 +1107,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
              >
                <ArrowLeft size={10} />
                <TableProperties size={10} />
-               Voltar para DRE
+               {backToLabel}
              </button>
            )}
            <button onClick={() => setShowFilters(!showFilters)} className={`flex items-center gap-1 px-2 py-1.5 rounded-none font-black text-[8px] uppercase tracking-widest transition-all border ${showFilters ? 'bg-[#1B75BB] text-white border-[#1B75BB]' : 'bg-white text-[#1B75BB] border-[#1B75BB]'}`}>
