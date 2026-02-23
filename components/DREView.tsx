@@ -234,7 +234,6 @@ interface DREViewProps {
 }
 
 const DRE_DIMENSIONS = [
-  { id: 'tag01', label: 'Tag01' },
   { id: 'tag02', label: 'Tag02' },
   { id: 'tag03', label: 'Tag03' },
   { id: 'marca', label: 'Marca' },
@@ -394,7 +393,11 @@ const DREView: React.FC<DREViewProps> = ({
   const [isFilialFilterOpen, setIsFilialFilterOpen] = useState(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
 
-  const [dynamicPath, setDynamicPath] = useState<string[]>(['tag01']); // ✅ Tag01 ativa por padrão no drill-down
+  const [dynamicPath, setDynamicPath] = useState<string[]>([]); // tag01 é fixo — drill-down começa em tag02+
+  // Garantir que tag01 nunca fique no caminho (limpeza de estado legado)
+  useEffect(() => {
+    setDynamicPath(prev => prev.filter(d => d !== 'tag01'));
+  }, []);
   // Ordenação de dimensões: 'alpha' (A-Z), 'desc' (maior→menor), 'asc' (menor→maior)
   const [dimensionSort, setDimensionSort] = useState<'alpha' | 'desc' | 'asc'>('alpha'); // 🔧 Padrão: A-Z
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({
@@ -1004,11 +1007,9 @@ const DREView: React.FC<DREViewProps> = ({
       const node = dreStructure.data[code];
       if (!node) return;
 
-      // items é Record<tag01, contas[]> - flatten para exportar
-      const tag01Items = node.items as Record<string, string[]>;
-      const categories = Object.values(tag01Items).flat();
+      const categories = Object.values(node.items as Record<string, string[]>).flat();
 
-                        
+
       // Linha tag0 (Nível 1)
       const tag0Row: any[] = [node.label];
 
@@ -1214,9 +1215,9 @@ const DREView: React.FC<DREViewProps> = ({
     return map;
   }, [summaryRows]);
 
-  // Construir hierarquia DRE a partir de summaryRows (tag0 → tag01 → conta_contabil)
+  // Construir hierarquia DRE a partir de summaryRows (tag0 → tag01 → contas[])
+  // tag01 é renderizado como sub-linha fixa; drill-down começa a partir do tag01
   const dreStructure = useMemo(() => {
-    // Hierarquia: tag0 → tag01 → conta_contabil (dados já filtrados pelo RPC)
     const tag0Map = new Map<string, Map<string, Set<string>>>();
 
     summaryRows.forEach(row => {
@@ -1224,7 +1225,6 @@ const DREView: React.FC<DREViewProps> = ({
       const tag01 = row.tag01 || 'Sem Tag01';
       const conta = row.conta_contabil;
 
-      // Criar estrutura hierárquica de 3 níveis
       if (!tag0Map.has(tag0)) tag0Map.set(tag0, new Map());
       const tag01Map = tag0Map.get(tag0)!;
       if (!tag01Map.has(tag01)) tag01Map.set(tag01, new Set());
@@ -1234,33 +1234,26 @@ const DREView: React.FC<DREViewProps> = ({
     const data: Record<string, {
       label: string;
       type: string;
-      items: Record<string, string[]> | string[]; // tag01 → contas OU array direto de contas
+      items: Record<string, string[]>; // tag01 → contas[]
     }> = {};
 
-    // Ordenar tag0s
     const sortedTag0s = Array.from(tag0Map.keys()).sort((a, b) => {
-      // Ordenar por prefixo numérico (01., 02., etc)
       const matchA = a.match(/^(\d+)\./);
       const matchB = b.match(/^(\d+)\./);
-      if (matchA && matchB) {
-        return parseInt(matchA[1]) - parseInt(matchB[1]);
-      }
+      if (matchA && matchB) return parseInt(matchA[1]) - parseInt(matchB[1]);
       return a.localeCompare(b);
     });
 
-    // Construir hierarquia completa: tag0 → tag01 → contas
     sortedTag0s.forEach(tag0 => {
       const tag01Map = tag0Map.get(tag0)!;
       const tag01Items: Record<string, string[]> = {};
-
       tag01Map.forEach((contas, tag01) => {
         tag01Items[tag01] = Array.from(contas).sort();
       });
-
       data[tag0] = {
         label: tag0,
-        type: tag0.split('.')[0] || 'outros', // Extrair prefixo numérico
-        items: tag01Items // Hierarquia de tag01 → contas
+        type: tag0.split('.')[0] || 'outros',
+        items: tag01Items
       };
     });
 
@@ -1288,6 +1281,19 @@ const DREView: React.FC<DREViewProps> = ({
       let sc = r.scenario || 'Real';
       if (sc === 'Original') sc = 'Real';
       if (sc !== scenario || r.tag0 !== tag0) return;
+      const monthIdx = parseInt(r.year_month.substring(5, 7), 10) - 1;
+      if (monthIdx >= 0 && monthIdx < 12) values[monthIdx] += Number(r.total_amount);
+    });
+    return values;
+  }, [summaryRows]);
+
+  // getTag01Values: agrega de summaryRows por tag0+tag01+scenario (nível 2 fixo)
+  const getTag01Values = useCallback((scenario: string, tag0: string, tag01: string): number[] => {
+    const values = new Array(12).fill(0);
+    summaryRows.forEach(r => {
+      let sc = r.scenario || 'Real';
+      if (sc === 'Original') sc = 'Real';
+      if (sc !== scenario || r.tag0 !== tag0 || r.tag01 !== tag01) return;
       const monthIdx = parseInt(r.year_month.substring(5, 7), 10) - 1;
       if (monthIdx >= 0 && monthIdx < 12) values[monthIdx] += Number(r.total_amount);
     });
@@ -1409,21 +1415,25 @@ const DREView: React.FC<DREViewProps> = ({
     // ✅ Apenas nível 1 (Tag0) expandido por padrão, demais níveis colapsados
     const isExpanded = expandedRows[id] ?? (level === 1);
 
-    // Obter valores para todos os cenários
-    // level 1-2: dados do summary (getValues), level 3+: drill-down dinâmico
-    // 🔥 TESTE: level 1 usa getValues (Type fixo), level 2+ usa getDynamicValues (drill-down)
-    // Level 1 (tag0): agrega direto de summaryRows para incluir contas com conta_contabil NULL
-    // Isso garante que tag01s como PDD (sem conta_contabil no A-1) apareçam no agregado
+    // Level 1 (tag0): agrega por tag0 de summaryRows (inclui contas com conta_contabil NULL)
+    // Level 2 (tag01): agrega por tag0+tag01 de summaryRows (sub-linha fixa)
+    // Level 3+ (drill-down): valores dinâmicos do cache de dimensões
     const scenarioValues: Record<string, number[]> = {
       'Real': level === 1
         ? getTag0Values('Real', tag0Context || id)
-        : getDynamicValues(categories, dynamicPath[level - 2], label, accumulatedFilters, 'Real'),
+        : level === 2
+          ? getTag01Values('Real', tag0Context || id, label)
+          : getDynamicValues(categories, dynamicPath[level - 3], label, accumulatedFilters, 'Real'),
       'Orçado': level === 1
         ? getTag0Values('Orçado', tag0Context || id)
-        : getDynamicValues(categories, dynamicPath[level - 2], label, accumulatedFilters, 'Orçado'),
+        : level === 2
+          ? getTag01Values('Orçado', tag0Context || id, label)
+          : getDynamicValues(categories, dynamicPath[level - 3], label, accumulatedFilters, 'Orçado'),
       'A-1': level === 1
         ? getTag0Values('A-1', tag0Context || id)
-        : getDynamicValues(categories, dynamicPath[level - 2], label, accumulatedFilters, 'A-1')
+        : level === 2
+          ? getTag01Values('A-1', tag0Context || id, label)
+          : getDynamicValues(categories, dynamicPath[level - 3], label, accumulatedFilters, 'A-1')
     };
 
     // Calcular YTDs para todos os cenários
@@ -1754,13 +1764,11 @@ const DREView: React.FC<DREViewProps> = ({
         </tr>
         
         {isExpanded && hasChildren && (() => {
-          // 🔥 TESTE: Removido nível 2 (Tag01), level=1 vai direto para drill-down
-
-          // Nível 1+: expande para drill-down dinâmico (dimensões selecionadas)
-          // dynamicPath[0] = primeira dimensão, dynamicPath[1] = segunda, etc.
-          // Para level=1: usa dynamicPath[0], level=2: dynamicPath[1], etc.
-          if (level >= 1 && dynamicPath.length > (level - 1)) {
-            const dimIndex = level - 1;  // level 1 → index 0, level 2 → index 1, etc.
+          // Nível 2 (tag01) em diante: expande para drill-down dinâmico
+          // dynamicPath[0] = primeira dimensão (ativada a partir do tag01)
+          // Para level=2: usa dynamicPath[0], level=3: dynamicPath[1], etc.
+          if (level >= 2 && dynamicPath.length > (level - 2)) {
+            const dimIndex = level - 2;  // level 2 → index 0, level 3 → index 1, etc.
             const currentDimKey = dynamicPath[dimIndex];
 
             
@@ -2577,7 +2585,7 @@ const DREView: React.FC<DREViewProps> = ({
         </div>
         <div className="flex flex-col pr-2 mr-2 border-r border-orange-200 shrink-0">
           <span className="text-[8px] font-black text-gray-500 uppercase tracking-wider">Drill-down</span>
-          <span className="text-[10px] font-black text-gray-900 uppercase">Níveis 4-8</span>
+          <span className="text-[10px] font-black text-gray-900 uppercase">Níveis 3+</span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {DRE_DIMENSIONS.map(dim => {
@@ -2833,8 +2841,7 @@ const DREView: React.FC<DREViewProps> = ({
             {Object.keys(dreStructure.data)
               .map((code) => {
                 const node = dreStructure.data[code];
-                // node.items agora é Record<tag01, contas[]>, não array
-                const categories = Object.values(node.items).flat();
+                const categories = Object.values(node.items as Record<string, string[]>).flat();
                 const realValues = getValues('Real', categories);
                 const orcadoValues = getValues('Orçado', categories);
 
@@ -4383,9 +4390,7 @@ const DREView: React.FC<DREViewProps> = ({
                 const allCostCategories: string[][] = [];      // Todos os custos (para EBITDA total)
 
                 entries.forEach(([, nivel1Data]) => {
-                  // items agora é Record<tag01, contas[]> - flatten para pegar todas as contas
-                  const tag01Items = nivel1Data.items as Record<string, string[]>;
-                  const allCats = Object.values(tag01Items).flat();
+                  const allCats = Object.values(nivel1Data.items as Record<string, string[]>).flat();
                   const label = nivel1Data.label;
 
                   if (label.startsWith('01.')) {
@@ -4412,17 +4417,26 @@ const DREView: React.FC<DREViewProps> = ({
                 return (
                   <>
                     {entries.map(([nivel1Code, nivel1Data], entryIdx) => {
-                      // items é Record<tag01, contas[]> - flatten para pegar todas as contas
                       const tag01Items = nivel1Data.items as Record<string, string[]>;
-                      // dreStructure já agrega todas as contas de todos os cenários a partir de summaryRows
                       const allCategories = Object.values(tag01Items)
                         .flat()
                         .filter((c): c is string => c != null && c !== '');
-
+                      const isTag0Expanded = expandedRows[nivel1Code] ?? true;
 
                       return (
                         <React.Fragment key={nivel1Code}>
-                          {renderRow(nivel1Code, nivel1Data.label, 1, allCategories, true, {}, nivel1Code)}
+                          {renderRow(nivel1Code, nivel1Data.label, 1, allCategories, Object.keys(tag01Items).length > 0, {}, nivel1Code)}
+
+                          {/* Sub-linhas fixas de tag01 (sempre visíveis quando tag0 expandido) */}
+                          {isTag0Expanded && Object.entries(tag01Items)
+                            .filter(([t]) => selectedTags01.length === 0 || selectedTags01.includes(t))
+                            .sort(([a], [b]) => a.localeCompare(b))
+                            .map(([tag01Label, tag01Contas], tag01Idx) => {
+                              const tag01Id = `${nivel1Code}-tag01-${tag01Idx}`;
+                              const filteredContas = tag01Contas.filter((c): c is string => c != null && c !== '');
+                              return renderRow(tag01Id, tag01Label, 2, filteredContas, dynamicPath.length > 0, { tag01: tag01Label }, nivel1Code);
+                            })
+                          }
 
                           {/* MARGEM DE CONTRIBUIÇÃO: Receita - (CV + CF), após grupo 03 */}
                           {showOnlyEbitda && entryIdx === margemAfterIdx && margemAfterIdx >= 0 && revenueCategories.length > 0 && renderCalculationLine(
@@ -4847,9 +4861,7 @@ const DREView: React.FC<DREViewProps> = ({
                   const node = dreStructure.data[code];
                   if (!node) return null;
 
-                  // items é Record<tag01, contas[]> - flatten
-                  const tag01Items = node.items as Record<string, string[]>;
-                  const categories = Object.values(tag01Items).flat();
+                  const categories = Object.values(node.items as Record<string, string[]>).flat();
                   const realValues = getValues('Real', categories);
                   const orcadoValues = getValues('Orçado', categories);
                   const realTotal = realValues.slice(selectedMonthStart, selectedMonthEnd + 1).reduce((sum, val) => sum + val, 0);
@@ -4871,7 +4883,7 @@ const DREView: React.FC<DREViewProps> = ({
                           }`}>
                             {delta >= 0 ? '+' : ''}{delta.toFixed(0)}%
                           </div>
-                          <p className="text-sm text-gray-600 font-semibold">{Object.keys(tag01Items).length} tag01s</p>
+                          <p className="text-sm text-gray-600 font-semibold">{categories.length} contas</p>
                         </div>
                       </div>
 
@@ -4945,11 +4957,8 @@ const DREView: React.FC<DREViewProps> = ({
 
                   if (!card1 || !card2) return null;
 
-                  // items é Record<tag01, contas[]> - flatten
-                  const tag01Items1 = card1.items as Record<string, string[]>;
-                  const tag01Items2 = card2.items as Record<string, string[]>;
-                  const categories1 = Object.values(tag01Items1).flat();
-                  const categories2 = Object.values(tag01Items2).flat();
+                  const categories1 = Object.values(card1.items as Record<string, string[]>).flat();
+                  const categories2 = Object.values(card2.items as Record<string, string[]>).flat();
                   const real1 = getValues('Real', categories1).slice(selectedMonthStart, selectedMonthEnd + 1).reduce((a, b) => a + b, 0);
                   const real2 = getValues('Real', categories2).slice(selectedMonthStart, selectedMonthEnd + 1).reduce((a, b) => a + b, 0);
                   const diff = real1 - real2;

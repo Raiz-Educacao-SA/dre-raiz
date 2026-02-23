@@ -338,7 +338,7 @@ const App: React.FC = () => {
 
     // Formatar mês usando ano dinâmico (não fixo 2024)
     const year = new Date().getFullYear();
-    const monthFilter = monthIdx !== undefined ? `${year}-${String(monthIdx + 1).padStart(2, '0')}` : '';
+    const monthFilter = (filters.month as string) || (monthIdx !== undefined ? `${year}-${String(monthIdx + 1).padStart(2, '0')}` : '');
 
     // Construir filtros para TransactionsView
     const drillFilters: any = {
@@ -945,7 +945,7 @@ const App: React.FC = () => {
                   title="Exportar Excel do Soma Tags"
                 >
                   <Download size={14} />
-                  <span className="whitespace-nowrap">Exportar Excel</span>
+                  <span className="whitespace-nowrap">Exportar</span>
                 </button>
                 <button
                   onClick={() => somaTagsActions.refresh?.()}
@@ -1091,6 +1091,7 @@ const App: React.FC = () => {
                 onRegisterActions={setSomaTagsActions}
                 onLoadingChange={setIsSomaTagsLoading}
                 onDataChange={setHasSomaTagsData}
+                onDrillDown={handleDrillDown}
               />
             </Suspense>
           )}
