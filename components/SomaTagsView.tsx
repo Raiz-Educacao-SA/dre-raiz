@@ -139,6 +139,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
   const [selectedTags01,  setSelectedTags01]  = useState<string[]>([]);
   const filialCleanupRef = useRef(false);
+  const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>('Sim');
 
   // ── Visibilidade de colunas ───────────────────────────────────────────────
   const [showReal,            setShowReal]            = useState(true);
@@ -256,7 +257,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       const tags02   = selectedTags02.length  > 0 ? selectedTags02  : undefined;
       const tags01Perm = allowedTag01 && allowedTag01.length > 0 ? allowedTag01 : undefined;
       const [data, opts, t02] = await Promise.all([
-        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm),
+        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm, recurring ?? undefined),
         getDREFilterOptions({ monthFrom: mFrom, monthTo: mTo }),
         allTag02OptionsRef.current.length === 0 ? getTag02Options() : Promise.resolve(allTag02OptionsRef.current),
       ]);
@@ -271,7 +272,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     } finally {
       setLoading(false);
     }
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, allowedTag01]);
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, allowedTag01, recurring]);
 
   // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
   // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
@@ -1318,6 +1319,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             <FilterX size={11} /><span className="whitespace-nowrap">Limpar</span>
           </button>
         )}
+
+        {/* Recorrência */}
+        <div className="flex items-center gap-0.5 bg-white border border-teal-200 rounded-lg px-2 py-1 shadow-sm shrink-0">
+          <span className="text-[9px] font-black text-gray-500 uppercase whitespace-nowrap mr-1">Recorr:</span>
+          {(['Sim', 'Não', null] as const).map(v => (
+            <button key={String(v)} onClick={() => setRecurring(v)}
+              className={`px-1.5 py-0.5 text-[9px] font-black rounded transition-all ${recurring === v ? 'bg-teal-500 text-white' : 'text-gray-500 hover:bg-teal-50 hover:text-teal-700'}`}>
+              {v ?? 'Todos'}
+            </button>
+          ))}
+        </div>
 
         {/* Até EBITDA */}
         <button onClick={() => setShowOnlyEbitda(v => !v)}

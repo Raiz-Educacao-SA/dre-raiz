@@ -450,6 +450,8 @@ export interface DREFilterOptions {
   marcas: string[];
   nome_filiais: string[];
   tags01: string[];
+  tags02: string[];
+  tags03: string[];
 }
 
 // ─── Dashboard RPC ────────────────────────────────────────────────────────────
@@ -546,6 +548,8 @@ export const getDRESummary = async (params: {
   marcas?: string[];
   nomeFiliais?: string[];  // ✅ Labels completas: ["GT - Bosque", "QI - Central"]
   tags01?: string[];
+  tags02?: string[];
+  tags03?: string[];
 }): Promise<DRESummaryRow[]> => {
   console.log('📊 getDRESummary: Buscando dados agregados...', params);
 
@@ -555,6 +559,8 @@ export const getDRESummary = async (params: {
     p_marcas: params.marcas && params.marcas.length > 0 ? params.marcas : null,
     p_nome_filiais: params.nomeFiliais && params.nomeFiliais.length > 0 ? params.nomeFiliais : null,
     p_tags01: params.tags01 && params.tags01.length > 0 ? params.tags01 : null,
+    p_tags02: params.tags02 && params.tags02.length > 0 ? params.tags02 : null,
+    p_tags03: params.tags03 && params.tags03.length > 0 ? params.tags03 : null,
   };
 
   console.log('🔍 RPC params sendo enviados:', rpcParams);
@@ -617,6 +623,7 @@ export const getSomaTags = async (
   nomeFiliais?: string[],
   tags02?: string[],
   tags01?: string[],
+  recurring?: string,
 ): Promise<SomaTagsRow[]> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
@@ -629,6 +636,7 @@ export const getSomaTags = async (
         p_nome_filiais: nomeFiliais && nomeFiliais.length > 0 ? nomeFiliais : null,
         p_tags02:       tags02      && tags02.length      > 0 ? tags02      : null,
         p_tags01:       tags01      && tags01.length      > 0 ? tags01      : null,
+        p_recurring:    recurring   || null,
       })
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
