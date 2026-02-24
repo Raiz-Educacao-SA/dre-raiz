@@ -314,19 +314,6 @@ export const getTag02OptionsForTag01s = async (tags01: string[]): Promise<string
 };
 
 /**
- * Busca opções de Tag03 filtradas por tag01s e/ou tag02s selecionados (cascata)
- */
-export const getTag03OptionsForTag01sAndTag02s = async (tags01: string[], tags02: string[]): Promise<string[]> => {
-  if (tags01.length === 0 && tags02.length === 0) return [];
-  let query = supabase.from('transactions').select('tag03').not('tag03', 'is', null);
-  if (tags01.length > 0) query = query.in('tag01', tags01);
-  if (tags02.length > 0) query = query.in('tag02', tags02);
-  const { data, error } = await query;
-  if (error || !data) return [];
-  return [...new Set(data.map(r => r.tag03).filter(Boolean) as string[])].sort();
-};
-
-/**
  * Busca todas as opções de Tag03 disponíveis no banco
  * Retorna lista única e ordenada de TODOS os tag03 distintos
  */
@@ -463,8 +450,6 @@ export interface DREFilterOptions {
   marcas: string[];
   nome_filiais: string[];
   tags01: string[];
-  tags02: string[];
-  tags03: string[];
 }
 
 // ─── Dashboard RPC ────────────────────────────────────────────────────────────
@@ -561,8 +546,6 @@ export const getDRESummary = async (params: {
   marcas?: string[];
   nomeFiliais?: string[];  // ✅ Labels completas: ["GT - Bosque", "QI - Central"]
   tags01?: string[];
-  tags02?: string[];
-  tags03?: string[];
 }): Promise<DRESummaryRow[]> => {
   console.log('📊 getDRESummary: Buscando dados agregados...', params);
 
@@ -572,8 +555,6 @@ export const getDRESummary = async (params: {
     p_marcas: params.marcas && params.marcas.length > 0 ? params.marcas : null,
     p_nome_filiais: params.nomeFiliais && params.nomeFiliais.length > 0 ? params.nomeFiliais : null,
     p_tags01: params.tags01 && params.tags01.length > 0 ? params.tags01 : null,
-    p_tags02: params.tags02 && params.tags02.length > 0 ? params.tags02 : null,
-    p_tags03: params.tags03 && params.tags03.length > 0 ? params.tags03 : null,
   };
 
   console.log('🔍 RPC params sendo enviados:', rpcParams);
@@ -636,8 +617,6 @@ export const getSomaTags = async (
   nomeFiliais?: string[],
   tags02?: string[],
   tags01?: string[],
-  recurring?: string,
-  tags03?: string[],
 ): Promise<SomaTagsRow[]> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
@@ -650,7 +629,6 @@ export const getSomaTags = async (
         p_nome_filiais: nomeFiliais && nomeFiliais.length > 0 ? nomeFiliais : null,
         p_tags02:       tags02      && tags02.length      > 0 ? tags02      : null,
         p_tags01:       tags01      && tags01.length      > 0 ? tags01      : null,
-        p_recurring:    recurring   || null,
       })
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
@@ -718,7 +696,6 @@ export const getDREDimension = async (params: {
   tags02?: string[];
   tags03?: string[];
   tag0?: string;  // fallback: inclui contas vazias do mesmo tag0 no A-1
-  recurring?: string;
 }): Promise<DREDimensionRow[]> => {
   console.log('📊 getDREDimension: Buscando dimensão', params.dimension, {
     tags01: params.tags01,
@@ -739,7 +716,6 @@ export const getDREDimension = async (params: {
     p_tags02: params.tags02 && params.tags02.length > 0 ? params.tags02 : null,
     p_tags03: params.tags03 && params.tags03.length > 0 ? params.tags03 : null,
     p_tag0: params.tag0 || null,
-    p_recurring: params.recurring || null,
   });
 
   if (error) {
@@ -768,11 +744,11 @@ export const getDREFilterOptions = async (params: {
 
   if (error) {
     console.error('❌ Erro ao buscar opções de filtro DRE:', error);
-    return { marcas: [], nome_filiais: [], tags01: [], tags02: [], tags03: [] };
+    return { marcas: [], nome_filiais: [], tags01: [] };
   }
 
-  const result = data?.[0] || { marcas: [], nome_filiais: [], tags01: [], tags02: [], tags03: [] };
-  console.log(`✅ getDREFilterOptions: ${result.marcas?.length || 0} marcas, ${result.nome_filiais?.length || 0} filiais, ${result.tags01?.length || 0} tags01, ${result.tags02?.length || 0} tags02, ${result.tags03?.length || 0} tags03`);
+  const result = data?.[0] || { marcas: [], nome_filiais: [], tags01: [] };
+  console.log(`✅ getDREFilterOptions: ${result.marcas?.length || 0} marcas, ${result.nome_filiais?.length || 0} filiais, ${result.tags01?.length || 0} tags01`);
   return result as DREFilterOptions;
 };
 

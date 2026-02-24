@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag01sAndTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
+import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
 import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
@@ -131,18 +131,14 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [hoveredBar,  setHoveredBar]  = useState<string | null>(null);
 
   // ── Filtros Marca / Filial / Tag01 ───────────────────────────────────────
-  const [filterOptions,   setFilterOptions]   = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [], tags02: [], tags03: [] });
+  const [filterOptions,   setFilterOptions]   = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
   const [selectedMarcas,  setSelectedMarcas]  = useState<string[]>([]);
   const [selectedTags02,  setSelectedTags02]  = useState<string[]>([]);
   const [tag02Options,    setTag02Options]    = useState<string[]>([]);
   const allTag02OptionsRef = useRef<string[]>([]);
-  const [selectedTags03,  setSelectedTags03]  = useState<string[]>([]);
-  const [tag03Options,    setTag03Options]    = useState<string[]>([]);
-  const allTag03OptionsRef = useRef<string[]>([]);
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
   const [selectedTags01,  setSelectedTags01]  = useState<string[]>([]);
   const filialCleanupRef = useRef(false);
-  const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>('Sim');
 
   // ── Visibilidade de colunas ───────────────────────────────────────────────
   const [showReal,            setShowReal]            = useState(true);
@@ -170,17 +166,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const monthToRef    = useRef(monthTo);
   const marcasRef     = useRef(selectedMarcas);
   const filiaisRef    = useRef(selectedFiliais);
-  const tags02Ref     = useRef(selectedTags02);
-  const tags03Ref     = useRef(selectedTags03);
-  const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
   useEffect(() => { yearRef.current      = year;            }, [year]);
   useEffect(() => { monthFromRef.current = monthFrom;       }, [monthFrom]);
   useEffect(() => { monthToRef.current   = monthTo;         }, [monthTo]);
   useEffect(() => { marcasRef.current    = selectedMarcas;  }, [selectedMarcas]);
   useEffect(() => { filiaisRef.current   = selectedFiliais; }, [selectedFiliais]);
-  useEffect(() => { tags02Ref.current    = selectedTags02;  }, [selectedTags02]);
-  useEffect(() => { tags03Ref.current    = selectedTags03;  }, [selectedTags03]);
-  useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
 
   const toggleElement = useCallback(
     (element: string, currentState: boolean, setState: (v: boolean) => void) => {
@@ -236,22 +226,19 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     tag01: string, tag0: string, scenario: string, dim: string, accFilters: Record<string, string> = {}
   ) => {
     const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
-    const recurringVal = recurringRef.current ?? 'null';
-    const cacheKey   = `${scenario}|${tag01}|${dim}|${filtersKey}|rec:${recurringVal}`;
+    const cacheKey   = `${scenario}|${tag01}|${dim}|${filtersKey}`;
     const mf = `${yearRef.current}-${monthFromRef.current}`;
     const mt = `${yearRef.current}-${monthToRef.current}`;
     const marcas  = accFilters.marca       ? [accFilters.marca]       : (marcasRef.current.length  > 0 ? marcasRef.current  : undefined);
     const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
-    // Prioriza accFilters do drill-down; se não houver, usa filtro global do painel
-    const tags02  = accFilters.tag02 ? [accFilters.tag02] : (tags02Ref.current.length > 0 ? tags02Ref.current : undefined);
-    const tags03  = accFilters.tag03 ? [accFilters.tag03] : (tags03Ref.current.length > 0 ? tags03Ref.current : undefined);
+    const tags02  = accFilters.tag02 ? [accFilters.tag02] : undefined;
+    const tags03  = accFilters.tag03 ? [accFilters.tag03] : undefined;
     const rows = await getDREDimension({
       monthFrom: mf, monthTo: mt,
       scenario, dimension: dim,
       tags01: [tag01], tag0,
       marcas, nomeFiliais: filiais,
       tags02, tags03,
-      recurring: recurringRef.current ?? undefined,
     });
     setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
   }, []);
@@ -267,13 +254,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       const marcas   = selectedMarcas.length  > 0 ? selectedMarcas  : undefined;
       const filiais  = selectedFiliais.length > 0 ? selectedFiliais : undefined;
       const tags02   = selectedTags02.length  > 0 ? selectedTags02  : undefined;
-      const tags03   = selectedTags03.length  > 0 ? selectedTags03  : undefined;
       const tags01Perm = allowedTag01 && allowedTag01.length > 0 ? allowedTag01 : undefined;
-      const [data, opts, t02, t03] = await Promise.all([
-        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm, recurring ?? undefined, tags03),
+      const [data, opts, t02] = await Promise.all([
+        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm),
         getDREFilterOptions({ monthFrom: mFrom, monthTo: mTo }),
         allTag02OptionsRef.current.length === 0 ? getTag02Options() : Promise.resolve(allTag02OptionsRef.current),
-        allTag03OptionsRef.current.length === 0 ? getTag03Options() : Promise.resolve(allTag03OptionsRef.current),
       ]);
       setRows(data);
       setFilterOptions(opts);
@@ -281,16 +266,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         allTag02OptionsRef.current = t02;
         setTag02Options(t02);
       }
-      if (allTag03OptionsRef.current.length === 0) {
-        allTag03OptionsRef.current = t03;
-        setTag03Options(t03);
-      }
     } catch (e: any) {
       setError(String(e?.message || e));
     } finally {
       setLoading(false);
     }
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, allowedTag01, recurring]);
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, allowedTag01]);
 
   // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
   // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
@@ -299,34 +280,19 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     fetchData();
   }, [fetchData]);
 
-  // Limpa cache de drill-down quando recurring muda (dados anteriores são inválidos)
-  useEffect(() => {
-    setDimensionCache({});
-  }, [recurring]);
-
   // Cascata Tag02: quando Tag01 muda, atualiza opções disponíveis de Tag02
   useEffect(() => {
     if (selectedTags01.length === 0) {
+      // Restaura lista completa; NÃO limpa seleção de tag02 automaticamente
       setTag02Options(allTag02OptionsRef.current);
     } else {
       getTag02OptionsForTag01s(selectedTags01).then(opts => {
         setTag02Options(opts);
+        // Remove seleções de tag02 que não existem para os tag01s escolhidos
         setSelectedTags02(prev => prev.filter(t => opts.includes(t)));
       });
     }
   }, [selectedTags01]);
-
-  // Cascata Tag03: quando Tag01 ou Tag02 mudam, atualiza opções disponíveis de Tag03
-  useEffect(() => {
-    if (selectedTags01.length === 0 && selectedTags02.length === 0) {
-      setTag03Options(allTag03OptionsRef.current);
-    } else {
-      getTag03OptionsForTag01sAndTag02s(selectedTags01, selectedTags02).then(opts => {
-        setTag03Options(opts);
-        setSelectedTags03(prev => prev.filter(t => opts.includes(t)));
-      });
-    }
-  }, [selectedTags01, selectedTags02]);
 
   // Limpa cache de drill ao trocar filtros
   useEffect(() => {
@@ -641,7 +607,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // ── Render helpers ────────────────────────────────────────────────────────
   const tag01Count   = displayedGroups.reduce((s, g) => s + g.items.length, 0);
   const hasOrcado    = displayedGroups.some(g => g.orcado !== 0);
-  const hasAnyFilter = selectedMarcas.length > 0 || selectedFiliais.length > 0 || selectedTags01.length > 0 || selectedTags02.length > 0 || selectedTags03.length > 0;
+  const hasAnyFilter = selectedMarcas.length > 0 || selectedFiliais.length > 0 || selectedTags01.length > 0 || selectedTags02.length > 0;
   const scenarioCount = [showReal, showOrcado, showA1].filter(Boolean).length;
   // Contagem para Mês: inclui deltas quando ativos
   const mesColCount = [showReal, showOrcado, showDeltaAbsOrcado, showDeltaPercOrcado, showA1, showDeltaAbsA1, showDeltaPercA1].filter(Boolean).length;
@@ -1312,9 +1278,6 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         <MultiSelectFilter label="Filial" icon={<Building2 size={14} />} options={filiaisFiltradas}           selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue"   />
         <MultiSelectFilter label="Tag01"  icon={<Layers   size={14} />} options={filterOptions.tags01}  selected={selectedTags01}  onChange={setSelectedTags01}  colorScheme="purple" />
         <MultiSelectFilter label="Tag02"  icon={<Layers   size={14} />} options={tag02Options}           selected={selectedTags02}  onChange={setSelectedTags02}  colorScheme="purple" />
-        {tag03Options.length > 0 && (
-          <MultiSelectFilter label="Tag03" icon={<Layers size={14} />} options={tag03Options} selected={selectedTags03} onChange={setSelectedTags03} colorScheme="purple" />
-        )}
 
         <div className="h-8 w-px bg-blue-200 mx-0.5 shrink-0" />
 
@@ -1349,23 +1312,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
         {/* Limpar filtros */}
         {hasAnyFilter && (
-          <button onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); setSelectedTags01([]); setSelectedTags02([]); setSelectedTags03([]); }}
+          <button onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); setSelectedTags01([]); setSelectedTags02([]); }}
             className="flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-1.5 rounded-lg border border-rose-200 font-bold text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all shadow-sm shrink-0"
             title="Limpar filtros">
             <FilterX size={11} /><span className="whitespace-nowrap">Limpar</span>
           </button>
         )}
-
-        {/* Recorrência */}
-        <div className="flex items-center gap-0.5 bg-white border border-teal-200 rounded-lg px-2 py-1 shadow-sm shrink-0">
-          <span className="text-[9px] font-black text-gray-500 uppercase whitespace-nowrap mr-1">Recorr:</span>
-          {(['Sim', 'Não', null] as const).map(v => (
-            <button key={String(v)} onClick={() => setRecurring(v)}
-              className={`px-1.5 py-0.5 text-[9px] font-black rounded transition-all ${recurring === v ? 'bg-teal-500 text-white' : 'text-gray-500 hover:bg-teal-50 hover:text-teal-700'}`}>
-              {v ?? 'Todos'}
-            </button>
-          ))}
-        </div>
 
         {/* Até EBITDA */}
         <button onClick={() => setShowOnlyEbitda(v => !v)}
