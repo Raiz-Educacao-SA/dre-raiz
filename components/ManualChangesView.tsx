@@ -2,7 +2,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ManualChange } from '../types';
 import {
   History, CheckCircle2, XCircle, ArrowRight, AlertCircle, GitFork,
-  User, Clock, ChevronDown, ShieldCheck, FileText, Shield, Lock, FilterX, X
+  User, Clock, ChevronDown, ShieldCheck, FileText, Shield, Lock, FilterX, X,
+  CheckSquare, Square, Loader2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
@@ -11,6 +12,7 @@ interface ManualChangesViewProps {
   changes: ManualChange[];
   approveChange: (changeId: string) => void;
   rejectChange: (changeId: string) => void;
+  bulkApproveChanges?: (ids: string[]) => Promise<void>;
 }
 
 interface DetailModalProps {
@@ -251,30 +253,10 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
   };
 
   const colorClasses = {
-    blue: {
-      bg: 'bg-blue-50',
-      border: 'border-blue-200',
-      text: 'text-blue-600',
-      hover: 'hover:bg-blue-100'
-    },
-    purple: {
-      bg: 'bg-purple-50',
-      border: 'border-purple-200',
-      text: 'text-purple-600',
-      hover: 'hover:bg-purple-100'
-    },
-    emerald: {
-      bg: 'bg-emerald-50',
-      border: 'border-emerald-200',
-      text: 'text-emerald-600',
-      hover: 'hover:bg-emerald-100'
-    },
-    amber: {
-      bg: 'bg-amber-50',
-      border: 'border-amber-200',
-      text: 'text-amber-600',
-      hover: 'hover:bg-amber-100'
-    }
+    blue:    { bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-600',    hover: 'hover:bg-blue-100' },
+    purple:  { bg: 'bg-purple-50',  border: 'border-purple-200',  text: 'text-purple-600',  hover: 'hover:bg-purple-100' },
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-600', hover: 'hover:bg-emerald-100' },
+    amber:   { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-600',   hover: 'hover:bg-amber-100' },
   };
 
   const colors = colorClasses[color as keyof typeof colorClasses] || colorClasses.blue;
@@ -285,9 +267,7 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 transition-all text-xs font-bold ${
-          isActive
-            ? `bg-yellow-50 border-yellow-300 text-yellow-900`
-            : `${colors.bg} ${colors.border} ${colors.text}`
+          isActive ? 'bg-yellow-50 border-yellow-300 text-yellow-900' : `${colors.bg} ${colors.border} ${colors.text}`
         }`}
       >
         {icon}
@@ -322,10 +302,14 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
   );
 };
 
-const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveChange, rejectChange }) => {
+const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveChange, rejectChange, bulkApproveChanges }) => {
   const [selectedChange, setSelectedChange] = useState<ManualChange | null>(null);
   const { user, isAdmin, isApprover } = useAuth();
   const canApprove = isAdmin || isApprover;
+
+  // Seleção em massa
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
 
   // Filter states
   const [filterStatus, setFilterStatus] = useState<string[]>([]);
@@ -336,76 +320,58 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
   const [filterDateTo, setFilterDateTo] = useState<string>('');
 
   // Extract unique values for filters
-  const uniqueStatuses = useMemo(() => {
-    return Array.from(new Set(changes.map(c => c.status))).sort();
-  }, [changes]);
+  const uniqueStatuses  = useMemo(() => Array.from(new Set(changes.map(c => c.status))).sort(), [changes]);
+  const uniqueTypes     = useMemo(() => Array.from(new Set(changes.map(c => c.type))).sort(), [changes]);
+  const uniqueRequesters = useMemo(() => Array.from(new Set(changes.map(c => c.requestedByName || c.requestedBy))).sort(), [changes]);
+  const uniqueApprovers = useMemo(() => Array.from(new Set(changes.filter(c => c.approvedByName).map(c => c.approvedByName!))).sort(), [changes]);
 
-  const uniqueTypes = useMemo(() => {
-    return Array.from(new Set(changes.map(c => c.type))).sort();
-  }, [changes]);
-
-  const uniqueRequesters = useMemo(() => {
-    return Array.from(new Set(changes.map(c => c.requestedByName || c.requestedBy))).sort();
-  }, [changes]);
-
-  const uniqueApprovers = useMemo(() => {
-    return Array.from(new Set(changes
-      .filter(c => c.approvedByName)
-      .map(c => c.approvedByName!)
-    )).sort();
-  }, [changes]);
-
-  // Filtrar mudanças: Admin e Aprovador veem tudo, outros usuários veem apenas as suas + aplicar filtros
+  // Filtrar mudanças
   const filteredChanges = useMemo(() => {
     let result = changes;
-
-    // Role-based filter (existing logic)
-    if (!canApprove) {
-      result = result.filter(c => c.requestedBy === user?.email);
-    }
-
-    // Status filter
-    if (filterStatus.length > 0) {
-      result = result.filter(c => filterStatus.includes(c.status));
-    }
-
-    // Type filter
-    if (filterType.length > 0) {
-      result = result.filter(c => filterType.includes(c.type));
-    }
-
-    // Requester filter
-    if (filterRequester.length > 0) {
-      result = result.filter(c =>
-        filterRequester.includes(c.requestedByName || c.requestedBy)
-      );
-    }
-
-    // Approver filter
-    if (filterApprover.length > 0) {
-      result = result.filter(c =>
-        c.approvedByName && filterApprover.includes(c.approvedByName)
-      );
-    }
-
-    // Date range filter (by request date)
-    if (filterDateFrom) {
-      result = result.filter(c =>
-        new Date(c.requestedAt) >= new Date(filterDateFrom)
-      );
-    }
-
+    if (!canApprove) result = result.filter(c => c.requestedBy === user?.email);
+    if (filterStatus.length > 0)    result = result.filter(c => filterStatus.includes(c.status));
+    if (filterType.length > 0)      result = result.filter(c => filterType.includes(c.type));
+    if (filterRequester.length > 0) result = result.filter(c => filterRequester.includes(c.requestedByName || c.requestedBy));
+    if (filterApprover.length > 0)  result = result.filter(c => c.approvedByName && filterApprover.includes(c.approvedByName));
+    if (filterDateFrom) result = result.filter(c => new Date(c.requestedAt) >= new Date(filterDateFrom));
     if (filterDateTo) {
-      // Set time to end of day (23:59:59.999) to include all records from the selected date
-      const dateToEndOfDay = new Date(filterDateTo);
-      dateToEndOfDay.setHours(23, 59, 59, 999);
-      result = result.filter(c =>
-        new Date(c.requestedAt) <= dateToEndOfDay
-      );
+      const end = new Date(filterDateTo); end.setHours(23, 59, 59, 999);
+      result = result.filter(c => new Date(c.requestedAt) <= end);
     }
-
     return result;
   }, [changes, canApprove, user, filterStatus, filterType, filterRequester, filterApprover, filterDateFrom, filterDateTo]);
+
+  // Itens pendentes visíveis (elegíveis para seleção em massa)
+  const pendingVisible = useMemo(() => filteredChanges.filter(c => c.status === 'Pendente'), [filteredChanges]);
+  const allPendingSelected = pendingVisible.length > 0 && pendingVisible.every(c => selectedIds.has(c.id));
+  const somePendingSelected = pendingVisible.some(c => selectedIds.has(c.id));
+
+  const toggleSelectAll = () => {
+    if (allPendingSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendingVisible.map(c => c.id)));
+    }
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkApprove = async () => {
+    if (!bulkApproveChanges || selectedIds.size === 0) return;
+    setIsBulkApproving(true);
+    try {
+      await bulkApproveChanges(Array.from(selectedIds));
+      setSelectedIds(new Set());
+    } finally {
+      setIsBulkApproving(false);
+    }
+  };
 
   const formatDateToMMAAAA = (dateStr: string) => {
     if (!dateStr) return '-';
@@ -429,19 +395,11 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
       const orig = change.originalTransaction;
       let newValueObj: any = {};
       let justification = "";
-
       try {
         const parsed = JSON.parse(change.newValue || '{}');
-        if (change.type === 'RATEIO') {
-          justification = parsed.justification || "";
-        } else {
-          newValueObj = parsed;
-          justification = newValueObj.justification || "";
-        }
-      } catch (e) {
-        console.error("Erro ao processar newValue", e);
-      }
-
+        if (change.type === 'RATEIO') { justification = parsed.justification || ""; }
+        else { newValueObj = parsed; justification = newValueObj.justification || ""; }
+      } catch (e) { /* ignore */ }
       return {
         "ID": change.id,
         "Solicitante Nome": change.requestedByName || "-",
@@ -465,10 +423,7 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
     });
 
     const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
-
-    // Auto-ajustar largura das colunas
     ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length, 14) }));
-
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Aprovações');
     XLSX.writeFile(wb, `Aprovacoes_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -489,7 +444,6 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Export Button */}
           <button
             onClick={handleExportExcel}
             className="bg-emerald-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-emerald-700 shadow-md transition-all active:scale-95"
@@ -498,8 +452,6 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
             <FileText size={16} />
             <span className="text-xs font-black">Exportar Excel</span>
           </button>
-
-          {/* Role Badge */}
           {isAdmin ? (
             <div className="bg-purple-50 border-2 border-purple-200 px-4 py-2 rounded-xl flex items-center gap-2">
               <Shield className="text-purple-600" size={16} />
@@ -540,12 +492,8 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
           </h3>
           <button
             onClick={() => {
-              setFilterStatus([]);
-              setFilterType([]);
-              setFilterRequester([]);
-              setFilterApprover([]);
-              setFilterDateFrom('');
-              setFilterDateTo('');
+              setFilterStatus([]); setFilterType([]); setFilterRequester([]);
+              setFilterApprover([]); setFilterDateFrom(''); setFilterDateTo('');
             }}
             className="flex items-center gap-2 px-3 py-2 bg-[#F44C00] hover:bg-[#d44200] text-white rounded-xl text-xs font-black uppercase tracking-wide transition-all shadow-sm active:scale-95"
           >
@@ -555,66 +503,23 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <MultiSelectDropdown
-            label="Status"
-            icon={<CheckCircle2 size={14} />}
-            options={uniqueStatuses}
-            selected={filterStatus}
-            onChange={setFilterStatus}
-            color="amber"
-          />
-
-          <MultiSelectDropdown
-            label="Tipo"
-            icon={<GitFork size={14} />}
-            options={uniqueTypes}
-            selected={filterType}
-            onChange={setFilterType}
-            color="purple"
-          />
-
-          <MultiSelectDropdown
-            label="Solicitante"
-            icon={<User size={14} />}
-            options={uniqueRequesters}
-            selected={filterRequester}
-            onChange={setFilterRequester}
-            color="blue"
-          />
-
-          <MultiSelectDropdown
-            label="Aprovador"
-            icon={<ShieldCheck size={14} />}
-            options={uniqueApprovers}
-            selected={filterApprover}
-            onChange={setFilterApprover}
-            color="emerald"
-          />
+          <MultiSelectDropdown label="Status"     icon={<CheckCircle2 size={14} />} options={uniqueStatuses}   selected={filterStatus}    onChange={setFilterStatus}    color="amber"   />
+          <MultiSelectDropdown label="Tipo"       icon={<GitFork size={14} />}      options={uniqueTypes}      selected={filterType}      onChange={setFilterType}      color="purple"  />
+          <MultiSelectDropdown label="Solicitante" icon={<User size={14} />}        options={uniqueRequesters} selected={filterRequester} onChange={setFilterRequester} color="blue"    />
+          <MultiSelectDropdown label="Aprovador"  icon={<ShieldCheck size={14} />}  options={uniqueApprovers}  selected={filterApprover}  onChange={setFilterApprover}  color="emerald" />
 
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-2 border-gray-200 rounded-lg">
             <Clock size={14} className="text-gray-500" />
             <span className="text-xs font-bold text-gray-600">De:</span>
-            <input
-              type="date"
-              value={filterDateFrom}
-              onChange={(e) => setFilterDateFrom(e.target.value)}
-              className="text-xs font-medium border-0 bg-transparent focus:outline-none"
-            />
+            <input type="date" value={filterDateFrom} onChange={(e) => setFilterDateFrom(e.target.value)} className="text-xs font-medium border-0 bg-transparent focus:outline-none" />
           </div>
-
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-2 border-gray-200 rounded-lg">
             <Clock size={14} className="text-gray-500" />
             <span className="text-xs font-bold text-gray-600">Até:</span>
-            <input
-              type="date"
-              value={filterDateTo}
-              onChange={(e) => setFilterDateTo(e.target.value)}
-              className="text-xs font-medium border-0 bg-transparent focus:outline-none"
-            />
+            <input type="date" value={filterDateTo} onChange={(e) => setFilterDateTo(e.target.value)} className="text-xs font-medium border-0 bg-transparent focus:outline-none" />
           </div>
         </div>
 
-        {/* Active Filter Summary */}
         {(filterStatus.length > 0 || filterType.length > 0 || filterRequester.length > 0 ||
           filterApprover.length > 0 || filterDateFrom || filterDateTo) && (
           <div className="mt-3 pt-3 border-t border-gray-100">
@@ -625,11 +530,59 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
         )}
       </div>
 
+      {/* Barra de Aprovação em Massa */}
+      {canApprove && selectedIds.size > 0 && (
+        <div className="bg-emerald-600 text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-3">
+            <CheckSquare size={18} />
+            <span className="text-sm font-black">
+              {selectedIds.size} {selectedIds.size === 1 ? 'item selecionado' : 'itens selecionados'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg text-xs font-black uppercase transition-all"
+            >
+              Limpar
+            </button>
+            <button
+              onClick={handleBulkApprove}
+              disabled={isBulkApproving}
+              className="flex items-center gap-2 px-4 py-1.5 bg-white text-emerald-700 hover:bg-emerald-50 rounded-lg text-xs font-black uppercase transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {isBulkApproving ? (
+                <><Loader2 size={13} className="animate-spin" /> Aprovando…</>
+              ) : (
+                <><CheckCircle2 size={13} /> Aprovar Selecionados</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-gray-100 shadow-xl overflow-hidden">
         <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
           <table className="w-full text-left min-w-[900px]">
             <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200 text-[9px] font-black text-gray-400 uppercase tracking-widest">
               <tr className="h-9">
+                {canApprove && (
+                  <th className="px-3 w-[40px]">
+                    {pendingVisible.length > 0 && (
+                      <button
+                        onClick={toggleSelectAll}
+                        title={allPendingSelected ? 'Desmarcar todos' : 'Selecionar todos pendentes'}
+                        className="text-gray-400 hover:text-emerald-600 transition-colors"
+                      >
+                        {allPendingSelected
+                          ? <CheckSquare size={15} className="text-emerald-600" />
+                          : somePendingSelected
+                            ? <CheckSquare size={15} className="text-emerald-400" />
+                            : <Square size={15} />}
+                      </button>
+                    )}
+                  </th>
+                )}
                 <th className="px-3 w-[90px]">Data</th>
                 <th className="px-3 w-[130px]">Solicitante</th>
                 <th className="px-3 w-[70px]">Tipo</th>
@@ -643,7 +596,7 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
             <tbody className="divide-y divide-gray-50">
               {filteredChanges.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-8 py-16 text-center">
+                  <td colSpan={canApprove ? 9 : 8} className="px-8 py-16 text-center">
                     <div className="flex flex-col items-center gap-2 text-gray-300">
                       <AlertCircle size={28} />
                       <p className="font-black text-gray-400 uppercase tracking-widest text-[10px]">
@@ -654,16 +607,36 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                 </tr>
               ) : filteredChanges.map((change) => {
                 const orig = change.originalTransaction;
+                const isPending = change.status === 'Pendente';
+                const isSelected = selectedIds.has(change.id);
                 return (
                   <tr
                     key={change.id}
                     onDoubleClick={() => setSelectedChange(change)}
-                    className={`h-10 cursor-pointer transition-colors hover:bg-blue-50/40 ${
-                      change.status === 'Aplicado' ? 'bg-emerald-50/20' :
-                      change.status === 'Rejeitado' ? 'bg-rose-50/20' : ''
+                    className={`h-10 cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'bg-emerald-50 hover:bg-emerald-100'
+                        : change.status === 'Aplicado' ? 'bg-emerald-50/20 hover:bg-blue-50/40'
+                        : change.status === 'Reprovado' ? 'bg-rose-50/20 hover:bg-blue-50/40'
+                        : 'hover:bg-blue-50/40'
                     }`}
                     title="Duplo clique para ver detalhes"
                   >
+                    {/* Checkbox de seleção (só para pendentes se canApprove) */}
+                    {canApprove && (
+                      <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                        {isPending && (
+                          <button
+                            onClick={() => toggleSelectOne(change.id)}
+                            className="text-gray-300 hover:text-emerald-600 transition-colors"
+                          >
+                            {isSelected
+                              ? <CheckSquare size={14} className="text-emerald-600" />
+                              : <Square size={14} />}
+                          </button>
+                        )}
+                      </td>
+                    )}
                     <td className="px-3 text-[10px] text-gray-500 font-bold whitespace-nowrap">
                       {new Date(change.requestedAt).toLocaleDateString('pt-BR')}
                     </td>
@@ -672,8 +645,8 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                     </td>
                     <td className="px-3">
                       <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase border ${
-                        change.type === 'CONTA' ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                        change.type === 'RATEIO' ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                        change.type === 'CONTA'    ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                        change.type === 'RATEIO'   ? 'bg-purple-50 text-purple-600 border-purple-100' :
                         change.type === 'EXCLUSAO' ? 'bg-rose-50 text-rose-600 border-rose-100' :
                         'bg-indigo-50 text-indigo-600 border-indigo-100'
                       }`}>
@@ -699,7 +672,7 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                       </span>
                     </td>
                     <td className="px-3 text-center">
-                      {change.status === 'Pendente' && canApprove ? (
+                      {isPending && canApprove ? (
                         <div className="flex justify-center gap-1">
                           <button
                             onClick={(e) => { e.stopPropagation(); approveChange(change.id); }}
@@ -716,7 +689,7 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                             <XCircle size={12} />
                           </button>
                         </div>
-                      ) : change.status === 'Pendente' ? (
+                      ) : isPending ? (
                         <span className="text-[8px] text-gray-400 font-bold">Aguardando</span>
                       ) : (
                         <span className="text-[8px] text-gray-300">-</span>
@@ -731,6 +704,9 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
         <div className="px-4 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
           <p className="text-[10px] font-bold text-gray-400">
             {filteredChanges.length} {filteredChanges.length === 1 ? 'registro' : 'registros'}
+            {canApprove && pendingVisible.length > 0 && (
+              <span className="ml-2 text-amber-500">· {pendingVisible.length} pendente{pendingVisible.length !== 1 ? 's' : ''}</span>
+            )}
           </p>
           <p className="text-[9px] text-gray-400">Duplo clique na linha para ver detalhes</p>
         </div>

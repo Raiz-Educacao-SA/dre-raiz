@@ -548,126 +548,118 @@ const App: React.FC = () => {
     }
   };
 
+  // Helper interno: aplica UMA aprovação no banco (chamadas Supabase paralelas)
+  // Não chama refreshData() — quem chama decide quando fazer o refresh
+  const _applyChange = React.useCallback(async (changeId: string): Promise<void> => {
+    const change = manualChanges.find(c => c.id === changeId);
+    if (!change) return;
+
+    const parsedValue = JSON.parse(change.newValue);
+    const approvalMeta = {
+      status: 'Aplicado' as const,
+      approvedAt: new Date().toISOString(),
+      approvedBy: user?.email || 'unknown@raizeducacao.com.br',
+      approvedByName: user?.name || 'Usuário Desconhecido',
+    };
+
+    if (change.type === 'RATEIO') {
+      const rawParts = (parsedValue.transactions || (Array.isArray(parsedValue) ? parsedValue : [])) as Transaction[];
+      const newParts = rawParts.map(({ updated_at, id, ...rest }: any, idx: number) => ({
+        ...rest,
+        id: crypto.randomUUID(),
+        description: `${rest.description} [R${idx + 1}/${rawParts.length}]`,
+      }));
+      // inserir novas ANTES de deletar (integridade)
+      await supabaseService.bulkAddTransactions(newParts as any);
+      // deletar original e registrar aprovação em paralelo
+      await Promise.all([
+        supabaseService.deleteTransaction(change.transactionId),
+        supabaseService.updateManualChange(changeId, approvalMeta),
+      ]);
+    } else if (change.type === 'EXCLUSAO') {
+      await Promise.all([
+        supabaseService.deleteTransaction(change.transactionId),
+        supabaseService.updateManualChange(changeId, approvalMeta),
+      ]);
+    } else {
+      // MULTI, CONTA, DATA, MARCA, FILIAL
+      const { justification, categoryLabel, ...transactionData } = parsedValue;
+      const updatedData = {
+        ...transactionData,
+        conta_contabil: transactionData.category || undefined,
+        status: 'Ajustado',
+        type: transactionData.category ? mapCategoryToType(transactionData.category) : undefined,
+        tag01: transactionData.tag01 || undefined,
+        tag02: transactionData.tag02 || undefined,
+        tag03: transactionData.tag03 || undefined,
+        nat_orc: transactionData.nat_orc || undefined,
+      };
+      // atualizar transação e registrar aprovação em paralelo
+      const [updateSuccess] = await Promise.all([
+        supabaseService.updateTransaction(change.transactionId, updatedData),
+        supabaseService.updateManualChange(changeId, approvalMeta),
+      ]);
+      if (!updateSuccess) throw new Error('Falha ao atualizar transação no Supabase');
+    }
+
+    // Atualizar estado local imediatamente (UI reage sem esperar refreshData)
+    setManualChanges(prev => prev.map(c =>
+      c.id === changeId ? { ...c, ...approvalMeta } : c
+    ));
+  }, [manualChanges, user]);
+
   const handleApproveChange = async (changeId: string) => {
-    // Verificar se o usuário é admin ou aprovador
     if (!isApprover) {
       alert('⚠️ Acesso negado!\n\nApenas administradores e aprovadores podem aprovar alterações.');
       return;
     }
-
-    const change = manualChanges.find(c => c.id === changeId);
-    if (!change) return;
-
-    console.log('🔵 Aprovando mudança:', { changeId, type: change.type, transactionId: change.transactionId });
-
     try {
-      const parsedValue = JSON.parse(change.newValue);
-      console.log('📦 Parsed value:', parsedValue);
-
-      if (change.type === 'RATEIO') {
-        const rawParts = (parsedValue.transactions || (Array.isArray(parsedValue) ? parsedValue : [])) as Transaction[];
-        // Gerar novo id (UUID), manter chave_id original, marcar rateio na description
-        const newParts = rawParts.map(({ updated_at, id, ...rest }, idx) => ({
-          ...rest,
-          id: crypto.randomUUID(),
-          description: `${rest.description} [R${idx + 1}/${rawParts.length}]`
-        }));
-        console.log('✂️ RATEIO: criando', newParts.length, 'novas transações');
-        console.log('📦 Primeira part:', JSON.stringify(newParts[0]));
-
-        // PRIMEIRO inserir as novas (antes de deletar a original)
-        const bulkResult = await supabaseService.bulkAddTransactions(newParts as any);
-        console.log('➕ Bulk add resultado:', bulkResult);
-
-        // SÓ deletar a original APÓS confirmar que o insert funcionou
-        const deleteSuccess = await supabaseService.deleteTransaction(change.transactionId);
-        console.log('🗑️ Delete resultado:', deleteSuccess);
-      } else if (change.type === 'EXCLUSAO') {
-        console.log('🗑️ EXCLUSAO: deletando transação');
-
-        // Deletar a transação do Supabase
-        const deleteSuccess = await supabaseService.deleteTransaction(change.transactionId);
-        console.log('🗑️ Delete resultado:', deleteSuccess);
-      } else {
-        console.log('✏️ Tipo:', change.type, '- atualizando transação');
-
-        // Para MULTI, CONTA, DATA, MARCA, FILIAL
-        // Remover justification e categoryLabel (campos que não existem no banco)
-        const { justification, categoryLabel, ...transactionData } = parsedValue;
-        const updatedData = {
-          ...transactionData,
-          conta_contabil: transactionData.category || undefined,
-          status: 'Ajustado',
-          type: transactionData.category ? mapCategoryToType(transactionData.category) : undefined,
-          // Atualizar tags e nat_orc para refletir a hierarquia da nova conta
-          tag01: transactionData.tag01 || undefined,
-          tag02: transactionData.tag02 || undefined,
-          tag03: transactionData.tag03 || undefined,
-          nat_orc: transactionData.nat_orc || undefined,
-        };
-
-        console.log('📝 Dados para atualizar:', updatedData);
-
-        // Atualizar no Supabase
-        const updateSuccess = await supabaseService.updateTransaction(change.transactionId, updatedData);
-        console.log('✅ Update resultado:', updateSuccess);
-
-        if (!updateSuccess) {
-          throw new Error('Falha ao atualizar transação no Supabase');
-        }
-      }
-
-      // Atualizar o status da mudança
-      console.log('📋 Atualizando status da mudança para Aplicado');
-      const changeUpdateSuccess = await supabaseService.updateManualChange(changeId, {
-        status: 'Aplicado',
-        approvedAt: new Date().toISOString(),
-        approvedBy: user?.email || 'unknown@raizeducacao.com.br',
-        approvedByName: user?.name || 'Usuário Desconhecido'
-      });
-      console.log('✅ Status da mudança atualizado:', changeUpdateSuccess);
-
-      setManualChanges(prev => prev.map(c =>
-        c.id === changeId
-          ? { ...c, status: 'Aplicado', approvedAt: new Date().toISOString(), approvedBy: user?.email || 'unknown@raizeducacao.com.br', approvedByName: user?.name || 'Usuário Desconhecido' }
-          : c
-      ));
-
-      // Re-fetch dados do banco para refletir as mudanças
-      await refreshData();
-
-      console.log('✅ Aprovação concluída com sucesso!');
+      await _applyChange(changeId);
+      refreshData(); // fire-and-forget: atualiza Lançamentos em background
     } catch (error) {
-      console.error("❌ Erro ao aplicar mudança:", error);
+      console.error('❌ Erro ao aprovar mudança:', error);
       alert('Erro ao aplicar mudança. Tente novamente.');
     }
   };
 
+  const handleBulkApproveChanges = async (ids: string[]) => {
+    if (!isApprover) {
+      alert('⚠️ Acesso negado!\n\nApenas administradores e aprovadores podem aprovar alterações.');
+      return;
+    }
+    try {
+      // Processar todas em paralelo, 1 refreshData no final
+      await Promise.all(ids.map(id => _applyChange(id)));
+      refreshData(); // fire-and-forget
+    } catch (error) {
+      console.error('❌ Erro na aprovação em massa:', error);
+      alert('Erro ao processar aprovações em massa. Verifique o console.');
+    }
+  };
+
   const handleRejectChange = async (changeId: string) => {
-    // Verificar se o usuário é admin ou aprovador
     if (!isApprover) {
       alert('⚠️ Acesso negado!\n\nApenas administradores e aprovadores podem reprovar alterações.');
       return;
     }
-
     const change = manualChanges.find(c => c.id === changeId);
     if (!change) return;
 
-    // Atualizar transação
-    await supabaseService.updateTransaction(change.transactionId, { status: 'Normal' });
-
-    // Atualizar mudança
-    await supabaseService.updateManualChange(changeId, {
-      status: 'Reprovado',
+    const rejectionMeta = {
+      status: 'Reprovado' as const,
       approvedAt: new Date().toISOString(),
       approvedBy: user?.email || 'unknown@raizeducacao.com.br',
-      approvedByName: user?.name || 'Usuário Desconhecido'
-    });
+      approvedByName: user?.name || 'Usuário Desconhecido',
+    };
 
-    setManualChanges(prev => prev.map(c => c.id === changeId ? { ...c, status: 'Reprovado', approvedAt: new Date().toISOString(), approvedBy: user?.email || 'unknown@raizeducacao.com.br', approvedByName: user?.name || 'Usuário Desconhecido' } : c));
+    // Atualizar transação e registrar reprovação em paralelo
+    await Promise.all([
+      supabaseService.updateTransaction(change.transactionId, { status: 'Normal' }),
+      supabaseService.updateManualChange(changeId, rejectionMeta),
+    ]);
 
-    // Re-fetch dados do banco para refletir as mudanças
-    await refreshData();
+    setManualChanges(prev => prev.map(c => c.id === changeId ? { ...c, ...rejectionMeta } : c));
+    refreshData(); // fire-and-forget
   };
 
   const clearGlobalFilters = () => {
@@ -1083,7 +1075,7 @@ const App: React.FC = () => {
           )}
           {currentView === 'manual_changes' && (
             <Suspense fallback={<LoadingSpinner message="Carregando alterações..." />}>
-              <ManualChangesView changes={manualChanges} approveChange={handleApproveChange} rejectChange={handleRejectChange} />
+              <ManualChangesView changes={manualChanges} approveChange={handleApproveChange} rejectChange={handleRejectChange} bulkApproveChanges={handleBulkApproveChanges} />
             </Suspense>
           )}
           {hasMountedDRE && (
