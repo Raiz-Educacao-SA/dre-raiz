@@ -11,10 +11,11 @@ interface MultiSelectFilterProps {
   selected: string[];
   onChange: (newSelection: string[]) => void;
   colorScheme: 'blue' | 'orange' | 'purple';
+  compact?: boolean;
 }
 
 const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
-  ({ label, icon, options, selected, onChange, colorScheme }) => {
+  ({ label, icon, options, selected, onChange, colorScheme, compact = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -75,24 +76,36 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
         <div
           ref={buttonRef}
           onClick={handleToggle}
-          className={`flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border-2 shadow-sm
+          title={compact ? `${label}: ${displayText}` : undefined}
+          className={`flex items-center bg-white rounded-lg border-2 shadow-sm
                      transition-all cursor-pointer hover:shadow-md
+                     ${compact ? 'gap-1 px-2 py-1' : 'gap-2 px-3 py-1.5'}
                      ${hasSelection ? `${scheme.border} ring-4 ${scheme.ring}` : scheme.borderLight}`}
         >
-          <div className={`p-1.5 rounded-lg ${hasSelection ? `${scheme.bg} text-white` : `${scheme.bgLight} ${scheme.text}`}`}>
+          <div className={`rounded-lg ${compact ? 'p-1' : 'p-1.5'} ${hasSelection ? `${scheme.bg} text-white` : `${scheme.bgLight} ${scheme.text}`}`}>
             {icon}
           </div>
-          <div className="flex flex-col justify-center">
-            <span className="text-[7px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">
-              {label}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-[10px] uppercase tracking-tight text-gray-900 min-w-[100px]">
-                {displayText}
+          {!compact && (
+            <div className="flex flex-col justify-center">
+              <span className="text-[7px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">
+                {label}
               </span>
-              <ChevronDown size={12} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-[10px] uppercase tracking-tight text-gray-900 min-w-[100px]">
+                  {displayText}
+                </span>
+                <ChevronDown size={12} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              </div>
             </div>
-          </div>
+          )}
+          {compact && (
+            <div className="flex items-center gap-1">
+              <span className={`font-black text-[9px] uppercase tracking-tight min-w-[45px] ${hasSelection ? scheme.text : 'text-gray-500'}`}>
+                {selected.length === 0 ? label.toUpperCase() : selected.length === 1 ? selected[0].substring(0, 8).toUpperCase() : `${label} ×${selected.length}`}
+              </span>
+              <ChevronDown size={10} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </div>
+          )}
         </div>
 
         {/* Dropdown — position:fixed para "explodir" fora do container */}

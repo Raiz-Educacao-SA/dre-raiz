@@ -1320,22 +1320,21 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     <div className="p-3 space-y-1.5 bg-gradient-to-br from-gray-50 to-white min-h-screen">
 
       {/* ══ LINHA 1: Filtros ══ */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm overflow-x-auto">
-        <span className="text-base shrink-0">🎯</span>
+      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm overflow-x-auto">
 
-        {/* Filtros de dimensão */}
-        <MultiSelectFilter label="Marca"  icon={<Flag     size={14} />} options={filterOptions.marcas}      selected={selectedMarcas}  onChange={setSelectedMarcas}  colorScheme="orange" />
-        <MultiSelectFilter label="Filial" icon={<Building2 size={14} />} options={filiaisFiltradas}           selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue"   />
-        <MultiSelectFilter label="Tag01"  icon={<Layers   size={14} />} options={filterOptions.tags01}  selected={selectedTags01}  onChange={setSelectedTags01}  colorScheme="purple" />
-        <MultiSelectFilter label="Tag02"  icon={<Layers   size={14} />} options={tag02Options}           selected={selectedTags02}  onChange={setSelectedTags02}  colorScheme="purple" />
-        <MultiSelectFilter label="Tag03"  icon={<Layers   size={14} />} options={tag03Options}           selected={selectedTags03}  onChange={setSelectedTags03}  colorScheme="blue"   />
+        {/* Filtros de dimensão — modo compacto */}
+        <MultiSelectFilter compact label="Marca"  icon={<Flag      size={12} />} options={filterOptions.marcas}     selected={selectedMarcas}  onChange={setSelectedMarcas}  colorScheme="orange" />
+        <MultiSelectFilter compact label="Filial" icon={<Building2 size={12} />} options={filiaisFiltradas}          selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue"   />
+        <MultiSelectFilter compact label="Tag01"  icon={<Layers    size={12} />} options={filterOptions.tags01} selected={selectedTags01}  onChange={setSelectedTags01}  colorScheme="purple" />
+        <MultiSelectFilter compact label="Tag02"  icon={<Layers    size={12} />} options={tag02Options}          selected={selectedTags02}  onChange={setSelectedTags02}  colorScheme="purple" />
+        <MultiSelectFilter compact label="Tag03"  icon={<Layers    size={12} />} options={tag03Options}          selected={selectedTags03}  onChange={setSelectedTags03}  colorScheme="blue"   />
 
-        <div className="h-8 w-px bg-blue-200 mx-0.5 shrink-0" />
+        <div className="h-5 w-px bg-blue-200 shrink-0" />
 
         {/* Filtro de Mês (multi-select) */}
-        <MultiSelectFilter
+        <MultiSelectFilter compact
           label="Mês"
-          icon={<CalendarDays size={14} />}
+          icon={<CalendarDays size={12} />}
           options={MONTHS.map(m => m.label)}
           selected={selectedMonths.map(v => MONTHS.find(m => m.value === v)?.label ?? v)}
           onChange={labels => setSelectedMonths(labels.map(l => MONTHS.find(m => m.label === l)?.value ?? l))}
@@ -1345,42 +1344,30 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         <div className="flex gap-0.5 shrink-0">
           {QUARTERS.map(q => (
             <button key={q.label} onClick={() => setSelectedMonths(q.months)} title={q.title}
-              className={`px-2 py-1 text-[11px] font-black uppercase rounded transition-all whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
+              className={`px-1.5 py-0.5 text-[10px] font-black uppercase rounded transition-all whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
               {q.label}
             </button>
           ))}
         </div>
 
         {/* Espaçador */}
-        <div className="flex-1 min-w-2" />
+        <div className="flex-1 min-w-1" />
 
-        {/* Limpar filtros */}
+        {/* Limpar filtros — ícone apenas */}
         {hasAnyFilter && (
           <button onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); setSelectedTags01([]); setSelectedTags02([]); setSelectedTags03([]); }}
-            className="flex items-center gap-1 bg-rose-50 text-rose-600 px-2 py-1.5 rounded-lg border border-rose-200 font-bold text-[9px] uppercase tracking-wider hover:bg-rose-100 transition-all shadow-sm shrink-0"
-            title="Limpar filtros">
-            <FilterX size={11} /><span className="whitespace-nowrap">Limpar</span>
+            className="p-1.5 bg-rose-50 text-rose-500 rounded-lg border border-rose-200 hover:bg-rose-100 transition-all shadow-sm shrink-0"
+            title="Limpar filtros de dimensão">
+            <FilterX size={13} />
           </button>
         )}
 
-        {/* Até EBITDA */}
+        {/* Até EBITDA — ícone apenas */}
         <button onClick={() => setShowOnlyEbitda(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all shadow-sm shrink-0 ${showOnlyEbitda ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:border-indigo-400'}`}
-          title={showOnlyEbitda ? 'Exibindo apenas até EBITDA' : 'Exibindo todas as Tag0'}>
-          {showOnlyEbitda ? <CheckSquare size={12} strokeWidth={2.5} /> : <Square size={12} strokeWidth={2.5} />}
-          <span>Até EBITDA</span>
+          className={`p-1.5 rounded-lg transition-all shadow-sm shrink-0 ${showOnlyEbitda ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white' : 'bg-white text-gray-500 border border-gray-200 hover:border-indigo-400'}`}
+          title={showOnlyEbitda ? 'Mostrando até EBITDA — clique para ver tudo' : 'Mostrando tudo — clique para filtrar até EBITDA'}>
+          {showOnlyEbitda ? <CheckSquare size={13} strokeWidth={2.5} /> : <Square size={13} strokeWidth={2.5} />}
         </button>
-
-        {/* Recorrência */}
-        <div className="flex items-center gap-0.5 bg-white border border-teal-200 rounded-lg px-2 py-1 shadow-sm shrink-0">
-          <span className="text-[9px] font-black text-gray-500 uppercase whitespace-nowrap mr-1">Recorr:</span>
-          {(['Sim', 'Não', null] as const).map(v => (
-            <button key={String(v)} onClick={() => setRecurring(v)}
-              className={`px-1.5 py-0.5 text-[9px] font-black rounded transition-all ${recurring === v ? 'bg-teal-500 text-white' : 'text-gray-500 hover:bg-teal-50 hover:text-teal-700'}`}>
-              {v ?? 'Todos'}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* ══ LINHA 2: Colunas + Visualização ══ */}
@@ -1422,6 +1409,19 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaAbsA1 ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-rose-400'}`}>
           <span>ΔR$ A-1</span>{showDeltaAbsA1 && <>{badge('DeltaAbsA1')}<span className="ml-0.5 opacity-60">×</span></>}
         </button>
+
+        <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
+
+        {/* Recorrência (movido da linha de filtros) */}
+        <div className="flex items-center gap-0.5 bg-white border border-teal-200 rounded-lg px-1.5 py-0.5 shadow-sm shrink-0">
+          <span className="text-[8px] font-black text-gray-500 uppercase whitespace-nowrap mr-1">Recorr</span>
+          {(['Sim', 'Não', null] as const).map(v => (
+            <button key={String(v)} onClick={() => setRecurring(v)}
+              className={`px-1.5 py-0.5 text-[8px] font-black rounded transition-all ${recurring === v ? 'bg-teal-500 text-white' : 'text-gray-500 hover:bg-teal-50 hover:text-teal-700'}`}>
+              {v ?? 'Todos'}
+            </button>
+          ))}
+        </div>
 
         {/* Espaçador */}
         <div className="flex-1 min-w-2" />
