@@ -255,7 +255,7 @@ const DREView: React.FC<DREViewProps> = ({
   
   // Estado para dados agregados do servidor
   const [summaryRows, setSummaryRows] = useState<DRESummaryRow[]>([]);
-  const [filterOptions, setFilterOptions] = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
+  const [filterOptions, setFilterOptions] = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [], tags02: [], tags03: [] });
 
 
   const [isLoadingDRE, setIsLoadingDRE] = useState(false); // ✅ Começa false - só carrega quando usuário clicar
@@ -274,6 +274,16 @@ const DREView: React.FC<DREViewProps> = ({
   // Estados de Filtros Multi-seleção
   const [selectedTags01, setSelectedTags01] = useState<string[]>(() => {
     const saved = sessionStorage.getItem('dreTags01');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [selectedTags02, setSelectedTags02] = useState<string[]>(() => {
+    const saved = sessionStorage.getItem('dreTags02');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [selectedTags03, setSelectedTags03] = useState<string[]>(() => {
+    const saved = sessionStorage.getItem('dreTags03');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -418,11 +428,15 @@ const DREView: React.FC<DREViewProps> = ({
   const selectedMarcasRef = useRef(selectedMarcas);
   const selectedFiliaisRef = useRef(selectedFiliais);
   const selectedTags01Ref = useRef(selectedTags01);
+  const selectedTags02Ref = useRef(selectedTags02);
+  const selectedTags03Ref = useRef(selectedTags03);
 
   // 🔧 Refs para valores anteriores (detectar mudanças reais)
   const prevMarcasRef = useRef<string[]>([]);
   const prevFiliaisRef = useRef<string[]>([]);
   const prevTags01Ref = useRef<string[]>([]);
+  const prevTags02Ref = useRef<string[]>([]);
+  const prevTags03Ref = useRef<string[]>([]);
   const prevYearRef = useRef<number>(currentYear);
 
   // Atualizar refs quando valores mudam
@@ -430,6 +444,8 @@ const DREView: React.FC<DREViewProps> = ({
   useEffect(() => { selectedMarcasRef.current = selectedMarcas; }, [selectedMarcas]);
   useEffect(() => { selectedFiliaisRef.current = selectedFiliais; }, [selectedFiliais]);
   useEffect(() => { selectedTags01Ref.current = selectedTags01; }, [selectedTags01]);
+  useEffect(() => { selectedTags02Ref.current = selectedTags02; }, [selectedTags02]);
+  useEffect(() => { selectedTags03Ref.current = selectedTags03; }, [selectedTags03]);
 
   // Função para formatar valores com separador de milhares (ponto)
   const formatValue = (value: number, decimals: number = 1): string => {
@@ -522,6 +538,14 @@ const DREView: React.FC<DREViewProps> = ({
   }, [selectedTags01]);
 
   useEffect(() => {
+    sessionStorage.setItem('dreTags02', JSON.stringify(selectedTags02));
+  }, [selectedTags02]);
+
+  useEffect(() => {
+    sessionStorage.setItem('dreTags03', JSON.stringify(selectedTags03));
+  }, [selectedTags03]);
+
+  useEffect(() => {
     sessionStorage.setItem('dreMarcas', JSON.stringify(selectedMarcas));
   }, [selectedMarcas]);
 
@@ -586,6 +610,8 @@ const DREView: React.FC<DREViewProps> = ({
     const marcas = selectedMarcasRef.current;
     const filiais = selectedFiliaisRef.current;
     const tags01 = selectedTags01Ref.current;
+    const tags02 = selectedTags02Ref.current;
+    const tags03 = selectedTags03Ref.current;
 
     const fetchId = ++fetchIdRef.current;
     setIsLoadingDRE(true);
@@ -599,8 +625,10 @@ const DREView: React.FC<DREViewProps> = ({
       const finalMarcas = marcas.length > 0 ? marcas : undefined;
       const finalFiliais = filiais.length > 0 ? filiais : undefined;
       const finalTags01 = tags01.length > 0 ? tags01 : undefined;
+      const finalTags02 = tags02.length > 0 ? tags02 : undefined;
+      const finalTags03 = tags03.length > 0 ? tags03 : undefined;
 
-                                                
+
       const [summary, options] = await Promise.all([
         getDRESummary({
           monthFrom,
@@ -609,6 +637,8 @@ const DREView: React.FC<DREViewProps> = ({
           nomeFiliais: finalFiliais,
           // tags01 removido: DRE summary deve trazer TODOS os dados (igual ao SomaTagsView)
           // O filtro tags01 só se aplica ao drill-down (loadDimensionData)
+          tags02: finalTags02,
+          tags03: finalTags03,
         }),
         getDREFilterOptions({ monthFrom, monthTo })
       ]);
@@ -643,6 +673,8 @@ const DREView: React.FC<DREViewProps> = ({
       prevMarcasRef.current = [...selectedMarcas];
       prevFiliaisRef.current = [...selectedFiliais];
       prevTags01Ref.current = [...selectedTags01];
+      prevTags02Ref.current = [...selectedTags02];
+      prevTags03Ref.current = [...selectedTags03];
       return; // Não busca na montagem - usuário deve clicar Atualizar ou mudar filtro
     }
 
@@ -666,19 +698,23 @@ const DREView: React.FC<DREViewProps> = ({
     const marcasChanged = !arraysEqual(selectedMarcas, prevMarcasRef.current);
     const filiaisChanged = !arraysEqual(selectedFiliais, prevFiliaisRef.current);
     const tags01Changed = !arraysEqual(selectedTags01, prevTags01Ref.current);
+    const tags02Changed = !arraysEqual(selectedTags02, prevTags02Ref.current);
+    const tags03Changed = !arraysEqual(selectedTags03, prevTags03Ref.current);
     const yearChanged = currentYear !== prevYearRef.current;
 
-    if (!marcasChanged && !filiaisChanged && !tags01Changed && !yearChanged) return;
+    if (!marcasChanged && !filiaisChanged && !tags01Changed && !tags02Changed && !tags03Changed && !yearChanged) return;
 
     prevMarcasRef.current = [...selectedMarcas];
     prevFiliaisRef.current = [...selectedFiliais];
     prevTags01Ref.current = [...selectedTags01];
+    prevTags02Ref.current = [...selectedTags02];
+    prevTags03Ref.current = [...selectedTags03];
     prevYearRef.current = currentYear;
 
     setSummaryRows([]);
     setDimensionCache({});
     fetchDREData();
-  }, [currentYear, selectedMarcas, selectedFiliais, selectedTags01, fetchDREData]);
+  }, [currentYear, selectedMarcas, selectedFiliais, selectedTags01, selectedTags02, selectedTags03, fetchDREData]);
 
   // Fetch automático na montagem — loop prevenido por autoSelectTriggeredRef e filialCleanupRef
   useEffect(() => {
@@ -909,11 +945,13 @@ const DREView: React.FC<DREViewProps> = ({
 
   const clearAllFilters = () => {
     setSelectedTags01([]);
+    setSelectedTags02([]);
+    setSelectedTags03([]);
     setSelectedMarcas([]);
     setSelectedFiliais([]);
   };
 
-  const hasAnyFilterActive = selectedTags01.length > 0 || selectedMarcas.length > 0 || selectedFiliais.length > 0;
+  const hasAnyFilterActive = selectedTags01.length > 0 || selectedTags02.length > 0 || selectedTags03.length > 0 || selectedMarcas.length > 0 || selectedFiliais.length > 0;
 
   // ========== FUNÇÕES DE EXPORTAÇÃO ==========
 
@@ -1338,6 +1376,8 @@ const DREView: React.FC<DREViewProps> = ({
     const marcas = selectedMarcasRef.current;
     const filiais = selectedFiliaisRef.current;
     const tags01 = selectedTags01Ref.current;
+    const globalTags02 = selectedTags02Ref.current;
+    const globalTags03 = selectedTags03Ref.current;
 
     // Cache key inclui accumulatedFilters para diferenciar marca QI vs CGS
     const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
@@ -1365,8 +1405,13 @@ const DREView: React.FC<DREViewProps> = ({
     const mergedTags01 = accFilters.tag01
       ? [accFilters.tag01]
       : (dimensionKey !== 'tag01' && tags01.length > 0 ? tags01 : undefined);
-    const mergedTags02 = accFilters.tag02 ? [accFilters.tag02] : undefined;
-    const mergedTags03 = accFilters.tag03 ? [accFilters.tag03] : undefined;
+    // Merge tag02/tag03: prioriza accFilters do drill-down; se não houver, usa filtro global do painel
+    const mergedTags02 = accFilters.tag02
+      ? [accFilters.tag02]
+      : (globalTags02.length > 0 ? globalTags02 : undefined);
+    const mergedTags03 = accFilters.tag03
+      ? [accFilters.tag03]
+      : (globalTags03.length > 0 ? globalTags03 : undefined);
 
     const rows = await getDREDimension({
       monthFrom,
@@ -2255,6 +2300,34 @@ const DREView: React.FC<DREViewProps> = ({
               }}
               colorScheme="purple"
             />
+
+            {/* Filtro de Tag02 (Segmento) - MULTI-SELEÇÃO */}
+            {filterOptions.tags02 && filterOptions.tags02.length > 0 && (
+              <MultiSelectFilter
+                label="Tag02"
+                icon={<Layers size={14} />}
+                options={filterOptions.tags02}
+                selected={selectedTags02}
+                onChange={(newSelection) => {
+                  setSelectedTags02(newSelection);
+                }}
+                colorScheme="green"
+              />
+            )}
+
+            {/* Filtro de Tag03 (Projeto) - MULTI-SELEÇÃO */}
+            {filterOptions.tags03 && filterOptions.tags03.length > 0 && (
+              <MultiSelectFilter
+                label="Tag03"
+                icon={<Layers size={14} />}
+                options={filterOptions.tags03}
+                selected={selectedTags03}
+                onChange={(newSelection) => {
+                  setSelectedTags03(newSelection);
+                }}
+                colorScheme="orange"
+              />
+            )}
 
             {/* Controles de Período */}
             <div className="flex items-center gap-2 scale-100">
