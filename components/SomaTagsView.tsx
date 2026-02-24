@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
+import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag01sAndTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
 import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
@@ -307,16 +307,26 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // Cascata Tag02: quando Tag01 muda, atualiza opções disponíveis de Tag02
   useEffect(() => {
     if (selectedTags01.length === 0) {
-      // Restaura lista completa; NÃO limpa seleção de tag02 automaticamente
       setTag02Options(allTag02OptionsRef.current);
     } else {
       getTag02OptionsForTag01s(selectedTags01).then(opts => {
         setTag02Options(opts);
-        // Remove seleções de tag02 que não existem para os tag01s escolhidos
         setSelectedTags02(prev => prev.filter(t => opts.includes(t)));
       });
     }
   }, [selectedTags01]);
+
+  // Cascata Tag03: quando Tag01 ou Tag02 mudam, atualiza opções disponíveis de Tag03
+  useEffect(() => {
+    if (selectedTags01.length === 0 && selectedTags02.length === 0) {
+      setTag03Options(allTag03OptionsRef.current);
+    } else {
+      getTag03OptionsForTag01sAndTag02s(selectedTags01, selectedTags02).then(opts => {
+        setTag03Options(opts);
+        setSelectedTags03(prev => prev.filter(t => opts.includes(t)));
+      });
+    }
+  }, [selectedTags01, selectedTags02]);
 
   // Limpa cache de drill ao trocar filtros
   useEffect(() => {

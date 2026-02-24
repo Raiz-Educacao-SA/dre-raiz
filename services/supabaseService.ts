@@ -314,6 +314,19 @@ export const getTag02OptionsForTag01s = async (tags01: string[]): Promise<string
 };
 
 /**
+ * Busca opções de Tag03 filtradas por tag01s e/ou tag02s selecionados (cascata)
+ */
+export const getTag03OptionsForTag01sAndTag02s = async (tags01: string[], tags02: string[]): Promise<string[]> => {
+  if (tags01.length === 0 && tags02.length === 0) return [];
+  let query = supabase.from('transactions').select('tag03').not('tag03', 'is', null);
+  if (tags01.length > 0) query = query.in('tag01', tags01);
+  if (tags02.length > 0) query = query.in('tag02', tags02);
+  const { data, error } = await query;
+  if (error || !data) return [];
+  return [...new Set(data.map(r => r.tag03).filter(Boolean) as string[])].sort();
+};
+
+/**
  * Busca todas as opções de Tag03 disponíveis no banco
  * Retorna lista única e ordenada de TODOS os tag03 distintos
  */
