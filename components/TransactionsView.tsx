@@ -260,6 +260,27 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   }, []);
   const dc = DENSITY_CFG[density];
 
+  // ─── Seleção para edição em massa ──────────────────────────────────────────
+  type BulkFieldKey = 'date' | 'filial' | 'conta_contabil' | 'recurring';
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkField, setBulkField] = useState<BulkFieldKey>('date');
+  const [bulkValue, setBulkValue] = useState('');
+  const [bulkJustification, setBulkJustification] = useState('');
+
+  const BULK_FIELDS: Array<{ key: BulkFieldKey; label: string }> = [
+    { key: 'date',           label: 'Data de Competência' },
+    { key: 'filial',         label: 'Filial' },
+    { key: 'conta_contabil', label: 'Conta Contábil' },
+    { key: 'recurring',      label: 'Recorrência' },
+  ];
+
+  // Carregar contas contábeis quando o usuário escolher esse campo no bulk
+  useEffect(() => {
+    if (bulkField === 'conta_contabil' && contaContabilData.length === 0) {
+      getContaContabilOptions().then(setContaContabilData);
+    }
+  }, [bulkField]);
+
   // Usar transactions buscados do estado do App.tsx se já buscou, senão mostrar vazio
   const transactions = hasSearchedTransactions ? searchedTransactions : [];
 
@@ -625,6 +646,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       const response = await getFilteredTransactions(filters, pagination, tableName);
 
       setSearchedTransactions(response.data);
+      setSelectedIds(new Set());
       setTotalCount(response.totalCount);
       setTotalPages(response.totalPages);
       setCurrentPageNumber(page);
@@ -1145,6 +1167,56 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     setSearchedTransactions([]);
   };
 
+  const handleBulkApply = () => {
+    if (!bulkValue || selectedIds.size === 0 || !bulkJustification.trim()) return;
+
+    const selectedTransactions = searchedTransactions.filter(t => selectedIds.has(t.id));
+    const fieldLabel = BULK_FIELDS.find(f => f.key === bulkField)?.label || bulkField;
+
+    selectedTransactions.forEach(t => {
+      // Base: todos os campos do editForm com os valores originais da transação
+      const newValue: Record<string, any> = {
+        category:      t.conta_contabil || t.category || '',
+        categoryLabel: t.conta_contabil || t.category || '',
+        date:          t.date,
+        filial:        t.filial,
+        marca:         t.marca || '',
+        justification: bulkJustification,
+        amount:        t.amount,
+        recurring:     t.recurring || 'Sim',
+        chave_id:      t.chave_id || '',
+        tag01:         t.tag01 || '',
+        tag02:         t.tag02 || '',
+        tag03:         t.tag03 || '',
+        nat_orc:       t.nat_orc || '',
+      };
+
+      // Sobrescreve só o campo alterado
+      if (bulkField === 'date')           newValue.date = bulkValue + '-01';
+      if (bulkField === 'filial')         newValue.filial = bulkValue;
+      if (bulkField === 'conta_contabil') { newValue.category = bulkValue; newValue.categoryLabel = bulkValue; }
+      if (bulkField === 'recurring')      newValue.recurring = bulkValue;
+
+      requestChange({
+        transactionId: t.id,
+        description:   `Alteração em massa: ${fieldLabel} → ${bulkValue}`,
+        justification: bulkJustification,
+        type:          'MULTI',
+        oldValue:      JSON.stringify(t),
+        newValue:      JSON.stringify(newValue),
+      });
+    });
+
+    // Atualiza status para 'Pendente' otimisticamente na lista local
+    setSearchedTransactions(
+      searchedTransactions.map(t => selectedIds.has(t.id) ? { ...t, status: 'Pendente' } : t)
+    );
+    setSelectedIds(new Set());
+    setBulkValue('');
+    setBulkJustification('');
+    console.log(`✅ ${selectedTransactions.length} solicitações de alteração (${fieldLabel}) enviadas para aprovação`);
+  };
+
   const toggleMultiFilter = (key: string, value: string) => {
     setColFilters(prev => {
       const current = (prev as any)[key] as string[];
@@ -1515,11 +1587,108 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         </div>
       )}
 
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 mb-1 bg-blue-600 text-white rounded-xl shadow-lg flex-wrap">
+          <span className="text-sm font-bold shrink-0">
+            {selectedIds.size} selecionado{selectedIds.size > 1 ? 's' : ''}
+          </span>
+          <div className="h-4 w-px bg-white/30 shrink-0" />
+          <span className="text-xs font-semibold opacity-80 shrink-0">Alterar:</span>
+          <select
+            value={bulkField}
+            onChange={e => { setBulkField(e.target.value as BulkFieldKey); setBulkValue(''); }}
+            className="bg-white/10 border border-white/30 rounded px-2 py-0.5 text-xs font-bold"
+          >
+            {BULK_FIELDS.map(f => <option key={f.key} value={f.key} className="text-gray-900 bg-white">{f.label}</option>)}
+          </select>
+          {bulkField === 'date' && (
+            <input
+              type="month"
+              value={bulkValue}
+              onChange={e => setBulkValue(e.target.value)}
+              className="bg-white/10 border border-white/30 rounded px-2 py-0.5 text-xs font-bold text-white"
+            />
+          )}
+          {bulkField === 'filial' && (
+            <select
+              value={bulkValue}
+              onChange={e => setBulkValue(e.target.value)}
+              className="bg-white/10 border border-white/30 rounded px-2 py-0.5 text-xs font-bold text-white"
+            >
+              <option value="" className="text-gray-900 bg-white">Selecionar filial...</option>
+              {BRANCHES.map(b => <option key={b} value={b} className="text-gray-900 bg-white">{b}</option>)}
+            </select>
+          )}
+          {bulkField === 'conta_contabil' && (
+            <>
+              <input
+                list="bulk-conta-list"
+                value={bulkValue}
+                onChange={e => setBulkValue(e.target.value)}
+                placeholder="Código da conta..."
+                className="bg-white/10 border border-white/30 rounded px-2 py-0.5 text-xs font-bold text-white placeholder:text-white/50 w-[160px]"
+              />
+              <datalist id="bulk-conta-list">
+                {contaContabilData.map(c => (
+                  <option key={c.cod_conta} value={c.cod_conta}>
+                    {c.nome_nat_orc ? `${c.cod_conta} — ${c.nome_nat_orc}` : c.cod_conta}
+                  </option>
+                ))}
+              </datalist>
+            </>
+          )}
+          {bulkField === 'recurring' && (
+            <select
+              value={bulkValue}
+              onChange={e => setBulkValue(e.target.value)}
+              className="bg-white/10 border border-white/30 rounded px-2 py-0.5 text-xs font-bold text-white"
+            >
+              <option value="" className="text-gray-900 bg-white">Selecionar...</option>
+              <option value="Sim" className="text-gray-900 bg-white">Sim</option>
+              <option value="Não" className="text-gray-900 bg-white">Não</option>
+            </select>
+          )}
+          <div className="h-4 w-px bg-white/30 shrink-0" />
+          <input
+            type="text"
+            placeholder="Justificativa (obrigatório)"
+            value={bulkJustification}
+            onChange={e => setBulkJustification(e.target.value)}
+            className="bg-white/10 border border-white/30 rounded px-2 py-0.5 text-xs font-bold text-white placeholder:text-white/50 min-w-[180px]"
+          />
+          <button
+            onClick={handleBulkApply}
+            disabled={!bulkValue || !bulkJustification.trim()}
+            className="px-3 py-1 bg-white text-blue-700 rounded font-bold text-xs disabled:opacity-40 hover:bg-blue-50 transition-all shrink-0"
+          >
+            Enviar para Aprovação
+          </button>
+          <button
+            onClick={() => { setSelectedIds(new Set()); setBulkValue(''); setBulkJustification(''); }}
+            className="ml-auto text-xs opacity-60 hover:opacity-100 transition-all shrink-0"
+          >
+            Limpar seleção
+          </button>
+        </div>
+      )}
+
       <div className="bg-white border border-gray-200 overflow-hidden shadow-sm rounded-none">
         <div ref={parentRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-420px)] relative">
           <table className="w-full border-separate border-spacing-0 text-left table-fixed min-w-[900px]">
             <thead>
               <tr className="whitespace-nowrap">
+                <th className="sticky top-0 z-[60] bg-[#1B75BB] w-8 px-2 border-b border-white/10">
+                  <input
+                    type="checkbox"
+                    checked={filteredAndSorted.length > 0 && filteredAndSorted.every(t => selectedIds.has(t.id))}
+                    ref={el => { if (el) el.indeterminate = selectedIds.size > 0 && !filteredAndSorted.every(t => selectedIds.has(t.id)); }}
+                    onChange={e => {
+                      if (e.target.checked) setSelectedIds(new Set(filteredAndSorted.map(t => t.id)));
+                      else setSelectedIds(new Set());
+                    }}
+                    className="cursor-pointer"
+                  />
+                </th>
                 {visibleColDefs.map(colDef => {
                   if (colDef.key === 'acoes') {
                     return (
@@ -1544,7 +1713,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
             <tbody className="bg-white">
               {filteredAndSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleColDefs.length} className="py-20">
+                  <td colSpan={visibleColDefs.length + 1} className="py-20">
                     <div className="text-center">
                       {!hasSearchedTransactions ? (
                         <>
@@ -1591,6 +1760,18 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     key={t.id}
                     className="hover:bg-blue-50/50 transition-colors border-b border-gray-50"
                   >
+                    <td className="w-8 px-2" onClick={e => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(t.id)}
+                        onChange={() => setSelectedIds(prev => {
+                          const next = new Set(prev);
+                          next.has(t.id) ? next.delete(t.id) : next.add(t.id);
+                          return next;
+                        })}
+                        className="cursor-pointer"
+                      />
+                    </td>
                     {visibleColDefs.map(colDef => {
                       const tdS = { paddingTop: dc.cellPy, paddingBottom: dc.cellPy, paddingLeft: dc.cellPx, paddingRight: dc.cellPx };
                       const bgS = { paddingTop: dc.badgePy, paddingBottom: dc.badgePy, paddingLeft: dc.badgePx, paddingRight: dc.badgePx };
@@ -1654,7 +1835,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           <table className="w-full border-separate border-spacing-0 text-left table-fixed min-w-[900px]">
             <tfoot className="sticky bottom-0 z-50 bg-[#152e55] text-white">
               <tr className="h-10 border-t border-white/20 whitespace-nowrap">
-                <td colSpan={visibleColDefs.length} className="px-4 text-[10px] font-black uppercase tracking-widest bg-[#152e55]">
+                <td colSpan={visibleColDefs.length + 1} className="px-4 text-[10px] font-black uppercase tracking-widest bg-[#152e55]">
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
                        <ListOrdered size={14} className="text-[#4AC8F4]" />

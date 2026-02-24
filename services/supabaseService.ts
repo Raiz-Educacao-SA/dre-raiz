@@ -1222,6 +1222,25 @@ export const updateTransaction = async (id: string, updates: Partial<Transaction
   return true;
 };
 
+export const bulkUpdateTransactions = async (
+  ids: string[],
+  updates: Partial<Transaction>
+): Promise<{ updated: number; error?: string }> => {
+  if (ids.length === 0) return { updated: 0 };
+  const clean: Record<string, any> = {};
+  Object.entries(updates).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') clean[k] = v;
+  });
+  if (!Object.keys(clean).length) return { updated: 0 };
+
+  const { error } = await supabase
+    .from('transactions')
+    .update(clean)
+    .in('id', ids);
+
+  return error ? { updated: 0, error: error.message } : { updated: ids.length };
+};
+
 export const deleteTransaction = async (id: string): Promise<boolean> => {
   const { error } = await supabase
     .from('transactions')
