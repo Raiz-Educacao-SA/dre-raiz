@@ -1602,7 +1602,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         case 'tag01':       return <td key="tag01"       style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag01 || '-'}</td>;
                         case 'tag02':       return <td key="tag02"       style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag02 || '-'}</td>;
                         case 'tag03':       return <td key="tag03"       style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag03 || '-'}</td>;
-                        case 'category':    return <td key="category"    style={tdS} className="text-[8px] font-black text-[#F44C00] border-r border-gray-100 uppercase truncate">{t.category}</td>;
+                        case 'category':    return <td key="category"    style={tdS} className="text-[8px] font-black text-[#F44C00] border-r border-gray-100 uppercase truncate">{t.conta_contabil}</td>;
                         case 'marca':       return <td key="marca"       style={tdS} className="text-[8px] font-black text-[#1B75BB] border-r border-gray-100 uppercase truncate">{t.marca || 'SAP'}</td>;
                         case 'filial':      return <td key="filial"      style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.filial}</td>;
                         case 'ticket':      return (
