@@ -169,12 +169,14 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const monthToRef    = useRef(monthTo);
   const marcasRef     = useRef(selectedMarcas);
   const filiaisRef    = useRef(selectedFiliais);
+  const tags02Ref     = useRef(selectedTags02);
   const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
   useEffect(() => { yearRef.current      = year;            }, [year]);
   useEffect(() => { monthFromRef.current = monthFrom;       }, [monthFrom]);
   useEffect(() => { monthToRef.current   = monthTo;         }, [monthTo]);
   useEffect(() => { marcasRef.current    = selectedMarcas;  }, [selectedMarcas]);
   useEffect(() => { filiaisRef.current   = selectedFiliais; }, [selectedFiliais]);
+  useEffect(() => { tags02Ref.current    = selectedTags02;  }, [selectedTags02]);
   useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
 
   const toggleElement = useCallback(
@@ -236,7 +238,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const mt = `${yearRef.current}-${monthToRef.current}`;
     const marcas  = accFilters.marca       ? [accFilters.marca]       : (marcasRef.current.length  > 0 ? marcasRef.current  : undefined);
     const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
-    const tags02  = accFilters.tag02 ? [accFilters.tag02] : undefined;
+    const tags02  = accFilters.tag02 ? [accFilters.tag02] : (tags02Ref.current.length > 0 ? tags02Ref.current : undefined);
     const tags03  = accFilters.tag03 ? [accFilters.tag03] : undefined;
     const rows = await getDREDimension({
       monthFrom: mf, monthTo: mt,
@@ -305,7 +307,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setDimensionCache({});
     setExpandedTag01s({});
     setExpandedDrillRows({});
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, recurring]);
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, recurring]);
 
   // ── Filtro client-side por Tag01 ─────────────────────────────────────────
   const filteredRows = useMemo(() => {
