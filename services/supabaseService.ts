@@ -704,6 +704,7 @@ export const getDREDimension = async (params: {
   tags02?: string[];
   tags03?: string[];
   tag0?: string;  // fallback: inclui contas vazias do mesmo tag0 no A-1
+  recurring?: string;
 }): Promise<DREDimensionRow[]> => {
   console.log('📊 getDREDimension: Buscando dimensão', params.dimension, {
     tags01: params.tags01,
@@ -724,6 +725,7 @@ export const getDREDimension = async (params: {
     p_tags02: params.tags02 && params.tags02.length > 0 ? params.tags02 : null,
     p_tags03: params.tags03 && params.tags03.length > 0 ? params.tags03 : null,
     p_tag0: params.tag0 || null,
+    p_recurring: params.recurring || null,
   });
 
   if (error) {
@@ -752,11 +754,11 @@ export const getDREFilterOptions = async (params: {
 
   if (error) {
     console.error('❌ Erro ao buscar opções de filtro DRE:', error);
-    return { marcas: [], nome_filiais: [], tags01: [] };
+    return { marcas: [], nome_filiais: [], tags01: [], tags02: [], tags03: [] };
   }
 
-  const result = data?.[0] || { marcas: [], nome_filiais: [], tags01: [] };
-  console.log(`✅ getDREFilterOptions: ${result.marcas?.length || 0} marcas, ${result.nome_filiais?.length || 0} filiais, ${result.tags01?.length || 0} tags01`);
+  const result = data?.[0] || { marcas: [], nome_filiais: [], tags01: [], tags02: [], tags03: [] };
+  console.log(`✅ getDREFilterOptions: ${result.marcas?.length || 0} marcas, ${result.nome_filiais?.length || 0} filiais, ${result.tags01?.length || 0} tags01, ${result.tags02?.length || 0} tags02, ${result.tags03?.length || 0} tags03`);
   return result as DREFilterOptions;
 };
 

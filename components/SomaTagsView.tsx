@@ -167,11 +167,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const monthToRef    = useRef(monthTo);
   const marcasRef     = useRef(selectedMarcas);
   const filiaisRef    = useRef(selectedFiliais);
+  const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
   useEffect(() => { yearRef.current      = year;            }, [year]);
   useEffect(() => { monthFromRef.current = monthFrom;       }, [monthFrom]);
   useEffect(() => { monthToRef.current   = monthTo;         }, [monthTo]);
   useEffect(() => { marcasRef.current    = selectedMarcas;  }, [selectedMarcas]);
   useEffect(() => { filiaisRef.current   = selectedFiliais; }, [selectedFiliais]);
+  useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
 
   const toggleElement = useCallback(
     (element: string, currentState: boolean, setState: (v: boolean) => void) => {
@@ -227,7 +229,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     tag01: string, tag0: string, scenario: string, dim: string, accFilters: Record<string, string> = {}
   ) => {
     const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
-    const cacheKey   = `${scenario}|${tag01}|${dim}|${filtersKey}`;
+    const recurringVal = recurringRef.current ?? 'null';
+    const cacheKey   = `${scenario}|${tag01}|${dim}|${filtersKey}|rec:${recurringVal}`;
     const mf = `${yearRef.current}-${monthFromRef.current}`;
     const mt = `${yearRef.current}-${monthToRef.current}`;
     const marcas  = accFilters.marca       ? [accFilters.marca]       : (marcasRef.current.length  > 0 ? marcasRef.current  : undefined);
@@ -240,6 +243,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       tags01: [tag01], tag0,
       marcas, nomeFiliais: filiais,
       tags02, tags03,
+      recurring: recurringRef.current ?? undefined,
     });
     setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
   }, []);
@@ -280,6 +284,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     if (filialCleanupRef.current) { filialCleanupRef.current = false; return; }
     fetchData();
   }, [fetchData]);
+
+  // Limpa cache de drill-down quando recurring muda (dados anteriores são inválidos)
+  useEffect(() => {
+    setDimensionCache({});
+  }, [recurring]);
 
   // Cascata Tag02: quando Tag01 muda, atualiza opções disponíveis de Tag02
   useEffect(() => {
