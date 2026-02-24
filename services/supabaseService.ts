@@ -638,7 +638,6 @@ export const getSomaTags = async (
         p_tags02:       tags02      && tags02.length      > 0 ? tags02      : null,
         p_tags01:       tags01      && tags01.length      > 0 ? tags01      : null,
         p_recurring:    recurring   || null,
-        p_tags03:       tags03      && tags03.length      > 0 ? tags03      : null,
       })
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
