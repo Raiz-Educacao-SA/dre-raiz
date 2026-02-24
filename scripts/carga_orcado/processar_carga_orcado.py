@@ -47,8 +47,8 @@ SUPABASE_URL     = "https://vafmufhlompwsdrlhkfz.supabase.co"
 SUPABASE_API_KEY = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
     ".eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6"
-    "ImFub24iLCJpYXQiOjE3Njk0MzIyOTEsImV4cCI6MjA4NTAwODI5MX0"
-    ".clOvf8kNdpIUiqhAf2oAs6ETaNaoC93TWLrvGucm_I4"
+    "InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ"
+    ".m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA"
 )
 
 BATCH_SIZE = 500
