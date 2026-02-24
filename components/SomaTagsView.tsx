@@ -112,9 +112,11 @@ interface SomaTagsViewProps {
   onDataChange?: (hasData: boolean) => void;
   onDrillDown?: (data: { categories: string[]; scenario?: string; filters?: Record<string, any> }) => void;
   allowedTag01?: string[];
+  presentationMode?: 'executive' | 'detailed';
+  onPresentationModeChange?: (mode: 'executive' | 'detailed') => void;
 }
 
-const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01 }) => {
+const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01, presentationMode: externalPM, onPresentationModeChange }) => {
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
@@ -124,7 +126,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [collapsed,      setCollapsed]      = useState<Set<string>>(new Set());
   const [showOnlyEbitda, setShowOnlyEbitda] = useState(true);
   const [viewMode,       setViewMode]       = useState<ViewMode>('consolidado');
-  const [presentationMode, setPresentationMode] = useState<'executive' | 'detailed'>('detailed');
+  const [internalPM, setInternalPM] = useState<'executive' | 'detailed'>('detailed');
+  const presentationMode = externalPM ?? internalPM;
+  const setPresentationMode = useCallback((mode: 'executive' | 'detailed') => {
+    setInternalPM(mode);
+    onPresentationModeChange?.(mode);
+  }, [onPresentationModeChange]);
   const [cardLayout,  setCardLayout]  = useState<'compact' | 'medium' | 'expanded' | 'list'>('compact');
   const [execFilter,  setExecFilter]  = useState<'all' | 'positive' | 'negative'>('all');
   const [execSort,    setExecSort]    = useState<'alphabetical' | 'value' | 'delta'>('value');
@@ -1411,20 +1418,6 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
         {/* Espaçador */}
         <div className="flex-1 min-w-2" />
-
-        {/* Toggle Executivo / Detalhado */}
-        <div className="relative inline-flex items-center bg-gray-200 rounded-full p-0.5 shadow-inner shrink-0">
-          <div className={`absolute top-0.5 bottom-0.5 w-[calc(50%-2px)] bg-gradient-to-r from-purple-600 to-blue-600 rounded-full shadow-md transition-all duration-300 ease-in-out ${presentationMode === 'executive' ? 'left-0.5' : 'left-[calc(50%+0.5px)]'}`} />
-          <button onClick={() => setPresentationMode('executive')}
-            className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-full font-bold text-[9px] uppercase tracking-wider transition-all ${presentationMode === 'executive' ? 'text-white' : 'text-gray-600 hover:text-gray-800'}`}>
-            <Activity size={10} /><span>Executivo</span>
-          </button>
-          <button onClick={() => setPresentationMode('detailed')}
-            className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-full font-bold text-[9px] uppercase tracking-wider transition-all ${presentationMode === 'detailed' ? 'text-white' : 'text-gray-600 hover:text-gray-800'}`}>
-            <Table2 size={10} /><span>Detalhado</span>
-          </button>
-        </div>
-        <div className="h-4 w-px bg-gray-300 mx-0.5 shrink-0" />
 
         {/* Visualização — botões de modo (apenas no modo detalhado) */}
         <div className={`flex items-center gap-1.5 shrink-0 bg-gray-100 p-1 rounded-xl border border-gray-200 transition-all ${presentationMode === 'executive' ? 'opacity-30 pointer-events-none' : ''}`}>

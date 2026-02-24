@@ -18,7 +18,7 @@ const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 const SomaTagsView = React.lazy(() => import('./components/SomaTagsView'));
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
-import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, RefreshCw, Download, ChevronDown } from 'lucide-react';
+import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown } from 'lucide-react';
 import * as supabaseService from './services/supabaseService';
 import { getSomaTags, SomaTagsRow } from './services/supabaseService';
 import { useAuth } from './contexts/AuthContext';
@@ -95,6 +95,7 @@ const App: React.FC = () => {
   }>({});
   const [isSomaTagsLoading, setIsSomaTagsLoading] = useState(false);
   const [hasSomaTagsData, setHasSomaTagsData] = useState(false);
+  const [somaTagsPresentationMode, setSomaTagsPresentationMode] = useState<'executive' | 'detailed'>('detailed');
 
   // Usar transactions do Context em vez de estado local
   const transactions = contextTransactions;
@@ -967,6 +968,18 @@ const App: React.FC = () => {
             {/* Botões de Ação DRE Gerencial */}
             {currentView === 'soma_tags' && (
               <>
+                {/* Toggle Executivo / Detalhado */}
+                <div className="relative inline-flex items-center bg-gray-200 rounded-full p-0.5 shadow-inner shrink-0">
+                  <div className={`absolute top-0.5 bottom-0.5 w-[calc(50%-2px)] bg-gradient-to-r from-purple-600 to-blue-600 rounded-full shadow-md transition-all duration-300 ease-in-out ${somaTagsPresentationMode === 'executive' ? 'left-0.5' : 'left-[calc(50%+0.5px)]'}`} />
+                  <button onClick={() => setSomaTagsPresentationMode('executive')}
+                    className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-full font-bold text-[9px] uppercase tracking-wider transition-all ${somaTagsPresentationMode === 'executive' ? 'text-white' : 'text-gray-600 hover:text-gray-800'}`}>
+                    <Activity size={10} /><span>Executivo</span>
+                  </button>
+                  <button onClick={() => setSomaTagsPresentationMode('detailed')}
+                    className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-full font-bold text-[9px] uppercase tracking-wider transition-all ${somaTagsPresentationMode === 'detailed' ? 'text-white' : 'text-gray-600 hover:text-gray-800'}`}>
+                    <Table2 size={10} /><span>Detalhado</span>
+                  </button>
+                </div>
                 <button
                   onClick={() => somaTagsActions.exportExcel?.()}
                   disabled={!hasSomaTagsData || isSomaTagsLoading}
@@ -1121,6 +1134,8 @@ const App: React.FC = () => {
                   onDataChange={setHasSomaTagsData}
                   onDrillDown={handleDrillDown}
                   allowedTag01={allowedTag01.length > 0 ? allowedTag01 : undefined}
+                  presentationMode={somaTagsPresentationMode}
+                  onPresentationModeChange={setSomaTagsPresentationMode}
                 />
               </Suspense>
             </div>
