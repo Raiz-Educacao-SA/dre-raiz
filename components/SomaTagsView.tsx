@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Calendar, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
 
@@ -120,9 +120,10 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
-  const [year,      setYear]      = useState('2026');
-  const [monthFrom, setMonthFrom] = useState('01');
-  const [monthTo,   setMonthTo]   = useState('12');
+  const [year,           setYear]           = useState('2026');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(
+    ['01','02','03','04','05','06','07','08','09','10','11','12']
+  );
   const [collapsed,      setCollapsed]      = useState<Set<string>>(new Set());
   const [showOnlyEbitda, setShowOnlyEbitda] = useState(true);
   const [viewMode,       setViewMode]       = useState<ViewMode>('consolidado');
@@ -174,18 +175,16 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
 
   // Refs para evitar closure stale em loadDrillData (useCallback sem deps)
-  const yearRef       = useRef(year);
-  const monthFromRef  = useRef(monthFrom);
-  const monthToRef    = useRef(monthTo);
-  const marcasRef     = useRef(selectedMarcas);
-  const filiaisRef    = useRef(selectedFiliais);
+  const yearRef           = useRef(year);
+  const selectedMonthsRef = useRef(selectedMonths);
+  const marcasRef         = useRef(selectedMarcas);
+  const filiaisRef        = useRef(selectedFiliais);
   const tags02Ref     = useRef(selectedTags02);
   const tags03Ref     = useRef(selectedTags03);
   const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
-  useEffect(() => { yearRef.current      = year;            }, [year]);
-  useEffect(() => { monthFromRef.current = monthFrom;       }, [monthFrom]);
-  useEffect(() => { monthToRef.current   = monthTo;         }, [monthTo]);
-  useEffect(() => { marcasRef.current    = selectedMarcas;  }, [selectedMarcas]);
+  useEffect(() => { yearRef.current           = year;            }, [year]);
+  useEffect(() => { selectedMonthsRef.current = selectedMonths;  }, [selectedMonths]);
+  useEffect(() => { marcasRef.current         = selectedMarcas;  }, [selectedMarcas]);
   useEffect(() => { filiaisRef.current   = selectedFiliais; }, [selectedFiliais]);
   useEffect(() => { tags02Ref.current    = selectedTags02;  }, [selectedTags02]);
   useEffect(() => { tags03Ref.current    = selectedTags03;  }, [selectedTags03]);
@@ -240,14 +239,27 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     }
   }, [selectedMarcas, filiaisFiltradas]);
 
+  // helper: min/max de selectedMonths
+  const getMonthRange = (months: string[]) => {
+    if (months.length === 0) return { from: '01', to: '12' };
+    const sorted = [...months].sort();
+    return { from: sorted[0], to: sorted[sorted.length - 1] };
+  };
+
   // ── loadDrillData ────────────────────────────────────────────────────────
   const loadDrillData = useCallback(async (
     tag01: string, tag0: string, scenario: string, dim: string, accFilters: Record<string, string> = {}
   ) => {
     const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
     const cacheKey   = `${scenario}|${tag01}|${dim}|${filtersKey}`;
-    const mf = `${yearRef.current}-${monthFromRef.current}`;
-    const mt = `${yearRef.current}-${monthToRef.current}`;
+    const { from: mfRaw, to: mtRaw } = (() => {
+      const m = selectedMonthsRef.current;
+      if (m.length === 0) return { from: '01', to: '12' };
+      const s = [...m].sort();
+      return { from: s[0], to: s[s.length - 1] };
+    })();
+    const mf = `${yearRef.current}-${mfRaw}`;
+    const mt = `${yearRef.current}-${mtRaw}`;
     const marcas  = accFilters.marca       ? [accFilters.marca]       : (marcasRef.current.length  > 0 ? marcasRef.current  : undefined);
     const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
     const tags02  = accFilters.tag02 ? [accFilters.tag02] : (tags02Ref.current.length > 0 ? tags02Ref.current : undefined);
@@ -267,8 +279,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const fetchData = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const from   = monthFrom <= monthTo ? monthFrom : monthTo;
-      const to     = monthFrom <= monthTo ? monthTo   : monthFrom;
+      const { from, to } = getMonthRange(selectedMonths);
       const mFrom  = `${year}-${from}`;
       const mTo    = `${year}-${to}`;
       const marcas   = selectedMarcas.length  > 0 ? selectedMarcas  : undefined;
@@ -297,7 +308,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     } finally {
       setLoading(false);
     }
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, allowedTag01, recurring]);
+  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, allowedTag01, recurring]);
 
   // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
   // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
@@ -335,15 +346,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setDimensionCache({});
     setExpandedTag01s({});
     setExpandedDrillRows({});
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, recurring]);
+  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, recurring]);
 
-  // ── Filtro client-side por Tag01 ─────────────────────────────────────────
+  // ── Filtro client-side por Tag01 e meses selecionados ───────────────────
   const filteredRows = useMemo(() => {
     let result = rows;
     if (selectedTags01.length > 0)
       result = result.filter(r => selectedTags01.includes(r.tag01));
+    if (selectedMonths.length > 0 && selectedMonths.length < 12)
+      result = result.filter(r => selectedMonths.includes(r.month.slice(-2)));
     return result;
-  }, [rows, selectedTags01]);
+  }, [rows, selectedTags01, selectedMonths]);
 
   // ── Agrupamento Consolidado ───────────────────────────────────────────────
   const groups = useMemo((): Tag0Group[] => {
@@ -422,13 +435,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
   // ── Meses a exibir ────────────────────────────────────────────────────────
   const monthsToShow = useMemo(() => {
-    const from = parseInt(monthFrom);
-    const to   = parseInt(monthTo);
-    const result: string[] = [];
-    for (let m = from; m <= to; m++)
-      result.push(`${year}-${String(m).padStart(2, '0')}`);
-    return result;
-  }, [year, monthFrom, monthTo]);
+    const months = selectedMonths.length > 0 ? [...selectedMonths].sort() : ['01','02','03','04','05','06','07','08','09','10','11','12'];
+    return months.map(m => `${year}-${m}`);
+  }, [year, selectedMonths]);
 
   // ── Grupos exibidos (filtro Até EBITDA) ──────────────────────────────────
   // '06.' incluído: Rateio Raiz faz parte do EBITDA TOTAL
@@ -568,9 +577,10 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     dimFilters: Record<string, string> = {},   // filtros acumulados do drill-down
   ) => {
     if (!onDrillDown) return;
-    // Quando month é null (clique no total), usa o período selecionado no SomaTags
-    const mf = month ?? `${year}-${monthFrom}`;
-    const mt = month ?? `${year}-${monthTo}`;
+    // Quando month é null (clique no total), usa min/max dos meses selecionados
+    const { from: dfrom, to: dto } = getMonthRange(selectedMonths);
+    const mf = month ?? `${year}-${dfrom}`;
+    const mt = month ?? `${year}-${dto}`;
     // conta_contabil vai via categories (array), demais dimensões vão via filters
     const contaContabil = dimFilters.conta_contabil ? [dimFilters.conta_contabil] : [];
     const extraDims = Object.fromEntries(
@@ -624,10 +634,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols'] = [{ wch: 30 }, { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
     const wb = XLSX.utils.book_new();
-    const per = monthFrom === '01' && monthTo === '12' ? year : `${year}_${monthFrom}-${monthTo}`;
+    const { from: xFrom, to: xTo } = getMonthRange(selectedMonths);
+    const per = selectedMonths.length === 12 ? year : `${year}_${xFrom}-${xTo}`;
     XLSX.utils.book_append_sheet(wb, ws, `SomaTags_${per}`);
     XLSX.writeFile(wb, `soma_tags_${per}.xlsx`);
-  }, [displayedGroups, lastIdx03, lastIdx04, margemData, ebitdaData, totals, year, monthFrom, monthTo]);
+  }, [displayedGroups, lastIdx03, lastIdx04, margemData, ebitdaData, totals, year, selectedMonths]);
 
   // Registra ações no App.tsx (header) — deve ficar após exportExcel e fetchData
   useEffect(() => {
@@ -655,13 +666,15 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const mesFirstCol = activeElements.length > 0 ? (elToMesKey[activeElements[0]] ?? 'real') : 'real';
 
   const QUARTERS = [
-    { label: 'Ano', from: '01', to: '12', title: 'Ano completo' },
-    { label: '1T',  from: '01', to: '03', title: '1º Trimestre (Jan–Mar)' },
-    { label: '2T',  from: '04', to: '06', title: '2º Trimestre (Abr–Jun)' },
-    { label: '3T',  from: '07', to: '09', title: '3º Trimestre (Jul–Set)' },
-    { label: '4T',  from: '10', to: '12', title: '4º Trimestre (Out–Dez)' },
+    { label: 'Ano', months: ['01','02','03','04','05','06','07','08','09','10','11','12'], title: 'Ano completo' },
+    { label: '1T',  months: ['01','02','03'], title: '1º Trimestre (Jan–Mar)' },
+    { label: '2T',  months: ['04','05','06'], title: '2º Trimestre (Abr–Jun)' },
+    { label: '3T',  months: ['07','08','09'], title: '3º Trimestre (Jul–Set)' },
+    { label: '4T',  months: ['10','11','12'], title: '4º Trimestre (Out–Dez)' },
   ];
-  const isQuarterActive = (q: typeof QUARTERS[0]) => monthFrom === q.from && monthTo === q.to;
+  const isQuarterActive = (q: typeof QUARTERS[0]) =>
+    q.months.length === selectedMonths.length &&
+    q.months.every(m => selectedMonths.includes(m));
 
   const badge = (key: string) => {
     const idx = activeElements.indexOf(key);
@@ -1322,25 +1335,33 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         <div className="flex items-center gap-1.5 shrink-0">
           <CalendarDays size={14} className="text-purple-600 shrink-0" />
           <span className="text-[12px] font-bold text-gray-600 whitespace-nowrap">Período:</span>
+          {/* Atalhos trimestrais */}
           <div className="flex gap-1">
             {QUARTERS.map(q => (
-              <button key={q.label} onClick={() => { setMonthFrom(q.from); setMonthTo(q.to); }} title={q.title}
+              <button key={q.label} onClick={() => setSelectedMonths(q.months)} title={q.title}
                 className={`px-2 py-1 text-[12px] font-black uppercase rounded transition-all whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
                 {q.label}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 bg-white border border-purple-200 px-2 py-1 rounded-lg shadow-sm">
-            <Calendar size={12} className="text-purple-500 shrink-0" />
-            <select value={monthFrom} onChange={e => { setMonthFrom(e.target.value); if (e.target.value > monthTo) setMonthTo(e.target.value); }}
-              className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer">
-              {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
-            <span className="text-[9px] text-gray-400 font-bold whitespace-nowrap">até</span>
-            <select value={monthTo} onChange={e => { setMonthTo(e.target.value); if (monthFrom > e.target.value) setMonthFrom(e.target.value); }}
-              className="bg-transparent text-[12px] font-bold text-gray-900 outline-none cursor-pointer">
-              {MONTHS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
+          {/* Chips de meses */}
+          <div className="flex gap-0.5 bg-white border border-purple-200 px-1.5 py-1 rounded-lg shadow-sm">
+            {MONTHS.map(m => {
+              const active = selectedMonths.includes(m.value);
+              return (
+                <button
+                  key={m.value}
+                  onClick={() => setSelectedMonths(prev =>
+                    prev.includes(m.value)
+                      ? prev.length > 1 ? prev.filter(x => x !== m.value) : prev  // impede deselecionar todos
+                      : [...prev, m.value]
+                  )}
+                  className={`px-1.5 py-0.5 text-[11px] font-black rounded transition-all ${active ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'text-gray-400 hover:bg-purple-50 hover:text-purple-700'}`}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
