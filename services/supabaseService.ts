@@ -314,6 +314,20 @@ export const getTag02OptionsForTag01s = async (tags01: string[]): Promise<string
 };
 
 /**
+ * Retorna tag03 distintos apenas para os tag02s fornecidos (cascata)
+ */
+export const getTag03OptionsForTag02s = async (tags02: string[]): Promise<string[]> => {
+  if (tags02.length === 0) return [];
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('tag03')
+    .in('tag02', tags02)
+    .not('tag03', 'is', null);
+  if (error || !data) return [];
+  return [...new Set(data.map(r => r.tag03).filter(Boolean) as string[])].sort();
+};
+
+/**
  * Busca todas as opções de Tag03 disponíveis no banco
  * Retorna lista única e ordenada de TODOS os tag03 distintos
  */
@@ -618,6 +632,7 @@ export const getSomaTags = async (
   tags02?: string[],
   tags01?: string[],
   recurring?: string,
+  tags03?: string[],
 ): Promise<SomaTagsRow[]> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
@@ -631,6 +646,7 @@ export const getSomaTags = async (
         p_tags02:       tags02      && tags02.length      > 0 ? tags02      : null,
         p_tags01:       tags01      && tags01.length      > 0 ? tags01      : null,
         p_recurring:    recurring   || null,
+        p_tags03:       tags03      && tags03.length      > 0 ? tags03      : null,
       })
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
