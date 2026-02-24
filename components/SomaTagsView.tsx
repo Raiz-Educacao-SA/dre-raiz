@@ -121,9 +121,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
   const [year,           setYear]           = useState('2026');
-  const [selectedMonths, setSelectedMonths] = useState<string[]>(
-    ['01','02','03','04','05','06','07','08','09','10','11','12']
-  );
+  // [] = todos os meses (exibe "TODAS"); parcial = filtra client-side
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [collapsed,      setCollapsed]      = useState<Set<string>>(new Set());
   const [showOnlyEbitda, setShowOnlyEbitda] = useState(true);
   const [viewMode,       setViewMode]       = useState<ViewMode>('consolidado');
@@ -353,7 +352,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     let result = rows;
     if (selectedTags01.length > 0)
       result = result.filter(r => selectedTags01.includes(r.tag01));
-    if (selectedMonths.length > 0 && selectedMonths.length < 12)
+    if (selectedMonths.length > 0)
       result = result.filter(r => selectedMonths.includes(r.month.slice(-2)));
     return result;
   }, [rows, selectedTags01, selectedMonths]);
@@ -635,7 +634,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     ws['!cols'] = [{ wch: 30 }, { wch: 40 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
     const wb = XLSX.utils.book_new();
     const { from: xFrom, to: xTo } = getMonthRange(selectedMonths);
-    const per = selectedMonths.length === 12 ? year : `${year}_${xFrom}-${xTo}`;
+    const per = selectedMonths.length === 0 ? year : `${year}_${xFrom}-${xTo}`;
     XLSX.utils.book_append_sheet(wb, ws, `SomaTags_${per}`);
     XLSX.writeFile(wb, `soma_tags_${per}.xlsx`);
   }, [displayedGroups, lastIdx03, lastIdx04, margemData, ebitdaData, totals, year, selectedMonths]);
@@ -666,15 +665,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const mesFirstCol = activeElements.length > 0 ? (elToMesKey[activeElements[0]] ?? 'real') : 'real';
 
   const QUARTERS = [
-    { label: 'Ano', months: ['01','02','03','04','05','06','07','08','09','10','11','12'], title: 'Ano completo' },
-    { label: '1T',  months: ['01','02','03'], title: '1º Trimestre (Jan–Mar)' },
-    { label: '2T',  months: ['04','05','06'], title: '2º Trimestre (Abr–Jun)' },
-    { label: '3T',  months: ['07','08','09'], title: '3º Trimestre (Jul–Set)' },
-    { label: '4T',  months: ['10','11','12'], title: '4º Trimestre (Out–Dez)' },
+    { label: 'Ano', months: [] as string[],          title: 'Ano completo (limpar filtro de mês)' },
+    { label: '1T',  months: ['01','02','03'],         title: '1º Trimestre (Jan–Mar)' },
+    { label: '2T',  months: ['04','05','06'],         title: '2º Trimestre (Abr–Jun)' },
+    { label: '3T',  months: ['07','08','09'],         title: '3º Trimestre (Jul–Set)' },
+    { label: '4T',  months: ['10','11','12'],         title: '4º Trimestre (Out–Dez)' },
   ];
-  const isQuarterActive = (q: typeof QUARTERS[0]) =>
-    q.months.length === selectedMonths.length &&
-    q.months.every(m => selectedMonths.includes(m));
+  const isQuarterActive = (q: typeof QUARTERS[0]) => {
+    if (q.months.length === 0) return selectedMonths.length === 0;
+    return q.months.length === selectedMonths.length &&
+      q.months.every(m => selectedMonths.includes(m));
+  };
 
   const badge = (key: string) => {
     const idx = activeElements.indexOf(key);
@@ -1331,38 +1332,23 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
         <div className="h-8 w-px bg-blue-200 mx-0.5 shrink-0" />
 
-        {/* Período */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <CalendarDays size={14} className="text-purple-600 shrink-0" />
-          <span className="text-[12px] font-bold text-gray-600 whitespace-nowrap">Período:</span>
-          {/* Atalhos trimestrais */}
-          <div className="flex gap-1">
-            {QUARTERS.map(q => (
-              <button key={q.label} onClick={() => setSelectedMonths(q.months)} title={q.title}
-                className={`px-2 py-1 text-[12px] font-black uppercase rounded transition-all whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-                {q.label}
-              </button>
-            ))}
-          </div>
-          {/* Chips de meses */}
-          <div className="flex gap-0.5 bg-white border border-purple-200 px-1.5 py-1 rounded-lg shadow-sm">
-            {MONTHS.map(m => {
-              const active = selectedMonths.includes(m.value);
-              return (
-                <button
-                  key={m.value}
-                  onClick={() => setSelectedMonths(prev =>
-                    prev.includes(m.value)
-                      ? prev.length > 1 ? prev.filter(x => x !== m.value) : prev  // impede deselecionar todos
-                      : [...prev, m.value]
-                  )}
-                  className={`px-1.5 py-0.5 text-[11px] font-black rounded transition-all ${active ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'text-gray-400 hover:bg-purple-50 hover:text-purple-700'}`}
-                >
-                  {m.label}
-                </button>
-              );
-            })}
-          </div>
+        {/* Filtro de Mês (multi-select) */}
+        <MultiSelectFilter
+          label="Mês"
+          icon={<CalendarDays size={14} />}
+          options={MONTHS.map(m => m.label)}
+          selected={selectedMonths.map(v => MONTHS.find(m => m.value === v)?.label ?? v)}
+          onChange={labels => setSelectedMonths(labels.map(l => MONTHS.find(m => m.label === l)?.value ?? l))}
+          colorScheme="purple"
+        />
+        {/* Atalhos trimestrais */}
+        <div className="flex gap-0.5 shrink-0">
+          {QUARTERS.map(q => (
+            <button key={q.label} onClick={() => setSelectedMonths(q.months)} title={q.title}
+              className={`px-2 py-1 text-[11px] font-black uppercase rounded transition-all whitespace-nowrap ${isQuarterActive(q) ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
+              {q.label}
+            </button>
+          ))}
         </div>
 
         {/* Espaçador */}
