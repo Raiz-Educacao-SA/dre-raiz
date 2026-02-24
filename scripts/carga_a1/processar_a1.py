@@ -99,12 +99,14 @@ def get_status(original_raw: str) -> str:
     return "Normal"   # ORIGINAL, PLANEJADO, PROVISÃO, SIM, etc.
 
 
-def get_recurring(rec_raw: str) -> str:
+def get_recurring(rec_raw: str):
     """Mapeia RECORRENTE? → recurring do Supabase."""
     r = str(rec_raw).upper().strip()
     if r == "SIM":
         return "Sim"
-    return "Não"   # NAO, NAO CONSIDERAR, etc.
+    if r in ("NAO", "NÃO", "NÃO"):
+        return "Não"
+    return None  # célula vazia ou desconhecida → NULL → COALESCE trata como 'Sim'
 
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITÁRIOS

@@ -129,7 +129,12 @@ def map_status(val):
     return "Normal"
 
 def map_recurring(val):
-    return "Sim" if str(val).upper().strip() == "SIM" else "Nao"
+    cleaned = str(val).upper().strip()
+    if cleaned == "SIM":
+        return "Sim"
+    if cleaned in ("NAO", "NÃO", "NÃO"):
+        return "Não"
+    return None  # célula vazia ou desconhecida → NULL → COALESCE trata como 'Sim'
 
 def clean_record(rec):
     return {
