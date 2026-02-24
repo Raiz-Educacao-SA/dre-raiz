@@ -23,7 +23,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction, TransactionType, TransactionStatus, ManualChange, PaginationParams, ContaContabilOption } from '../types';
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
 import { getFilteredTransactions, TransactionFilters, getFiliais, getTagRecords, FilialOption, TagRecord, getContaContabilOptions, getTag0Map, getTag0Options, getTag01Options, getTag02Options, getTag03Options, resolveTag0 } from '../services/supabaseService';
@@ -37,8 +37,62 @@ import {
   Trash2, Filter, Loader2,
   Split, CheckCircle2, Download, ListOrdered, Calculator, ArrowRight,
   ChevronDown, Check, Square, CheckSquare, TrendingUp, History,
-  TrendingDown, ArrowUpRight, ArrowDownRight, AlertCircle, Search, ArrowLeft, TableProperties
+  TrendingDown, ArrowUpRight, ArrowDownRight, AlertCircle, Search, ArrowLeft, TableProperties, Eye
 } from 'lucide-react';
+
+// ─── Visibilidade de colunas ──────────────────────────────────────────────────
+const COL_VISIBILITY_KEY = 'transactions_col_visibility_v1';
+
+// ─── Densidade da tabela ───────────────────────────────────────────────────────
+const DENSITY_KEY = 'transactions_density_v1';
+type Density = 'comfortable' | 'compact' | 'ultra';
+const DENSITY_CYCLE: Density[] = ['comfortable', 'compact', 'ultra'];
+const DENSITY_LABELS: Record<Density, string> = {
+  comfortable: 'Confortável',
+  compact:     'Compacto',
+  ultra:       'Ultra',
+};
+interface DensCfg {
+  cellPy: number; cellPx: number;
+  headerPy: number;
+  badgePy: number; badgePx: number;
+  btnP: number;
+}
+const DENSITY_CFG: Record<Density, DensCfg> = {
+  //                    cellPy cellPx headerPy badgePy badgePx btnP
+  comfortable: { cellPy: 4,  cellPx: 8, headerPy: 10, badgePy: 2, badgePx: 6, btnP: 6 },
+  compact:     { cellPy: 2,  cellPx: 8, headerPy: 6,  badgePy: 1, badgePx: 4, btnP: 4 },
+  ultra:       { cellPy: 1,  cellPx: 6, headerPy: 3,  badgePy: 0, badgePx: 3, btnP: 2 },
+};
+
+const COLUMN_DEFS: Array<{
+  key: string;
+  label: string;
+  headerLabel: string;
+  className: string;
+  align?: 'left' | 'right' | 'center';
+}> = [
+  { key: 'scenario',    label: 'Cenário',    headerLabel: 'Cen',        className: 'w-[50px]'  },
+  { key: 'date',        label: 'Data',       headerLabel: 'Data',       className: 'w-[65px]'  },
+  { key: 'tag0',        label: 'Tag0',       headerLabel: 'Tag0',       className: 'w-[75px]'  },
+  { key: 'tag01',       label: 'Tag01',      headerLabel: 'Tag01',      className: 'w-[75px]'  },
+  { key: 'tag02',       label: 'Tag02',      headerLabel: 'Tag02',      className: 'w-[85px]'  },
+  { key: 'tag03',       label: 'Tag03',      headerLabel: 'Tag03',      className: 'w-[85px]'  },
+  { key: 'category',   label: 'Conta',      headerLabel: 'Conta',      className: 'w-[105px]' },
+  { key: 'marca',       label: 'Marca',      headerLabel: 'Mar',        className: 'w-[45px]'  },
+  { key: 'filial',      label: 'Filial',     headerLabel: 'Filial',     className: 'w-[100px]' },
+  { key: 'ticket',      label: 'Ticket',     headerLabel: 'Tick',       className: 'w-[60px]'  },
+  { key: 'chave_id',    label: 'Chave ID',   headerLabel: 'Chave ID',   className: 'w-[80px]'  },
+  { key: 'vendor',      label: 'Fornecedor', headerLabel: 'Fornecedor', className: 'w-[120px]' },
+  { key: 'description', label: 'Descrição',  headerLabel: 'Descrição',  className: 'w-[180px]' },
+  { key: 'amount',      label: 'Valor',      headerLabel: 'Valor',      className: 'w-[95px]',  align: 'right'  },
+  { key: 'status',      label: 'Status',     headerLabel: 'Status',     className: 'w-[70px]',  align: 'center' },
+  { key: 'acoes',       label: 'Ações',      headerLabel: 'Ações',      className: 'w-[65px]',  align: 'center' },
+];
+
+const DEFAULT_VISIBILITY: Record<string, boolean> = Object.fromEntries(
+  COLUMN_DEFS.map(c => [c.key, true])
+);
 
 interface TransactionsViewProps {
   transactions: Transaction[];
@@ -154,6 +208,57 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [rateioTransaction, setRateioTransaction] = useState<Transaction | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'desc' });
+
+  // ─── Visibilidade de colunas ────────────────────────────────────────────────
+  const [colVisibility, setColVisibility] = useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem(COL_VISIBILITY_KEY);
+      if (stored) return { ...DEFAULT_VISIBILITY, ...JSON.parse(stored) };
+    } catch {}
+    return { ...DEFAULT_VISIBILITY };
+  });
+  const [showColPanel, setShowColPanel] = useState(false);
+
+  useEffect(() => {
+    if (!showColPanel) return;
+    const close = () => setShowColPanel(false);
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showColPanel]);
+
+  const toggleColVisibility = useCallback((key: string) => {
+    setColVisibility(prev => {
+      const visibleCount = Object.values(prev).filter(Boolean).length;
+      if (prev[key] && visibleCount <= 1) return prev; // não oculta a última
+      const next = { ...prev, [key]: !prev[key] };
+      try { localStorage.setItem(COL_VISIBILITY_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const showAllCols = useCallback(() => {
+    setColVisibility({ ...DEFAULT_VISIBILITY });
+    try { localStorage.removeItem(COL_VISIBILITY_KEY); } catch {}
+  }, []);
+
+  const visibleColDefs = useMemo(
+    () => COLUMN_DEFS.filter(c => colVisibility[c.key] !== false),
+    [colVisibility]
+  );
+
+  // ─── Densidade ─────────────────────────────────────────────────────────────
+  const [density, setDensity] = useState<Density>(() => {
+    try { return (localStorage.getItem(DENSITY_KEY) as Density) || 'comfortable'; } catch {}
+    return 'comfortable';
+  });
+  const cycleDensity = useCallback(() => {
+    setDensity(prev => {
+      const next = DENSITY_CYCLE[(DENSITY_CYCLE.indexOf(prev) + 1) % DENSITY_CYCLE.length];
+      try { localStorage.setItem(DENSITY_KEY, next); } catch {}
+      return next;
+    });
+  }, []);
+  const dc = DENSITY_CFG[density];
 
   // Usar transactions buscados do estado do App.tsx se já buscou, senão mostrar vazio
   const transactions = hasSearchedTransactions ? searchedTransactions : [];
@@ -1337,6 +1442,76 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
               </div>
             </>
           )}
+          {/* Controles direita: Densidade + Colunas */}
+          <div style={{ marginLeft: 'auto' }} className="flex items-center gap-2">
+            {/* Toggle de densidade */}
+            <div className="flex items-center gap-0.5 bg-white/5 rounded px-1 py-0.5">
+              {DENSITY_CYCLE.map(d => (
+                <button
+                  key={d}
+                  onClick={() => {
+                    setDensity(d);
+                    try { localStorage.setItem(DENSITY_KEY, d); } catch {}
+                  }}
+                  className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest transition-colors ${
+                    density === d
+                      ? 'bg-white text-[#152e55]'
+                      : 'text-white/50 hover:text-white/80'
+                  }`}
+                >
+                  {d === 'comfortable' ? 'Conf.' : d === 'compact' ? 'Comp.' : 'Ultra'}
+                </button>
+              ))}
+            </div>
+            {/* Botão Colunas */}
+            <div style={{ position: 'relative' }}>
+            <button
+              onClick={e => { e.stopPropagation(); setShowColPanel(p => !p); }}
+              className="flex items-center gap-1 px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-[9px] font-black uppercase tracking-widest"
+            >
+              <Eye size={11} />
+              Colunas
+              {visibleColDefs.length < COLUMN_DEFS.length && (
+                <span className="ml-0.5 text-[#4AC8F4]">({visibleColDefs.length}/{COLUMN_DEFS.length})</span>
+              )}
+            </button>
+            {showColPanel && (
+              <div
+                onMouseDown={e => e.stopPropagation()}
+                style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 600, minWidth: 210 }}
+                className="bg-white border border-gray-200 shadow-2xl rounded-lg overflow-hidden"
+              >
+                <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-100">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Colunas visíveis</span>
+                  <button
+                    onClick={showAllCols}
+                    className="text-[9px] font-black text-[#1B75BB] hover:underline uppercase"
+                  >
+                    Exibir todas
+                  </button>
+                </div>
+                <div className="py-1 max-h-[320px] overflow-y-auto">
+                  {COLUMN_DEFS.map(colDef => {
+                    const visible = colVisibility[colDef.key] !== false;
+                    return (
+                      <button
+                        key={colDef.key}
+                        onClick={() => toggleColVisibility(colDef.key)}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 transition-colors text-left"
+                      >
+                        {visible
+                          ? <CheckSquare size={13} className="text-[#1B75BB] shrink-0" />
+                          : <Square size={13} className="text-gray-300 shrink-0" />
+                        }
+                        <span className="text-[10px] font-bold text-gray-700">{colDef.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+          </div>
         </div>
       )}
 
@@ -1345,28 +1520,31 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           <table className="w-full border-separate border-spacing-0 text-left table-fixed min-w-[900px]">
             <thead>
               <tr className="whitespace-nowrap">
-                <HeaderCell label="Cen" sortKey="scenario" config={sortConfig} setConfig={setSortConfig} className="w-[50px]" />
-                <HeaderCell label="Data" sortKey="date" config={sortConfig} setConfig={setSortConfig} className="w-[65px]" />
-                <HeaderCell label="Tag0" sortKey="tag0" config={sortConfig} setConfig={setSortConfig} className="w-[75px]" />
-                <HeaderCell label="Tag01" sortKey="tag01" config={sortConfig} setConfig={setSortConfig} className="w-[75px]" />
-                <HeaderCell label="Tag02" sortKey="tag02" config={sortConfig} setConfig={setSortConfig} className="w-[85px]" />
-                <HeaderCell label="Tag03" sortKey="tag03" config={sortConfig} setConfig={setSortConfig} className="w-[85px]" />
-                <HeaderCell label="Conta" sortKey="category" config={sortConfig} setConfig={setSortConfig} className="w-[105px]" />
-                <HeaderCell label="Mar" sortKey="marca" config={sortConfig} setConfig={setSortConfig} className="w-[45px]" />
-                <HeaderCell label="Filial" sortKey="filial" config={sortConfig} setConfig={setSortConfig} className="w-[100px]" />
-                <HeaderCell label="Tick" sortKey="ticket" config={sortConfig} setConfig={setSortConfig} className="w-[60px]" />
-                <HeaderCell label="Chave ID" sortKey="chave_id" config={sortConfig} setConfig={setSortConfig} className="w-[80px]" />
-                <HeaderCell label="Fornecedor" sortKey="vendor" config={sortConfig} setConfig={setSortConfig} className="w-[120px]" />
-                <HeaderCell label="Descrição" sortKey="description" config={sortConfig} setConfig={setSortConfig} className="w-[180px]" />
-                <HeaderCell label="Valor" sortKey="amount" config={sortConfig} setConfig={setSortConfig} align="right" className="w-[95px]" />
-                <HeaderCell label="Status" sortKey="status" config={sortConfig} setConfig={setSortConfig} align="center" className="w-[70px]" />
-                <th className="sticky top-0 z-[60] bg-[#1B75BB] text-white text-center w-[65px] border-b border-white/10 px-1 py-1.5 uppercase text-[8px] font-black">Ações</th>
+                {visibleColDefs.map(colDef => {
+                  if (colDef.key === 'acoes') {
+                    return (
+                      <th key="acoes" style={{ paddingTop: dc.headerPy, paddingBottom: dc.headerPy }} className="sticky top-0 z-[60] bg-[#1B75BB] text-white text-center w-[65px] border-b border-white/10 px-1 py-1.5 uppercase text-[8px] font-black">Ações</th>
+                    );
+                  }
+                  return (
+                    <HeaderCell
+                      key={colDef.key}
+                      label={colDef.headerLabel}
+                      sortKey={colDef.key}
+                      config={sortConfig}
+                      setConfig={setSortConfig}
+                      align={colDef.align}
+                      className={colDef.className}
+                      headerPy={dc.headerPy}
+                    />
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="bg-white">
               {filteredAndSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="py-20">
+                  <td colSpan={visibleColDefs.length} className="py-20">
                     <div className="text-center">
                       {!hasSearchedTransactions ? (
                         <>
@@ -1413,45 +1591,61 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     key={t.id}
                     className="hover:bg-blue-50/50 transition-colors border-b border-gray-50"
                   >
-                    <td className="px-2 py-1 border-r border-gray-100 text-center whitespace-nowrap overflow-hidden"><span className="px-1.5 py-0.5 rounded-none text-[8px] font-black uppercase border bg-blue-50 text-blue-700">{t.scenario || 'Real'}</span></td>
-                    <td className="px-2 py-1 text-[8px] font-mono text-gray-500 border-r border-gray-100 whitespace-nowrap overflow-hidden">{formatDateToMMAAAA(t.date)}</td>
-                    <td className="px-2 py-1 text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag0 || '-'}</td>
-                    <td className="px-2 py-1 text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag01 || '-'}</td>
-                    <td className="px-2 py-1 text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag02 || '-'}</td>
-                    <td className="px-2 py-1 text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag03 || '-'}</td>
-                    <td className="px-2 py-1 text-[8px] font-black text-[#F44C00] border-r border-gray-100 uppercase truncate">{t.category}</td>
-                    <td className="px-2 py-1 text-[8px] font-black text-[#1B75BB] border-r border-gray-100 uppercase truncate">{t.marca || 'SAP'}</td>
-                    <td className="px-2 py-1 text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.filial}</td>
-                    <td className="px-2 py-1 text-[8px] font-mono border-r border-gray-100 truncate">
-                      {t.ticket ? (
-                        <a href={`https://raizeducacao.zeev.it/report/main/?inpsearch=${t.ticket}`} target="_blank" rel="noopener noreferrer" className="text-[#1B75BB] font-black flex items-center gap-0.5 hover:underline active:scale-95">
-                          {t.ticket} <ExternalLink size={8} />
-                        </a>
-                      ) : '-'}
-                    </td>
-                    <td className="px-2 py-1 text-[8px] font-black text-[#F44C00] border-r border-gray-100 uppercase truncate">{t.chave_id || '-'}</td>
-                    <td className="px-2 py-1 text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate" title={t.vendor}>{t.vendor || '-'}</td>
-                    <td className="px-2 py-1 text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate" title={t.description}>{t.description}</td>
-                    <td className={`px-2 py-1 text-[8px] font-mono font-black text-right border-r border-gray-100 ${t.type === 'REVENUE' ? 'text-emerald-600' : 'text-gray-900'}`}>
-                      {t.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-2 py-1 text-center border-r border-gray-100">
-                      <span className={`px-2 py-0.5 rounded-none text-[8px] font-black uppercase border ${
-                        t.status === 'Pendente' ? 'bg-orange-50 text-orange-600 border-orange-200' :
-                        t.status === 'Ajustado' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                        t.status === 'Rateado' ? 'bg-purple-50 text-purple-600 border-purple-200' :
-                        t.status === 'Excluído' ? 'bg-red-50 text-red-600 border-red-200' :
-                        'bg-gray-50 text-gray-400 border-gray-200'
-                      }`}>
-                        {t.status}
-                      </span>
-                    </td>
-                    <td className="px-2 py-1 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                         <button onClick={() => setEditingTransaction(t)} className="p-1.5 text-sky-600 bg-sky-50 hover:bg-sky-100 border border-sky-100 active:scale-90 transition-all"><Edit3 size={12}/></button>
-                         <button onClick={() => setRateioTransaction(t)} className="p-1.5 text-[#F44C00] bg-amber-50 hover:bg-amber-100 border border-amber-100 active:scale-90 transition-all"><GitFork size={12}/></button>
-                      </div>
-                    </td>
+                    {visibleColDefs.map(colDef => {
+                      const tdS = { paddingTop: dc.cellPy, paddingBottom: dc.cellPy, paddingLeft: dc.cellPx, paddingRight: dc.cellPx };
+                      const bgS = { paddingTop: dc.badgePy, paddingBottom: dc.badgePy, paddingLeft: dc.badgePx, paddingRight: dc.badgePx };
+                      const btS = { padding: dc.btnP };
+                      switch (colDef.key) {
+                        case 'scenario':    return <td key="scenario"    style={tdS} className="border-r border-gray-100 text-center whitespace-nowrap overflow-hidden"><span style={bgS} className="rounded-none text-[8px] font-black uppercase border bg-blue-50 text-blue-700">{t.scenario || 'Real'}</span></td>;
+                        case 'date':        return <td key="date"        style={tdS} className="text-[8px] font-mono text-gray-500 border-r border-gray-100 whitespace-nowrap overflow-hidden">{formatDateToMMAAAA(t.date)}</td>;
+                        case 'tag0':        return <td key="tag0"        style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag0 || '-'}</td>;
+                        case 'tag01':       return <td key="tag01"       style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag01 || '-'}</td>;
+                        case 'tag02':       return <td key="tag02"       style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag02 || '-'}</td>;
+                        case 'tag03':       return <td key="tag03"       style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.tag03 || '-'}</td>;
+                        case 'category':    return <td key="category"    style={tdS} className="text-[8px] font-black text-[#F44C00] border-r border-gray-100 uppercase truncate">{t.category}</td>;
+                        case 'marca':       return <td key="marca"       style={tdS} className="text-[8px] font-black text-[#1B75BB] border-r border-gray-100 uppercase truncate">{t.marca || 'SAP'}</td>;
+                        case 'filial':      return <td key="filial"      style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate">{t.filial}</td>;
+                        case 'ticket':      return (
+                          <td key="ticket" style={tdS} className="text-[8px] font-mono border-r border-gray-100 truncate">
+                            {t.ticket ? (
+                              <a href={`https://raizeducacao.zeev.it/report/main/?inpsearch=${t.ticket}`} target="_blank" rel="noopener noreferrer" className="text-[#1B75BB] font-black flex items-center gap-0.5 hover:underline active:scale-95">
+                                {t.ticket} <ExternalLink size={8} />
+                              </a>
+                            ) : '-'}
+                          </td>
+                        );
+                        case 'chave_id':    return <td key="chave_id"    style={tdS} className="text-[8px] font-black text-[#F44C00] border-r border-gray-100 uppercase truncate">{t.chave_id || '-'}</td>;
+                        case 'vendor':      return <td key="vendor"      style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate" title={t.vendor}>{t.vendor || '-'}</td>;
+                        case 'description': return <td key="description" style={tdS} className="text-[8px] font-bold text-gray-600 border-r border-gray-100 uppercase truncate" title={t.description}>{t.description}</td>;
+                        case 'amount':      return (
+                          <td key="amount" style={tdS} className={`text-[8px] font-mono font-black text-right border-r border-gray-100 ${t.type === 'REVENUE' ? 'text-emerald-600' : 'text-gray-900'}`}>
+                            {t.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        );
+                        case 'status':      return (
+                          <td key="status" style={tdS} className="text-center border-r border-gray-100">
+                            <span style={bgS} className={`rounded-none text-[8px] font-black uppercase border ${
+                              t.status === 'Pendente' ? 'bg-orange-50 text-orange-600 border-orange-200' :
+                              t.status === 'Ajustado' ? 'bg-blue-50 text-blue-600 border-blue-200' :
+                              t.status === 'Rateado' ? 'bg-purple-50 text-purple-600 border-purple-200' :
+                              t.status === 'Excluído' ? 'bg-red-50 text-red-600 border-red-200' :
+                              'bg-gray-50 text-gray-400 border-gray-200'
+                            }`}>
+                              {t.status}
+                            </span>
+                          </td>
+                        );
+                        case 'acoes':       return (
+                          <td key="acoes" style={tdS} className="text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button onClick={() => setEditingTransaction(t)} style={btS} className="text-sky-600 bg-sky-50 hover:bg-sky-100 border border-sky-100 active:scale-90 transition-all"><Edit3 size={12}/></button>
+                              <button onClick={() => setRateioTransaction(t)} style={btS} className="text-[#F44C00] bg-amber-50 hover:bg-amber-100 border border-amber-100 active:scale-90 transition-all"><GitFork size={12}/></button>
+                            </div>
+                          </td>
+                        );
+                        default: return null;
+                      }
+                    })}
                   </tr>
                 ))}
             </tbody>
@@ -1460,7 +1654,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           <table className="w-full border-separate border-spacing-0 text-left table-fixed min-w-[900px]">
             <tfoot className="sticky bottom-0 z-50 bg-[#152e55] text-white">
               <tr className="h-10 border-t border-white/20 whitespace-nowrap">
-                <td colSpan={14} className="px-4 text-[10px] font-black uppercase tracking-widest bg-[#152e55]">
+                <td colSpan={visibleColDefs.length} className="px-4 text-[10px] font-black uppercase tracking-widest bg-[#152e55]">
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
                        <ListOrdered size={14} className="text-[#4AC8F4]" />
@@ -1872,11 +2066,13 @@ const MultiSelectFilter = React.memo(({ id, label, options, selected, active, is
   );
 });
 
-const HeaderCell = ({ label, sortKey, config, setConfig, align = 'left', className = '' }: any) => {
+const HeaderCell = ({ label, sortKey, config, setConfig, align = 'left', className = '', headerPy }: any) => {
   const isSorted = config.key === sortKey;
+  const padStyle = headerPy !== undefined ? { paddingTop: headerPy, paddingBottom: headerPy } : undefined;
   return (
     <th
       onClick={() => setConfig({ key: sortKey, direction: isSorted && config.direction === 'asc' ? 'desc' : 'asc' })}
+      style={padStyle}
       className={`sticky top-0 z-[60] bg-[#1B75BB] text-white text-left border-b border-white/10 border-r border-white/20 px-2 py-2.5 cursor-pointer hover:bg-[#152e55] transition-colors whitespace-nowrap ${className}`}
     >
       <div className={`flex items-center gap-0.5 ${align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : 'justify-start'}`}>
