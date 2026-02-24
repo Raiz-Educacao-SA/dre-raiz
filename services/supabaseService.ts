@@ -617,6 +617,7 @@ export const getSomaTags = async (
   nomeFiliais?: string[],
   tags02?: string[],
   tags01?: string[],
+  recurring?: string,
 ): Promise<SomaTagsRow[]> => {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
@@ -629,6 +630,7 @@ export const getSomaTags = async (
         p_nome_filiais: nomeFiliais && nomeFiliais.length > 0 ? nomeFiliais : null,
         p_tags02:       tags02      && tags02.length      > 0 ? tags02      : null,
         p_tags01:       tags01      && tags01.length      > 0 ? tags01      : null,
+        p_recurring:    recurring   || null,
       })
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
@@ -696,6 +698,7 @@ export const getDREDimension = async (params: {
   tags02?: string[];
   tags03?: string[];
   tag0?: string;  // fallback: inclui contas vazias do mesmo tag0 no A-1
+  recurring?: string;
 }): Promise<DREDimensionRow[]> => {
   console.log('📊 getDREDimension: Buscando dimensão', params.dimension, {
     tags01: params.tags01,
@@ -716,6 +719,7 @@ export const getDREDimension = async (params: {
     p_tags02: params.tags02 && params.tags02.length > 0 ? params.tags02 : null,
     p_tags03: params.tags03 && params.tags03.length > 0 ? params.tags03 : null,
     p_tag0: params.tag0 || null,
+    p_recurring: params.recurring || null,
   });
 
   if (error) {

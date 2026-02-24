@@ -152,6 +152,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     'Real', 'Orçado', 'DeltaAbsOrcado', 'DeltaPercOrcado', 'A1', 'DeltaAbsA1', 'DeltaPercA1',
   ]);
 
+  // ── Filtro Recorrência ────────────────────────────────────────────────────
+  const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>('Sim');
+
   // ── Drill-down ────────────────────────────────────────────────────────────
   const [dimensionCache,    setDimensionCache]    = useState<Record<string, DREDimensionRow[]>>({});
   const [expandedTag01s,    setExpandedTag01s]    = useState<Record<string, boolean>>({});
@@ -166,11 +169,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const monthToRef    = useRef(monthTo);
   const marcasRef     = useRef(selectedMarcas);
   const filiaisRef    = useRef(selectedFiliais);
+  const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
   useEffect(() => { yearRef.current      = year;            }, [year]);
   useEffect(() => { monthFromRef.current = monthFrom;       }, [monthFrom]);
   useEffect(() => { monthToRef.current   = monthTo;         }, [monthTo]);
   useEffect(() => { marcasRef.current    = selectedMarcas;  }, [selectedMarcas]);
   useEffect(() => { filiaisRef.current   = selectedFiliais; }, [selectedFiliais]);
+  useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
 
   const toggleElement = useCallback(
     (element: string, currentState: boolean, setState: (v: boolean) => void) => {
@@ -239,6 +244,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       tags01: [tag01], tag0,
       marcas, nomeFiliais: filiais,
       tags02, tags03,
+      recurring: recurringRef.current ?? undefined,
     });
     setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
   }, []);
@@ -256,7 +262,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       const tags02   = selectedTags02.length  > 0 ? selectedTags02  : undefined;
       const tags01Perm = allowedTag01 && allowedTag01.length > 0 ? allowedTag01 : undefined;
       const [data, opts, t02] = await Promise.all([
-        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm),
+        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm, recurring ?? undefined),
         getDREFilterOptions({ monthFrom: mFrom, monthTo: mTo }),
         allTag02OptionsRef.current.length === 0 ? getTag02Options() : Promise.resolve(allTag02OptionsRef.current),
       ]);
@@ -271,7 +277,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     } finally {
       setLoading(false);
     }
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, allowedTag01]);
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, selectedTags02, allowedTag01, recurring]);
 
   // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
   // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
@@ -299,7 +305,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setDimensionCache({});
     setExpandedTag01s({});
     setExpandedDrillRows({});
-  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais]);
+  }, [year, monthFrom, monthTo, selectedMarcas, selectedFiliais, recurring]);
 
   // ── Filtro client-side por Tag01 ─────────────────────────────────────────
   const filteredRows = useMemo(() => {
@@ -1326,6 +1332,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           {showOnlyEbitda ? <CheckSquare size={12} strokeWidth={2.5} /> : <Square size={12} strokeWidth={2.5} />}
           <span>Até EBITDA</span>
         </button>
+
+        {/* Recorrência */}
+        <div className="flex items-center gap-0.5 bg-white border border-teal-200 rounded-lg px-2 py-1 shadow-sm shrink-0">
+          <span className="text-[9px] font-black text-gray-500 uppercase whitespace-nowrap mr-1">Recorr:</span>
+          {(['Sim', 'Não', null] as const).map(v => (
+            <button key={String(v)} onClick={() => setRecurring(v)}
+              className={`px-1.5 py-0.5 text-[9px] font-black rounded transition-all ${recurring === v ? 'bg-teal-500 text-white' : 'text-gray-500 hover:bg-teal-50 hover:text-teal-700'}`}>
+              {v ?? 'Todos'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ══ LINHA 2: Colunas + Visualização ══ */}
