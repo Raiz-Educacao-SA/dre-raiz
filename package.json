@@ -25,6 +25,7 @@
     "dotenv": "^17.2.3",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "file-saver": "^2.0.5",
     "firebase": "^12.7.0",

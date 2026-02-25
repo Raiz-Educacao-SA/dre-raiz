@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
 import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
 import DreAnalysisSection from './DreAnalysisSection';
 import { useAuth } from '../contexts/AuthContext';
@@ -668,14 +668,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     });
 
   // ── Exportar Excel ────────────────────────────────────────────────────────
-  const exportExcel = useCallback(() => {
-    // Paleta de cores
-    const C = {
-      white: 'FFFFFF', hdr: 'E5E7EB',
-      groupHdr: '374151', tag01Row: 'FFFFFF',
-      drillD0: 'FFFBEB', drillD1: 'EFF6FF', drillD2: 'F9FAFB',
-      calcRow: 'F44C00', total: '1F2937',
-      neg: 'DC2626', pos: '15803D', neutral: '1F2937',
+  const exportExcel = useCallback(async () => {
+    // ExcelJS usa ARGB (8 chars): FF + RRGGBB
+    const BG = {
+      white:    'FFFFFFFF', hdr:      'FFE5E7EB',
+      groupHdr: 'FF374151', tag01Row: 'FFFFFFFF',
+      drillD0:  'FFFFBEB',  drillD1:  'FFEFF6FF', drillD2: 'FFF9FAFB',
+      calcRow:  'FFF44C00', total:    'FF1F2937',
+    };
+    const FNT = {
+      white: 'FFFFFFFF', neutral: 'FF1F2937', muted: 'FF9CA3AF',
+      sub: 'FF4B5563', neg: 'FFDC2626', pos: 'FF15803D',
     };
     const ML: Record<string, string> = {
       '01':'Jan','02':'Fev','03':'Mar','04':'Abr','05':'Mai','06':'Jun',
@@ -687,46 +690,60 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       'DeltaAbsA1':'Δ A-1','DeltaPercA1':'Δ% A-1',
     };
 
-    // Helpers de estilo
-    const st = (bg: string, bold = false, color = C.neutral, align = 'left') => ({
-      fill: { patternType: 'solid', fgColor: { rgb: bg } },
-      font: { bold, color: { rgb: color } },
-      alignment: { horizontal: align, vertical: 'center', wrapText: false },
-    });
-    const tC = (v: string, bg: string, bold = false, color = C.neutral) =>
-      ({ v, t: 's', s: st(bg, bold, color, 'left') });
-    const nC = (v: number, bg: string, bold = false) =>
-      ({ v: Math.round(v), t: 'n', z: '#,##0', s: st(bg, bold, C.neutral, 'right') });
-    const dC = (v: number, base: number, bg: string, bold = false) =>
-      base === 0
-        ? { v: 'N/D', t: 's', s: st(bg, bold, '9CA3AF', 'center') }
-        : { v: Math.round(v), t: 'n', z: '#,##0',
-            s: st(bg, bold, v < 0 ? C.neg : v > 0 ? C.pos : C.neutral, 'right') };
-    const pC = (real: number, base: number, bg: string, bold = false) =>
-      base === 0
-        ? { v: 'N/D', t: 's', s: st(bg, bold, '9CA3AF', 'center') }
-        : { v: (real - base) / Math.abs(base), t: 'n', z: '0.0%',
-            s: st(bg, bold, (real - base) < 0 ? C.neg : (real - base) > 0 ? C.pos : C.neutral, 'center') };
-    const wF = (cell: any) => ({ ...cell, s: { ...cell.s, font: { ...cell.s?.font, color: { rgb: C.white }, bold: true } } });
+    type CellDef = { v: any; bg: string; bold?: boolean; color?: string; align?: string; fmt?: string };
 
-    // Build cells for tri-scenario data
-    const vCells = (real: number, orcado: number, a1: number, bg: string, bold = false, white = false) =>
+    const { from: xFrom, to: xTo } = getMonthRange(selectedMonths);
+    const per  = selectedMonths.length === 0 ? year : `${year}_${xFrom}-${xTo}`;
+    const mode = viewMode === 'consolidado' ? 'Consol' : viewMode === 'cenario' ? 'Cenario' : 'Mes';
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(`DRE_${mode}_${per}`.substring(0, 31));
+
+    // Aplica estilo a uma célula ExcelJS
+    const applyCell = (cell: ExcelJS.Cell, def: CellDef) => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: def.bg } };
+      cell.font = { bold: def.bold ?? false, color: { argb: def.color ?? FNT.neutral } };
+      cell.alignment = { horizontal: (def.align ?? 'left') as any, vertical: 'middle' };
+      if (def.fmt) cell.numFmt = def.fmt;
+    };
+
+    const addRow = (defs: CellDef[]) => {
+      const row = ws.addRow(defs.map(d => d.v));
+      row.height = 16;
+      defs.forEach((def, i) => applyCell(row.getCell(i + 1), def));
+    };
+
+    // Builders de célula (retornam CellDef)
+    const tD = (v: string, bg: string, bold = false, color = FNT.neutral): CellDef =>
+      ({ v, bg, bold, color, align: 'left' });
+    const nD = (v: number, bg: string, bold = false): CellDef =>
+      ({ v: Math.round(v), bg, bold, color: FNT.neutral, align: 'right', fmt: '#,##0' });
+    const dD = (v: number, base: number, bg: string, bold = false): CellDef =>
+      base === 0
+        ? { v: 'N/D', bg, bold, color: FNT.muted, align: 'center' }
+        : { v: Math.round(v), bg, bold, color: v < 0 ? FNT.neg : v > 0 ? FNT.pos : FNT.neutral, align: 'right', fmt: '#,##0' };
+    const pD = (real: number, base: number, bg: string, bold = false): CellDef => {
+      const delta = real - base;
+      return base === 0
+        ? { v: 'N/D', bg, bold, color: FNT.muted, align: 'center' }
+        : { v: delta / Math.abs(base), bg, bold, color: delta < 0 ? FNT.neg : delta > 0 ? FNT.pos : FNT.neutral, align: 'center', fmt: '0.0%' };
+    };
+
+    const vDefs = (real: number, orcado: number, a1: number, bg: string, bold = false): CellDef[] =>
       activeElements.map(el => {
-        let c: any;
         switch (el) {
-          case 'Real':            c = nC(real,   bg, bold); break;
-          case 'Orçado':          c = nC(orcado, bg, bold); break;
-          case 'A1':              c = nC(a1,     bg, bold); break;
-          case 'DeltaAbsOrcado':  c = dC(real - orcado, orcado, bg, bold); break;
-          case 'DeltaPercOrcado': c = pC(real, orcado, bg, bold); break;
-          case 'DeltaAbsA1':      c = dC(real - a1, a1, bg, bold); break;
-          case 'DeltaPercA1':     c = pC(real, a1, bg, bold); break;
-          default: c = { v: '', t: 's' };
+          case 'Real':            return nD(real,   bg, bold);
+          case 'Orçado':          return nD(orcado, bg, bold);
+          case 'A1':              return nD(a1,     bg, bold);
+          case 'DeltaAbsOrcado':  return dD(real - orcado, orcado, bg, bold);
+          case 'DeltaPercOrcado': return pD(real, orcado, bg, bold);
+          case 'DeltaAbsA1':      return dD(real - a1, a1, bg, bold);
+          case 'DeltaPercA1':     return pD(real, a1, bg, bold);
+          default: return { v: '', bg };
         }
-        return white ? wF(c) : c;
       });
 
-    // Drill-down via dimensionCache (local getDrill para evitar dep extra)
+    // Drill-down
     const getDrill = (tag01: string, dim: string, sc: string, val: string, af: Record<string, string>) => {
       const fk = Object.entries(af).sort().map(([k, v]) => `${k}=${v}`).join('&');
       return (dimensionCache[`${sc}|${tag01}|${dim}|${fk}`] || [])
@@ -734,7 +751,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         .reduce((s: number, r: any) => s + Number(r.total_amount), 0);
     };
 
-    const buildDrill = (rows: any[][], tag01: string, tag0: string, dimIdx = 0, af: Record<string, string> = {}, depth = 0) => {
+    const buildDrill = (tag01: string, _tag0: string, dimIdx = 0, af: Record<string, string> = {}, depth = 0) => {
       if (!drillDimensions.length || dimIdx >= drillDimensions.length) return;
       const dim = drillDimensions[dimIdx];
       const fk  = Object.entries(af).sort().map(([k, v]) => `${k}=${v}`).join('&');
@@ -747,7 +764,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       else if (dimensionSort === 'desc') vals.sort((a, b) => getDrill(tag01, dim, 'Real', b, af) - getDrill(tag01, dim, 'Real', a, af));
       else vals.sort((a, b) => getDrill(tag01, dim, 'Real', a, af) - getDrill(tag01, dim, 'Real', b, af));
 
-      const bg     = depth === 0 ? C.drillD0 : depth === 1 ? C.drillD1 : C.drillD2;
+      const bg     = depth === 0 ? BG.drillD0 : depth === 1 ? BG.drillD1 : BG.drillD2;
       const mark   = depth === 0 ? '◆ ' : '◇ ';
       const pad    = '  '.repeat(depth + 1);
       const dlabel = SOMA_DIMENSIONS.find(d => d.id === dim)?.label ?? dim;
@@ -755,149 +772,131 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         const real   = getDrill(tag01, dim, 'Real',   val, af);
         const orcado = getDrill(tag01, dim, 'Orçado', val, af);
         const a1     = getDrill(tag01, dim, 'A-1',    val, af);
-        rows.push([tC('', bg), tC(`${pad}${mark}${dlabel}: ${val}`, bg, false, '4B5563'), ...vCells(real, orcado, a1, bg)]);
+        addRow([tD('', bg), tD(`${pad}${mark}${dlabel}: ${val}`, bg, false, FNT.sub), ...vDefs(real, orcado, a1, bg)]);
         const dk = `${tag01}|${dim}|${val}|${fk}`;
         if (dimIdx < drillDimensions.length - 1 && expandedDrillRows[dk]) {
-          buildDrill(rows, tag01, tag0, dimIdx + 1, { ...af, [dim]: val }, depth + 1);
+          buildDrill(tag01, _tag0, dimIdx + 1, { ...af, [dim]: val }, depth + 1);
         }
       });
     };
 
-    // ── Helpers mensais ──────────────────────────────────────────────────
+    // Helpers mensais
     type MD = { real: number; orcado: number; a1: number };
     const sumMD = (byMonth: Record<string, MD>): MD =>
       Object.values(byMonth).reduce((a, m) => ({ real: a.real + m.real, orcado: a.orcado + m.orcado, a1: a.a1 + m.a1 }), { real: 0, orcado: 0, a1: 0 });
 
-    const buildMonthCells = (byMonth: Record<string, MD>, bg: string, bold = false, white = false): any[] => {
-      const cells: any[] = [];
-      const tot = sumMD(byMonth);
-      const push = (c: any) => cells.push(white ? wF(c) : c);
-      const md2cells = (md: MD) => activeElements.forEach(el => {
+    const vMDefs = (md: MD, bg: string, bold = false): CellDef[] =>
+      activeElements.map(el => {
         switch (el) {
-          case 'Real':            push(nC(md.real, bg, bold)); break;
-          case 'Orçado':          push(nC(md.orcado, bg, bold)); break;
-          case 'A1':              push(nC(md.a1, bg, bold)); break;
-          case 'DeltaAbsOrcado':  push(dC(md.real - md.orcado, md.orcado, bg, bold)); break;
-          case 'DeltaPercOrcado': push(pC(md.real, md.orcado, bg, bold)); break;
-          case 'DeltaAbsA1':      push(dC(md.real - md.a1, md.a1, bg, bold)); break;
-          case 'DeltaPercA1':     push(pC(md.real, md.a1, bg, bold)); break;
-          default: push({ v: '', t: 's' });
+          case 'Real':            return nD(md.real, bg, bold);
+          case 'Orçado':          return nD(md.orcado, bg, bold);
+          case 'A1':              return nD(md.a1, bg, bold);
+          case 'DeltaAbsOrcado':  return dD(md.real - md.orcado, md.orcado, bg, bold);
+          case 'DeltaPercOrcado': return pD(md.real, md.orcado, bg, bold);
+          case 'DeltaAbsA1':      return dD(md.real - md.a1, md.a1, bg, bold);
+          case 'DeltaPercA1':     return pD(md.real, md.a1, bg, bold);
+          default: return { v: '', bg };
         }
       });
+
+    const buildMonthDefs = (byMonth: Record<string, MD>, bg: string, bold = false): CellDef[] => {
+      const defs: CellDef[] = [];
+      const tot = sumMD(byMonth);
       if (viewMode === 'cenario') {
         activeElements.forEach(el => {
           monthsToShow.forEach(m => {
             const md = byMonth[m] || { real: 0, orcado: 0, a1: 0 };
             switch (el) {
-              case 'Real':            push(nC(md.real, bg, bold)); break;
-              case 'Orçado':          push(nC(md.orcado, bg, bold)); break;
-              case 'A1':              push(nC(md.a1, bg, bold)); break;
-              case 'DeltaAbsOrcado':  push(dC(md.real - md.orcado, md.orcado, bg, bold)); break;
-              case 'DeltaPercOrcado': push(pC(md.real, md.orcado, bg, bold)); break;
-              case 'DeltaAbsA1':      push(dC(md.real - md.a1, md.a1, bg, bold)); break;
-              case 'DeltaPercA1':     push(pC(md.real, md.a1, bg, bold)); break;
-              default: push({ v: '', t: 's' });
+              case 'Real':            defs.push(nD(md.real, bg, bold)); break;
+              case 'Orçado':          defs.push(nD(md.orcado, bg, bold)); break;
+              case 'A1':             defs.push(nD(md.a1, bg, bold)); break;
+              case 'DeltaAbsOrcado':  defs.push(dD(md.real - md.orcado, md.orcado, bg, bold)); break;
+              case 'DeltaPercOrcado': defs.push(pD(md.real, md.orcado, bg, bold)); break;
+              case 'DeltaAbsA1':      defs.push(dD(md.real - md.a1, md.a1, bg, bold)); break;
+              case 'DeltaPercA1':     defs.push(pD(md.real, md.a1, bg, bold)); break;
+              default: defs.push({ v: '', bg });
             }
           });
-          // total by element
           switch (el) {
-            case 'Real':            push(nC(tot.real, bg, bold)); break;
-            case 'Orçado':          push(nC(tot.orcado, bg, bold)); break;
-            case 'A1':              push(nC(tot.a1, bg, bold)); break;
-            case 'DeltaAbsOrcado':  push(dC(tot.real - tot.orcado, tot.orcado, bg, bold)); break;
-            case 'DeltaPercOrcado': push(pC(tot.real, tot.orcado, bg, bold)); break;
-            case 'DeltaAbsA1':      push(dC(tot.real - tot.a1, tot.a1, bg, bold)); break;
-            case 'DeltaPercA1':     push(pC(tot.real, tot.a1, bg, bold)); break;
-            default: push({ v: '', t: 's' });
+            case 'Real':            defs.push(nD(tot.real, bg, bold)); break;
+            case 'Orçado':          defs.push(nD(tot.orcado, bg, bold)); break;
+            case 'A1':              defs.push(nD(tot.a1, bg, bold)); break;
+            case 'DeltaAbsOrcado':  defs.push(dD(tot.real - tot.orcado, tot.orcado, bg, bold)); break;
+            case 'DeltaPercOrcado': defs.push(pD(tot.real, tot.orcado, bg, bold)); break;
+            case 'DeltaAbsA1':      defs.push(dD(tot.real - tot.a1, tot.a1, bg, bold)); break;
+            case 'DeltaPercA1':     defs.push(pD(tot.real, tot.a1, bg, bold)); break;
+            default: defs.push({ v: '', bg });
           }
         });
       } else {
-        monthsToShow.forEach(m => md2cells(byMonth[m] || { real: 0, orcado: 0, a1: 0 }));
-        md2cells(tot); // total columns
+        monthsToShow.forEach(m => defs.push(...vMDefs(byMonth[m] || { real: 0, orcado: 0, a1: 0 }, bg, bold)));
+        defs.push(...vMDefs(tot, bg, bold));
       }
-      return cells;
+      return defs;
     };
 
-    // ── Montar wsData ────────────────────────────────────────────────────
-    const wsData: any[][] = [];
-    const { from: xFrom, to: xTo } = getMonthRange(selectedMonths);
-    const per = selectedMonths.length === 0 ? year : `${year}_${xFrom}-${xTo}`;
-
+    // ── Montar worksheet ─────────────────────────────────────────────────
     if (viewMode === 'consolidado') {
-      wsData.push([tC('Grupo (Tag0)', C.hdr, true), tC('Tag01', C.hdr, true), ...activeElements.map(el => tC(EL[el] ?? el, C.hdr, true))]);
-
+      addRow([tD('Grupo (Tag0)', BG.hdr, true), tD('Tag01', BG.hdr, true), ...activeElements.map(el => tD(EL[el] ?? el, BG.hdr, true))]);
       displayedGroups.forEach((g, idx) => {
-        wsData.push([tC(g.tag0, C.groupHdr, true, C.white), tC('▶ SUBTOTAL', C.groupHdr, true, C.white), ...vCells(g.real, g.orcado, g.a1, C.groupHdr, true, true)]);
+        addRow([tD(g.tag0, BG.groupHdr, true, FNT.white), tD('▶ SUBTOTAL', BG.groupHdr, true, FNT.white), ...vDefs(g.real, g.orcado, g.a1, BG.groupHdr, true)]);
         g.items.forEach(item => {
-          wsData.push([tC(g.tag0, C.tag01Row), tC(item.tag01, C.tag01Row), ...vCells(item.real, item.orcado, item.a1, C.tag01Row)]);
-          if (expandedTag01s[`${g.tag0}|${item.tag01}`] && drillDimensions.length > 0) buildDrill(wsData, item.tag01, g.tag0);
+          addRow([tD(g.tag0, BG.tag01Row), tD(item.tag01, BG.tag01Row), ...vDefs(item.real, item.orcado, item.a1, BG.tag01Row)]);
+          if (expandedTag01s[`${g.tag0}|${item.tag01}`] && drillDimensions.length > 0) buildDrill(item.tag01, g.tag0);
         });
         if (!hasTagFilter) {
-          if (idx === lastIdx03) wsData.push([tC('▶ MARGEM DE CONTRIBUIÇÃO', C.calcRow, true, C.white), tC('', C.calcRow), ...vCells(margemData.real, margemData.orcado, margemData.a1, C.calcRow, true, true)]);
-          if (idx === lastIdx04 || (idx === lastIdx03 && lastIdx04 === -1)) wsData.push([tC('▶ EBITDA (S/ RATEIO RAIZ CSC)', C.calcRow, true, C.white), tC('', C.calcRow), ...vCells(ebitdaData.real, ebitdaData.orcado, ebitdaData.a1, C.calcRow, true, true)]);
+          if (idx === lastIdx03) addRow([tD('▶ MARGEM DE CONTRIBUIÇÃO', BG.calcRow, true, FNT.white), tD('', BG.calcRow), ...vDefs(margemData.real, margemData.orcado, margemData.a1, BG.calcRow, true)]);
+          if (idx === lastIdx04 || (idx === lastIdx03 && lastIdx04 === -1)) addRow([tD('▶ EBITDA (S/ RATEIO RAIZ CSC)', BG.calcRow, true, FNT.white), tD('', BG.calcRow), ...vDefs(ebitdaData.real, ebitdaData.orcado, ebitdaData.a1, BG.calcRow, true)]);
         }
       });
-      wsData.push([tC('TOTAL GERAL', C.total, true, C.white), tC('', C.total), ...vCells(totals.real, totals.orcado, totals.a1, C.total, true, true)]);
+      addRow([tD('TOTAL GERAL', BG.total, true, FNT.white), tD('', BG.total), ...vDefs(totals.real, totals.orcado, totals.a1, BG.total, true)]);
     } else {
-      // Cenário ou Mês: cabeçalho duplo
       const mls = monthsToShow.map(m => ML[m.split('-')[1]] ?? m.split('-')[1]);
-      const h1: any[] = [tC('Grupo (Tag0)', C.hdr, true), tC('Tag01', C.hdr, true)];
-      const h2: any[] = [tC('', C.hdr), tC('', C.hdr)];
+      const h1: CellDef[] = [tD('Grupo (Tag0)', BG.hdr, true), tD('Tag01', BG.hdr, true)];
+      const h2: CellDef[] = [tD('', BG.hdr), tD('', BG.hdr)];
       if (viewMode === 'cenario') {
         activeElements.forEach((el, ei) => {
-          monthsToShow.forEach((_, mi) => { h1.push(tC(mi === 0 ? EL[el] ?? el : '', C.hdr, true)); h2.push(tC(mls[mi], C.hdr, false, '4B5563')); });
-          h1.push(tC(ei === 0 ? 'Total' : '', C.hdr, true)); h2.push(tC(EL[el] ?? el, C.hdr, false, '4B5563'));
+          monthsToShow.forEach((_, mi) => { h1.push(tD(mi === 0 ? EL[el] ?? el : '', BG.hdr, true)); h2.push(tD(mls[mi], BG.hdr, false, FNT.sub)); });
+          h1.push(tD(ei === 0 ? 'Total' : '', BG.hdr, true)); h2.push(tD(EL[el] ?? el, BG.hdr, false, FNT.sub));
         });
       } else {
-        monthsToShow.forEach((_, mi) => { activeElements.forEach((el, ei) => { h1.push(tC(ei === 0 ? mls[mi] : '', C.hdr, true)); h2.push(tC(EL[el] ?? el, C.hdr, false, '4B5563')); }); });
-        activeElements.forEach((el, ei) => { h1.push(tC(ei === 0 ? 'Total' : '', C.hdr, true)); h2.push(tC(EL[el] ?? el, C.hdr, false, '4B5563')); });
+        monthsToShow.forEach((_, mi) => { activeElements.forEach((el, ei) => { h1.push(tD(ei === 0 ? mls[mi] : '', BG.hdr, true)); h2.push(tD(EL[el] ?? el, BG.hdr, false, FNT.sub)); }); });
+        activeElements.forEach((el, ei) => { h1.push(tD(ei === 0 ? 'Total' : '', BG.hdr, true)); h2.push(tD(EL[el] ?? el, BG.hdr, false, FNT.sub)); });
       }
-      wsData.push(h1, h2);
-
+      addRow(h1); addRow(h2);
       displayedMonthlyGroups.forEach((g, idx) => {
-        wsData.push([tC(g.tag0, C.groupHdr, true, C.white), tC('▶ SUBTOTAL', C.groupHdr, true, C.white), ...buildMonthCells(g.byMonth, C.groupHdr, true, true)]);
-        g.items.forEach(item => wsData.push([tC(g.tag0, C.tag01Row), tC(item.tag01, C.tag01Row), ...buildMonthCells(item.byMonth, C.tag01Row)]));
+        addRow([tD(g.tag0, BG.groupHdr, true, FNT.white), tD('▶ SUBTOTAL', BG.groupHdr, true, FNT.white), ...buildMonthDefs(g.byMonth, BG.groupHdr, true)]);
+        g.items.forEach(item => addRow([tD(g.tag0, BG.tag01Row), tD(item.tag01, BG.tag01Row), ...buildMonthDefs(item.byMonth, BG.tag01Row)]));
         if (!hasTagFilter) {
-          if (idx === lastIdx03M) wsData.push([tC('▶ MARGEM DE CONTRIBUIÇÃO', C.calcRow, true, C.white), tC('', C.calcRow), ...buildMonthCells(monthlyMargemData, C.calcRow, true, true)]);
-          if (idx === lastIdx04M || (idx === lastIdx03M && lastIdx04M === -1)) wsData.push([tC('▶ EBITDA (S/ RATEIO RAIZ CSC)', C.calcRow, true, C.white), tC('', C.calcRow), ...buildMonthCells(monthlyEbitdaData, C.calcRow, true, true)]);
+          if (idx === lastIdx03M) addRow([tD('▶ MARGEM DE CONTRIBUIÇÃO', BG.calcRow, true, FNT.white), tD('', BG.calcRow), ...buildMonthDefs(monthlyMargemData, BG.calcRow, true)]);
+          if (idx === lastIdx04M || (idx === lastIdx03M && lastIdx04M === -1)) addRow([tD('▶ EBITDA (S/ RATEIO RAIZ CSC)', BG.calcRow, true, FNT.white), tD('', BG.calcRow), ...buildMonthDefs(monthlyEbitdaData, BG.calcRow, true)]);
         }
       });
-      wsData.push([tC('TOTAL GERAL', C.total, true, C.white), tC('', C.total), ...buildMonthCells(monthlyTotals, C.total, true, true)]);
+      addRow([tD('TOTAL GERAL', BG.total, true, FNT.white), tD('', BG.total), ...buildMonthDefs(monthlyTotals, BG.total, true)]);
     }
 
-    // ── Converter para worksheet ─────────────────────────────────────────
-    const plain = wsData.map(row => row.map((c: any) => (typeof c === 'object' && 'v' in c ? c.v : c)));
-    const ws2   = XLSX.utils.aoa_to_sheet(plain);
-
-    wsData.forEach((row, ri) => {
-      row.forEach((cell: any, ci: number) => {
-        if (typeof cell !== 'object' || !('v' in cell)) return;
-        const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
-        if (!ws2[addr]) return;
-        ws2[addr].t = cell.t ?? 's';
-        if (cell.z) ws2[addr].z = cell.z;
-        if (cell.s) ws2[addr].s = cell.s;
-      });
-    });
-
+    // Larguras de coluna
+    ws.getColumn(1).width = 28;
+    ws.getColumn(2).width = 36;
     const nMth = monthsToShow.length;
     const nEl  = activeElements.length;
     const nDataCols = viewMode === 'consolidado' ? nEl
                     : viewMode === 'cenario'     ? nEl * (nMth + 1)
                     : nMth * nEl + nEl;
-    ws2['!cols'] = [
-      { wch: 28 }, { wch: 36 },
-      ...Array(nDataCols).fill(0).map((_, i) => {
-        if (viewMode !== 'consolidado') return { wch: 11 };
-        return { wch: activeElements[i]?.includes('Perc') ? 9 : 16 };
-      }),
-    ];
-    ws2['!views'] = [{ state: 'frozen', xSplit: 2, ySplit: viewMode === 'consolidado' ? 1 : 2 }];
+    for (let i = 3; i <= 2 + nDataCols; i++) {
+      ws.getColumn(i).width = viewMode !== 'consolidado' ? 11 : (activeElements[i - 3]?.includes('Perc') ? 9 : 16);
+    }
 
-    const wb = XLSX.utils.book_new();
-    const mode = viewMode === 'consolidado' ? 'Consol' : viewMode === 'cenario' ? 'Cenario' : 'Mes';
-    XLSX.utils.book_append_sheet(wb, ws2, `DRE_${mode}_${per}`.substring(0, 31));
-    XLSX.writeFile(wb, `dre_gerencial_${viewMode}_${per}.xlsx`);
+    // Freeze panes
+    ws.views = [{ state: 'frozen', xSplit: 2, ySplit: viewMode === 'consolidado' ? 1 : 2 }];
+
+    // Download
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer as ArrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `dre_gerencial_${viewMode}_${per}.xlsx`; a.click();
+    URL.revokeObjectURL(url);
   }, [
     viewMode, displayedGroups, displayedMonthlyGroups, activeElements,
     expandedTag01s, expandedDrillRows, drillDimensions, dimensionCache,
