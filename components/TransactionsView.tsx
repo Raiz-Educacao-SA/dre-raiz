@@ -1031,7 +1031,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     XLSX.utils.book_append_sheet(wb, ws, "Lançamentos");
 
     // Gerar e baixar o arquivo Excel
-    const fileName = `Relatorio_SAP_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `Relatorio_Lancamentos_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, fileName);
   };
 
