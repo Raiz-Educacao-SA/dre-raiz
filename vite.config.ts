@@ -9,6 +9,33 @@ export default defineConfig(({ mode }) => {
         port: 5173,
         host: '0.0.0.0',
         strictPort: false,
+        proxy: {
+          '/api/anthropic': {
+            target: 'https://api.anthropic.com',
+            changeOrigin: true,
+            rewrite: () => '/v1/messages',
+            configure: (proxy) => {
+              proxy.on('proxyReq', (proxyReq) => {
+                proxyReq.setHeader('x-api-key', env.VITE_ANTHROPIC_API_KEY || '');
+                proxyReq.setHeader('anthropic-version', '2023-06-01');
+                proxyReq.removeHeader('origin');
+                proxyReq.removeHeader('referer');
+              });
+            },
+          },
+          '/api/groq': {
+            target: 'https://api.groq.com',
+            changeOrigin: true,
+            rewrite: () => '/openai/v1/chat/completions',
+            configure: (proxy) => {
+              proxy.on('proxyReq', (proxyReq) => {
+                proxyReq.setHeader('Authorization', `Bearer ${env.VITE_GROQ_API_KEY || ''}`);
+                proxyReq.removeHeader('origin');
+                proxyReq.removeHeader('referer');
+              });
+            },
+          },
+        },
       },
       plugins: [react()],
       define: {

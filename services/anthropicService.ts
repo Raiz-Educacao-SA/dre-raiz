@@ -1,10 +1,47 @@
 
 import { Transaction, SchoolKPIs, IAInsight, AIChartResponse } from "../types";
 
-// Use proxy server during development, Vercel API route in production
-const ANTHROPIC_API_URL = import.meta.env.DEV
-  ? "http://localhost:3021/api/anthropic"  // Development proxy
-  : "/api/anthropic";  // Production Vercel function
+// Vite proxy (dev) ou Vercel function (prod) — sempre URL relativa
+const ANTHROPIC_API_URL = "/api/anthropic";
+const GROQ_API_URL      = "/api/groq";
+
+/** Verifica se o erro da Anthropic é por saldo insuficiente */
+const isCreditError = (status: number, body: string): boolean =>
+  status === 400 && body.includes('credit') ||
+  status === 402 ||
+  (status === 529); // overloaded
+
+/** Chama o Groq como fallback — retorna texto no mesmo formato */
+const callGroqFallback = async (
+  system: string,
+  userMsg: string,
+  maxTokens: number,
+  temperature: number
+): Promise<string> => {
+  const response = await fetch(GROQ_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: maxTokens,
+      // Groq usa formato OpenAI: system vai dentro de messages
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user',   content: userMsg },
+      ],
+      temperature,
+    }),
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Groq API error: ${response.status} — ${err}`);
+  }
+  const data = await response.json();
+  // Groq retorna formato OpenAI: choices[0].message.content
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Resposta vazia do Groq');
+  return text;
+};
 
 /**
  * getFinancialInsights generates 4 strategic insights using Claude (Anthropic)
@@ -542,8 +579,134 @@ function getFallbackExecutiveSummary(context: ExecutiveSummaryContext): Executiv
 }
 
 /**
+ * generateDreNarrativeAnalysis — gera análise narrativa do DRE Gerencial via Claude
+ * Recebe os somaRows filtrados e o contexto de filtros em texto e retorna o texto gerado.
+ */
+export const generateDreNarrativeAnalysis = async (
+  somaRows: { tag0: string; tag01: string; scenario: string; month: string; total: number }[],
+  filterContext: string
+): Promise<string> => {
+  // Agrega por tag0 + scenario (reduz centenas de linhas para ~60 células)
+  const agg: Record<string, Record<string, number>> = {};
+  for (const row of somaRows) {
+    if (!agg[row.tag0]) agg[row.tag0] = {};
+    agg[row.tag0][row.scenario] = (agg[row.tag0][row.scenario] || 0) + row.total;
+  }
+
+  const fmtVal = (v: number) => v === 0 ? '—' : 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const dreTable = Object.entries(agg)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([tag0, s]) => {
+      const real   = s['Real']   || 0;
+      const orcado = s['Orçado'] || 0;
+      const a1     = s['A-1']    || 0;
+      const dOrc = orcado !== 0 ? ((real - orcado) / Math.abs(orcado) * 100).toFixed(1) + '%' : 'N/D';
+      const dA1  = a1     !== 0 ? ((real - a1)     / Math.abs(a1)     * 100).toFixed(1) + '%' : 'N/D';
+      return `| ${tag0} | ${fmtVal(real)} | ${fmtVal(orcado)} | ${dOrc} | ${fmtVal(a1)} | ${dA1} |`;
+    })
+    .join('\n');
+
+  const system = `Você é um analista financeiro sênior da Raiz Educação.
+Redija uma análise narrativa do DRE Gerencial em português brasileiro.
+A análise deve: (1) explicar principais desvios vs Orçado e vs A-1, (2) destacar grupos (tag0) com variações relevantes, (3) ser objetiva e executiva, (4) ter 3 a 5 parágrafos em prosa corrida.
+Não inclua tabelas. Use valores em R$ formatados.`;
+
+  const userMsg = `Filtros aplicados: ${filterContext}
+
+DRE Gerencial — Dados Agregados:
+| Grupo (tag0) | Real | Orçado | Δ% Orç | A-1 | Δ% A-1 |
+|---|---|---|---|---|---|
+${dreTable}
+
+Redija a análise.`;
+
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      system,
+      messages: [{ role: 'user', content: userMsg }],
+      temperature: 0.6,
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    if (isCreditError(response.status, errBody)) {
+      console.warn('⚠️ Anthropic sem crédito — usando Groq (Llama) como fallback');
+      return callGroqFallback(system, userMsg, 1500, 0.6);
+    }
+    throw new Error(`Anthropic API error: ${response.status} — ${errBody}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text;
+  if (!text) throw new Error('Resposta vazia da IA');
+  return text;
+};
+
+/**
  * Helper function to generate fallback insights
  */
+/**
+ * improveDreNarrativeAnalysis — melhora e estrutura uma análise existente com visão de FP&A
+ */
+export const improveDreNarrativeAnalysis = async (
+  existingText: string,
+  filterContext: string
+): Promise<string> => {
+  const system = `Você é um analista sênior de FP&A (Financial Planning & Analysis) da Raiz Educação.
+Sua tarefa é melhorar e estruturar uma análise narrativa do DRE Gerencial escrita por um colega.
+
+Diretrizes de FP&A que você deve aplicar:
+1. **Estrutura clara**: Contexto → Desvios principais → Causas-raiz → Impacto no EBITDA → Perspectiva
+2. **Linguagem executiva**: direta, sem redundâncias, orientada a decisão
+3. **Causalidade explícita**: toda variação deve ter uma causa identificada ("devido a", "em função de", "reflexo de")
+4. **Forward-looking**: quando pertinente, inclua implicação para o restante do período ou ação recomendada
+5. **Valores**: mantenha os números originais em R$; não invente dados novos
+6. **Tamanho**: 3 a 5 parágrafos, prosa corrida — sem bullet points, sem tabelas
+7. **Idioma**: português brasileiro, tom profissional-executivo
+
+Não altere os fatos nem os números da análise original. Apenas melhore a redação, estrutura e profundidade analítica.`;
+
+  const userMsg = `Filtros aplicados: ${filterContext}
+
+Análise original a melhorar:
+"""
+${existingText}
+"""
+
+Reescreva com visão de FP&A conforme as diretrizes.`;
+
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      system,
+      messages: [{ role: 'user', content: userMsg }],
+      temperature: 0.5,
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    if (isCreditError(response.status, errBody)) {
+      console.warn('⚠️ Anthropic sem crédito — usando Groq (Llama) como fallback');
+      return callGroqFallback(system, userMsg, 1500, 0.5);
+    }
+    throw new Error(`Anthropic API error: ${response.status} — ${errBody}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text;
+  if (!text) throw new Error('Resposta vazia da IA');
+  return text;
+};
+
 function getFallbackInsights(kpis: SchoolKPIs): IAInsight[] {
   return [
     {

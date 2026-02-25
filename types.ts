@@ -232,3 +232,28 @@ export interface PaginatedResponse<T> {
   totalPages: number;
   hasMore: boolean;
 }
+
+// ============================================
+// DRE Analyses
+// ============================================
+
+export interface DreAnalysis {
+  id: string;
+  filter_hash: string;
+  filter_context: {
+    year: string;
+    months: string[];
+    marcas: string[];
+    filiais: string[];
+    tags01: string[];
+    tags02: string[];
+    tags03: string[];
+    recurring: string | null;
+  };
+  title: string;
+  content: string;
+  requested_by: string;         // email — mesmo padrão do ManualChange
+  requested_by_name: string;
+  created_at: string;
+  updated_at: string;
+}

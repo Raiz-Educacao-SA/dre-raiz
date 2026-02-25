@@ -1,5 +1,5 @@
 import { supabase, DatabaseTransaction, DatabaseManualChange } from '../supabase';
-import { Transaction, ManualChange, PaginationParams, PaginatedResponse, ContaContabilOption } from '../types';
+import { Transaction, ManualChange, PaginationParams, PaginatedResponse, ContaContabilOption, DreAnalysis } from '../types';
 import { addPermissionFiltersToObject, applyPermissionFilters } from './permissionsService';
 
 // Converter Transaction do app para formato do banco
@@ -660,6 +660,51 @@ export const getSomaTags = async (
     console.error('❌ getSomaTags error:', err);
     return [];
   }
+};
+
+// ── DRE ANALYSES ─────────────────────────────────────────────────────────────
+
+export const getDreAnalyses = async (filterHash: string): Promise<DreAnalysis[]> => {
+  const { data, error } = await supabase
+    .from('dre_analyses')
+    .select('*')
+    .eq('filter_hash', filterHash)
+    .order('created_at', { ascending: false });
+  if (error) { console.error('❌ getDreAnalyses:', error); return []; }
+  return (data || []) as DreAnalysis[];
+};
+
+export const saveDreAnalysis = async (
+  analysis: Omit<DreAnalysis, 'id' | 'created_at' | 'updated_at'>
+): Promise<DreAnalysis | null> => {
+  const { data, error } = await supabase
+    .from('dre_analyses').insert(analysis).select().single();
+  if (error) { console.error('❌ saveDreAnalysis:', error); return null; }
+  return data as DreAnalysis;
+};
+
+export const updateDreAnalysis = async (
+  id: string, updates: Pick<DreAnalysis, 'title' | 'content'>
+): Promise<boolean> => {
+  const { error } = await supabase
+    .from('dre_analyses').update(updates).eq('id', id);
+  if (error) { console.error('❌ updateDreAnalysis:', error); return false; }
+  return true;
+};
+
+export const deleteDreAnalysis = async (id: string): Promise<boolean> => {
+  const { error } = await supabase.from('dre_analyses').delete().eq('id', id);
+  if (error) { console.error('❌ deleteDreAnalysis:', error); return false; }
+  return true;
+};
+
+export const getAllDreAnalyses = async (): Promise<DreAnalysis[]> => {
+  const { data, error } = await supabase
+    .from('dre_analyses')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) { console.error('❌ getAllDreAnalyses:', error); return []; }
+  return (data || []) as DreAnalysis[];
 };
 
 /**

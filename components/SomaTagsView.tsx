@@ -3,6 +3,9 @@ import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTa
 import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import MultiSelectFilter from './MultiSelectFilter';
+import DreAnalysisSection from './DreAnalysisSection';
+import { useAuth } from '../contexts/AuthContext';
+import { DreAnalysis } from '../types';
 
 // ── Formatação ────────────────────────────────────────────────────────────────
 const fmt = (v: number) =>
@@ -105,6 +108,46 @@ const calcXlsxRow = (label: string, d: CalcData) => [
   d.real - d.a1, d.a1 !== 0 ? (d.real - d.a1) / Math.abs(d.a1) : null,
 ];
 
+// ── Utilitários de hash/contexto de filtros ───────────────────────────────────
+
+const computeFilterHash = (
+  year: string, months: string[], marcas: string[], filiais: string[],
+  tags01: string[], tags02: string[], tags03: string[], recurring: 'Sim' | 'Não' | null
+): string => {
+  const canonical = JSON.stringify({
+    year,
+    months:  [...months].sort(),  marcas: [...marcas].sort(),
+    filiais: [...filiais].sort(), tags01: [...tags01].sort(),
+    tags02:  [...tags02].sort(),  tags03: [...tags03].sort(),
+    recurring: recurring ?? 'todos',
+  });
+  let h = 5381;
+  for (let i = 0; i < canonical.length; i++) {
+    h = ((h << 5) + h) ^ canonical.charCodeAt(i);
+    h = h & h;
+  }
+  return Math.abs(h).toString(36);
+};
+
+const computeFilterContext = (
+  year: string, months: string[], marcas: string[], filiais: string[],
+  tags01: string[], tags02: string[], tags03: string[], recurring: 'Sim' | 'Não' | null
+): string => {
+  const MONTH_LBL: Record<string, string> = {
+    '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr', '05': 'Mai', '06': 'Jun',
+    '07': 'Jul', '08': 'Ago', '09': 'Set', '10': 'Out', '11': 'Nov', '12': 'Dez',
+  };
+  const parts = [`Ano ${year}`];
+  parts.push(`Meses: ${months.length === 0 ? 'Todos' : [...months].sort().map(m => MONTH_LBL[m] || m).join(', ')}`);
+  if (marcas.length)  parts.push(`Marca: ${marcas.join(', ')}`);
+  if (filiais.length) parts.push(`Filial: ${filiais.join(', ')}`);
+  if (tags01.length)  parts.push(`Tag01: ${tags01.join(', ')}`);
+  if (tags02.length)  parts.push(`Tag02: ${tags02.join(', ')}`);
+  if (tags03.length)  parts.push(`Tag03: ${tags03.join(', ')}`);
+  if (recurring !== null) parts.push(`Recorrência: ${recurring}`);
+  return parts.join(' | ');
+};
+
 // ── Componente principal ──────────────────────────────────────────────────────
 interface SomaTagsViewProps {
   onRegisterActions?: (actions: { refresh: () => void; exportExcel: () => void }) => void;
@@ -117,6 +160,7 @@ interface SomaTagsViewProps {
 }
 
 const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01, presentationMode: externalPM, onPresentationModeChange }) => {
+  const { user: authUser } = useAuth();
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
@@ -214,6 +258,31 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     deltaAbsOrcado: showDeltaAbsOrcado, deltaPercOrcado: showDeltaPercOrcado,
     a1: showA1, deltaAbsA1: showDeltaAbsA1, deltaPercA1: showDeltaPercA1,
   }), [showReal, showOrcado, showA1, showDeltaAbsOrcado, showDeltaPercOrcado, showDeltaAbsA1, showDeltaPercA1]);
+
+  // ── Memos de hash e contexto de filtros (para DreAnalysisSection) ─────────
+  const filterHash = useMemo(() =>
+    computeFilterHash(year, selectedMonths, selectedMarcas, selectedFiliais,
+                      selectedTags01, selectedTags02, selectedTags03, recurring),
+    [year, selectedMonths, selectedMarcas, selectedFiliais,
+     selectedTags01, selectedTags02, selectedTags03, recurring]);
+
+  const filterContextString = useMemo(() =>
+    computeFilterContext(year, selectedMonths, selectedMarcas, selectedFiliais,
+                         selectedTags01, selectedTags02, selectedTags03, recurring),
+    [year, selectedMonths, selectedMarcas, selectedFiliais,
+     selectedTags01, selectedTags02, selectedTags03, recurring]);
+
+  const filterContextObj = useMemo(() => ({
+    year,
+    months:  [...selectedMonths].sort(),
+    marcas:  [...selectedMarcas].sort(),
+    filiais: [...selectedFiliais].sort(),
+    tags01:  [...selectedTags01].sort(),
+    tags02:  [...selectedTags02].sort(),
+    tags03:  [...selectedTags03].sort(),
+    recurring,
+  }), [year, selectedMonths, selectedMarcas, selectedFiliais,
+      selectedTags01, selectedTags02, selectedTags03, recurring]);
 
   // ColSpans dinâmicos para grupos do cabeçalho (Consolidado)
   const orcGrpCols = [showOrcado, showDeltaAbsOrcado, showDeltaPercOrcado].filter(Boolean).length;
@@ -1315,6 +1384,25 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     );
   };
 
+  // ── Callback: restaura filtros a partir do contexto salvo numa análise ───
+  const handleRestoreFilters = useCallback((ctx: DreAnalysis['filter_context']) => {
+    setYear(ctx.year);
+    setSelectedMonths(ctx.months);
+    setSelectedMarcas(ctx.marcas);
+    setSelectedFiliais(ctx.filiais);
+    setSelectedTags01(ctx.tags01);
+    setSelectedTags02(ctx.tags02);
+    setSelectedTags03(ctx.tags03);
+    setRecurring(
+      ctx.recurring === 'Sim' ? 'Sim' :
+      ctx.recurring === 'Não' ? 'Não' : null
+    );
+    // Limpa cache de drill pois filtros mudaram
+    setDimensionCache({});
+    setExpandedTag01s({});
+    setExpandedDrillRows({});
+  }, []);
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="p-3 space-y-1.5 bg-gradient-to-br from-gray-50 to-white min-h-screen">
@@ -1959,6 +2047,18 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           </div>
         </div>
       ) : null}
+
+      {/* ══ ANÁLISES DO RESULTADO ══ */}
+      {authUser && !isTableFullscreen && (
+        <DreAnalysisSection
+          filterHash={filterHash}
+          filterContext={filterContextString}
+          filterContextObj={filterContextObj}
+          somaRows={rows}
+          currentUser={authUser}
+          onRestoreFilters={handleRestoreFilters}
+        />
+      )}
     </div>
   );
 };
