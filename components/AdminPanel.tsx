@@ -51,10 +51,23 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco'>('import');
 
   // Estado para busca de usuários
   const [userSearch, setUserSearch] = useState('');
+
+  // Estados para aba Banco
+  const [bancoYear, setBancoYear] = useState(String(new Date().getFullYear()));
+  const [bancoMonths, setBancoMonths] = useState<string[]>([]);
+  const [bancoMarcas, setBancoMarcas] = useState<string[]>([]);
+  const [bancoFiliais, setBancoFiliais] = useState<string[]>([]);
+  const [bancoTags01, setBancoTags01] = useState<string[]>([]);
+  const [bancoTags02, setBancoTags02] = useState<string[]>([]);
+  const [bancoTags03, setBancoTags03] = useState<string[]>([]);
+  const [bancoTag02Options, setBancoTag02Options] = useState<string[]>([]);
+  const [bancoTag03Options, setBancoTag03Options] = useState<string[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+  const [bancoMessage, setBancoMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Filtrar usuários por busca
   const filteredUsers = users.filter(user => {
@@ -69,6 +82,7 @@ const AdminPanel: React.FC = () => {
   useEffect(() => {
     loadUsers();
     loadAvailableValues();
+    loadBancoTagOptions();
   }, []);
 
   const loadAvailableValues = async () => {
@@ -88,6 +102,148 @@ const AdminPanel: React.FC = () => {
       setAvailableValues({ marcas, filiais, categories, tags, tag01Values });
     } catch (error) {
       console.error('Erro ao carregar valores disponíveis:', error);
+    }
+  };
+
+  const loadBancoTagOptions = async () => {
+    try {
+      const [tag02Opts, tag03Opts] = await Promise.all([
+        supabaseService.getTag02Options(),
+        supabaseService.getTag03Options(),
+      ]);
+      setBancoTag02Options(tag02Opts);
+      setBancoTag03Options(tag03Opts);
+    } catch (error) {
+      console.error('Erro ao carregar opções de tag02/tag03:', error);
+    }
+  };
+
+  const toggleBancoMulti = (
+    value: string,
+    current: string[],
+    setter: React.Dispatch<React.SetStateAction<string[]>>
+  ) => {
+    setter(current.includes(value) ? current.filter(v => v !== value) : [...current, value]);
+  };
+
+  const showBancoMessage = (type: 'success' | 'error' | 'info', text: string) => {
+    setBancoMessage({ type, text });
+    setTimeout(() => setBancoMessage(null), 5000);
+  };
+
+  const handleExportBanco = async (format: 'xlsx' | 'csv') => {
+    setIsExporting(true);
+    showBancoMessage('info', 'Buscando dados do banco...');
+    try {
+      const monthFrom = bancoMonths.length > 0 ? `${bancoYear}-${[...bancoMonths].sort()[0]}` : `${bancoYear}-01`;
+      const monthTo   = bancoMonths.length > 0 ? `${bancoYear}-${[...bancoMonths].sort().slice(-1)[0]}` : `${bancoYear}-12`;
+
+      const filters: supabaseService.TransactionFilters = {
+        scenario: 'Real',
+        monthFrom,
+        monthTo,
+        ...(bancoMarcas.length  > 0 && { marca:  bancoMarcas  }),
+        ...(bancoFiliais.length > 0 && { nome_filial: bancoFiliais }),
+        ...(bancoTags01.length  > 0 && { tag01:  bancoTags01  }),
+        ...(bancoTags02.length  > 0 && { tag02:  bancoTags02  }),
+        ...(bancoTags03.length  > 0 && { tag03:  bancoTags03  }),
+      };
+
+      const result = await supabaseService.getFilteredTransactions(filters);
+      const rows = result.data;
+
+      if (rows.length === 0) {
+        showBancoMessage('error', 'Nenhum registro encontrado com os filtros aplicados.');
+        setIsExporting(false);
+        return;
+      }
+
+      const exportData = rows.map(t => ({
+        'ID':             t.id ?? '',
+        'Cenário':        t.scenario ?? 'Real',
+        'Data':           t.date,
+        'Competência':    t.date?.substring(0, 7) ?? '',
+        'Conta Contábil': t.conta_contabil ?? '',
+        'Categoria':      t.category ?? '',
+        'Filial (código)':t.filial ?? '',
+        'Filial':         t.nome_filial ?? '',
+        'Marca':          t.marca ?? '',
+        'Fornecedor':     t.vendor ?? '',
+        'Descrição':      t.description ?? '',
+        'Valor':          t.amount ?? 0,
+        'Ticket':         t.ticket ?? '',
+        'Recorrente':     t.recurring ?? '',
+        'Status':         t.status ?? '',
+        'Tipo':           t.type ?? '',
+        'Tag0':           t.tag0 ?? '',
+        'Tag01':          t.tag01 ?? '',
+        'Tag02':          t.tag02 ?? '',
+        'Tag03':          t.tag03 ?? '',
+        'Nat. Orç.':      t.nat_orc ?? '',
+        'Chave ID':       t.chave_id ?? '',
+        'Justificativa':  t.justification ?? '',
+        'Atualizado em':  t.updated_at ?? '',
+      }));
+
+      if (format === 'xlsx') {
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        ws['!cols'] = [
+          { wch: 38 }, // ID
+          { wch: 10 }, // Cenário
+          { wch: 12 }, // Data
+          { wch: 12 }, // Competência
+          { wch: 22 }, // Conta Contábil
+          { wch: 20 }, // Categoria
+          { wch: 14 }, // Filial (código)
+          { wch: 30 }, // Filial
+          { wch: 12 }, // Marca
+          { wch: 30 }, // Fornecedor
+          { wch: 40 }, // Descrição
+          { wch: 14 }, // Valor
+          { wch: 14 }, // Ticket
+          { wch: 12 }, // Recorrente
+          { wch: 12 }, // Status
+          { wch: 15 }, // Tipo
+          { wch: 20 }, // Tag0
+          { wch: 20 }, // Tag01
+          { wch: 20 }, // Tag02
+          { wch: 20 }, // Tag03
+          { wch: 14 }, // Nat. Orç.
+          { wch: 20 }, // Chave ID
+          { wch: 40 }, // Justificativa
+          { wch: 22 }, // Atualizado em
+        ];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Transações');
+        const filterLabel = [
+          bancoYear,
+          bancoMonths.length ? bancoMonths.join('_') : 'todos_meses',
+          bancoMarcas.length ? bancoMarcas.slice(0, 2).join('_') : '',
+        ].filter(Boolean).join('_');
+        XLSX.writeFile(wb, `banco_${filterLabel}_${rows.length}reg.xlsx`);
+      } else {
+        const headers = Object.keys(exportData[0]).join(';');
+        const csvRows = exportData.map(row =>
+          Object.values(row).map(v =>
+            typeof v === 'string' && (v.includes(';') || v.includes('"') || v.includes('\n'))
+              ? `"${v.replace(/"/g, '""')}"` : v
+          ).join(';')
+        );
+        const csvContent = '\uFEFF' + [headers, ...csvRows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `banco_${bancoYear}_${rows.length}reg.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      showBancoMessage('success', `✅ ${rows.length} registros exportados com sucesso!`);
+    } catch (error: any) {
+      showBancoMessage('error', `Erro ao exportar: ${error.message}`);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -422,6 +578,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'users' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('banco')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'banco'
+              ? 'text-blue-700 bg-blue-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Database size={14} />
+            Banco
+          </div>
+          {activeTab === 'banco' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -1057,6 +1229,270 @@ const AdminPanel: React.FC = () => {
         </ul>
       </div>
         </>
+      )}
+
+      {/* ── ABA: BANCO ── */}
+      {activeTab === 'banco' && (
+        <div className="bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-300 rounded-xl p-4 shadow">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-blue-100 p-2 rounded-lg">
+              <Database className="text-blue-600" size={20} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-black text-blue-900">🗄️ Exportar Dados do Banco</h2>
+              <p className="text-xs text-blue-700">Transações reais (cenário Real) com filtros aplicados</p>
+            </div>
+          </div>
+
+          {/* Mensagem de feedback */}
+          {bancoMessage && (
+            <div className={`p-2 rounded-lg flex items-center gap-2 mb-3 ${
+              bancoMessage.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' :
+              bancoMessage.type === 'error'   ? 'bg-red-100 text-red-800 border border-red-300' :
+                                               'bg-blue-100 text-blue-800 border border-blue-300'
+            }`}>
+              {bancoMessage.type === 'success' ? <CheckCircle size={14} /> :
+               bancoMessage.type === 'error'   ? <AlertTriangle size={14} /> :
+               <FileSpreadsheet size={14} />}
+              <span className="font-bold text-xs">{bancoMessage.text}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* Coluna esquerda: Período e Dimensões */}
+            <div className="space-y-3">
+
+              {/* Ano */}
+              <div className="bg-white rounded-lg p-3 border border-blue-200">
+                <p className="font-bold text-[10px] text-blue-900 uppercase mb-2">Ano</p>
+                <select
+                  value={bancoYear}
+                  onChange={e => setBancoYear(e.target.value)}
+                  className="w-full px-2 py-1.5 border border-blue-200 rounded text-xs font-bold text-blue-900 focus:outline-none focus:border-blue-400"
+                >
+                  {[2023, 2024, 2025, 2026, 2027].map(y => (
+                    <option key={y} value={String(y)}>{y}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Meses */}
+              <div className="bg-white rounded-lg p-3 border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-bold text-[10px] text-blue-900 uppercase">Meses</p>
+                  <button
+                    onClick={() => setBancoMonths([])}
+                    className="text-[9px] text-blue-500 hover:text-blue-700"
+                  >
+                    {bancoMonths.length === 0 ? 'Todos' : `${bancoMonths.length} sel. · Limpar`}
+                  </button>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {[
+                    ['01','Jan'],['02','Fev'],['03','Mar'],['04','Abr'],
+                    ['05','Mai'],['06','Jun'],['07','Jul'],['08','Ago'],
+                    ['09','Set'],['10','Out'],['11','Nov'],['12','Dez'],
+                  ].map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => toggleBancoMulti(val, bancoMonths, setBancoMonths)}
+                      className={`py-1 rounded text-[10px] font-bold border transition-all ${
+                        bancoMonths.includes(val)
+                          ? 'bg-blue-500 text-white border-blue-500'
+                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-300'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Marca */}
+              <div className="bg-white rounded-lg p-3 border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-bold text-[10px] text-blue-900 uppercase">Marca</p>
+                  {bancoMarcas.length > 0 && (
+                    <button onClick={() => setBancoMarcas([])} className="text-[9px] text-blue-500 hover:text-blue-700">
+                      {bancoMarcas.length} sel. · Limpar
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                  {availableValues.marcas.map(m => (
+                    <label key={m} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={bancoMarcas.includes(m)}
+                        onChange={() => toggleBancoMulti(m, bancoMarcas, setBancoMarcas)}
+                        className="accent-blue-500"
+                      />
+                      <span className="text-[10px] text-gray-700">{m}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filial */}
+              <div className="bg-white rounded-lg p-3 border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-bold text-[10px] text-blue-900 uppercase">Filial</p>
+                  {bancoFiliais.length > 0 && (
+                    <button onClick={() => setBancoFiliais([])} className="text-[9px] text-blue-500 hover:text-blue-700">
+                      {bancoFiliais.length} sel. · Limpar
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                  {availableValues.filiais.map(f => (
+                    <label key={f} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={bancoFiliais.includes(f)}
+                        onChange={() => toggleBancoMulti(f, bancoFiliais, setBancoFiliais)}
+                        className="accent-blue-500"
+                      />
+                      <span className="text-[10px] text-gray-700">{f}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Coluna direita: Tags e Botões */}
+            <div className="space-y-3">
+
+              {/* Tag01 */}
+              <div className="bg-white rounded-lg p-3 border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-bold text-[10px] text-blue-900 uppercase">Tag 01</p>
+                  {bancoTags01.length > 0 && (
+                    <button onClick={() => setBancoTags01([])} className="text-[9px] text-blue-500 hover:text-blue-700">
+                      {bancoTags01.length} sel. · Limpar
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1 max-h-[120px] overflow-y-auto">
+                  {availableValues.tag01Values.map(t => (
+                    <label key={t} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+                      <input
+                        type="checkbox"
+                        checked={bancoTags01.includes(t)}
+                        onChange={() => toggleBancoMulti(t, bancoTags01, setBancoTags01)}
+                        className="accent-blue-500"
+                      />
+                      <span className="text-[10px] text-gray-700">{t}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Tag02 */}
+              {bancoTag02Options.length > 0 && (
+                <div className="bg-white rounded-lg p-3 border border-blue-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-bold text-[10px] text-blue-900 uppercase">Tag 02</p>
+                    {bancoTags02.length > 0 && (
+                      <button onClick={() => setBancoTags02([])} className="text-[9px] text-blue-500 hover:text-blue-700">
+                        {bancoTags02.length} sel. · Limpar
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1 max-h-[100px] overflow-y-auto">
+                    {bancoTag02Options.map(t => (
+                      <label key={t} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={bancoTags02.includes(t)}
+                          onChange={() => toggleBancoMulti(t, bancoTags02, setBancoTags02)}
+                          className="accent-blue-500"
+                        />
+                        <span className="text-[10px] text-gray-700">{t}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Tag03 */}
+              {bancoTag03Options.length > 0 && (
+                <div className="bg-white rounded-lg p-3 border border-blue-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-bold text-[10px] text-blue-900 uppercase">Tag 03</p>
+                    {bancoTags03.length > 0 && (
+                      <button onClick={() => setBancoTags03([])} className="text-[9px] text-blue-500 hover:text-blue-700">
+                        {bancoTags03.length} sel. · Limpar
+                      </button>
+                    )}
+                  </div>
+                  <div className="space-y-1 max-h-[100px] overflow-y-auto">
+                    {bancoTag03Options.map(t => (
+                      <label key={t} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={bancoTags03.includes(t)}
+                          onChange={() => toggleBancoMulti(t, bancoTags03, setBancoTags03)}
+                          className="accent-blue-500"
+                        />
+                        <span className="text-[10px] text-gray-700">{t}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Botões de exportação */}
+              <div className="bg-white rounded-lg p-3 border border-blue-200">
+                <p className="font-bold text-[10px] text-blue-900 uppercase mb-3">Exportar</p>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => handleExportBanco('xlsx')}
+                    disabled={isExporting}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg font-bold text-xs uppercase transition-all shadow hover:shadow-md"
+                  >
+                    {isExporting ? (
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    ) : (
+                      <FileSpreadsheet size={14} />
+                    )}
+                    Exportar Excel (.xlsx)
+                  </button>
+                  <button
+                    onClick={() => handleExportBanco('csv')}
+                    disabled={isExporting}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-300 text-white rounded-lg font-bold text-xs uppercase transition-all shadow hover:shadow-md"
+                  >
+                    {isExporting ? (
+                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    ) : (
+                      <Download size={14} />
+                    )}
+                    Exportar CSV
+                  </button>
+                </div>
+                <p className="text-[9px] text-blue-600 mt-2">
+                  ℹ️ Sem filtros de meses: exporta o ano inteiro. Campos em branco exportam todos os valores.
+                </p>
+              </div>
+
+              {/* Resumo dos filtros ativos */}
+              {(bancoMarcas.length > 0 || bancoFiliais.length > 0 || bancoTags01.length > 0 || bancoTags02.length > 0 || bancoTags03.length > 0 || bancoMonths.length > 0) && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                  <p className="font-bold text-[10px] text-blue-800 mb-1">Filtros ativos:</p>
+                  <div className="flex flex-wrap gap-1">
+                    <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px] font-bold">Ano: {bancoYear}</span>
+                    {bancoMonths.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Meses: {bancoMonths.length}</span>}
+                    {bancoMarcas.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Marca: {bancoMarcas.length}</span>}
+                    {bancoFiliais.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Filial: {bancoFiliais.length}</span>}
+                    {bancoTags01.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Tag01: {bancoTags01.length}</span>}
+                    {bancoTags02.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Tag02: {bancoTags02.length}</span>}
+                    {bancoTags03.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Tag03: {bancoTags03.length}</span>}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

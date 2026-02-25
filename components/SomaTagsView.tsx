@@ -409,11 +409,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     }
   }, [selectedTags02]);
 
-  // Limpa cache de drill ao trocar filtros
+  // Limpa cache de drill ao trocar filtros (mantém abertura das linhas)
   useEffect(() => {
     setDimensionCache({});
-    setExpandedTag01s({});
-    setExpandedDrillRows({});
   }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, recurring]);
 
   // ── Filtro client-side por Tag01 e meses selecionados ───────────────────
@@ -1566,8 +1564,6 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                 onClick={() => {
                   setDrillDimensions(prev => prev.includes(d.id) ? prev.filter(x => x !== d.id) : [...prev, d.id]);
                   setDimensionCache({});
-                  setExpandedTag01s({});
-                  setExpandedDrillRows({});
                 }}
                 className={`px-2 py-1 rounded-lg text-[12px] font-black uppercase transition-all flex items-center gap-1.5 border shadow-sm ${
                   active
