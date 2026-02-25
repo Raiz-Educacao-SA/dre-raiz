@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
 import DreAnalysisSection from './DreAnalysisSection';
@@ -207,6 +207,20 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [drillDimensions,   setDrillDimensions]   = useState<string[]>([]);
   const [dimensionSort,     setDimensionSort]     = useState<'alpha' | 'desc' | 'asc'>('desc');
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
+
+  // ── Seleção de células para somatório ─────────────────────────────────────
+  const [cellSelection, setCellSelection] = useState<Map<string, { value: number; label: string }>>(new Map());
+  const selectedSum = useMemo(() =>
+    Array.from(cellSelection.values()).reduce((s, c) => s + c.value, 0), [cellSelection]);
+  const toggleCellSel = useCallback((id: string, value: number, label: string) => {
+    if (value === 0) return;
+    setCellSelection(prev => {
+      const n = new Map(prev);
+      n.has(id) ? n.delete(id) : n.set(id, { value, label });
+      return n;
+    });
+  }, []);
+  const isCellSel = (id: string) => cellSelection.has(id);
 
   // Refs para evitar closure stale em loadDrillData (useCallback sem deps)
   const yearRef           = useRef(year);
@@ -1466,11 +1480,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                             <React.Fragment key={m}>
                               {activeElements.map(el => {
                                 switch (el) {
-                                  case 'Real':            return <td key="r"   className={`px-1 py-0.5 text-right font-mono text-gray-900 text-[12px] w-[80px] hover:bg-yellow-300 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''}`} onDoubleClick={() => drillTo('Real', g.tag0, r.tag01, m)}>{md.real   !== 0 ? fmtK(md.real)   : <span className="text-gray-300">—</span>}</td>;
-                                  case 'Orçado':          return <td key="o"   className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[12px] w-[80px] hover:bg-yellow-300 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''}`} onDoubleClick={() => drillTo('Orçado', g.tag0, r.tag01, m)}>{md.orcado !== 0 ? fmtK(md.orcado) : <span className="text-gray-300">—</span>}</td>;
+                                  case 'Real':            return <td key="r"   onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|Real|${m}`, md.real, `Real: ${r.tag01} (${m.split('-')[1]})`)} className={`px-1 py-0.5 text-right font-mono text-[12px] w-[80px] cursor-pointer transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''} ${isCellSel(`${g.tag0}|${r.tag01}|Real|${m}`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : 'text-gray-900 hover:bg-yellow-300'}`} onDoubleClick={() => drillTo('Real', g.tag0, r.tag01, m)}>{md.real   !== 0 ? fmtK(md.real)   : <span className="text-gray-300">—</span>}</td>;
+                                  case 'Orçado':          return <td key="o"   onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|Orçado|${m}`, md.orcado, `Orçado: ${r.tag01} (${m.split('-')[1]})`)} className={`px-1 py-0.5 text-right font-mono text-[12px] w-[80px] cursor-pointer transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''} ${isCellSel(`${g.tag0}|${r.tag01}|Orçado|${m}`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : 'text-gray-600 hover:bg-yellow-300'}`} onDoubleClick={() => drillTo('Orçado', g.tag0, r.tag01, m)}>{md.orcado !== 0 ? fmtK(md.orcado) : <span className="text-gray-300">—</span>}</td>;
                                   case 'DeltaAbsOrcado':  return <td key="dao" className={`px-0.5 py-0.5 text-right font-mono text-[12px] w-[85px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtK(dOrçM) : <span className="text-gray-300">—</span>}</td>;
                                   case 'DeltaPercOrcado': return <td key="dpo" className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${md.orcado !== 0 ? deltaClass(dOrçM, md.orcado) : 'text-gray-300'} ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.orcado !== 0 ? fmtPct(md.real, md.orcado) : <span className="text-gray-300">—</span>}</td>;
-                                  case 'A1':              return <td key="a"   className={`px-1 py-0.5 text-right font-mono text-gray-600 text-[12px] w-[80px] hover:bg-yellow-300 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''}`} onDoubleClick={() => drillTo('A-1', g.tag0, r.tag01, m)}>{md.a1 !== 0 ? fmtK(md.a1) : <span className="text-gray-300">—</span>}</td>;
+                                  case 'A1':              return <td key="a"   onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|A1|${m}`, md.a1, `A-1: ${r.tag01} (${m.split('-')[1]})`)} className={`px-1 py-0.5 text-right font-mono text-[12px] w-[80px] cursor-pointer transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''} ${isCellSel(`${g.tag0}|${r.tag01}|A1|${m}`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : 'text-gray-600 hover:bg-yellow-300'}`} onDoubleClick={() => drillTo('A-1', g.tag0, r.tag01, m)}>{md.a1 !== 0 ? fmtK(md.a1) : <span className="text-gray-300">—</span>}</td>;
                                   case 'DeltaAbsA1':      return <td key="da1" className={`px-0.5 py-0.5 text-right font-mono text-[12px] w-[85px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'} ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-gray-200' : ''}`}>{md.a1 !== 0 ? fmtK(dA1M) : <span className="text-gray-300">—</span>}</td>;
                                   case 'DeltaPercA1':     return <td key="dp1" className={`px-0.5 py-0.5 text-center text-[9px] w-[70px] ${md.a1 !== 0 ? deltaClass(dA1M, md.a1) : 'text-gray-300'}`}>{md.a1 !== 0 ? fmtPct(md.real, md.a1) : <span className="text-gray-300">—</span>}</td>;
                                   default: return null;
@@ -1481,11 +1495,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                         })}
                         {activeElements.map(el => {
                           switch (el) {
-                            case 'Real':            return <td key="r-t"   className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] bg-blue-50 text-[#152e55] hover:bg-yellow-300 transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''}`} onDoubleClick={() => drillTo('Real', g.tag0, r.tag01, null)}>{fmtK(tot.real)}</td>;
-                            case 'Orçado':          return <td key="o-t"   className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] bg-green-50 text-green-900 hover:bg-yellow-300 transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''}`} onDoubleClick={() => drillTo('Orçado', g.tag0, r.tag01, null)}>{fmtK(tot.orcado)}</td>;
+                            case 'Real':            return <td key="r-t"   onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|Real|total`, tot.real, `Real: ${r.tag01} (Total)`)} className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] cursor-pointer transition-colors ${mesFirstCol === 'real' ? 'border-l-2 border-l-gray-200' : ''} ${isCellSel(`${g.tag0}|${r.tag01}|Real|total`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : 'bg-blue-50 text-[#152e55] hover:bg-yellow-300'}`} onDoubleClick={() => drillTo('Real', g.tag0, r.tag01, null)}>{fmtK(tot.real)}</td>;
+                            case 'Orçado':          return <td key="o-t"   onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|Orçado|total`, tot.orcado, `Orçado: ${r.tag01} (Total)`)} className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] cursor-pointer transition-colors ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-gray-200' : ''} ${isCellSel(`${g.tag0}|${r.tag01}|Orçado|total`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : 'bg-green-50 text-green-900 hover:bg-yellow-300'}`} onDoubleClick={() => drillTo('Orçado', g.tag0, r.tag01, null)}>{fmtK(tot.orcado)}</td>;
                             case 'DeltaAbsOrcado':  return <td key="dao-t" className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] bg-green-50 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-gray-200' : ''} ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtK(dOrçT) : '—'}</td>;
                             case 'DeltaPercOrcado': return <td key="dpo-t" className={`px-1 py-0.5 text-center text-[9px] w-[100px] bg-green-50 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-gray-200' : ''} ${hOrc ? deltaClass(dOrçT, tot.orcado) : 'text-gray-300'}`}>{hOrc ? fmtPct(tot.real, tot.orcado) : '—'}</td>;
-                            case 'A1':              return <td key="a-t"   className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] bg-purple-50 text-purple-900 hover:bg-yellow-300 transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''}`} onDoubleClick={() => drillTo('A-1', g.tag0, r.tag01, null)}>{fmtK(tot.a1)}</td>;
+                            case 'A1':              return <td key="a-t"   onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|A1|total`, tot.a1, `A-1: ${r.tag01} (Total)`)} className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] cursor-pointer transition-colors ${mesFirstCol === 'a1' ? 'border-l-2 border-l-gray-200' : ''} ${isCellSel(`${g.tag0}|${r.tag01}|A1|total`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : 'bg-purple-50 text-purple-900 hover:bg-yellow-300'}`} onDoubleClick={() => drillTo('A-1', g.tag0, r.tag01, null)}>{fmtK(tot.a1)}</td>;
                             case 'DeltaAbsA1':      return <td key="da1-t" className={`px-1 py-0.5 text-right font-mono font-semibold text-[12px] w-[100px] bg-purple-50 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-gray-200' : ''} ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtK(dA1T) : '—'}</td>;
                             case 'DeltaPercA1':     return <td key="dp1-t" className={`px-1 py-0.5 text-center text-[9px] w-[100px] bg-purple-50 ${hA1 ? deltaClass(dA1T, tot.a1) : 'text-gray-300'}`}>{hA1 ? fmtPct(tot.real, tot.a1) : '—'}</td>;
                             default: return null;
@@ -2150,11 +2164,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                           <td className={TAG0_LABEL} onClick={() => toggleGroup(g.tag0)}>{g.tag0}</td>
                           {activeElements.map(el => {
                             switch (el) {
-                              case 'Real':            return <td key="real" className="px-2 py-1 text-right font-mono font-black border-r border-white/10 cursor-pointer" onDoubleClick={() => drillTo('Real', g.tag0, null, null)}>{fmt(g.real)}</td>;
-                              case 'Orçado':          return <td key="orc"  className={`px-2 py-1 text-right font-mono font-black cursor-pointer ${hasOrc ? '' : 'text-gray-500'}`} onDoubleClick={() => drillTo('Orçado', g.tag0, null, null)}>{hasOrc ? fmt(g.orcado) : '—'}</td>;
+                              case 'Real':            return <td key="real" onClick={() => toggleCellSel(`${g.tag0}|Real`, g.real, `Real: ${g.tag0}`)} className={`px-2 py-1 text-right font-mono font-black border-r border-white/10 cursor-pointer ${isCellSel(`${g.tag0}|Real`) ? 'bg-blue-200 text-blue-900 ring-2 ring-inset ring-blue-500' : ''}`} onDoubleClick={() => drillTo('Real', g.tag0, null, null)}>{fmt(g.real)}</td>;
+                              case 'Orçado':          return <td key="orc"  onClick={() => toggleCellSel(`${g.tag0}|Orçado`, g.orcado, `Orçado: ${g.tag0}`)} className={`px-2 py-1 text-right font-mono font-black cursor-pointer ${isCellSel(`${g.tag0}|Orçado`) ? 'bg-blue-200 text-blue-900 ring-2 ring-inset ring-blue-500' : hasOrc ? '' : 'text-gray-500'}`} onDoubleClick={() => drillTo('Orçado', g.tag0, null, null)}>{hasOrc ? fmt(g.orcado) : '—'}</td>;
                               case 'DeltaAbsOrcado':  return <td key="dao"  className={`px-2 py-1 text-right font-mono font-black ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>{hasOrc ? fmt(dOrç) : '—'}</td>;
                               case 'DeltaPercOrcado': return <td key="dpo"  className={`px-2 py-1 text-right font-mono font-black border-r border-white/10 ${hasOrc ? deltaClass(dOrç, g.orcado) : 'text-gray-500'}`}>{fmtPct(g.real, g.orcado)}</td>;
-                              case 'A1':              return <td key="a1"   className={`px-2 py-1 text-right font-mono font-black cursor-pointer ${hasA1 ? '' : 'text-gray-500'}`} onDoubleClick={() => drillTo('A-1', g.tag0, null, null)}>{hasA1 ? fmt(g.a1) : '—'}</td>;
+                              case 'A1':              return <td key="a1"   onClick={() => toggleCellSel(`${g.tag0}|A1`, g.a1, `A-1: ${g.tag0}`)} className={`px-2 py-1 text-right font-mono font-black cursor-pointer ${isCellSel(`${g.tag0}|A1`) ? 'bg-blue-200 text-blue-900 ring-2 ring-inset ring-blue-500' : hasA1 ? '' : 'text-gray-500'}`} onDoubleClick={() => drillTo('A-1', g.tag0, null, null)}>{hasA1 ? fmt(g.a1) : '—'}</td>;
                               case 'DeltaAbsA1':      return <td key="da1"  className={`px-2 py-1 text-right font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>{hasA1 ? fmt(dA1) : '—'}</td>;
                               case 'DeltaPercA1':     return <td key="dp1"  className={`px-2 py-1 text-right font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>{fmtPct(g.real, g.a1)}</td>;
                               default: return null;
@@ -2179,11 +2193,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                                 <td className="px-2 py-1 pl-6 text-gray-950 font-extrabold truncate sticky left-8 z-20 w-[280px] bg-gray-100 group-hover:bg-yellow-300 transition-colors">{r.tag01}</td>
                                 {activeElements.map(el => {
                                   switch (el) {
-                                    case 'Real':            return <td key="real" className="px-2 py-1 text-right font-mono text-gray-900 border-r border-gray-100 cursor-pointer" onDoubleClick={() => drillTo('Real', g.tag0, r.tag01, null)}>{fmt(r.real)}</td>;
-                                    case 'Orçado':          return <td key="orc"  className={`px-2 py-1 text-right font-mono cursor-pointer ${rHasOrc ? 'text-gray-900' : 'text-gray-300'}`} onDoubleClick={() => drillTo('Orçado', g.tag0, r.tag01, null)}>{rHasOrc ? fmt(r.orcado) : '—'}</td>;
+                                    case 'Real':            return <td key="real" onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|Real`, r.real, `Real: ${r.tag01}`)} className={`px-2 py-1 text-right font-mono border-r border-gray-100 cursor-pointer ${isCellSel(`${g.tag0}|${r.tag01}|Real`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : 'text-gray-900 hover:bg-yellow-300'}`} onDoubleClick={() => drillTo('Real', g.tag0, r.tag01, null)}>{fmt(r.real)}</td>;
+                                    case 'Orçado':          return <td key="orc"  onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|Orçado`, r.orcado, `Orçado: ${r.tag01}`)} className={`px-2 py-1 text-right font-mono cursor-pointer ${isCellSel(`${g.tag0}|${r.tag01}|Orçado`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : rHasOrc ? 'text-gray-900 hover:bg-yellow-300' : 'text-gray-300'}`} onDoubleClick={() => drillTo('Orçado', g.tag0, r.tag01, null)}>{rHasOrc ? fmt(r.orcado) : '—'}</td>;
                                     case 'DeltaAbsOrcado':  return <td key="dao"  className={`px-2 py-1 text-right font-mono ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? fmt(rdOrç) : '—'}</td>;
                                     case 'DeltaPercOrcado': return <td key="dpo"  className={`px-2 py-1 text-right font-mono border-r border-gray-200 ${rHasOrc ? deltaClass(rdOrç, r.orcado) : 'text-gray-300'}`}>{rHasOrc ? `${((rdOrç / Math.abs(r.orcado)) * 100).toFixed(1)}%` : '—'}</td>;
-                                    case 'A1':              return <td key="a1"   className={`px-2 py-1 text-right font-mono cursor-pointer ${rHasA1 ? 'text-gray-900' : 'text-gray-300'}`} onDoubleClick={() => drillTo('A-1', g.tag0, r.tag01, null)}>{rHasA1 ? fmt(r.a1) : '—'}</td>;
+                                    case 'A1':              return <td key="a1"   onClick={() => toggleCellSel(`${g.tag0}|${r.tag01}|A1`, r.a1, `A-1: ${r.tag01}`)} className={`px-2 py-1 text-right font-mono cursor-pointer ${isCellSel(`${g.tag0}|${r.tag01}|A1`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : rHasA1 ? 'text-gray-900 hover:bg-yellow-300' : 'text-gray-300'}`} onDoubleClick={() => drillTo('A-1', g.tag0, r.tag01, null)}>{rHasA1 ? fmt(r.a1) : '—'}</td>;
                                     case 'DeltaAbsA1':      return <td key="da1"  className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(rdA1) : '—'}</td>;
                                     case 'DeltaPercA1':     return <td key="dp1"  className={`px-2 py-1 text-right font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? `${((rdA1 / Math.abs(r.a1)) * 100).toFixed(1)}%` : '—'}</td>;
                                     default: return null;
@@ -2248,6 +2262,43 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           </div>
         </div>
       ) : null}
+
+      {/* ══ PAINEL DE SOMATÓRIO DE CÉLULAS SELECIONADAS ══ */}
+      {cellSelection.size > 0 && (
+        <div className="fixed bottom-6 right-6 z-[300] bg-white rounded-2xl shadow-2xl border border-indigo-100 min-w-[260px] max-w-[320px] overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-blue-50 border-b border-indigo-100">
+            <div className="flex items-center gap-2">
+              <Calculator size={14} className="text-indigo-500" />
+              <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">
+                {cellSelection.size} {cellSelection.size === 1 ? 'item' : 'itens'}
+              </span>
+            </div>
+            <button onClick={() => setCellSelection(new Map())} className="text-gray-400 hover:text-gray-600 transition-colors p-0.5 rounded hover:bg-gray-100">
+              <X size={13} />
+            </button>
+          </div>
+          {/* Lista de itens */}
+          <div className="max-h-[180px] overflow-y-auto divide-y divide-gray-50">
+            {Array.from(cellSelection.entries()).map(([id, { value, label }]) => (
+              <div key={id} className="flex items-center justify-between px-4 py-1.5 hover:bg-gray-50 group">
+                <span className="text-[11px] text-gray-600 truncate mr-2 flex-1">{label}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[11px] font-mono text-gray-800">{fmt(value)}</span>
+                  <button onClick={() => toggleCellSel(id, value, label)} className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-rose-400 transition-all">
+                    <X size={10} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Footer com soma */}
+          <div className="px-4 py-3 bg-gradient-to-r from-indigo-500 to-blue-500 flex items-center justify-between">
+            <span className="text-[11px] font-black text-white/80 uppercase tracking-widest">SOMA</span>
+            <span className="text-[16px] font-black text-white font-mono">{fmt(selectedSum)}</span>
+          </div>
+        </div>
+      )}
 
       {/* ══ ANÁLISES DO RESULTADO ══ */}
       {authUser && !isTableFullscreen && (
