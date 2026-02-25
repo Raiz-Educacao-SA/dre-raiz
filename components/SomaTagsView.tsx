@@ -505,6 +505,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     return months.map(m => `${year}-${m}`);
   }, [year, selectedMonths]);
 
+  // ── Oculta CalcRows quando há filtro de tag ativo ─────────────────────────
+  const hasTagFilter = selectedTags01.length > 0 || selectedTags02.length > 0 || selectedTags03.length > 0;
+
   // ── Grupos exibidos (filtro Até EBITDA) ──────────────────────────────────
   // '06.' incluído: Rateio Raiz faz parte do EBITDA TOTAL
   const EBITDA_PREFIXES = ['01.', '02.', '03.', '04.', '05.', '06.'];
@@ -1296,9 +1299,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             })}
 
             {/* CalcRows */}
-            {idx === lastIdx03M && renderMonthlyCalcRow('MARGEM DE CONTRIBUIÇÃO', monthlyMargemData, margemData, true)}
-            {idx === lastIdx04M && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, true)}
-            {idx === lastIdx03M && lastIdx04M === -1 && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, false)}
+            {!hasTagFilter && idx === lastIdx03M && renderMonthlyCalcRow('MARGEM DE CONTRIBUIÇÃO', monthlyMargemData, margemData, true)}
+            {!hasTagFilter && idx === lastIdx04M && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, true)}
+            {!hasTagFilter && idx === lastIdx03M && lastIdx04M === -1 && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, false)}
           </React.Fragment>
         );
       })}
@@ -1989,9 +1992,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                             </React.Fragment>
                           );
                         })}
-                        {idx === lastIdx03 && <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} activeElements={activeElements} />}
-                        {idx === lastIdx04 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop cols={cols} activeElements={activeElements} />}
-                        {idx === lastIdx03 && lastIdx04 === -1 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} cols={cols} activeElements={activeElements} />}
+                        {!hasTagFilter && idx === lastIdx03 && <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} activeElements={activeElements} />}
+                        {!hasTagFilter && idx === lastIdx04 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop cols={cols} activeElements={activeElements} />}
+                        {!hasTagFilter && idx === lastIdx03 && lastIdx04 === -1 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} cols={cols} activeElements={activeElements} />}
                       </React.Fragment>
                     );
                   })}
