@@ -716,8 +716,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     // Builders de célula (retornam CellDef)
     const tD = (v: string, bg: string, bold = false, color = FNT.neutral): CellDef =>
       ({ v, bg, bold, color, align: 'left' });
-    const nD = (v: number, bg: string, bold = false): CellDef =>
-      ({ v: Math.round(v), bg, bold, color: FNT.neutral, align: 'right', fmt: '#,##0' });
+    // whiteVals=true → força branco em Real/Orçado/A1 (para fundos escuros); deltas mantêm vermelho/verde
+    const nD = (v: number, bg: string, bold = false, color = FNT.neutral): CellDef =>
+      ({ v: Math.round(v), bg, bold, color, align: 'right', fmt: '#,##0' });
     const dD = (v: number, base: number, bg: string, bold = false): CellDef =>
       base === 0
         ? { v: 'N/D', bg, bold, color: FNT.muted, align: 'center' }
@@ -729,12 +730,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         : { v: delta / Math.abs(base), bg, bold, color: delta < 0 ? FNT.neg : delta > 0 ? FNT.pos : FNT.neutral, align: 'center', fmt: '0.0%' };
     };
 
-    const vDefs = (real: number, orcado: number, a1: number, bg: string, bold = false): CellDef[] =>
-      activeElements.map(el => {
+    const vDefs = (real: number, orcado: number, a1: number, bg: string, bold = false, whiteVals = false): CellDef[] => {
+      const vc = whiteVals ? FNT.white : FNT.neutral;
+      return activeElements.map(el => {
         switch (el) {
-          case 'Real':            return nD(real,   bg, bold);
-          case 'Orçado':          return nD(orcado, bg, bold);
-          case 'A1':              return nD(a1,     bg, bold);
+          case 'Real':            return nD(real,   bg, bold, vc);
+          case 'Orçado':          return nD(orcado, bg, bold, vc);
+          case 'A1':              return nD(a1,     bg, bold, vc);
           case 'DeltaAbsOrcado':  return dD(real - orcado, orcado, bg, bold);
           case 'DeltaPercOrcado': return pD(real, orcado, bg, bold);
           case 'DeltaAbsA1':      return dD(real - a1, a1, bg, bold);
@@ -742,6 +744,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           default: return { v: '', bg };
         }
       });
+    };
 
     // Drill-down
     const getDrill = (tag01: string, dim: string, sc: string, val: string, af: Record<string, string>) => {
@@ -785,12 +788,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const sumMD = (byMonth: Record<string, MD>): MD =>
       Object.values(byMonth).reduce((a, m) => ({ real: a.real + m.real, orcado: a.orcado + m.orcado, a1: a.a1 + m.a1 }), { real: 0, orcado: 0, a1: 0 });
 
-    const vMDefs = (md: MD, bg: string, bold = false): CellDef[] =>
-      activeElements.map(el => {
+    const vMDefs = (md: MD, bg: string, bold = false, whiteVals = false): CellDef[] => {
+      const vc = whiteVals ? FNT.white : FNT.neutral;
+      return activeElements.map(el => {
         switch (el) {
-          case 'Real':            return nD(md.real, bg, bold);
-          case 'Orçado':          return nD(md.orcado, bg, bold);
-          case 'A1':              return nD(md.a1, bg, bold);
+          case 'Real':            return nD(md.real,   bg, bold, vc);
+          case 'Orçado':          return nD(md.orcado, bg, bold, vc);
+          case 'A1':              return nD(md.a1,     bg, bold, vc);
           case 'DeltaAbsOrcado':  return dD(md.real - md.orcado, md.orcado, bg, bold);
           case 'DeltaPercOrcado': return pD(md.real, md.orcado, bg, bold);
           case 'DeltaAbsA1':      return dD(md.real - md.a1, md.a1, bg, bold);
@@ -798,18 +802,20 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           default: return { v: '', bg };
         }
       });
+    };
 
-    const buildMonthDefs = (byMonth: Record<string, MD>, bg: string, bold = false): CellDef[] => {
+    const buildMonthDefs = (byMonth: Record<string, MD>, bg: string, bold = false, whiteVals = false): CellDef[] => {
       const defs: CellDef[] = [];
       const tot = sumMD(byMonth);
+      const vc = whiteVals ? FNT.white : FNT.neutral;
       if (viewMode === 'cenario') {
         activeElements.forEach(el => {
           monthsToShow.forEach(m => {
             const md = byMonth[m] || { real: 0, orcado: 0, a1: 0 };
             switch (el) {
-              case 'Real':            defs.push(nD(md.real, bg, bold)); break;
-              case 'Orçado':          defs.push(nD(md.orcado, bg, bold)); break;
-              case 'A1':             defs.push(nD(md.a1, bg, bold)); break;
+              case 'Real':            defs.push(nD(md.real,   bg, bold, vc)); break;
+              case 'Orçado':          defs.push(nD(md.orcado, bg, bold, vc)); break;
+              case 'A1':              defs.push(nD(md.a1,     bg, bold, vc)); break;
               case 'DeltaAbsOrcado':  defs.push(dD(md.real - md.orcado, md.orcado, bg, bold)); break;
               case 'DeltaPercOrcado': defs.push(pD(md.real, md.orcado, bg, bold)); break;
               case 'DeltaAbsA1':      defs.push(dD(md.real - md.a1, md.a1, bg, bold)); break;
@@ -818,9 +824,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             }
           });
           switch (el) {
-            case 'Real':            defs.push(nD(tot.real, bg, bold)); break;
-            case 'Orçado':          defs.push(nD(tot.orcado, bg, bold)); break;
-            case 'A1':              defs.push(nD(tot.a1, bg, bold)); break;
+            case 'Real':            defs.push(nD(tot.real,   bg, bold, vc)); break;
+            case 'Orçado':          defs.push(nD(tot.orcado, bg, bold, vc)); break;
+            case 'A1':              defs.push(nD(tot.a1,     bg, bold, vc)); break;
             case 'DeltaAbsOrcado':  defs.push(dD(tot.real - tot.orcado, tot.orcado, bg, bold)); break;
             case 'DeltaPercOrcado': defs.push(pD(tot.real, tot.orcado, bg, bold)); break;
             case 'DeltaAbsA1':      defs.push(dD(tot.real - tot.a1, tot.a1, bg, bold)); break;
@@ -829,8 +835,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           }
         });
       } else {
-        monthsToShow.forEach(m => defs.push(...vMDefs(byMonth[m] || { real: 0, orcado: 0, a1: 0 }, bg, bold)));
-        defs.push(...vMDefs(tot, bg, bold));
+        monthsToShow.forEach(m => defs.push(...vMDefs(byMonth[m] || { real: 0, orcado: 0, a1: 0 }, bg, bold, whiteVals)));
+        defs.push(...vMDefs(tot, bg, bold, whiteVals));
       }
       return defs;
     };
@@ -839,7 +845,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     if (viewMode === 'consolidado') {
       addRow([tD('Grupo (Tag0)', BG.hdr, true), tD('Tag01', BG.hdr, true), ...activeElements.map(el => tD(EL[el] ?? el, BG.hdr, true))]);
       displayedGroups.forEach((g, idx) => {
-        addRow([tD(g.tag0, BG.groupHdr, true, FNT.white), tD('▶ SUBTOTAL', BG.groupHdr, true, FNT.white), ...vDefs(g.real, g.orcado, g.a1, BG.groupHdr, true)]);
+        addRow([tD(g.tag0, BG.groupHdr, true, FNT.white), tD('▶ SUBTOTAL', BG.groupHdr, true, FNT.white), ...vDefs(g.real, g.orcado, g.a1, BG.groupHdr, true, true)]);
         g.items.forEach(item => {
           addRow([tD(g.tag0, BG.tag01Row), tD(item.tag01, BG.tag01Row), ...vDefs(item.real, item.orcado, item.a1, BG.tag01Row)]);
           if (expandedTag01s[`${g.tag0}|${item.tag01}`] && drillDimensions.length > 0) buildDrill(item.tag01, g.tag0);
@@ -849,7 +855,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           if (idx === lastIdx04 || (idx === lastIdx03 && lastIdx04 === -1)) addRow([tD('▶ EBITDA (S/ RATEIO RAIZ CSC)', BG.calcRow, true, FNT.white), tD('', BG.calcRow), ...vDefs(ebitdaData.real, ebitdaData.orcado, ebitdaData.a1, BG.calcRow, true)]);
         }
       });
-      addRow([tD('TOTAL GERAL', BG.total, true, FNT.white), tD('', BG.total), ...vDefs(totals.real, totals.orcado, totals.a1, BG.total, true)]);
+      addRow([tD('TOTAL GERAL', BG.total, true, FNT.white), tD('', BG.total), ...vDefs(totals.real, totals.orcado, totals.a1, BG.total, true, true)]);
     } else {
       const mls = monthsToShow.map(m => ML[m.split('-')[1]] ?? m.split('-')[1]);
       const h1: CellDef[] = [tD('Grupo (Tag0)', BG.hdr, true), tD('Tag01', BG.hdr, true)];
@@ -865,14 +871,14 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       }
       addRow(h1); addRow(h2);
       displayedMonthlyGroups.forEach((g, idx) => {
-        addRow([tD(g.tag0, BG.groupHdr, true, FNT.white), tD('▶ SUBTOTAL', BG.groupHdr, true, FNT.white), ...buildMonthDefs(g.byMonth, BG.groupHdr, true)]);
+        addRow([tD(g.tag0, BG.groupHdr, true, FNT.white), tD('▶ SUBTOTAL', BG.groupHdr, true, FNT.white), ...buildMonthDefs(g.byMonth, BG.groupHdr, true, true)]);
         g.items.forEach(item => addRow([tD(g.tag0, BG.tag01Row), tD(item.tag01, BG.tag01Row), ...buildMonthDefs(item.byMonth, BG.tag01Row)]));
         if (!hasTagFilter) {
           if (idx === lastIdx03M) addRow([tD('▶ MARGEM DE CONTRIBUIÇÃO', BG.calcRow, true, FNT.white), tD('', BG.calcRow), ...buildMonthDefs(monthlyMargemData, BG.calcRow, true)]);
           if (idx === lastIdx04M || (idx === lastIdx03M && lastIdx04M === -1)) addRow([tD('▶ EBITDA (S/ RATEIO RAIZ CSC)', BG.calcRow, true, FNT.white), tD('', BG.calcRow), ...buildMonthDefs(monthlyEbitdaData, BG.calcRow, true)]);
         }
       });
-      addRow([tD('TOTAL GERAL', BG.total, true, FNT.white), tD('', BG.total), ...buildMonthDefs(monthlyTotals, BG.total, true)]);
+      addRow([tD('TOTAL GERAL', BG.total, true, FNT.white), tD('', BG.total), ...buildMonthDefs(monthlyTotals, BG.total, true, true)]);
     }
 
     // Larguras de coluna
