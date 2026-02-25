@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check } from 'lucide-react';
+import { ChevronDown, Check, Search } from 'lucide-react';
 
 // IMPORTANTE: Componente externo (fora de qualquer pai) para evitar
 // re-criação a cada render do componente pai — preserva estado do dropdown.
@@ -18,8 +18,10 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
   ({ label, icon, options, selected, onChange, colorScheme, compact = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+    const [search, setSearch] = useState('');
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const buttonRef  = useRef<HTMLDivElement>(null);
+    const buttonRef   = useRef<HTMLDivElement>(null);
+    const searchRef   = useRef<HTMLInputElement>(null);
 
     const colors = {
       blue: {
@@ -66,9 +68,15 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
       if (!isOpen && buttonRef.current) {
         const rect = buttonRef.current.getBoundingClientRect();
         setDropdownPosition({ top: rect.bottom + 8, left: rect.left });
+        setSearch('');
+        setTimeout(() => searchRef.current?.focus(), 50);
       }
       setIsOpen(v => !v);
     };
+
+    const filteredOptions = search.trim()
+      ? options.filter(o => o.toLowerCase().includes(search.toLowerCase()))
+      : options;
 
     return (
       <div ref={dropdownRef} className="relative">
@@ -135,9 +143,29 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
               </div>
             </div>
 
+            {/* Busca */}
+            {options.length > 6 && (
+              <div className="px-2 py-1.5 border-b border-gray-100 bg-white">
+                <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded px-2 py-1">
+                  <Search size={11} className="text-gray-400 shrink-0" />
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Buscar..."
+                    className="flex-1 bg-transparent text-[11px] text-gray-700 outline-none placeholder-gray-400 min-w-0"
+                  />
+                  {search && (
+                    <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600 text-[10px] leading-none">✕</button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Lista */}
             <div className="overflow-y-auto">
-              {options.map(option => {
+              {filteredOptions.map(option => {
                 const isSel = selected.includes(option);
                 return (
                   <div
@@ -153,8 +181,10 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
                   </div>
                 );
               })}
-              {options.length === 0 && (
-                <div className="px-3 py-4 text-xs text-gray-400 text-center">Nenhuma opção</div>
+              {filteredOptions.length === 0 && (
+                <div className="px-3 py-4 text-xs text-gray-400 text-center">
+                  {search ? `Nenhum resultado para "${search}"` : 'Nenhuma opção'}
+                </div>
               )}
             </div>
           </div>
