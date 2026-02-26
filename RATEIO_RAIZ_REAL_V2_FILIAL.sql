@@ -9,7 +9,7 @@
 --   3. share_filial = receita_filial / receita_total_mes
 --   4. valor_rateado = ebitda_rz × share_filial
 --   5. UPSERT em rateio_raiz_log (chave: year_month + filial)
---   6. UPSERT em transactions (chave: RATEIO_RAIZ_REAL_YYYY-MM_FILIAL)
+--   6. UPSERT em transactions (chave: RATEIO_RAIZ_REAL_YYYY-MM_FILIAL, tag0='05. RATEIO RAIZ')
 --
 -- Pré-requisitos:
 --   - Coluna tag0 populada em transactions via trigger trg_auto_tag0
@@ -124,7 +124,7 @@ CREATE INDEX IF NOT EXISTS idx_rateio_log_filial    ON rateio_raiz_log (filial);
 -- ══════════════════════════════════════════════════════════════════════
 
 INSERT INTO tag0_map (tag1_norm, tag1_raw, tag0)
-VALUES ('rateio adm', 'RATEIO ADM', '06. RATEIO RAIZ')
+VALUES ('rateio adm', 'RATEIO ADM', '05. RATEIO RAIZ')
 ON CONFLICT (tag1_norm) DO UPDATE
   SET tag0 = EXCLUDED.tag0, tag1_raw = EXCLUDED.tag1_raw;
 
@@ -235,9 +235,9 @@ BEGIN
   SELECT
     gen_random_uuid()::text,
     (l.year_month || '-01'),
-    'Rateio ADM ' || l.year_month,
+    'Rateios RZ calculado Supabase',
     'RATEIO ADM',
-    'Rateio ADM',
+    '4.2.1.17.01.01',
     l.valor_rateado,
     'RATEIO',
     'Real',
@@ -245,10 +245,10 @@ BEGIN
     l.filial,
     l.nome_filial,
     l.marca,
-    '06. RATEIO RAIZ',
+    '05. RATEIO RAIZ',
     'RATEIO ADM',
-    NULL,
-    NULL,
+    'Rateio Despesas Intercompany',
+    'Rateio Despesas Intercompany',
     'RZ Educação — CSC',
     'Sim',
     'RATEIO_RAIZ_REAL_' || l.year_month || '_' || l.filial
