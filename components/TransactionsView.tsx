@@ -1963,13 +1963,21 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         <label className="text-[8px] font-black text-gray-500 uppercase">Nova Unidade</label>
                         <DeParaVisualizer oldValue={editingTransaction.nome_filial || editingTransaction.filial} newValue={editForm.filial} />
                       </div>
-                      <select value={editForm.filial} onChange={e => {
-                        const selected = filterOptions.filiais.find(f => f.label === e.target.value);
-                        setEditForm({...editForm, filial: e.target.value, filial_code: selected?.filialCodes[0] || '', marca: selected?.cia || editForm.marca});
-                      }} className="w-full border border-gray-200 p-2 text-[10px] font-black outline-none focus:border-[#F44C00] bg-gray-50/30">
-                        <option value="">Selecionar unidade...</option>
-                        {filterOptions.filiais.map(f => <option key={f.label} value={f.label}>{f.label}</option>)}
-                      </select>
+                      <input
+                        type="text"
+                        list="filial-options-list"
+                        value={editForm.filial}
+                        onChange={e => {
+                          const val = e.target.value;
+                          const selected = filterOptions.filiais.find(f => f.label === val);
+                          setEditForm({...editForm, filial: val, filial_code: selected?.filialCodes[0] || editForm.filial_code, marca: selected?.cia || editForm.marca});
+                        }}
+                        placeholder="Digite para buscar a unidade..."
+                        className="w-full border border-gray-200 p-2 text-[10px] font-black outline-none focus:border-[#F44C00] bg-gray-50/30"
+                      />
+                      <datalist id="filial-options-list">
+                        {filterOptions.filiais.map(f => <option key={f.label} value={f.label} />)}
+                      </datalist>
                     </div>
                     <div className="space-y-1">
                       <div className="flex justify-between items-end">
