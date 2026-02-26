@@ -87,6 +87,7 @@ const COLUMN_DEFS: Array<{
   { key: 'description', label: 'Descrição',  headerLabel: 'Descrição',  className: 'w-[180px]' },
   { key: 'amount',      label: 'Valor',      headerLabel: 'Valor',      className: 'w-[95px]',  align: 'right'  },
   { key: 'status',      label: 'Status',     headerLabel: 'Status',     className: 'w-[70px]',  align: 'center' },
+  { key: 'recurring',   label: 'Recorrência',headerLabel: 'Recorr',     className: 'w-[70px]',  align: 'center' },
   { key: 'acoes',       label: 'Ações',      headerLabel: 'Ações',      className: 'w-[65px]',  align: 'center' },
 ];
 
@@ -1855,6 +1856,17 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                               'bg-gray-50 text-gray-400 border-gray-200'
                             }`}>
                               {t.status}
+                            </span>
+                          </td>
+                        );
+                        case 'recurring': return (
+                          <td key="recurring" style={tdS} className="text-center border-r border-gray-100">
+                            <span style={bgS} className={`rounded-none text-[8px] font-black uppercase border ${
+                              (t.recurring || 'Sim') === 'Sim'
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                : 'bg-gray-50 text-gray-400 border-gray-200'
+                            }`}>
+                              {t.recurring || 'Sim'}
                             </span>
                           </td>
                         );
