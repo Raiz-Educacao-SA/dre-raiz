@@ -509,7 +509,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         category: editingTransaction.conta_contabil || editingTransaction.category || '',
         categoryLabel: editingTransaction.conta_contabil || editingTransaction.category || '',
         date: editingTransaction.date,
-        filial: editingTransaction.filial,
+        filial: editingTransaction.nome_filial || editingTransaction.filial,
         marca: editingTransaction.marca || 'SAP',
         justification: '',
         amount: editingTransaction.amount,
@@ -1960,10 +1960,11 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     <div className="space-y-1">
                       <div className="flex justify-between items-end">
                         <label className="text-[8px] font-black text-gray-500 uppercase">Nova Unidade</label>
-                        <DeParaVisualizer oldValue={editingTransaction.filial} newValue={editForm.filial} />
+                        <DeParaVisualizer oldValue={editingTransaction.nome_filial || editingTransaction.filial} newValue={editForm.filial} />
                       </div>
                       <select value={editForm.filial} onChange={e => setEditForm({...editForm, filial: e.target.value})} className="w-full border border-gray-200 p-2 text-[10px] font-black outline-none focus:border-[#F44C00] bg-gray-50/30">
-                        {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                        <option value="">Selecionar unidade...</option>
+                        {filterOptions.filiais.map(f => <option key={f.label} value={f.label}>{f.label}</option>)}
                       </select>
                     </div>
                     <div className="space-y-1">
