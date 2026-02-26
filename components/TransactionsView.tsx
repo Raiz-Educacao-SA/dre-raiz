@@ -1973,12 +1973,16 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     </div>
                     <div className="space-y-1">
                       <div className="flex justify-between items-end">
-                        <label className="text-[8px] font-black text-gray-500 uppercase">Nova Marca</label>
+                        <label className="text-[8px] font-black text-gray-500 uppercase">Marca</label>
                         <DeParaVisualizer oldValue={editingTransaction.marca} newValue={editForm.marca} />
                       </div>
-                      <select value={editForm.marca} onChange={e => setEditForm({...editForm, marca: e.target.value})} className="w-full border border-gray-200 p-2 text-[10px] font-black outline-none focus:border-[#F44C00] bg-gray-50/30">
-                        {ALL_BRANDS.map(b => <option key={b} value={b}>{b}</option>)}
-                      </select>
+                      <input
+                        type="text"
+                        value={editForm.marca || ''}
+                        readOnly
+                        title="Marca atualizada automaticamente ao trocar a filial"
+                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm cursor-not-allowed opacity-60"
+                      />
                     </div>
                     <div className="space-y-1">
                       <div className="flex justify-between items-end">
