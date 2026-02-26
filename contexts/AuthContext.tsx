@@ -55,13 +55,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await supabaseService.updateUserLastLogin(dbUser.id);
 
         // 🔐 CARREGAR PERMISSÕES DO USUÁRIO
-        console.log('🔐 Carregando permissões para:', dbUser.email);
+        console.log('🔐 Carregando permissões para:', dbUser.email, '| user_id:', dbUser.id);
         const userPermissions = await supabaseService.getUserPermissions(dbUser.id);
 
-        // Organizar permissões por tipo
+        if (userPermissions.length === 0 && dbUser.role !== 'admin') {
+          console.warn('⚠️ ALERTA: getUserPermissions retornou vazio para usuário não-admin!');
+          console.warn('⚠️ Possíveis causas: RLS bloqueando leitura de user_permissions, ou GRANT SELECT não concedido ao role anon/authenticated.');
+          console.warn('⚠️ Execute no Supabase: GRANT SELECT ON public.user_permissions TO anon, authenticated;');
+        }
+
+        // Organizar permissões por tipo (normalizar para UPPERCASE para evitar mismatch de case)
         const allowedMarcas = userPermissions
           .filter(p => p.permission_type === 'cia')
-          .map(p => p.permission_value);
+          .map(p => p.permission_value.toUpperCase());
 
         const allowedFiliais = userPermissions
           .filter(p => p.permission_type === 'filial')

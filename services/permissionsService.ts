@@ -149,13 +149,14 @@ export const addPermissionFiltersToObject = (filters: any): any => {
 
   console.log('🔒 Adicionando permissões ao objeto de filtros...');
 
-  // Adicionar MARCA
+  // Adicionar MARCA (comparação normalizada uppercase)
   if (permissions.allowedMarcas.length > 0) {
+    const allowedUpper = permissions.allowedMarcas.map(m => m.toUpperCase());
     if (filters.marca && filters.marca.length > 0) {
       // Intersecção: manter apenas marcas que o usuário selecionou E tem permissão
-      filters.marca = filters.marca.filter((m: string) => permissions.allowedMarcas.includes(m));
+      filters.marca = filters.marca.filter((m: string) => allowedUpper.includes(m.toUpperCase()));
     } else {
-      filters.marca = permissions.allowedMarcas;
+      filters.marca = allowedUpper;
     }
     console.log('  ✅ Marca filtrada:', filters.marca);
   }

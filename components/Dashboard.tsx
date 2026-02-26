@@ -17,6 +17,10 @@ interface DashboardProps {
   onMarcaChange: (brands: string[]) => void;
   onFilialChange: (branches: string[]) => void;
   somaRows?: SomaTagsRow[];
+  allowedMarcas?: string[];
+  allowedFiliais?: string[];
+  allowedCategories?: string[];
+  isLoading?: boolean;
 }
 
 export interface MonthRange {
@@ -33,7 +37,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   availableBranches,
   onMarcaChange,
   onFilialChange,
-  somaRows
+  somaRows,
+  allowedMarcas,
 }) => {
   const [activeMetric, setActiveMetric] = useState<'revenue' | 'ebitda' | 'margin'>('ebitda');
   // ⚡ OTIMIZAÇÃO: Iniciar com mês atual (sincronizado com App.tsx)
@@ -129,6 +134,9 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Receita Líquida: calcula direto dos somaRows (mesma fonte do DRE Gerencial)
   useEffect(() => {
+    // Flag de cancelamento: evita race condition quando somaRows chega depois do fallback async
+    let cancelled = false;
+
     const compScenario = comparisonMode === 'budget' ? 'Orçado' : 'A-1';
 
     // ⚡ Caminho rápido: somaRows já carregados — sem chamada extra ao Supabase
@@ -169,7 +177,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       );
 
       console.log(`💰 Receita Líquida (somaRows): Real=${real.toLocaleString('pt-BR')} | ${compScenario}=${comp.toLocaleString('pt-BR')}`);
-      return;
+      return () => { cancelled = true; };
     }
 
     // Fallback: buscar via RPC quando somaRows não disponível
@@ -180,15 +188,25 @@ const Dashboard: React.FC<DashboardProps> = ({
         const monthFrom = `${year}-${String(selectedMonthStart + 1).padStart(2, '0')}`;
         const monthTo   = `${year}-${String(selectedMonthEnd   + 1).padStart(2, '0')}`;
 
+        // Aplicar filtro de permissão de marca: intersectar seleção do usuário com marcas permitidas
+        const permMarcas = allowedMarcas && allowedMarcas.length > 0 ? allowedMarcas : undefined;
+        const effectiveMarcas = permMarcas
+          ? (selectedMarca.length > 0 ? selectedMarca.filter(m => permMarcas.some(p => p.toUpperCase() === m.toUpperCase())) : permMarcas)
+          : (selectedMarca.length > 0 ? selectedMarca : undefined);
+
         const [receitaReal, receitaComp] = await Promise.all([
-          getReceitaLiquidaDRE({ monthFrom, monthTo, marcas: selectedMarca.length > 0 ? selectedMarca : undefined, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined, scenario: 'Real' }),
-          getReceitaLiquidaDRE({ monthFrom, monthTo, marcas: selectedMarca.length > 0 ? selectedMarca : undefined, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined, scenario: compScenario }),
+          getReceitaLiquidaDRE({ monthFrom, monthTo, marcas: effectiveMarcas, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined, scenario: 'Real' }),
+          getReceitaLiquidaDRE({ monthFrom, monthTo, marcas: effectiveMarcas, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined, scenario: compScenario }),
         ]);
 
+        // Verificar cancelamento antes de atualizar estado (evita sobrescrever dados do caminho primário)
+        if (cancelled) return;
         setReceitaLiquidaReal(receitaReal);
         setReceitaLiquidaComparison(receitaComp);
 
-        const summaryRows = await getDRESummary({ monthFrom, monthTo, marcas: selectedMarca.length > 0 ? selectedMarca : undefined, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined });
+        const summaryRows = await getDRESummary({ monthFrom, monthTo, marcas: effectiveMarcas, nomeFiliais: selectedFilial.length > 0 ? selectedFilial : undefined });
+
+        if (cancelled) return;
         const receitaRows = summaryRows.filter(row => row.tag0 && row.tag0.match(/^01\./i));
 
         const breakdownMap = new Map<string, { real: number; orcado: number; a1: number; txCount: number; tag02s: Map<string, { real: number; orcado: number; a1: number; txCount: number }> }>();
@@ -208,28 +226,37 @@ const Dashboard: React.FC<DashboardProps> = ({
           else if (row.scenario === 'A-1')    { t2.a1 += amt; }
         });
 
+        if (cancelled) return;
         setReceitaBreakdown(
           Array.from(breakdownMap.entries())
             .map(([tag01, v]) => ({ tag01, real: v.real, orcado: v.orcado, a1: v.a1, txCount: v.txCount, tag02s: Array.from(v.tag02s.entries()).map(([tag02, tv]) => ({ tag02, ...tv })).sort((a, b) => Math.abs(b.real) - Math.abs(a.real)) }))
             .sort((a, b) => Math.abs(b.real) - Math.abs(a.real))
         );
       } catch (error) {
+        if (cancelled) return;
         console.error('❌ Erro ao buscar Receita Líquida:', error);
         toast.error('❌ Erro ao carregar dados. Tente novamente.');
       } finally {
-        setIsLoadingReceita(false);
+        if (!cancelled) setIsLoadingReceita(false);
       }
     };
     fetchReceitaLiquida();
-  }, [selectedMonthStart, selectedMonthEnd, selectedMarca, selectedFilial, comparisonMode, refreshTrigger, somaRows]);
+    // Cleanup: cancela a chamada async se o effect rodar novamente antes de completar
+    return () => { cancelled = true; };
+  }, [selectedMonthStart, selectedMonthEnd, selectedMarca, selectedFilial, comparisonMode, refreshTrigger, somaRows, allowedMarcas]);
 
-  // Filter transactions by selected month range
+  // Filter transactions by selected month range + permission marca filter (segurança extra)
   const filteredByMonth = useMemo(() => {
     return permissionFilteredTransactions.filter(t => {
       const month = parseInt(t.date.substring(5, 7), 10) - 1;
-      return month >= selectedMonthStart && month <= selectedMonthEnd;
+      if (month < selectedMonthStart || month > selectedMonthEnd) return false;
+      // Aplicar filtro de permissão de marca diretamente (garante mesmo se singleton falhar)
+      if (allowedMarcas && allowedMarcas.length > 0) {
+        if (!t.marca || !allowedMarcas.some(p => p.toUpperCase() === (t.marca || '').toUpperCase())) return false;
+      }
+      return true;
     });
-  }, [permissionFilteredTransactions, selectedMonthStart, selectedMonthEnd]);
+  }, [permissionFilteredTransactions, selectedMonthStart, selectedMonthEnd, allowedMarcas]);
 
   const branchData = useMemo(() => {
     const data = BRANCHES.map(branch => {

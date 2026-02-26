@@ -108,7 +108,8 @@ const App: React.FC = () => {
   // ⚡ Dashboard — dados da mesma fonte do DRE Gerencial (getSomaTags)
   const [dashboardSomaRows, setDashboardSomaRows] = useState<SomaTagsRow[]>([]);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
-  const dashboardLoadedRef = React.useRef(false);
+  // Chave de carga: muda só quando os FILTROS DE PERMISSÃO mudam — evita carregar com filtros vazios
+  const dashboardLoadedRef = React.useRef<string>('');
 
   // Helper para re-buscar dados do banco após operações de escrita
   const refreshData = React.useCallback(async () => {
@@ -122,8 +123,18 @@ const App: React.FC = () => {
 
   // ⚡ Dashboard — carrega via getSomaTags (mesma fonte do DRE Gerencial)
   useEffect(() => {
-    if (permissionsLoading || dashboardLoadedRef.current) return;
-    dashboardLoadedRef.current = true;
+    if (permissionsLoading) return;
+
+    // Chave única para o conjunto de permissões atual
+    // Garante que recarrega quando allowedMarcas muda de [] para ['CGS','QI']
+    const loadKey = [
+      allowedMarcas.length  > 0 ? [...allowedMarcas].sort().join(',')  : '*',
+      allowedFiliais.length > 0 ? [...allowedFiliais].sort().join(',') : '*',
+      allowedTag01.length   > 0 ? [...allowedTag01].sort().join(',')   : '*',
+    ].join('|');
+
+    if (loadKey === dashboardLoadedRef.current) return;
+    dashboardLoadedRef.current = loadKey;
 
     const year = 2026;
     setIsLoadingDashboard(true);
@@ -136,13 +147,13 @@ const App: React.FC = () => {
     )
       .then((rows) => {
         setDashboardSomaRows(rows);
-        console.log(`⚡ [Dashboard getSomaTags] ${rows.length} linhas agregadas`);
+        console.log(`⚡ [Dashboard getSomaTags] ${rows.length} linhas | key=${loadKey}`);
       })
       .catch((err) => {
         console.warn('⚠️ [Dashboard getSomaTags] Falhou:', err);
       })
       .finally(() => setIsLoadingDashboard(false));
-  }, [permissionsLoading, allowedMarcas, allowedFiliais]);
+  }, [permissionsLoading, allowedMarcas, allowedFiliais, allowedTag01]);
 
   // ✅ ÚNICO useEffect: Carregar dados brutos com permissões (para Lançamentos, KPIs, etc.)
   const initialLoadRef = React.useRef(false);
@@ -587,6 +598,7 @@ const App: React.FC = () => {
       const { justification, categoryLabel, ...transactionData } = parsedValue;
       const updatedData = {
         ...transactionData,
+        justification: justification || change.justification || undefined,
         conta_contabil: transactionData.category || undefined,
         status: 'Ajustado',
         type: transactionData.category ? mapCategoryToType(transactionData.category) : undefined,
@@ -1083,6 +1095,7 @@ const App: React.FC = () => {
                 allowedTag01={allowedTag01}
                 allowedTag02={allowedTag02}
                 allowedTag03={allowedTag03}
+                userRole={user?.role}
               />
             </Suspense>
           )}
@@ -1134,6 +1147,7 @@ const App: React.FC = () => {
                   onDataChange={setHasSomaTagsData}
                   onDrillDown={handleDrillDown}
                   allowedTag01={allowedTag01.length > 0 ? allowedTag01 : undefined}
+                  allowedMarcas={allowedMarcas.length > 0 ? allowedMarcas : undefined}
                   presentationMode={somaTagsPresentationMode}
                   onPresentationModeChange={setSomaTagsPresentationMode}
                 />

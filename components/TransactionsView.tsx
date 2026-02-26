@@ -28,7 +28,7 @@ import { Transaction, TransactionType, TransactionStatus, ManualChange, Paginati
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
 import { getFilteredTransactions, TransactionFilters, getFiliais, getTagRecords, FilialOption, TagRecord, getContaContabilOptions, getTag0Map, getTag0Options, getTag01Options, getTag02Options, getTag03Options, resolveTag0 } from '../services/supabaseService';
 import ContaContabilSelector from './ContaContabilSelector';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import debounce from 'lodash.debounce';
 import {
   Edit3, GitFork, X, Save,
@@ -117,6 +117,7 @@ interface TransactionsViewProps {
   allowedTag01?: string[];
   allowedTag02?: string[];
   allowedTag03?: string[];
+  userRole?: string;
 }
 
 type SortKey = keyof Transaction;
@@ -166,7 +167,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   allowedCategories,
   allowedTag01,
   allowedTag02,
-  allowedTag03
+  allowedTag03,
+  userRole
 }) => {
   // Estado de busca
   const [isSearching, setIsSearching] = useState(false);
@@ -584,25 +586,23 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         amount: colFilters.amount || undefined,
       };
 
-      // ⚠️ TESTE: PERMISSÕES DESABILITADAS
-      // if (allowedMarcas && allowedMarcas.length > 0) {
-      //   // Se usuário JÁ selecionou marcas nos filtros, fazer intersecção
-      //   if (filters.marca && filters.marca.length > 0) {
-      //     filters.marca = filters.marca.filter(m => allowedMarcas.includes(m));
-      //   } else {
-      //     filters.marca = allowedMarcas;
-      //   }
-      //   console.log('🔒 Filtro de permissão MARCA aplicado:', filters.marca);
-      // }
+      if (allowedMarcas && allowedMarcas.length > 0) {
+        if (filters.marca && filters.marca.length > 0) {
+          filters.marca = filters.marca.filter(m => allowedMarcas.includes(m));
+        } else {
+          filters.marca = allowedMarcas;
+        }
+        console.log('🔒 Filtro de permissão MARCA aplicado:', filters.marca);
+      }
 
-      // if (allowedFiliais && allowedFiliais.length > 0) {
-      //   if (filters.nome_filial && filters.nome_filial.length > 0) {
-      //     filters.nome_filial = filters.nome_filial.filter(f => allowedFiliais.includes(f));
-      //   } else {
-      //     filters.nome_filial = allowedFiliais;
-      //   }
-      //   console.log('🔒 Filtro de permissão FILIAL aplicado:', filters.nome_filial);
-      // }
+      if (allowedFiliais && allowedFiliais.length > 0) {
+        if (filters.nome_filial && filters.nome_filial.length > 0) {
+          filters.nome_filial = filters.nome_filial.filter(f => allowedFiliais.includes(f));
+        } else {
+          filters.nome_filial = allowedFiliais;
+        }
+        console.log('🔒 Filtro de permissão FILIAL aplicado:', filters.nome_filial);
+      }
 
       if (allowedCategories && allowedCategories.length > 0) {
         if (filters.category && filters.category.length > 0) {
@@ -718,24 +718,23 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         amount: colFilters.amount || undefined,
       };
 
-      // ⚠️ TESTE: PERMISSÕES DESABILITADAS
-      // if (allowedMarcas && allowedMarcas.length > 0) {
-      //   if (filters.marca && filters.marca.length > 0) {
-      //     filters.marca = filters.marca.filter(m => allowedMarcas.includes(m));
-      //   } else {
-      //     filters.marca = allowedMarcas;
-      //   }
-      //   console.log('🔒 Filtro de permissão MARCA aplicado:', filters.marca);
-      // }
+      if (allowedMarcas && allowedMarcas.length > 0) {
+        if (filters.marca && filters.marca.length > 0) {
+          filters.marca = filters.marca.filter(m => allowedMarcas.includes(m));
+        } else {
+          filters.marca = allowedMarcas;
+        }
+        console.log('🔒 Filtro de permissão MARCA aplicado:', filters.marca);
+      }
 
-      // if (allowedFiliais && allowedFiliais.length > 0) {
-      //   if (filters.nome_filial && filters.nome_filial.length > 0) {
-      //     filters.nome_filial = filters.nome_filial.filter(f => allowedFiliais.includes(f));
-      //   } else {
-      //     filters.nome_filial = allowedFiliais;
-      //   }
-      //   console.log('🔒 Filtro de permissão FILIAL aplicado:', filters.nome_filial);
-      // }
+      if (allowedFiliais && allowedFiliais.length > 0) {
+        if (filters.nome_filial && filters.nome_filial.length > 0) {
+          filters.nome_filial = filters.nome_filial.filter(f => allowedFiliais.includes(f));
+        } else {
+          filters.nome_filial = allowedFiliais;
+        }
+        console.log('🔒 Filtro de permissão FILIAL aplicado:', filters.nome_filial);
+      }
 
       if (allowedCategories && allowedCategories.length > 0) {
         if (filters.category && filters.category.length > 0) {
@@ -980,59 +979,102 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     };
   }, [filteredAndSorted, transactions]);
 
-  const handleExportExcel = () => {
-    const headers = ["Cenário", "Data", "Tag 0", "Tag 01", "Tag 02", "Tag 03", "Conta", "Unidade", "Marca", "Ticket", "Fornecedor", "Descrição", "Valor", "Recorrente", "ID", "Status", "Justificativa"];
-    const rows = filteredAndSorted.map(t => [
-      t.scenario || 'Real',
-      t.date,
-      t.tag0 || '',
-      t.tag01 || '',
-      t.tag02 || '',
-      t.tag03 || '',
-      t.category,
-      t.filial,
-      t.marca || 'SAP',
-      t.ticket || '',
-      t.vendor || '',
-      t.description,
-      t.amount,
-      t.recurring || 'Sim',
-      t.id,
-      t.status,
-      t.justification || ''
-    ]);
-
-    // Criar workbook e worksheet
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-
-    // Definir largura das colunas
-    const colWidths = [
-      { wch: 10 },  // Cenário
-      { wch: 12 },  // Data
-      { wch: 15 },  // Tag 01
-      { wch: 15 },  // Tag 02
-      { wch: 15 },  // Tag 03
-      { wch: 25 },  // Conta
-      { wch: 12 },  // Unidade
-      { wch: 10 },  // Marca
-      { wch: 15 },  // Ticket
-      { wch: 30 },  // Fornecedor
-      { wch: 50 },  // Descrição
-      { wch: 15 },  // Valor
-      { wch: 12 },  // Recorrente
-      { wch: 30 },  // ID
-      { wch: 12 },  // Status
-      { wch: 40 }   // Justificativa
+  const handleExportExcel = async () => {
+    const COLS = [
+      { header: 'Cenário',    key: 'scenario',    width: 11, align: 'left'  as const },
+      { header: 'Data',       key: 'date',        width: 13, align: 'center'as const },
+      { header: 'Tag 0',      key: 'tag0',        width: 16, align: 'left'  as const },
+      { header: 'Tag 01',     key: 'tag01',       width: 16, align: 'left'  as const },
+      { header: 'Tag 02',     key: 'tag02',       width: 16, align: 'left'  as const },
+      { header: 'Tag 03',     key: 'tag03',       width: 16, align: 'left'  as const },
+      { header: 'Conta',      key: 'category',    width: 26, align: 'left'  as const },
+      { header: 'Marca',      key: 'marca',       width: 10, align: 'left'  as const },
+      { header: 'Filial',     key: 'filial',      width: 14, align: 'left'  as const },
+      { header: 'Ticket',     key: 'ticket',      width: 16, align: 'left'  as const },
+      { header: 'Chave ID',   key: 'chave_id',    width: 22, align: 'left'  as const },
+      { header: 'Fornecedor', key: 'vendor',      width: 30, align: 'left'  as const },
+      { header: 'Descrição',  key: 'description', width: 50, align: 'left'  as const },
+      { header: 'Valor',      key: 'amount',      width: 16, align: 'right' as const, numFmt: '#,##0.00' },
+      { header: 'Status',     key: 'status',      width: 13, align: 'center'as const },
+      { header: 'Recorrente', key: 'recurring',   width: 13, align: 'center'as const },
+      { header: 'ID',         key: 'id',          width: 32, align: 'left'  as const },
+      { header: 'Justificativa', key: 'justification', width: 42, align: 'left' as const },
     ];
-    ws['!cols'] = colWidths;
 
-    // Adicionar worksheet ao workbook
-    XLSX.utils.book_append_sheet(wb, ws, "Lançamentos");
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'DRE Raiz';
+    const ws = wb.addWorksheet('Lançamentos');
 
-    // Gerar e baixar o arquivo Excel
-    const fileName = `Relatorio_Lancamentos_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
+    // Colunas
+    ws.columns = COLS.map(c => ({ key: c.key, width: c.width }));
+
+    // Cabeçalho
+    const headerRow = ws.addRow(COLS.map(c => c.header));
+    headerRow.height = 20;
+    headerRow.eachCell((cell, colIdx) => {
+      cell.fill   = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1B3A5C' } };
+      cell.font   = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+      cell.alignment = { horizontal: COLS[colIdx - 1].align, vertical: 'middle', wrapText: false };
+      cell.border = {
+        bottom: { style: 'medium', color: { argb: 'FF2E75B6' } },
+      };
+    });
+
+    // Freeze cabeçalho
+    ws.views = [{ state: 'frozen', ySplit: 1, xSplit: 0 }];
+
+    // Dados
+    filteredAndSorted.forEach((t, rowIdx) => {
+      const values: Record<string, unknown> = {
+        scenario:      t.scenario || 'Real',
+        date:          t.date,
+        tag0:          t.tag0 || '',
+        tag01:         t.tag01 || '',
+        tag02:         t.tag02 || '',
+        tag03:         t.tag03 || '',
+        category:      t.category,
+        marca:         t.marca || 'SAP',
+        filial:        t.filial,
+        ticket:        t.ticket || '',
+        chave_id:      (t as any).chave_id || '',
+        vendor:        t.vendor || '',
+        description:   t.description,
+        amount:        t.amount,
+        status:        t.status,
+        recurring:     t.recurring || 'Sim',
+        id:            t.id,
+        justification: (t as any).justification || '',
+      };
+
+      const dataRow = ws.addRow(COLS.map(c => values[c.key]));
+      const isEven = rowIdx % 2 === 0;
+      const bgArgb = isEven ? 'FFFFFFFF' : 'FFF5F8FC';
+
+      dataRow.height = 16;
+      dataRow.eachCell({ includeEmpty: true }, (cell, colIdx) => {
+        const colDef = COLS[colIdx - 1];
+        cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgArgb } };
+        cell.font      = { size: 10, color: { argb: 'FF1A1A2E' } };
+        cell.alignment = { horizontal: colDef.align, vertical: 'middle' };
+        if (colDef.numFmt) cell.numFmt = colDef.numFmt;
+        cell.border = {
+          bottom: { style: 'hair', color: { argb: 'FFD9E1EC' } },
+        };
+      });
+    });
+
+    // Auto-filtro no cabeçalho
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLS.length } };
+
+    // Download
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Lancamentos_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleSubmitAjuste = () => {
@@ -1816,14 +1858,33 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                             </span>
                           </td>
                         );
-                        case 'acoes':       return (
+                        case 'acoes': {
+                          const canEdit = activeTab === 'real' || userRole === 'admin';
+                          return (
                           <td key="acoes" style={tdS} className="text-center">
                             <div className="flex items-center justify-center gap-1.5">
-                              <button onClick={() => setEditingTransaction(t)} style={btS} className="text-sky-600 bg-sky-50 hover:bg-sky-100 border border-sky-100 active:scale-90 transition-all"><Edit3 size={12}/></button>
-                              <button onClick={() => setRateioTransaction(t)} style={btS} className="text-[#F44C00] bg-amber-50 hover:bg-amber-100 border border-amber-100 active:scale-90 transition-all"><GitFork size={12}/></button>
+                              <button
+                                onClick={canEdit ? () => setEditingTransaction(t) : undefined}
+                                disabled={!canEdit}
+                                title={canEdit ? 'Solicitar ajuste' : 'Apenas administradores podem solicitar ajustes em Orçado e A-1'}
+                                style={btS}
+                                className={canEdit
+                                  ? "text-sky-600 bg-sky-50 hover:bg-sky-100 border border-sky-100 active:scale-90 transition-all"
+                                  : "text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed opacity-60"}
+                              ><Edit3 size={12}/></button>
+                              <button
+                                onClick={canEdit ? () => setRateioTransaction(t) : undefined}
+                                disabled={!canEdit}
+                                title={canEdit ? 'Rateio' : 'Apenas administradores podem fazer rateio em Orçado e A-1'}
+                                style={btS}
+                                className={canEdit
+                                  ? "text-[#F44C00] bg-amber-50 hover:bg-amber-100 border border-amber-100 active:scale-90 transition-all"
+                                  : "text-gray-400 bg-gray-100 border border-gray-200 cursor-not-allowed opacity-60"}
+                              ><GitFork size={12}/></button>
                             </div>
                           </td>
-                        );
+                          );
+                        }
                         default: return null;
                       }
                     })}

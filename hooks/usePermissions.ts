@@ -48,6 +48,10 @@ export const usePermissions = (): UsePermissionsReturn => {
         console.log('🔒 usePermissions: Usuário encontrado no banco', { id: dbUser.id, role: dbUser.role });
         const userPermissions = await supabaseService.getUserPermissions(dbUser.id);
         console.log('🔒 usePermissions: Permissões carregadas', userPermissions);
+        if (userPermissions.length === 0 && dbUser.role !== 'admin') {
+          console.warn('⚠️ usePermissions: ZERO permissões carregadas para usuário não-admin!');
+          console.warn('⚠️ Verifique RLS e GRANTs na tabela user_permissions no Supabase.');
+        }
         setPermissions(userPermissions);
       } else {
         console.warn('⚠️ usePermissions: Usuário não encontrado no banco Supabase');
@@ -64,7 +68,7 @@ export const usePermissions = (): UsePermissionsReturn => {
   const allowedMarcas = useMemo(() =>
     permissions
       .filter(p => p.permission_type === 'cia')
-      .map(p => p.permission_value),
+      .map(p => p.permission_value.toUpperCase()), // normaliza uppercase para evitar mismatch de case
     [permissions]
   );
 

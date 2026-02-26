@@ -146,11 +146,12 @@ interface SomaTagsViewProps {
   onDataChange?: (hasData: boolean) => void;
   onDrillDown?: (data: { categories: string[]; scenario?: string; filters?: Record<string, any> }) => void;
   allowedTag01?: string[];
+  allowedMarcas?: string[];
   presentationMode?: 'executive' | 'detailed';
   onPresentationModeChange?: (mode: 'executive' | 'detailed') => void;
 }
 
-const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01, presentationMode: externalPM, onPresentationModeChange }) => {
+const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01, allowedMarcas, presentationMode: externalPM, onPresentationModeChange }) => {
   const { user: authUser } = useAuth();
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
@@ -244,6 +245,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const tags02Ref     = useRef(selectedTags02);
   const tags03Ref     = useRef(selectedTags03);
   const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
+  const allowedMarcasRef = useRef<string[] | undefined>(allowedMarcas);
   useEffect(() => { yearRef.current           = year;            }, [year]);
   useEffect(() => { selectedMonthsRef.current = selectedMonths;  }, [selectedMonths]);
   useEffect(() => { marcasRef.current         = selectedMarcas;  }, [selectedMarcas]);
@@ -251,6 +253,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   useEffect(() => { tags02Ref.current    = selectedTags02;  }, [selectedTags02]);
   useEffect(() => { tags03Ref.current    = selectedTags03;  }, [selectedTags03]);
   useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
+  useEffect(() => { allowedMarcasRef.current = allowedMarcas; }, [allowedMarcas]);
 
   const toggleElement = useCallback(
     (element: string, currentState: boolean, setState: (v: boolean) => void) => {
@@ -347,7 +350,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     })();
     const mf = `${yearRef.current}-${mfRaw}`;
     const mt = `${yearRef.current}-${mtRaw}`;
-    const marcas  = accFilters.marca       ? [accFilters.marca]       : (marcasRef.current.length  > 0 ? marcasRef.current  : undefined);
+    // Aplicar permissão de marca: intersectar seleção do usuário com marcas permitidas
+    const marcasPerm = allowedMarcasRef.current && allowedMarcasRef.current.length > 0 ? allowedMarcasRef.current : undefined;
+    const rawMarcas = accFilters.marca ? [accFilters.marca] : (marcasRef.current.length > 0 ? marcasRef.current : undefined);
+    const marcas = marcasPerm
+      ? (rawMarcas ? rawMarcas.filter(m => marcasPerm.some(p => p.toUpperCase() === m.toUpperCase())) : marcasPerm)
+      : rawMarcas;
     const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
     const tags02  = accFilters.tag02 ? [accFilters.tag02] : (tags02Ref.current.length > 0 ? tags02Ref.current : undefined);
     const tags03  = accFilters.tag03 ? [accFilters.tag03] : (tags03Ref.current.length > 0 ? tags03Ref.current : undefined);
@@ -369,7 +377,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       const { from, to } = getMonthRange(selectedMonths);
       const mFrom  = `${year}-${from}`;
       const mTo    = `${year}-${to}`;
-      const marcas   = selectedMarcas.length  > 0 ? selectedMarcas  : undefined;
+      // Aplicar permissão de marca: intersectar seleção do usuário com marcas permitidas
+      const marcasPerm = allowedMarcas && allowedMarcas.length > 0 ? allowedMarcas : undefined;
+      const rawMarcas  = selectedMarcas.length > 0 ? selectedMarcas : undefined;
+      const marcas = marcasPerm
+        ? (rawMarcas ? rawMarcas.filter(m => marcasPerm.some(p => p.toUpperCase() === m.toUpperCase())) : marcasPerm)
+        : rawMarcas;
       const filiais  = selectedFiliais.length > 0 ? selectedFiliais : undefined;
       const tags02   = selectedTags02.length  > 0 ? selectedTags02  : undefined;
       const tags03   = selectedTags03.length  > 0 ? selectedTags03  : undefined;
@@ -395,7 +408,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     } finally {
       setLoading(false);
     }
-  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, allowedTag01, recurring]);
+  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, allowedTag01, allowedMarcas, recurring]);
 
   // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
   // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
@@ -1684,7 +1697,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm overflow-x-auto">
 
         {/* Filtros de dimensão — modo compacto */}
-        <MultiSelectFilter compact label="Marca"  icon={<Flag      size={12} />} options={filterOptions.marcas}     selected={selectedMarcas}  onChange={setSelectedMarcas}  colorScheme="orange" />
+        <MultiSelectFilter compact label="Marca"  icon={<Flag      size={12} />} options={allowedMarcas && allowedMarcas.length > 0 ? filterOptions.marcas.filter(m => allowedMarcas.some(p => p.toUpperCase() === m.toUpperCase())) : filterOptions.marcas}     selected={selectedMarcas}  onChange={setSelectedMarcas}  colorScheme="orange" />
         <MultiSelectFilter compact label="Filial" icon={<Building2 size={12} />} options={filiaisFiltradas}          selected={selectedFiliais} onChange={setSelectedFiliais} colorScheme="blue"   />
         <MultiSelectFilter compact label="Tag01"  icon={<Layers    size={12} />} options={filterOptions.tags01} selected={selectedTags01}  onChange={setSelectedTags01}  colorScheme="purple" />
         <MultiSelectFilter compact label="Tag02"  icon={<Layers    size={12} />} options={tag02Options}          selected={selectedTags02}  onChange={setSelectedTags02}  colorScheme="purple" />
