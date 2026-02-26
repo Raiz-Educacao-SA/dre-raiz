@@ -595,10 +595,9 @@ const App: React.FC = () => {
       ]);
     } else {
       // MULTI, CONTA, DATA, MARCA, FILIAL
-      const { justification, categoryLabel, ...transactionData } = parsedValue;
+      const { justification: _j, categoryLabel, ...transactionData } = parsedValue;
       const updatedData = {
         ...transactionData,
-        justification: justification || change.justification || undefined,
         conta_contabil: transactionData.category || undefined,
         status: 'Ajustado',
         type: transactionData.category ? mapCategoryToType(transactionData.category) : undefined,
