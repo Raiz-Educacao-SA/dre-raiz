@@ -1965,7 +1965,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                       </div>
                       <select value={editForm.filial} onChange={e => {
                         const selected = filterOptions.filiais.find(f => f.label === e.target.value);
-                        setEditForm({...editForm, filial: e.target.value, filial_code: selected?.filialCodes[0] || ''});
+                        setEditForm({...editForm, filial: e.target.value, filial_code: selected?.filialCodes[0] || '', marca: selected?.cia || editForm.marca});
                       }} className="w-full border border-gray-200 p-2 text-[10px] font-black outline-none focus:border-[#F44C00] bg-gray-50/30">
                         <option value="">Selecionar unidade...</option>
                         {filterOptions.filiais.map(f => <option key={f.label} value={f.label}>{f.label}</option>)}
