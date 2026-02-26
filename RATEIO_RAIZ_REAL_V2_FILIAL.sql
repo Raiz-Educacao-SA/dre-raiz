@@ -17,7 +17,7 @@
 --   - Índice único em transactions.chave_id
 --
 -- Agendamento: pg_cron a cada 15 minutos (Passo 5)
--- Versão: 2.1 — 28/02/2026
+-- Versão: 2.2 — 28/02/2026
 -- ══════════════════════════════════════════════════════════════════════
 
 
@@ -150,6 +150,7 @@ BEGIN
 
   WITH
   -- 1. EBITDA da RZ por mês (custos da holding: 02, 03, 04)
+  --    Apenas recorrentes (recurring = 'Sim') — custos não-recorrentes não são rateados
   rz_ebitda AS (
     SELECT
       LEFT(date::text, 7) AS ym,
@@ -158,6 +159,7 @@ BEGIN
     WHERE COALESCE(scenario, 'Real') IN ('Real', 'Original')
       AND marca = 'RZ'
       AND (tag0 LIKE '02.%' OR tag0 LIKE '03.%' OR tag0 LIKE '04.%')
+      AND COALESCE(recurring, 'Sim') = 'Sim'
     GROUP BY 1
   ),
   -- 2. Receita bruta por filial por mês
