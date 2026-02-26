@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDown10, ArrowUp10, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
 import DreAnalysisSection from './DreAnalysisSection';
@@ -205,7 +205,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [expandedTag01s,    setExpandedTag01s]    = useState<Record<string, boolean>>({});
   const [expandedDrillRows, setExpandedDrillRows] = useState<Record<string, boolean>>({});
   const [drillDimensions,   setDrillDimensions]   = useState<string[]>([]);
-  const [dimensionSort,     setDimensionSort]     = useState<'alpha' | 'desc' | 'asc'>('desc');
+  const [sortConfig, setSortConfig] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'real_total', dir: 'desc' });
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
 
   // ── Seleção de células para somatório ─────────────────────────────────────
@@ -227,6 +227,14 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     toggleCellSel(id, value, label);
   }, [toggleCellSel]);
   const isCellSel = (id: string) => cellSelection.has(id);
+
+  const handleColSort = useCallback((col: string) => {
+    setSortConfig(prev =>
+      prev.col === col
+        ? { col, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
+        : { col, dir: 'desc' }
+    );
+  }, []);
 
   // Refs para evitar closure stale em loadDrillData (useCallback sem deps)
   const yearRef           = useRef(year);
@@ -435,6 +443,47 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     return result;
   }, [rows, selectedTags01, selectedMonths]);
 
+  // ── Meses a exibir ────────────────────────────────────────────────────────
+  const monthsToShow = useMemo(() => {
+    const months = selectedMonths.length > 0 ? [...selectedMonths].sort() : ['01','02','03','04','05','06','07','08','09','10','11','12'];
+    return months.map(m => `${year}-${m}`);
+  }, [year, selectedMonths]);
+
+  // ── Extração de valor para sort por coluna ────────────────────────────────
+  const getSortValue = useCallback((item: Tag01Row | Tag01MonthlyItem, col: string): number => {
+    if ('byMonth' in item) {
+      const [scen, ...rest] = col.split('_');
+      const key = rest.join('_');
+      const months = key === 'total' ? monthsToShow : [key];
+      const md = months.reduce(
+        (acc, m) => { const d = (item as Tag01MonthlyItem).byMonth[m] || { real: 0, orcado: 0, a1: 0 };
+          return { real: acc.real + d.real, orcado: acc.orcado + d.orcado, a1: acc.a1 + d.a1 }; },
+        { real: 0, orcado: 0, a1: 0 }
+      );
+      switch (scen) {
+        case 'real': return md.real;
+        case 'orc':  return md.orcado;
+        case 'a1':   return md.a1;
+        case 'dao':  return md.real - md.orcado;
+        case 'dpo':  return md.orcado !== 0 ? (md.real - md.orcado) / Math.abs(md.orcado) : 0;
+        case 'da1':  return md.real - md.a1;
+        case 'dp1':  return md.a1 !== 0 ? (md.real - md.a1) / Math.abs(md.a1) : 0;
+      }
+    } else {
+      const r = item as Tag01Row;
+      switch (col) {
+        case 'real_total': return r.real;
+        case 'orc_total':  return r.orcado;
+        case 'a1_total':   return r.a1;
+        case 'dao_total':  return r.real - r.orcado;
+        case 'dpo_total':  return r.orcado !== 0 ? (r.real - r.orcado) / Math.abs(r.orcado) : 0;
+        case 'da1_total':  return r.real - r.a1;
+        case 'dp1_total':  return r.a1 !== 0 ? (r.real - r.a1) / Math.abs(r.a1) : 0;
+      }
+    }
+    return 0;
+  }, [monthsToShow]);
+
   // ── Agrupamento Consolidado ───────────────────────────────────────────────
   const groups = useMemo((): Tag0Group[] => {
     const map = new Map<string, Map<string, Tag01Row>>();
@@ -453,9 +502,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([tag0, m]) => {
         const items = Array.from(m.values());
-        if (dimensionSort === 'alpha') items.sort((a, b) => a.tag01.localeCompare(b.tag01));
-        else if (dimensionSort === 'desc') items.sort((a, b) => b.real - a.real);
-        else items.sort((a, b) => a.real - b.real);
+        if (sortConfig.col === 'tag01') {
+          items.sort((a, b) => a.tag01.localeCompare(b.tag01));
+        } else {
+          const dir = sortConfig.dir === 'desc' ? -1 : 1;
+          items.sort((a, b) => dir * (getSortValue(b, sortConfig.col) - getSortValue(a, sortConfig.col)));
+        }
         return {
           tag0,
           real:   items.reduce((s, i) => s + i.real,   0),
@@ -464,7 +516,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           items,
         };
       });
-  }, [filteredRows, dimensionSort]);
+  }, [filteredRows, sortConfig, getSortValue]);
 
   // ── Agrupamento Mensal ────────────────────────────────────────────────────
   const monthlyGroups = useMemo((): Tag0MonthlyGroup[] => {
@@ -494,27 +546,16 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         }
         items.push({ tag01: key, byMonth });
       }
-      if (dimensionSort === 'alpha') items.sort((a, b) => a.tag01.localeCompare(b.tag01));
-      else if (dimensionSort === 'desc') items.sort((a, b) => {
-        const totalA = Object.values(a.byMonth).reduce((s, m) => s + m.real, 0);
-        const totalB = Object.values(b.byMonth).reduce((s, m) => s + m.real, 0);
-        return totalB - totalA;
-      });
-      else items.sort((a, b) => {
-        const totalA = Object.values(a.byMonth).reduce((s, m) => s + m.real, 0);
-        const totalB = Object.values(b.byMonth).reduce((s, m) => s + m.real, 0);
-        return totalA - totalB;
-      });
+      if (sortConfig.col === 'tag01') {
+        items.sort((a, b) => a.tag01.localeCompare(b.tag01));
+      } else {
+        const dir = sortConfig.dir === 'desc' ? -1 : 1;
+        items.sort((a, b) => dir * (getSortValue(b, sortConfig.col) - getSortValue(a, sortConfig.col)));
+      }
       result.push({ tag0, byMonth: tag0ByMonth, items });
     }
     return result.sort((a, b) => a.tag0.localeCompare(b.tag0));
-  }, [filteredRows, dimensionSort]);
-
-  // ── Meses a exibir ────────────────────────────────────────────────────────
-  const monthsToShow = useMemo(() => {
-    const months = selectedMonths.length > 0 ? [...selectedMonths].sort() : ['01','02','03','04','05','06','07','08','09','10','11','12'];
-    return months.map(m => `${year}-${m}`);
-  }, [year, selectedMonths]);
+  }, [filteredRows, sortConfig, getSortValue]);
 
   // ── Oculta CalcRows quando há filtro de tag ativo ─────────────────────────
   const hasTagFilter = selectedTags01.length > 0 || selectedTags02.length > 0 || selectedTags03.length > 0;
@@ -783,8 +824,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         (dimensionCache[`${sc}|${tag01}|${dim}|${fk}`] || []).forEach((r: any) => { if (r.dimension_value) allVals.add(r.dimension_value); });
       }
       let vals = Array.from(allVals);
-      if (dimensionSort === 'alpha') vals.sort((a, b) => a.localeCompare(b));
-      else if (dimensionSort === 'desc') vals.sort((a, b) => getDrill(tag01, dim, 'Real', b, af) - getDrill(tag01, dim, 'Real', a, af));
+      if (sortConfig.col === 'tag01') vals.sort((a, b) => a.localeCompare(b));
+      else if (sortConfig.dir === 'desc') vals.sort((a, b) => getDrill(tag01, dim, 'Real', b, af) - getDrill(tag01, dim, 'Real', a, af));
       else vals.sort((a, b) => getDrill(tag01, dim, 'Real', a, af) - getDrill(tag01, dim, 'Real', b, af));
 
       const bg     = depth === 0 ? BG.drillD0 : depth === 1 ? BG.drillD1 : BG.drillD2;
@@ -928,7 +969,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     expandedTag01s, expandedDrillRows, drillDimensions, dimensionCache,
     hasTagFilter, margemData, ebitdaData, monthlyMargemData, monthlyEbitdaData,
     monthlyTotals, totals, lastIdx03, lastIdx04, lastIdx03M, lastIdx04M,
-    year, selectedMonths, monthsToShow, dimensionSort,
+    year, selectedMonths, monthsToShow, sortConfig,
   ]);
 
   // Registra ações no App.tsx (header) — deve ficar após exportExcel e fetchData
@@ -1029,9 +1070,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     }
     let vals = Array.from(allVals);
 
-    if (dimensionSort === 'alpha') {
+    if (sortConfig.col === 'tag01') {
       vals.sort((a, b) => a.localeCompare(b));
-    } else if (dimensionSort === 'desc') {
+    } else if (sortConfig.dir === 'desc') {
       vals.sort((a, b) => getDrillTotal(tag01, dim, 'Real', b, accFilters) - getDrillTotal(tag01, dim, 'Real', a, accFilters));
     } else {
       vals.sort((a, b) => getDrillTotal(tag01, dim, 'Real', a, accFilters) - getDrillTotal(tag01, dim, 'Real', b, accFilters));
@@ -1273,8 +1314,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const renderCenarioHeader = () => (
     <thead className="sticky top-0 z-50 shadow-lg whitespace-nowrap">
       <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white h-7">
-        <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle">
-          CONTAS GERENCIAIS
+        <th colSpan={2} rowSpan={2} onClick={() => handleColSort('tag01')} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle cursor-pointer select-none hover:brightness-110 transition-all">
+          CONTAS GERENCIAIS<SortIcon col="tag01" />
         </th>
         {activeElements.map(el => {
           switch (el) {
@@ -1292,13 +1333,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       <tr className="bg-gradient-to-r from-slate-700 to-slate-600 text-white h-6">
         {activeElements.map(el => {
           switch (el) {
-            case 'Real':            return <React.Fragment key="real">{monthsToShow.map(m => <th key={`r-${m}`} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] ${scenarioSubBg['Real']}`}>{getML(m)}</th>)}<th className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 ${scenarioSubBg['Real']}`}>Total</th></React.Fragment>;
-            case 'Orçado':          return <React.Fragment key="orc">{monthsToShow.map(m => <th key={`o-${m}`} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] ${scenarioSubBg['Orçado']}`}>{getML(m)}</th>)}<th className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 ${scenarioSubBg['Orçado']}`}>Total</th></React.Fragment>;
-            case 'A1':              return <React.Fragment key="a1">{monthsToShow.map(m => <th key={`a-${m}`} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] ${scenarioSubBg['A-1']}`}>{getML(m)}</th>)}<th className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 ${scenarioSubBg['A-1']}`}>Total</th></React.Fragment>;
-            case 'DeltaAbsOrcado':  return <React.Fragment key="dao">{monthsToShow.map(m => <th key={`dao-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-teal-500 to-teal-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-gradient-to-br from-teal-500 to-teal-600">Total</th></React.Fragment>;
-            case 'DeltaPercOrcado': return <React.Fragment key="dpo">{monthsToShow.map(m => <th key={`dpo-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-teal-500 to-teal-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-gradient-to-br from-teal-500 to-teal-600">Total</th></React.Fragment>;
-            case 'DeltaAbsA1':      return <React.Fragment key="da1">{monthsToShow.map(m => <th key={`da1-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-violet-500 to-violet-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 bg-gradient-to-br from-violet-500 to-violet-600">Total</th></React.Fragment>;
-            case 'DeltaPercA1':     return <React.Fragment key="dp1">{monthsToShow.map(m => <th key={`dp1-${m}`} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-gradient-to-br from-violet-500 to-violet-600">{getML(m)}</th>)}<th className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 bg-gradient-to-br from-violet-500 to-violet-600">Total</th></React.Fragment>;
+            case 'Real':            return <React.Fragment key="real">{monthsToShow.map(m => <th key={`r-${m}`} onClick={() => handleColSort(`real_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] cursor-pointer select-none hover:brightness-110 transition-all ${scenarioSubBg['Real']}`}>{getML(m)}<SortIcon col={`real_${m}`} /></th>)}<th onClick={() => handleColSort('real_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all ${scenarioSubBg['Real']}`}>Total<SortIcon col="real_total" /></th></React.Fragment>;
+            case 'Orçado':          return <React.Fragment key="orc">{monthsToShow.map(m => <th key={`o-${m}`} onClick={() => handleColSort(`orc_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] cursor-pointer select-none hover:brightness-110 transition-all ${scenarioSubBg['Orçado']}`}>{getML(m)}<SortIcon col={`orc_${m}`} /></th>)}<th onClick={() => handleColSort('orc_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all ${scenarioSubBg['Orçado']}`}>Total<SortIcon col="orc_total" /></th></React.Fragment>;
+            case 'A1':              return <React.Fragment key="a1">{monthsToShow.map(m => <th key={`a-${m}`} onClick={() => handleColSort(`a1_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] cursor-pointer select-none hover:brightness-110 transition-all ${scenarioSubBg['A-1']}`}>{getML(m)}<SortIcon col={`a1_${m}`} /></th>)}<th onClick={() => handleColSort('a1_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all ${scenarioSubBg['A-1']}`}>Total<SortIcon col="a1_total" /></th></React.Fragment>;
+            case 'DeltaAbsOrcado':  return <React.Fragment key="dao">{monthsToShow.map(m => <th key={`dao-${m}`} onClick={() => handleColSort(`dao_${m}`)} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-teal-500 to-teal-600">{getML(m)}<SortIcon col={`dao_${m}`} /></th>)}<th onClick={() => handleColSort('dao_total')} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-teal-500 to-teal-600">Total<SortIcon col="dao_total" /></th></React.Fragment>;
+            case 'DeltaPercOrcado': return <React.Fragment key="dpo">{monthsToShow.map(m => <th key={`dpo-${m}`} onClick={() => handleColSort(`dpo_${m}`)} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-teal-500 to-teal-600">{getML(m)}<SortIcon col={`dpo_${m}`} /></th>)}<th onClick={() => handleColSort('dpo_total')} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-teal-500 to-teal-600">Total<SortIcon col="dpo_total" /></th></React.Fragment>;
+            case 'DeltaAbsA1':      return <React.Fragment key="da1">{monthsToShow.map(m => <th key={`da1-${m}`} onClick={() => handleColSort(`da1_${m}`)} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-violet-500 to-violet-600">{getML(m)}<SortIcon col={`da1_${m}`} /></th>)}<th onClick={() => handleColSort('da1_total')} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-violet-500 to-violet-600">Total<SortIcon col="da1_total" /></th></React.Fragment>;
+            case 'DeltaPercA1':     return <React.Fragment key="dp1">{monthsToShow.map(m => <th key={`dp1-${m}`} onClick={() => handleColSort(`dp1_${m}`)} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-violet-500 to-violet-600">{getML(m)}<SortIcon col={`dp1_${m}`} /></th>)}<th onClick={() => handleColSort('dp1_total')} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] border-l border-white/20 cursor-pointer select-none hover:brightness-110 transition-all bg-gradient-to-br from-violet-500 to-violet-600">Total<SortIcon col="dp1_total" /></th></React.Fragment>;
             default: return null;
           }
         })}
@@ -1310,8 +1351,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const renderMesHeader = () => (
     <thead className="sticky top-0 z-50 shadow-lg whitespace-nowrap">
       <tr className="text-white h-7">
-        <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-[#152e55] px-3 py-0.5 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle">
-          CONTAS GERENCIAIS
+        <th colSpan={2} rowSpan={2} onClick={() => handleColSort('tag01')} className="sticky left-0 z-[60] bg-[#152e55] px-3 py-0.5 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle cursor-pointer select-none hover:brightness-110 transition-all">
+          CONTAS GERENCIAIS<SortIcon col="tag01" />
         </th>
         {monthsToShow.map(m => (
           <th key={m} colSpan={mesColCount} className="px-1.5 py-0.5 text-center text-[9px] font-black uppercase tracking-widest border-l-2 border-l-white/20 border-b border-white/10 bg-[#1B75BB] shadow-sm">
@@ -1327,13 +1368,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           <React.Fragment key={m}>
             {activeElements.map(el => {
               switch (el) {
-                case 'Real':            return <th key="r"   className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] bg-[#1B75BB] ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>Real</th>;
-                case 'Orçado':          return <th key="o"   className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] bg-[#1B75BB] ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>Orç</th>;
-                case 'DeltaAbsOrcado':  return <th key="dao" className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[85px] bg-[#1B75BB] ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrçR$</th>;
-                case 'DeltaPercOrcado': return <th key="dpo" className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-[#1B75BB] ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrç%</th>;
-                case 'A1':              return <th key="a"   className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] bg-[#1B75BB] ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>A-1</th>;
-                case 'DeltaAbsA1':      return <th key="da1" className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[85px] bg-[#1B75BB] ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>ΔA-1R$</th>;
-                case 'DeltaPercA1':     return <th key="dp1" className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-[#1B75BB]">ΔA-1%</th>;
+                case 'Real':            return <th key="r"   onClick={() => handleColSort(`real_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] bg-[#1B75BB] cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>Real<SortIcon col={`real_${m}`} /></th>;
+                case 'Orçado':          return <th key="o"   onClick={() => handleColSort(`orc_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] bg-[#1B75BB] cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>Orç<SortIcon col={`orc_${m}`} /></th>;
+                case 'DeltaAbsOrcado':  return <th key="dao" onClick={() => handleColSort(`dao_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[85px] bg-[#1B75BB] cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrçR$<SortIcon col={`dao_${m}`} /></th>;
+                case 'DeltaPercOrcado': return <th key="dpo" onClick={() => handleColSort(`dpo_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-[#1B75BB] cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrç%<SortIcon col={`dpo_${m}`} /></th>;
+                case 'A1':              return <th key="a"   onClick={() => handleColSort(`a1_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[80px] bg-[#1B75BB] cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>A-1<SortIcon col={`a1_${m}`} /></th>;
+                case 'DeltaAbsA1':      return <th key="da1" onClick={() => handleColSort(`da1_${m}`)} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[85px] bg-[#1B75BB] cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>ΔA-1R$<SortIcon col={`da1_${m}`} /></th>;
+                case 'DeltaPercA1':     return <th key="dp1" onClick={() => handleColSort(`dp1_${m}`)} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[70px] bg-[#1B75BB] cursor-pointer select-none hover:brightness-110 transition-all">ΔA-1%<SortIcon col={`dp1_${m}`} /></th>;
                 default: return null;
               }
             })}
@@ -1341,13 +1382,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         ))}
         {activeElements.map(el => {
           switch (el) {
-            case 'Real':            return <th key="r-t"   className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>Real</th>;
-            case 'Orçado':          return <th key="o-t"   className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>Orç</th>;
-            case 'DeltaAbsOrcado':  return <th key="dao-t" className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrçR$</th>;
-            case 'DeltaPercOrcado': return <th key="dpo-t" className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrç%</th>;
-            case 'A1':              return <th key="a-t"   className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>A-1</th>;
-            case 'DeltaAbsA1':      return <th key="da1-t" className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>ΔA-1R$</th>;
-            case 'DeltaPercA1':     return <th key="dp1-t" className="px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55]">ΔA-1%</th>;
+            case 'Real':            return <th key="r-t"   onClick={() => handleColSort('real_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'real' ? 'border-l-2 border-l-white/20' : ''}`}>Real<SortIcon col="real_total" /></th>;
+            case 'Orçado':          return <th key="o-t"   onClick={() => handleColSort('orc_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'orcado' ? 'border-l-2 border-l-white/20' : ''}`}>Orç<SortIcon col="orc_total" /></th>;
+            case 'DeltaAbsOrcado':  return <th key="dao-t" onClick={() => handleColSort('dao_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'deltaAbsOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrçR$<SortIcon col="dao_total" /></th>;
+            case 'DeltaPercOrcado': return <th key="dpo-t" onClick={() => handleColSort('dpo_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'deltaPercOrcado' ? 'border-l-2 border-l-white/20' : ''}`}>ΔOrç%<SortIcon col="dpo_total" /></th>;
+            case 'A1':              return <th key="a-t"   onClick={() => handleColSort('a1_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'a1' ? 'border-l-2 border-l-white/20' : ''}`}>A-1<SortIcon col="a1_total" /></th>;
+            case 'DeltaAbsA1':      return <th key="da1-t" onClick={() => handleColSort('da1_total')} className={`px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] border-r border-white/5 cursor-pointer select-none hover:brightness-110 transition-all ${mesFirstCol === 'deltaAbsA1' ? 'border-l-2 border-l-white/20' : ''}`}>ΔA-1R$<SortIcon col="da1_total" /></th>;
+            case 'DeltaPercA1':     return <th key="dp1-t" onClick={() => handleColSort('dp1_total')} className="px-1 py-1 text-center font-black text-[9px] uppercase w-[100px] bg-[#152e55] cursor-pointer select-none hover:brightness-110 transition-all">ΔA-1%<SortIcon col="dp1_total" /></th>;
             default: return null;
           }
         })}
@@ -1626,6 +1667,15 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setExpandedDrillRows({});
   }, []);
 
+  // ── Ícone de sort por coluna ──────────────────────────────────────────────
+  const SortIcon = ({ col }: { col: string }) => (
+    <span className="ml-0.5 opacity-80">
+      {sortConfig.col === col
+        ? (sortConfig.dir === 'desc' ? ' ↓' : ' ↑')
+        : <span className="opacity-30"> ↕</span>}
+    </span>
+  );
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="p-3 space-y-1.5 bg-gradient-to-br from-gray-50 to-white min-h-screen">
@@ -1804,12 +1854,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           <div className="h-4 w-px bg-orange-200 mx-0.5" />
           {/* Ordenação — afeta Tag01 e valores de drill-down */}
           <button
-            onClick={() => setDimensionSort(s => s === 'desc' ? 'asc' : s === 'asc' ? 'alpha' : 'desc')}
-            className="px-1.5 py-0.5 rounded-lg text-[8px] font-black uppercase transition-all flex items-center gap-1 border bg-[#1B75BB] text-white border-[#1B75BB] shadow-sm"
-            title={dimensionSort === 'desc' ? 'Ordenar: Maior → Menor' : dimensionSort === 'asc' ? 'Ordenar: Menor → Maior' : 'Ordenar: Alfabético (A-Z)'}>
-            {dimensionSort === 'desc'  && <><ArrowDown10 size={11} /> Maior→Menor</>}
-            {dimensionSort === 'asc'   && <><ArrowUp10   size={11} /> Menor→Maior</>}
-            {dimensionSort === 'alpha' && <><ArrowDownAZ size={11} /> A-Z</>}
+            onClick={() => handleColSort('tag01')}
+            className={`px-1.5 py-0.5 rounded-lg text-[8px] font-black uppercase transition-all flex items-center gap-1 border shadow-sm ${
+              sortConfig.col === 'tag01' ? 'bg-[#1B75BB] text-white border-[#1B75BB]' : 'bg-white text-gray-600 border-gray-300 hover:border-[#1B75BB]'
+            }`}
+            title="Ordenar alfabeticamente (A-Z)">
+            <ArrowDownAZ size={11} /> A-Z
           </button>
 
           {drillDimensions.length > 0 && (
@@ -2138,7 +2188,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
               <>
                 <thead className="sticky top-0 z-50 shadow-lg whitespace-nowrap">
                   <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white h-7">
-                    <th colSpan={2} rowSpan={2} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle">CONTAS GERENCIAIS</th>
+                    <th colSpan={2} rowSpan={2} onClick={() => handleColSort('tag01')} className="sticky left-0 z-[60] bg-gradient-to-r from-slate-800 to-slate-700 px-3 py-1 text-[9px] font-black uppercase tracking-wider w-[320px] align-middle cursor-pointer select-none hover:brightness-110 transition-all">CONTAS GERENCIAIS<SortIcon col="tag01" /></th>
                     {cols.real   && <th className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-blue-600 to-blue-500 border-r border-white/20 shadow-sm">REAL</th>}
                     {orcGrpCols > 0 && <th colSpan={orcGrpCols} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 to-emerald-500 border-r border-white/20 shadow-sm">REAL vs ORÇADO</th>}
                     {a1GrpCols  > 0 && <th colSpan={a1GrpCols}  className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-purple-600 to-purple-500 shadow-sm">REAL vs A-1</th>}
@@ -2146,13 +2196,13 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                   <tr className="bg-gradient-to-r from-slate-700 to-slate-600 text-white h-6">
                     {activeElements.map(el => {
                       switch (el) {
-                        case 'Real':            return <th key="real" className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-blue-500 to-blue-600 border-r border-white/20">Real</th>;
-                        case 'Orçado':          return <th key="orc"  className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-emerald-500 to-emerald-600">Orçado</th>;
-                        case 'DeltaAbsOrcado':  return <th key="dao"  className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-gradient-to-br from-emerald-500 to-emerald-600">Δ R−Orç</th>;
-                        case 'DeltaPercOrcado': return <th key="dpo"  className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-emerald-500 to-emerald-600 border-r border-white/20">Δ%</th>;
-                        case 'A1':              return <th key="a1"   className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-purple-500 to-purple-600">A-1</th>;
-                        case 'DeltaAbsA1':      return <th key="da1"  className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-gradient-to-br from-purple-500 to-purple-600">Δ R−A-1</th>;
-                        case 'DeltaPercA1':     return <th key="dp1"  className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-purple-500 to-purple-600">Δ%</th>;
+                        case 'Real':            return <th key="real" onClick={() => handleColSort('real_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-blue-500 to-blue-600 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all">Real<SortIcon col="real_total" /></th>;
+                        case 'Orçado':          return <th key="orc"  onClick={() => handleColSort('orc_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-emerald-500 to-emerald-600 cursor-pointer select-none hover:brightness-110 transition-all">Orçado<SortIcon col="orc_total" /></th>;
+                        case 'DeltaAbsOrcado':  return <th key="dao"  onClick={() => handleColSort('dao_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-gradient-to-br from-emerald-500 to-emerald-600 cursor-pointer select-none hover:brightness-110 transition-all">Δ R−Orç<SortIcon col="dao_total" /></th>;
+                        case 'DeltaPercOrcado': return <th key="dpo"  onClick={() => handleColSort('dpo_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-emerald-500 to-emerald-600 border-r border-white/20 cursor-pointer select-none hover:brightness-110 transition-all">Δ%<SortIcon col="dpo_total" /></th>;
+                        case 'A1':              return <th key="a1"   onClick={() => handleColSort('a1_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-purple-500 to-purple-600 cursor-pointer select-none hover:brightness-110 transition-all">A-1<SortIcon col="a1_total" /></th>;
+                        case 'DeltaAbsA1':      return <th key="da1"  onClick={() => handleColSort('da1_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-gradient-to-br from-purple-500 to-purple-600 cursor-pointer select-none hover:brightness-110 transition-all">Δ R−A-1<SortIcon col="da1_total" /></th>;
+                        case 'DeltaPercA1':     return <th key="dp1"  onClick={() => handleColSort('dp1_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-purple-500 to-purple-600 cursor-pointer select-none hover:brightness-110 transition-all">Δ%<SortIcon col="dp1_total" /></th>;
                         default: return null;
                       }
                     })}
