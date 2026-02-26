@@ -595,11 +595,13 @@ const App: React.FC = () => {
       ]);
     } else {
       // MULTI, CONTA, DATA, MARCA, FILIAL
-      const { justification: _j, categoryLabel, filial: filialValue, ...transactionData } = parsedValue;
+      const { justification: _j, categoryLabel, filial: filialValue, filial_code: filialCode, ...transactionData } = parsedValue;
       const updatedData = {
         ...transactionData,
         // filial do editForm contém o nome_filial (ex: 'CGS - Barra') — atualiza a coluna nome_filial
         nome_filial: filialValue || undefined,
+        // filial_code contém o código curto da filial — atualiza a coluna filial
+        filial: filialCode || undefined,
         conta_contabil: transactionData.category || undefined,
         status: 'Ajustado',
         type: transactionData.category ? mapCategoryToType(transactionData.category) : undefined,
