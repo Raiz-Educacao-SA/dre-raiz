@@ -1921,60 +1921,32 @@ let contaContabilCache: ContaContabilOption[] | null = null;
 export const getContaContabilOptions = async (): Promise<ContaContabilOption[]> => {
   if (contaContabilCache && contaContabilCache.length > 0) return contaContabilCache;
 
-  // Estratégia: tentar tabela conta_contabil primeiro (tem nome_nat_orc correto)
-  // Se não existir, fallback para DISTINCT de transactions
   try {
-    // 1) Tentar tabela conta_contabil (plano de contas com nomes corretos)
-    console.log('📋 Tentando tabela conta_contabil...');
-    const { data: ccData, error: ccError } = await supabase
-      .from('conta_contabil')
-      .select('cod_conta, tag1, tag2, tag3, tag4, nome_nat_orc, nat_orc')
+    // Busca da tabela tags — apenas contas com cod_conta de 14 caracteres (nível folha)
+    console.log('📋 Carregando contas da tabela tags (cod_conta com 14 chars)...');
+    const { data, error } = await supabase
+      .from('tags')
+      .select('cod_conta, tag0, tag1, tag2, tag3, tag4, nome_nat_orc, nat_orc')
       .order('cod_conta', { ascending: true });
 
-    if (!ccError && ccData && ccData.length > 0) {
-      console.log(`✅ Tabela conta_contabil encontrada com ${ccData.length} registros`);
-      contaContabilCache = ccData.map(row => ({
-        cod_conta: row.cod_conta,
-        nome_nat_orc: row.nome_nat_orc || row.nat_orc || null,
-        tag0: row.tag1 || null,
-        tag01: row.tag2 || null,
-        tag02: row.tag3 || null,
-        tag03: row.tag4 || null,
-      }));
-      return contaContabilCache;
-    }
-
-    // 2) Fallback: buscar DISTINCT de transactions
-    console.log('📋 Fallback: carregando contas de transactions...');
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('conta_contabil, nat_orc, tag01, tag02, tag03')
-      .not('conta_contabil', 'is', null);
-
     if (error) {
-      console.error('❌ Erro ao buscar contas:', error.message);
+      console.error('❌ Erro ao buscar tabela tags:', error.message);
       return [];
     }
 
-    const tag0Map = await getTag0Map();
+    // Filtra apenas os registros com cod_conta de exatamente 14 caracteres
+    const filtered = (data || []).filter(row => row.cod_conta && row.cod_conta.length === 14);
 
-    const contaMap = new Map<string, ContaContabilOption>();
-    for (const row of data || []) {
-      const cod = row.conta_contabil;
-      if (!cod || contaMap.has(cod)) continue;
-      contaMap.set(cod, {
-        cod_conta: cod,
-        nome_nat_orc: row.tag03 || null,
-        tag0: resolveTag0(row.tag01, tag0Map) || null,
-        tag01: row.tag01 || null,
-        tag02: row.tag02 || null,
-        tag03: row.tag03 || null,
-      });
-    }
+    contaContabilCache = filtered.map(row => ({
+      cod_conta: row.cod_conta,
+      nome_nat_orc: row.nome_nat_orc || row.nat_orc || null,
+      tag0:  row.tag0  || null,
+      tag01: row.tag1  || null,
+      tag02: row.tag2  || null,
+      tag03: row.tag3  || null,
+    }));
 
-    contaContabilCache = Array.from(contaMap.values()).sort((a, b) => a.cod_conta.localeCompare(b.cod_conta));
-    console.log(`✅ ${contaContabilCache.length} contas únicas carregadas (fallback transactions)`);
-
+    console.log(`✅ ${contaContabilCache.length} contas carregadas da tabela tags (14 chars)`);
     return contaContabilCache;
   } catch (e) {
     console.error('❌ EXCEPTION:', e);
