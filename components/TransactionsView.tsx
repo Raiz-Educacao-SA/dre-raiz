@@ -128,7 +128,8 @@ interface RateioPart {
   id: string;
   amount: number;
   percent: number;
-  filial: string;
+  filial: string;      // nome_filial (display, ex: "CGS - Barra")
+  filial_code: string; // código da filial (ex: "CGS")
   marca: string;
   date: string;
   category: string;
@@ -531,8 +532,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       setRateioParts([
         {
           id: `p1-${Date.now()}`,
-          filial: rateioTransaction.filial,
-          marca: rateioTransaction.marca || 'SAP',
+          filial: rateioTransaction.nome_filial || rateioTransaction.filial || '',
+          filial_code: rateioTransaction.filial || '',
+          marca: rateioTransaction.marca || '',
           amount: Number((rateioTransaction.amount / 2).toFixed(2)),
           percent: 50,
           date: rateioTransaction.date,
@@ -540,8 +542,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         },
         {
           id: `p2-${Date.now()}`,
-          filial: rateioTransaction.filial,
-          marca: rateioTransaction.marca || 'SAP',
+          filial: rateioTransaction.nome_filial || rateioTransaction.filial || '',
+          filial_code: rateioTransaction.filial || '',
+          marca: rateioTransaction.marca || '',
           amount: Number((rateioTransaction.amount / 2).toFixed(2)),
           percent: 50,
           date: rateioTransaction.date,
@@ -1159,7 +1162,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       ...rateioTransaction,
       id: crypto.randomUUID(),
       chave_id: rateioTransaction.chave_id,
-      filial: p.filial,
+      filial: p.filial_code || p.filial,   // código da filial (coluna filial no banco)
+      nome_filial: p.filial,               // nome de exibição (coluna nome_filial no banco)
       marca: p.marca,
       date: p.date,
       category: p.category,
@@ -1237,7 +1241,13 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       // Sobrescreve só o campo alterado
       if (bulkField === 'date')           newValue.date = bulkValue + '-01';
-      if (bulkField === 'filial')         newValue.filial = bulkValue;
+      if (bulkField === 'filial') {
+        // bulkValue = nome_filial (display); encontra o código e a marca no filterOptions
+        const opt = filterOptions.filiais.find(f => f.label === bulkValue);
+        newValue.filial      = bulkValue;                        // → nome_filial no banco (via _applyChange)
+        newValue.filial_code = opt?.filialCodes[0] || bulkValue; // → filial (código) no banco
+        newValue.marca       = opt?.cia || t.marca || '';        // → marca no banco
+      }
       if (bulkField === 'conta_contabil') { newValue.category = bulkValue; newValue.categoryLabel = bulkValue; }
       if (bulkField === 'recurring')      newValue.recurring = bulkValue;
 
@@ -1660,7 +1670,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
               className="bg-white/10 border border-white/30 rounded px-2 py-0.5 text-xs font-bold text-white"
             >
               <option value="" className="text-gray-900 bg-white">Selecionar filial...</option>
-              {BRANCHES.map(b => <option key={b} value={b} className="text-gray-900 bg-white">{b}</option>)}
+              {filterOptions.filiais.map(f => <option key={f.label} value={f.label} className="text-gray-900 bg-white">{f.label}</option>)}
             </select>
           )}
           {bulkField === 'conta_contabil' && (
@@ -2078,8 +2088,15 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     {rateioParts.map((part) => (
                       <div key={part.id} className="grid grid-cols-6 md:grid-cols-12 gap-2 bg-gray-50 p-2 border border-gray-100 items-center">
                          <div className="col-span-3">
-                           <select value={part.filial} onChange={e => updateRateioPart(part.id, { filial: e.target.value })} className="w-full bg-white border border-gray-100 p-1.5 text-[8px] font-black outline-none focus:border-[#1B75BB]">
-                             {BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                           <select value={part.filial} onChange={e => {
+                             const opt = filterOptions.filiais.find(f => f.label === e.target.value);
+                             updateRateioPart(part.id, {
+                               filial: e.target.value,
+                               filial_code: opt?.filialCodes[0] || e.target.value,
+                               marca: opt?.cia || part.marca,
+                             });
+                           }} className="w-full bg-white border border-gray-100 p-1.5 text-[8px] font-black outline-none focus:border-[#1B75BB]">
+                             {filterOptions.filiais.map(f => <option key={f.label} value={f.label}>{f.label}</option>)}
                            </select>
                          </div>
                          <div className="col-span-3">
@@ -2104,7 +2121,18 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                          </div>
                       </div>
                     ))}
-                    <button onClick={() => setRateioParts([...rateioParts, { id: `p-${Date.now()}`, filial: BRANCHES[0], marca: 'SAP', amount: 0, percent: 0, date: rateioTransaction.date, category: rateioTransaction.category }])} className="w-full py-2.5 border-2 border-dashed border-gray-100 text-gray-300 hover:text-[#1B75BB] hover:border-[#1B75BB]/30 transition-all font-black text-[8px] uppercase flex items-center justify-center gap-2">
+                    <button onClick={() => {
+                      const firstFilial = filterOptions.filiais[0];
+                      setRateioParts([...rateioParts, {
+                        id: `p-${Date.now()}`,
+                        filial: firstFilial?.label || '',
+                        filial_code: firstFilial?.filialCodes[0] || '',
+                        marca: firstFilial?.cia || '',
+                        amount: 0, percent: 0,
+                        date: rateioTransaction.date,
+                        category: rateioTransaction.category
+                      }]);
+                    }} className="w-full py-2.5 border-2 border-dashed border-gray-100 text-gray-300 hover:text-[#1B75BB] hover:border-[#1B75BB]/30 transition-all font-black text-[8px] uppercase flex items-center justify-center gap-2">
                       <PlusCircle size={12} /> Adicionar Linha
                     </button>
                     <div className="pt-6 space-y-2">
