@@ -576,9 +576,11 @@ const App: React.FC = () => {
 
     if (change.type === 'RATEIO') {
       const rawParts = (parsedValue.transactions || (Array.isArray(parsedValue) ? parsedValue : [])) as Transaction[];
-      const newParts = rawParts.map(({ updated_at, id, ...rest }: any, idx: number) => ({
+      const newParts = rawParts.map(({ updated_at, id, chave_id, ...rest }: any, idx: number) => ({
         ...rest,
         id: crypto.randomUUID(),
+        // chave_id único por parte: evita conflito com o original (ainda existente) e entre partes
+        chave_id: chave_id ? `${chave_id}-R${idx + 1}` : null,
         description: `${rest.description} [R${idx + 1}/${rawParts.length}]`,
       }));
       // inserir novas ANTES de deletar (integridade)
