@@ -51,8 +51,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const dbUser = await supabaseService.getUserByEmail(firebaseUser.email);
 
       if (dbUser) {
-        // Atualizar último login
-        await supabaseService.updateUserLastLogin(dbUser.id);
+        // Atualizar último login (fire-and-forget — não bloqueia login)
+        supabaseService.updateUserLastLogin(dbUser.id);
 
         // 🔐 CARREGAR PERMISSÕES DO USUÁRIO
         console.log('🔐 Carregando permissões para:', dbUser.email, '| user_id:', dbUser.id);

@@ -226,12 +226,6 @@ const App: React.FC = () => {
     applyFilters
   ]);
 
-  // 🔄 Limpar caches ao iniciar (para garantir dados atualizados do banco)
-  useEffect(() => {
-    console.log('🔄 Limpando caches ao iniciar aplicação...');
-    supabaseService.clearAllCaches();
-  }, []);
-
   // Carregar manual changes ao iniciar
   useEffect(() => {
     const loadManualChanges = async () => {

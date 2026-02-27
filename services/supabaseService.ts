@@ -1323,33 +1323,51 @@ export const bulkAddTransactions = async (transactions: Omit<Transaction, 'id'>[
 export const getAllManualChanges = async (): Promise<ManualChange[]> => {
   console.log('🟦 getAllManualChanges INICIADO');
 
-  const { data, error } = await supabase
-    .from('manual_changes')
-    .select('*')
-    .order('requested_at', { ascending: false });
+  // Buscar pendentes (todas) + últimas 500 processadas em paralelo
+  const [pendingRes, recentRes] = await Promise.all([
+    supabase
+      .from('manual_changes')
+      .select('*')
+      .eq('status', 'Pendente')
+      .order('requested_at', { ascending: false }),
+    supabase
+      .from('manual_changes')
+      .select('*')
+      .neq('status', 'Pendente')
+      .order('requested_at', { ascending: false })
+      .limit(500),
+  ]);
 
-  console.log('🟦 Resposta do Supabase:', {
-    error: error,
-    hasData: !!data,
-    dataLength: data ? data.length : 0
-  });
-
-  if (error) {
-    console.error('❌ Error fetching manual changes:', error);
-    console.error('❌ Código do erro:', error.code);
-    console.error('❌ Mensagem do erro:', error.message);
-    return [];
+  if (pendingRes.error) {
+    console.error('❌ Error fetching pending manual changes:', pendingRes.error);
+  }
+  if (recentRes.error) {
+    console.error('❌ Error fetching recent manual changes:', recentRes.error);
   }
 
-  console.log('✅ Dados brutos (primeiros 2):', data.slice(0, 2));
+  // Unificar e deduplicar por ID
+  const allData = [...(pendingRes.data || []), ...(recentRes.data || [])];
+  const seen = new Set<string>();
+  const unique = allData.filter(row => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
 
-  const converted = data.map(dbToManualChange);
-  console.log('✅ Dados convertidos (primeiros 2):', converted.slice(0, 2).map(c => ({
-    id: c.id,
-    type: c.type,
-    status: c.status,
-    transactionId: c.transactionId
-  })));
+  // Ordenar por requested_at DESC (pendentes ficam no topo por serem mais recentes ou mesclados)
+  unique.sort((a, b) => (b.requested_at || '').localeCompare(a.requested_at || ''));
+
+  console.log('🟦 Resposta do Supabase:', {
+    pending: pendingRes.data?.length || 0,
+    recent: recentRes.data?.length || 0,
+    total: unique.length
+  });
+
+  const converted = unique.map(dbToManualChange);
+  console.log('✅ Dados convertidos:', {
+    total: converted.length,
+    pendentes: converted.filter(c => c.status === 'Pendente').length
+  });
 
   return converted;
 };
