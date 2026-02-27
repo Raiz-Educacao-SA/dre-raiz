@@ -199,7 +199,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   ]);
 
   // ── Filtro Recorrência ────────────────────────────────────────────────────
-  const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>('Sim');
+  const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>(null);
 
   // ── Drill-down ────────────────────────────────────────────────────────────
   const [dimensionCache,    setDimensionCache]    = useState<Record<string, DREDimensionRow[]>>({});
@@ -244,7 +244,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const filiaisRef        = useRef(selectedFiliais);
   const tags02Ref     = useRef(selectedTags02);
   const tags03Ref     = useRef(selectedTags03);
-  const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
+  const recurringRef  = useRef<'Sim' | 'Não' | null>(null);
   const allowedMarcasRef = useRef<string[] | undefined>(allowedMarcas);
   useEffect(() => { yearRef.current           = year;            }, [year]);
   useEffect(() => { selectedMonthsRef.current = selectedMonths;  }, [selectedMonths]);
