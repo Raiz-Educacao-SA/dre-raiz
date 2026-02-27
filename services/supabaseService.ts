@@ -1,6 +1,49 @@
 import { supabase, DatabaseTransaction, DatabaseManualChange } from '../supabase';
 import { Transaction, ManualChange, PaginationParams, PaginatedResponse, ContaContabilOption, DreAnalysis } from '../types';
 import { addPermissionFiltersToObject, applyPermissionFilters } from './permissionsService';
+import { debug } from '../utils/logger';
+import { z } from 'zod';
+
+// ── Zod schemas para validação de parâmetros RPC ──────────────────────────────
+const MAX_ARRAY_LENGTH = 500;
+const monthPattern = /^\d{4}-\d{2}$/;
+
+const optionalMonth = z.string().regex(monthPattern).optional();
+const optionalStringArray = z.array(z.string().max(200)).max(MAX_ARRAY_LENGTH).optional();
+const optionalRecurring = z.enum(['Sim', 'Não']).optional();
+
+const somaTagsParamsSchema = z.object({
+  monthFrom: optionalMonth,
+  monthTo: optionalMonth,
+  marcas: optionalStringArray,
+  nomeFiliais: optionalStringArray,
+  tags02: optionalStringArray,
+  tags01: optionalStringArray,
+  recurring: optionalRecurring,
+  tags03: optionalStringArray,
+});
+
+const transactionFiltersSchema = z.object({
+  monthFrom: optionalMonth,
+  monthTo: optionalMonth,
+  marca: optionalStringArray,
+  filial: optionalStringArray,
+  nome_filial: optionalStringArray,
+  tag0: optionalStringArray,
+  tag01: optionalStringArray,
+  tag02: optionalStringArray,
+  tag03: optionalStringArray,
+  category: optionalStringArray,
+  conta_contabil: optionalStringArray,
+  ticket: z.string().max(200).optional(),
+  chave_id: z.string().max(200).optional(),
+  vendor: z.string().max(200).optional(),
+  description: z.string().max(500).optional(),
+  amount: z.string().max(50).optional(),
+  recurring: z.array(z.string().max(10)).max(10).optional(),
+  status: z.array(z.string().max(30)).max(10).optional(),
+  scenario: z.string().max(30).optional(),
+}).passthrough();
 
 // Converter Transaction do app para formato do banco
 // Remove campos que não existem na tabela: ticket, vendor, recurring, justification
@@ -64,7 +107,7 @@ const manualChangeToDb = (mc: ManualChange): DatabaseManualChange => {
   // Extrair justificativa - se não estiver direta, tentar extrair do newValue (para RATEIO)
   let justification = mc.justification || mc.description || '';
 
-  console.log('🔄 manualChangeToDb - Justification inicial:', {
+  debug('🔄 manualChangeToDb - Justification inicial:', {
     mcJustification: mc.justification,
     mcDescription: mc.description,
     justification
@@ -75,14 +118,14 @@ const manualChangeToDb = (mc: ManualChange): DatabaseManualChange => {
     try {
       const parsed = JSON.parse(mc.newValue);
       justification = parsed.justification || '';
-      console.log('🔄 manualChangeToDb - Justification extraída do newValue:', justification);
+      debug('🔄 manualChangeToDb - Justification extraída do newValue:', justification);
     } catch (e) {
       console.warn('⚠️ manualChangeToDb - Falha ao fazer parsing do newValue:', e);
     }
   }
 
   const finalJustification = justification || 'Sem justificativa';
-  console.log('✅ manualChangeToDb - Justification final:', finalJustification);
+  debug('✅ manualChangeToDb - Justification final:', finalJustification);
 
   return {
     id: mc.id,
@@ -155,7 +198,7 @@ let cachedTag0Map: Map<string, string> | null = null;
 export const getTag0Map = async (): Promise<Map<string, string>> => {
   if (cachedTag0Map) return cachedTag0Map;
 
-  console.log('🏷️ Carregando tag0_map...');
+  debug('🏷️ Carregando tag0_map...');
   const { data, error } = await supabase
     .from('tag0_map')
     .select('tag1_norm, tag0, tag1_raw');
@@ -172,7 +215,7 @@ export const getTag0Map = async (): Promise<Map<string, string>> => {
     if (row.tag1_raw) cachedTag0Map.set(row.tag1_raw.toLowerCase().trim(), row.tag0);
   }
 
-  console.log(`✅ ${cachedTag0Map.size} entradas de tag0_map carregadas`);
+  debug(`✅ ${cachedTag0Map.size} entradas de tag0_map carregadas`);
   return cachedTag0Map;
 };
 
@@ -202,7 +245,7 @@ export const clearAllCaches = () => {
   cachedTag01Options = null;
   cachedTag02Options = null;
   cachedTag03Options = null;
-  console.log('🔄 TODOS OS CACHES LIMPOS - Próxima busca vai buscar do banco');
+  debug('🔄 TODOS OS CACHES LIMPOS - Próxima busca vai buscar do banco');
 };
 
 /**
@@ -212,7 +255,7 @@ export const clearAllCaches = () => {
 export const getTag0Options = async (): Promise<string[]> => {
   if (cachedTag0Options) return cachedTag0Options;
 
-  console.log('🏷️ Carregando opções de Tag0...');
+  debug('🏷️ Carregando opções de Tag0...');
   const { data, error } = await supabase
     .from('tag0_map')
     .select('tag0');
@@ -226,7 +269,7 @@ export const getTag0Options = async (): Promise<string[]> => {
   const uniqueTag0s = [...new Set(data?.map(row => row.tag0).filter(Boolean))].sort();
   cachedTag0Options = uniqueTag0s;
 
-  console.log(`✅ ${cachedTag0Options.length} opções de Tag0 carregadas`);
+  debug(`✅ ${cachedTag0Options.length} opções de Tag0 carregadas`);
   return cachedTag0Options;
 };
 
@@ -242,7 +285,7 @@ let cachedTag03Options: string[] | null = null;
 export const getTag01Options = async (): Promise<string[]> => {
   if (cachedTag01Options) return cachedTag01Options;
 
-  console.log('🏷️ Carregando opções de Tag01...');
+  debug('🏷️ Carregando opções de Tag01...');
   const { data, error } = await supabase
     .from('transactions')
     .select('tag01')
@@ -256,7 +299,7 @@ export const getTag01Options = async (): Promise<string[]> => {
   const uniqueTag01s = [...new Set(data?.map(row => row.tag01).filter(Boolean))].sort();
   cachedTag01Options = uniqueTag01s;
 
-  console.log(`✅ ${cachedTag01Options.length} opções de Tag01 carregadas`);
+  debug(`✅ ${cachedTag01Options.length} opções de Tag01 carregadas`);
   return cachedTag01Options;
 };
 
@@ -267,7 +310,7 @@ export const getTag01Options = async (): Promise<string[]> => {
 export const getTag02Options = async (): Promise<string[]> => {
   if (cachedTag02Options) return cachedTag02Options;
 
-  console.log('🏷️ Carregando opções de Tag02...');
+  debug('🏷️ Carregando opções de Tag02...');
   const { data, error } = await supabase
     .from('transactions')
     .select('tag02')
@@ -281,7 +324,7 @@ export const getTag02Options = async (): Promise<string[]> => {
   const uniqueTag02s = [...new Set(data?.map(row => row.tag02).filter(Boolean))].sort();
   cachedTag02Options = uniqueTag02s;
 
-  console.log(`✅ ${cachedTag02Options.length} opções de Tag02 carregadas`);
+  debug(`✅ ${cachedTag02Options.length} opções de Tag02 carregadas`);
   return cachedTag02Options;
 };
 
@@ -334,7 +377,7 @@ export const getTag03OptionsForTag02s = async (tags02: string[]): Promise<string
 export const getTag03Options = async (): Promise<string[]> => {
   if (cachedTag03Options) return cachedTag03Options;
 
-  console.log('🏷️ Carregando opções de Tag03...');
+  debug('🏷️ Carregando opções de Tag03...');
   const { data, error } = await supabase
     .from('transactions')
     .select('tag03')
@@ -348,19 +391,19 @@ export const getTag03Options = async (): Promise<string[]> => {
   const uniqueTag03s = [...new Set(data?.map(row => row.tag03).filter(Boolean))].sort();
   cachedTag03Options = uniqueTag03s;
 
-  console.log(`✅ ${cachedTag03Options.length} opções de Tag03 carregadas`);
+  debug(`✅ ${cachedTag03Options.length} opções de Tag03 carregadas`);
   return cachedTag03Options;
 };
 
 export const getFiliais = async (): Promise<FilialOption[]> => {
-  console.log('🔍 [MARCA] getFiliais() CHAMADO');
+  debug('🔍 [MARCA] getFiliais() CHAMADO');
 
   if (cachedFiliais) {
-    console.log('🔍 [MARCA] Retornando cache:', cachedFiliais.length, 'filiais');
+    debug('🔍 [MARCA] Retornando cache:', cachedFiliais.length, 'filiais');
     return cachedFiliais;
   }
 
-  console.log('🏢 [MARCA] Buscando tabela FILIAL no banco...');
+  debug('🏢 [MARCA] Buscando tabela FILIAL no banco...');
   const { data, error } = await supabase
     .from('filial')
     .select('cia, filial, nomefilial')
@@ -372,8 +415,8 @@ export const getFiliais = async (): Promise<FilialOption[]> => {
     return [];
   }
 
-  console.log('🔍 [MARCA] Dados brutos recebidos:', data?.length, 'registros');
-  console.log('🔍 [MARCA] Sample:', data?.slice(0, 3));
+  debug('🔍 [MARCA] Dados brutos recebidos:', data?.length, 'registros');
+  debug('🔍 [MARCA] Sample:', data?.slice(0, 3));
 
   // Agrupar por cia+nomefilial (label) → coletar todos os códigos de filial do grupo
   const groupMap = new Map<string, FilialOption>();
@@ -396,15 +439,15 @@ export const getFiliais = async (): Promise<FilialOption[]> => {
   }
   cachedFiliais = Array.from(groupMap.values());
 
-  console.log(`✅ [MARCA] ${cachedFiliais.length} filiais processadas`);
-  console.log('✅ [MARCA] CIAs únicas:', [...new Set(cachedFiliais.map(f => f.cia))]);
+  debug(`✅ [MARCA] ${cachedFiliais.length} filiais processadas`);
+  debug('✅ [MARCA] CIAs únicas:', [...new Set(cachedFiliais.map(f => f.cia))]);
   return cachedFiliais;
 };
 
 export const getTagRecords = async (): Promise<TagRecord[]> => {
   if (cachedTagRecords) return cachedTagRecords;
 
-  console.log('🏷️ Carregando combinações de tags de transactions...');
+  debug('🏷️ Carregando combinações de tags de transactions...');
 
   // Buscar DISTINCT tag01/tag02/tag03 direto da tabela transactions
   // (tabela tags está vazia — os dados vivem em transactions)
@@ -433,7 +476,7 @@ export const getTagRecords = async (): Promise<TagRecord[]> => {
     }
   }
 
-  console.log(`✅ ${cachedTagRecords.length} combinações de tags carregadas`);
+  debug(`✅ ${cachedTagRecords.length} combinações de tags carregadas`);
   return cachedTagRecords;
 };
 
@@ -561,7 +604,7 @@ export const getDRESummary = async (params: {
   nomeFiliais?: string[];  // ✅ Labels completas: ["GT - Bosque", "QI - Central"]
   tags01?: string[];
 }): Promise<DRESummaryRow[]> => {
-  console.log('📊 getDRESummary: Buscando dados agregados...', params);
+  debug('📊 getDRESummary: Buscando dados agregados...', params);
 
   const rpcParams = {
     p_month_from: params.monthFrom || null,
@@ -571,7 +614,7 @@ export const getDRESummary = async (params: {
     p_tags01: params.tags01 && params.tags01.length > 0 ? params.tags01 : null,
   };
 
-  console.log('🔍 RPC params sendo enviados:', rpcParams);
+  debug('🔍 RPC params sendo enviados:', rpcParams);
 
   // ⏱️ Adicionar timeout de 30 segundos
   const controller = new AbortController();
@@ -589,7 +632,7 @@ export const getDRESummary = async (params: {
       return [];
     }
 
-    console.log(`✅ getDRESummary: ${data?.length || 0} linhas agregadas retornadas`);
+    debug(`✅ getDRESummary: ${data?.length || 0} linhas agregadas retornadas`);
 
     // Se retornou 0 linhas com filtros, pode ser problema de matching
     if (data?.length === 0 && (rpcParams.p_marcas || rpcParams.p_nome_filiais || rpcParams.p_tags01)) {
@@ -634,6 +677,12 @@ export const getSomaTags = async (
   recurring?: string,
   tags03?: string[],
 ): Promise<SomaTagsRow[]> => {
+  // Validar parâmetros antes de enviar ao RPC
+  const parsed = somaTagsParamsSchema.safeParse({ monthFrom, monthTo, marcas, nomeFiliais, tags02, tags01, recurring, tags03 });
+  if (!parsed.success) {
+    console.error('❌ getSomaTags: parâmetros inválidos', parsed.error.issues);
+    return [];
+  }
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
@@ -718,7 +767,7 @@ export const getReceitaLiquidaDRE = async (params: {
   nomeFiliais?: string[];
   scenario?: string;
 }): Promise<number> => {
-  console.log('💰 getReceitaLiquidaDRE: Calculando receita líquida...', params);
+  debug('💰 getReceitaLiquidaDRE: Calculando receita líquida...', params);
 
   // Buscar dados agregados usando getDRESummary
   const summaryRows = await getDRESummary({
@@ -739,7 +788,7 @@ export const getReceitaLiquidaDRE = async (params: {
     .filter(row => row.tag0 && row.tag0.match(/^01\./i))
     .reduce((sum, row) => sum + Number(row.total_amount), 0);
 
-  console.log(`✅ Receita Líquida calculada: R$ ${totalReceita.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
+  debug(`✅ Receita Líquida calculada: R$ ${totalReceita.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`);
   return totalReceita;
 };
 
@@ -761,7 +810,7 @@ export const getDREDimension = async (params: {
   tag0?: string;  // fallback: inclui contas vazias do mesmo tag0 no A-1
   recurring?: string;
 }): Promise<DREDimensionRow[]> => {
-  console.log('📊 getDREDimension: Buscando dimensão', params.dimension, {
+  debug('📊 getDREDimension: Buscando dimensão', params.dimension, {
     tags01: params.tags01,
     tags02: params.tags02,
     tags03: params.tags03,
@@ -788,7 +837,7 @@ export const getDREDimension = async (params: {
     return [];
   }
 
-  console.log(`✅ getDREDimension: ${data?.length || 0} linhas retornadas`);
+  debug(`✅ getDREDimension: ${data?.length || 0} linhas retornadas`);
   return (data || []) as DREDimensionRow[];
 };
 
@@ -800,7 +849,7 @@ export const getDREFilterOptions = async (params: {
   monthFrom?: string;
   monthTo?: string;
 }): Promise<DREFilterOptions> => {
-  console.log('📊 getDREFilterOptions: Buscando opções de filtro...');
+  debug('📊 getDREFilterOptions: Buscando opções de filtro...');
 
   const { data, error } = await supabase.rpc('get_dre_filter_options', {
     p_month_from: params.monthFrom || null,
@@ -813,7 +862,7 @@ export const getDREFilterOptions = async (params: {
   }
 
   const result = data?.[0] || { marcas: [], nome_filiais: [], tags01: [] };
-  console.log(`✅ getDREFilterOptions: ${result.marcas?.length || 0} marcas, ${result.nome_filiais?.length || 0} filiais, ${result.tags01?.length || 0} tags01`);
+  debug(`✅ getDREFilterOptions: ${result.marcas?.length || 0} marcas, ${result.nome_filiais?.length || 0} filiais, ${result.tags01?.length || 0} tags01`);
   return result as DREFilterOptions;
 };
 
@@ -822,7 +871,7 @@ export const getDREFilterOptions = async (params: {
  * Retorna lista completa de tag01 do banco com mapeamento tag0
  */
 export const getAllTag01WithTag0 = async (): Promise<Array<{ tag0: string; tag01: string }>> => {
-  console.log('🏷️ Buscando TODAS as tag01 com tag0 do banco...');
+  debug('🏷️ Buscando TODAS as tag01 com tag0 do banco...');
 
   const { data, error } = await supabase.rpc('get_all_tag01_with_tag0');
 
@@ -831,7 +880,7 @@ export const getAllTag01WithTag0 = async (): Promise<Array<{ tag0: string; tag01
     return [];
   }
 
-  console.log(`✅ getAllTag01WithTag0: ${data?.length || 0} tag01 encontradas`);
+  debug(`✅ getAllTag01WithTag0: ${data?.length || 0} tag01 encontradas`);
   return data || [];
 };
 
@@ -844,46 +893,34 @@ export const getMarcasEFiliais = async (): Promise<{
   marcas: string[];
   filiais: Array<{ marca: string; label: string }>;
 }> => {
-  console.log('🏢 Buscando marcas e filiais da tabela transactions...');
+  debug('🏢 Buscando marcas e filiais (DISTINCT via RPC)...');
 
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('marca, nome_filial')
-    .not('marca', 'is', null)
-    .not('nome_filial', 'is', null);
+  // Usa RPC com SELECT DISTINCT — retorna dezenas de rows em vez de 50K+
+  const { data, error } = await supabase.rpc('get_distinct_marcas_filiais');
 
   if (error) {
     console.error('❌ Erro ao buscar marcas e filiais:', error);
-    return { marcas: [], filiais: [] };
+    // Fallback: query direta com dedup client-side
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('transactions')
+      .select('marca, nome_filial')
+      .not('marca', 'is', null)
+      .not('nome_filial', 'is', null);
+    if (fallbackError) return { marcas: [], filiais: [] };
+    const seen = new Set<string>();
+    const arr: Array<{ marca: string; label: string }> = [];
+    for (const row of fallbackData || []) {
+      const key = `${row.marca}|${row.nome_filial}`;
+      if (!seen.has(key)) { seen.add(key); arr.push({ marca: row.marca, label: row.nome_filial }); }
+    }
+    arr.sort((a, b) => a.marca !== b.marca ? a.marca.localeCompare(b.marca) : a.label.localeCompare(b.label));
+    return { marcas: [...new Set(arr.map(f => f.marca))].sort(), filiais: arr };
   }
 
-  console.log(`✅ Query retornou ${data?.length || 0} registros`);
-
-  // Criar conjunto único de combinações marca + nome_filial
-  const filiaisSet = new Set<string>();
-  const filiaisArray: Array<{ marca: string; label: string }> = [];
-
-  (data || []).forEach(row => {
-    const key = `${row.marca}|${row.nome_filial}`;
-    if (!filiaisSet.has(key)) {
-      filiaisSet.add(key);
-      filiaisArray.push({
-        marca: row.marca,
-        label: row.nome_filial
-      });
-    }
-  });
-
-  // Ordenar
-  filiaisArray.sort((a, b) => {
-    if (a.marca !== b.marca) return a.marca.localeCompare(b.marca);
-    return a.label.localeCompare(b.label);
-  });
-
+  const filiaisArray = (data || []).map((row: any) => ({ marca: row.marca, label: row.nome_filial }));
   const marcasUnicas = [...new Set(filiaisArray.map(f => f.marca))].sort();
 
-  console.log(`✅ Encontradas ${marcasUnicas.length} marcas e ${filiaisArray.length} filiais`);
-  console.log(`   Marcas:`, marcasUnicas);
+  debug(`✅ Encontradas ${marcasUnicas.length} marcas e ${filiaisArray.length} filiais`);
 
   return { marcas: marcasUnicas, filiais: filiaisArray };
 };
@@ -892,14 +929,14 @@ export const getMarcasEFiliais = async (): Promise<{
 
 export const getAllTransactions = async (monthsBack: number = 3): Promise<Transaction[]> => {
   // VERSÃO OTIMIZADA: Carrega apenas últimos X meses (padrão: 3)
-  console.log(`🔄 Carregando últimos ${monthsBack} meses de transações...`);
+  debug(`🔄 Carregando últimos ${monthsBack} meses de transações...`);
 
   // Calcular data de início (X meses atrás)
   const startDate = new Date();
   startDate.setMonth(startDate.getMonth() - monthsBack);
   const startDateStr = startDate.toISOString().split('T')[0];
 
-  console.log(`📅 Buscando transações desde: ${startDateStr}`);
+  debug(`📅 Buscando transações desde: ${startDateStr}`);
 
   const { data, error, count } = await supabase
     .from('transactions')
@@ -915,15 +952,15 @@ export const getAllTransactions = async (monthsBack: number = 3): Promise<Transa
   }
 
   if (!data || data.length === 0) {
-    console.log('⚠️ Nenhuma transação encontrada no período');
+    debug('⚠️ Nenhuma transação encontrada no período');
     return [];
   }
 
-  console.log(`✅ ${data.length} transações carregadas (de ${count} no período)!`);
+  debug(`✅ ${data.length} transações carregadas (de ${count} no período)!`);
 
   // Debug: Verificar campos na primeira transação
   if (data.length > 0) {
-    console.log('🔍 DEBUG - Primeira transação ANTES do mapeamento (do banco):', {
+    debug('🔍 DEBUG - Primeira transação ANTES do mapeamento (do banco):', {
       id: data[0].id,
       chave_id: data[0].chave_id,
       ticket: data[0].ticket,
@@ -944,7 +981,7 @@ export const getAllTransactions = async (monthsBack: number = 3): Promise<Transa
 
   // Debug: Verificar após mapeamento
   if (mapped.length > 0) {
-    console.log('🔍 DEBUG - Primeira transação DEPOIS do mapeamento (para o app):', {
+    debug('🔍 DEBUG - Primeira transação DEPOIS do mapeamento (para o app):', {
       id: mapped[0].id,
       tag0: mapped[0].tag0,
       tag01: mapped[0].tag01,
@@ -980,19 +1017,19 @@ export interface TransactionFilters {
 
 // Helper para aplicar filtros em uma query (reutilizado em paginação)
 const applyTransactionFilters = (query: any, filters: TransactionFilters) => {
-  console.log('🔧 applyTransactionFilters chamado com:', JSON.stringify(filters, null, 2));
+  debug('🔧 applyTransactionFilters chamado com:', JSON.stringify(filters, null, 2));
 
   // ═══════════════════════════════════════════════════════════════
   // 🔐 APLICAR PERMISSÕES AUTOMATICAMENTE
   // ═══════════════════════════════════════════════════════════════
   filters = addPermissionFiltersToObject(filters);
-  console.log('🔐 Filtros após aplicar permissões:', JSON.stringify(filters, null, 2));
+  debug('🔐 Filtros após aplicar permissões:', JSON.stringify(filters, null, 2));
 
   // Filtros de data (período)
   if (filters.monthFrom) {
     const startDate = `${filters.monthFrom}-01`;
     query = query.gte('date', startDate);
-    console.log('  ✅ Filtro monthFrom aplicado:', startDate);
+    debug('  ✅ Filtro monthFrom aplicado:', startDate);
   }
 
   if (filters.monthTo) {
@@ -1000,15 +1037,15 @@ const applyTransactionFilters = (query: any, filters: TransactionFilters) => {
     const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
     const endDate = `${filters.monthTo}-${lastDay}`;
     query = query.lte('date', endDate);
-    console.log('  ✅ Filtro monthTo aplicado:', endDate);
+    debug('  ✅ Filtro monthTo aplicado:', endDate);
   }
 
   // Filtros de array (marca, filial, tags, category, etc)
   if (filters.marca && filters.marca.length > 0) {
     query = query.in('marca', filters.marca);
-    console.log('  🔒 Filtro MARCA aplicado:', filters.marca);
+    debug('  🔒 Filtro MARCA aplicado:', filters.marca);
   } else {
-    console.log('  ⚠️ Filtro marca NÃO aplicado (vazio ou undefined)');
+    debug('  ⚠️ Filtro marca NÃO aplicado (vazio ou undefined)');
   }
   if (filters.filial && filters.filial.length > 0) query = query.in('filial', filters.filial);
   if (filters.nome_filial && filters.nome_filial.length > 0) query = query.in('nome_filial', filters.nome_filial);
@@ -1070,10 +1107,17 @@ export const getFilteredTransactions = async (
   pagination?: PaginationParams,
   tableName: string = 'transactions'
 ): Promise<PaginatedResponse<Transaction>> => {
-  console.log('🔍 Buscando transações com filtros:', filters);
+  // Validar filtros antes de enviar ao banco
+  const parsed = transactionFiltersSchema.safeParse(filters);
+  if (!parsed.success) {
+    console.error('❌ getFilteredTransactions: filtros inválidos', parsed.error.issues);
+    return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
+  }
+
+  debug('🔍 Buscando transações com filtros:', filters);
 
   if (pagination) {
-    console.log(`📄 Paginação: Página ${pagination.pageNumber}, ${pagination.pageSize} registros/página`);
+    debug(`📄 Paginação: Página ${pagination.pageNumber}, ${pagination.pageSize} registros/página`);
 
     // Iniciar query com contagem
     let query = supabase
@@ -1098,7 +1142,7 @@ export const getFilteredTransactions = async (
     const rangeEnd = offset + pageSize - 1;
     query = query.range(offset, rangeEnd);
 
-    console.log(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} (range: ${offset}-${rangeEnd})...`);
+    debug(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} (range: ${offset}-${rangeEnd})...`);
 
     const { data, count, error } = await query;
 
@@ -1108,7 +1152,7 @@ export const getFilteredTransactions = async (
     }
 
     const totalCount = count || 0;
-    console.log(`📊 Total de registros filtrados: ${totalCount}`);
+    debug(`📊 Total de registros filtrados: ${totalCount}`);
 
     if (!data || data.length === 0) {
       return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
@@ -1152,7 +1196,7 @@ export const getFilteredTransactions = async (
   }
 
   const totalCount = totalCountRaw || 0;
-  console.log(`📊 Total de registros filtrados: ${totalCount}`);
+  debug(`📊 Total de registros filtrados: ${totalCount}`);
 
   if (totalCount === 0) {
     return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
@@ -1160,7 +1204,7 @@ export const getFilteredTransactions = async (
 
   // Criar todas as promises de lotes
   const totalBatches = Math.ceil(totalCount / BATCH_SIZE);
-  console.log(`📦 Buscando ${totalCount} registros em ${totalBatches} lotes de ${BATCH_SIZE} (${PARALLEL_BATCHES} em paralelo)...`);
+  debug(`📦 Buscando ${totalCount} registros em ${totalBatches} lotes de ${BATCH_SIZE} (${PARALLEL_BATCHES} em paralelo)...`);
 
   const fetchBatch = async (batchIdx: number) => {
     const from = batchIdx * BATCH_SIZE;
@@ -1191,10 +1235,10 @@ export const getFilteredTransactions = async (
     for (const result of results) {
       allData.push(...result);
     }
-    console.log(`  ✅ Lotes ${i + 1}-${i + batchIndices.length}/${totalBatches}: acumulado ${allData.length} registros`);
+    debug(`  ✅ Lotes ${i + 1}-${i + batchIndices.length}/${totalBatches}: acumulado ${allData.length} registros`);
   }
 
-  console.log(`✅ ${allData.length} transações carregadas de ${totalCount} total`);
+  debug(`✅ ${allData.length} transações carregadas de ${totalCount} total`);
 
   // Enriquecer com tag0
   const tag0Map = await getTag0Map();
@@ -1233,7 +1277,7 @@ export const addTransaction = async (transaction: Omit<Transaction, 'id'>): Prom
 };
 
 export const updateTransaction = async (id: string, updates: Partial<Transaction>): Promise<boolean> => {
-  console.log('updateTransaction called with:', { id, updates });
+  debug('updateTransaction called with:', { id, updates });
 
   // Remover campos null/undefined e campos vazios
   const cleanedUpdates: any = {};
@@ -1244,11 +1288,11 @@ export const updateTransaction = async (id: string, updates: Partial<Transaction
     }
   });
 
-  console.log('cleanedUpdates:', cleanedUpdates);
+  debug('cleanedUpdates:', cleanedUpdates);
 
   // Se não há nada para atualizar, retornar sucesso
   if (Object.keys(cleanedUpdates).length === 0) {
-    console.log('No fields to update, returning success');
+    debug('No fields to update, returning success');
     return true;
   }
 
@@ -1321,7 +1365,7 @@ export const bulkAddTransactions = async (transactions: Omit<Transaction, 'id'>[
 // ========== MANUAL CHANGES ==========
 
 export const getAllManualChanges = async (): Promise<ManualChange[]> => {
-  console.log('🟦 getAllManualChanges INICIADO');
+  debug('🟦 getAllManualChanges INICIADO');
 
   // Buscar pendentes (todas) + últimas 500 processadas em paralelo
   const [pendingRes, recentRes] = await Promise.all([
@@ -1357,14 +1401,14 @@ export const getAllManualChanges = async (): Promise<ManualChange[]> => {
   // Ordenar por requested_at DESC (pendentes ficam no topo por serem mais recentes ou mesclados)
   unique.sort((a, b) => (b.requested_at || '').localeCompare(a.requested_at || ''));
 
-  console.log('🟦 Resposta do Supabase:', {
+  debug('🟦 Resposta do Supabase:', {
     pending: pendingRes.data?.length || 0,
     recent: recentRes.data?.length || 0,
     total: unique.length
   });
 
   const converted = unique.map(dbToManualChange);
-  console.log('✅ Dados convertidos:', {
+  debug('✅ Dados convertidos:', {
     total: converted.length,
     pendentes: converted.filter(c => c.status === 'Pendente').length
   });
@@ -1373,7 +1417,7 @@ export const getAllManualChanges = async (): Promise<ManualChange[]> => {
 };
 
 export const addManualChange = async (change: ManualChange): Promise<boolean> => {
-  console.log('🟦 addManualChange INICIADO:', {
+  debug('🟦 addManualChange INICIADO:', {
     id: change.id,
     type: change.type,
     transactionId: change.transactionId,
@@ -1384,7 +1428,7 @@ export const addManualChange = async (change: ManualChange): Promise<boolean> =>
   try {
     const dbChange = manualChangeToDb(change);
 
-    console.log('🟦 Após manualChangeToDb:', {
+    debug('🟦 Após manualChangeToDb:', {
       id: dbChange.id,
       type: dbChange.type,
       transaction_id: dbChange.transaction_id,
@@ -1397,7 +1441,7 @@ export const addManualChange = async (change: ManualChange): Promise<boolean> =>
 
     // Garantir que original_transaction é um objeto válido
     if (typeof dbChange.original_transaction === 'string') {
-      console.log('🟦 Convertendo original_transaction de string para objeto');
+      debug('🟦 Convertendo original_transaction de string para objeto');
       dbChange.original_transaction = JSON.parse(dbChange.original_transaction);
     }
 
@@ -1410,8 +1454,8 @@ export const addManualChange = async (change: ManualChange): Promise<boolean> =>
       }
     });
 
-    console.log('🟦 Campos após limpeza:', Object.keys(cleanedChange));
-    console.log('🟦 Dados limpos (resumo):', {
+    debug('🟦 Campos após limpeza:', Object.keys(cleanedChange));
+    debug('🟦 Dados limpos (resumo):', {
       id: cleanedChange.id,
       type: cleanedChange.type,
       transaction_id: cleanedChange.transaction_id,
@@ -1424,13 +1468,13 @@ export const addManualChange = async (change: ManualChange): Promise<boolean> =>
       has_new_values: !!cleanedChange.new_values
     });
 
-    console.log('🔄 Iniciando INSERT no Supabase...');
+    debug('🔄 Iniciando INSERT no Supabase...');
     const { error, data } = await supabase
       .from('manual_changes')
       .insert([cleanedChange])
       .select();
 
-    console.log('🟦 Resposta do Supabase:', {
+    debug('🟦 Resposta do Supabase:', {
       error: error,
       data: data,
       hasError: !!error,
@@ -1447,8 +1491,8 @@ export const addManualChange = async (change: ManualChange): Promise<boolean> =>
       return false;
     }
 
-    console.log('✅ Manual change salvo com SUCESSO!');
-    console.log('✅ Dados retornados:', data);
+    debug('✅ Manual change salvo com SUCESSO!');
+    debug('✅ Dados retornados:', data);
     return true;
   } catch (err) {
     console.error('❌ EXCEPTION in addManualChange:', err);
@@ -1590,7 +1634,7 @@ export const deleteUser = async (userId: string) => {
       return false;
     }
 
-    console.log(`User ${userId} deleted successfully`);
+    debug(`User ${userId} deleted successfully`);
     return true;
   } catch (error) {
     console.error('Exception in deleteUser:', error);
@@ -1662,8 +1706,8 @@ export const updateTransactionWithConflictCheck = async (
   expectedUpdatedAt: string
 ): Promise<{ success: boolean; conflict?: Transaction; error?: string }> => {
   try {
-    console.log(`🔍 Verificando conflito para transação ${id}`);
-    console.log(`   Expected updated_at: ${expectedUpdatedAt}`);
+    debug(`🔍 Verificando conflito para transação ${id}`);
+    debug(`   Expected updated_at: ${expectedUpdatedAt}`);
 
     // 1. Buscar versão atual do servidor
     const { data: current, error: fetchError } = await supabase
@@ -1680,7 +1724,7 @@ export const updateTransactionWithConflictCheck = async (
       };
     }
 
-    console.log(`   Server updated_at: ${current.updated_at}`);
+    debug(`   Server updated_at: ${current.updated_at}`);
 
     // 2. Verificar conflito (comparar updated_at)
     if (current.updated_at !== expectedUpdatedAt) {
@@ -1722,7 +1766,7 @@ export const updateTransactionWithConflictCheck = async (
       };
     }
 
-    console.log('✅ Transação atualizada com sucesso (sem conflito)');
+    debug('✅ Transação atualizada com sucesso (sem conflito)');
 
     return { success: true };
   } catch (error) {
@@ -1747,7 +1791,7 @@ export const migrateFromLocalStorage = async () => {
       const transactions: Transaction[] = JSON.parse(savedTransactions);
       const success = await bulkAddTransactions(transactions);
       if (success) {
-        console.log(`Migrated ${transactions.length} transactions to Supabase`);
+        debug(`Migrated ${transactions.length} transactions to Supabase`);
       }
     }
 
@@ -1758,7 +1802,7 @@ export const migrateFromLocalStorage = async () => {
       for (const change of changes) {
         await addManualChange(change);
       }
-      console.log(`Migrated ${changes.length} manual changes to Supabase`);
+      debug(`Migrated ${changes.length} manual changes to Supabase`);
     }
 
     return true;
@@ -1787,7 +1831,7 @@ export const subscribeToTransactionChanges = (
     onError?: (error: Error) => void;
   }
 ): any => {
-  console.log('📡 Iniciando subscription Realtime com filtros:', filters);
+  debug('📡 Iniciando subscription Realtime com filtros:', filters);
 
   // Construir filtro Realtime
   // Nota: Supabase Realtime tem limitações - filtros complexos são aplicados no cliente
@@ -1806,7 +1850,7 @@ export const subscribeToTransactionChanges = (
         table: 'transactions'
       },
       (payload: any) => {
-        console.log('📥 Realtime INSERT:', payload.new.id);
+        debug('📥 Realtime INSERT:', payload.new.id);
 
         const transaction = dbToTransaction(payload.new);
 
@@ -1814,7 +1858,7 @@ export const subscribeToTransactionChanges = (
         if (shouldIncludeTransaction(transaction, filters)) {
           callbacks.onInsert!(transaction);
         } else {
-          console.log('⏭️ Transação filtrada (não corresponde aos critérios)');
+          debug('⏭️ Transação filtrada (não corresponde aos critérios)');
         }
       }
     );
@@ -1830,14 +1874,14 @@ export const subscribeToTransactionChanges = (
         table: 'transactions'
       },
       (payload: any) => {
-        console.log('📝 Realtime UPDATE:', payload.new.id);
+        debug('📝 Realtime UPDATE:', payload.new.id);
 
         const transaction = dbToTransaction(payload.new);
 
         if (shouldIncludeTransaction(transaction, filters)) {
           callbacks.onUpdate!(transaction);
         } else {
-          console.log('⏭️ Transação filtrada (não corresponde aos critérios)');
+          debug('⏭️ Transação filtrada (não corresponde aos critérios)');
         }
       }
     );
@@ -1853,7 +1897,7 @@ export const subscribeToTransactionChanges = (
         table: 'transactions'
       },
       (payload: any) => {
-        console.log('🗑️ Realtime DELETE:', payload.old.id);
+        debug('🗑️ Realtime DELETE:', payload.old.id);
         callbacks.onDelete!(payload.old.id);
       }
     );
@@ -1861,12 +1905,12 @@ export const subscribeToTransactionChanges = (
 
   // Subscribe ao channel
   channel.subscribe((status: string) => {
-    console.log(`📡 Realtime status: ${status}`);
+    debug(`📡 Realtime status: ${status}`);
 
     if (status === 'SUBSCRIBED') {
-      console.log('✅ Realtime conectado com sucesso!');
+      debug('✅ Realtime conectado com sucesso!');
     } else if (status === 'CLOSED') {
-      console.log('⚠️ Realtime desconectado');
+      debug('⚠️ Realtime desconectado');
     } else if (status === 'CHANNEL_ERROR') {
       console.error('❌ Erro no canal Realtime');
       if (callbacks.onError) {
@@ -1941,7 +1985,7 @@ export const getContaContabilOptions = async (): Promise<ContaContabilOption[]> 
 
   try {
     // Busca da tabela tags — apenas contas com cod_conta de 14 caracteres (nível folha)
-    console.log('📋 Carregando contas da tabela tags (cod_conta com 14 chars)...');
+    debug('📋 Carregando contas da tabela tags (cod_conta com 14 chars)...');
     const { data, error } = await supabase
       .from('tags')
       .select('cod_conta, tag0, tag1, tag2, tag3, tag4, nome_nat_orc, nat_orc')
@@ -1964,7 +2008,7 @@ export const getContaContabilOptions = async (): Promise<ContaContabilOption[]> 
       tag03: row.tag3  || null,
     }));
 
-    console.log(`✅ ${contaContabilCache.length} contas carregadas da tabela tags (14 chars)`);
+    debug(`✅ ${contaContabilCache.length} contas carregadas da tabela tags (14 chars)`);
     return contaContabilCache;
   } catch (e) {
     console.error('❌ EXCEPTION:', e);

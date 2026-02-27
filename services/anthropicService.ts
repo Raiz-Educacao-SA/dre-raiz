@@ -34,7 +34,8 @@ const callGroqFallback = async (
   });
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Groq API error: ${response.status} — ${err}`);
+    console.error('Groq API error:', response.status, err);
+    throw new Error(`Serviço de IA indisponível (${response.status})`);
   }
   const data = await response.json();
   // Groq retorna formato OpenAI: choices[0].message.content
@@ -95,8 +96,8 @@ Formato de resposta:
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error("❌ Anthropic API error:", response.status, response.statusText, errorBody);
-      throw new Error(`Anthropic API error: ${response.status} ${response.statusText} - ${errorBody}`);
+      console.error("Anthropic API error:", response.status, response.statusText, errorBody);
+      throw new Error(`Serviço de IA indisponível (${response.status})`);
     }
 
     const data = await response.json();
@@ -189,13 +190,13 @@ Use **negrito** para destacar informações importantes.`;
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error("❌ Chat - Anthropic API error:", response.status, response.statusText, errorBody);
+      console.error("Chat - Anthropic API error:", response.status, response.statusText, errorBody);
 
       if (response.status === 429) {
         return "⚠️ **Limite de requisições atingido**\n\nVocê atingiu o limite temporário de requisições da API. Aguarde alguns segundos e tente novamente.\n\n**Análise Básica dos Dados Atuais:**\n\n- **EBITDA**: R$ " + context.kpis.ebitda.toLocaleString() + " (" + context.kpis.netMargin.toFixed(1) + "%)\n- **Receita/Aluno**: R$ " + context.kpis.revenuePerStudent.toLocaleString() + "\n- **Custo/Aluno**: R$ " + context.kpis.costPerStudent.toLocaleString() + "\n- **Meta de Margem**: 25%";
       }
 
-      throw new Error(`Anthropic API error: ${response.status} ${response.statusText} - ${errorBody}`);
+      throw new Error(`Serviço de IA indisponível (${response.status})`);
     }
 
     const data = await response.json();
@@ -304,7 +305,7 @@ Responda APENAS com JSON válido.`;
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error("❌ generateChartWithData - Anthropic API error:", response.status, response.statusText, errorBody);
+      console.error("generateChartWithData - Anthropic API error:", response.status, response.statusText, errorBody);
 
       if (response.status === 429) {
         return {
@@ -313,7 +314,7 @@ Responda APENAS com JSON válido.`;
         };
       }
 
-      throw new Error(`Anthropic API error: ${response.status} ${response.statusText}`);
+      throw new Error(`Serviço de IA indisponível (${response.status})`);
     }
 
     const data = await response.json();
@@ -638,7 +639,8 @@ Redija a análise.`;
       console.warn('⚠️ Anthropic sem crédito — usando Groq (Llama) como fallback');
       return callGroqFallback(system, userMsg, 1500, 0.6);
     }
-    throw new Error(`Anthropic API error: ${response.status} — ${errBody}`);
+    console.error('Anthropic API error:', response.status, errBody);
+    throw new Error(`Serviço de IA indisponível (${response.status})`);
   }
 
   const data = await response.json();
@@ -698,7 +700,8 @@ Reescreva com visão de FP&A conforme as diretrizes.`;
       console.warn('⚠️ Anthropic sem crédito — usando Groq (Llama) como fallback');
       return callGroqFallback(system, userMsg, 1500, 0.5);
     }
-    throw new Error(`Anthropic API error: ${response.status} — ${errBody}`);
+    console.error('Anthropic API error:', response.status, errBody);
+    throw new Error(`Serviço de IA indisponível (${response.status})`);
   }
 
   const data = await response.json();

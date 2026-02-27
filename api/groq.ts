@@ -1,7 +1,23 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+const ALLOWED_ORIGINS = [
+  'https://dre-raiz.vercel.app',
+  'https://dre-raiz-git-master.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:4173',
+];
+
+function getCorsOrigin(req: VercelRequest): string {
+  const origin = req.headers.origin as string | undefined;
+  if (origin && ALLOWED_ORIGINS.some(o => origin === o || origin.endsWith('.vercel.app'))) {
+    return origin;
+  }
+  return ALLOWED_ORIGINS[0];
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = getCorsOrigin(req);
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
@@ -34,7 +50,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!response.ok) {
       const err = await response.text();
-      return res.status(response.status).json({ error: `Groq API error: ${response.status}`, details: err });
+      console.error('Groq API error:', response.status, err);
+      return res.status(response.status).json({ error: `Erro no serviço de IA (${response.status})` });
     }
 
     // Converte resposta OpenAI → formato Anthropic para o cliente não precisar saber do fallback
@@ -42,6 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const text = data.choices?.[0]?.message?.content || '';
     return res.status(200).json({ content: [{ type: 'text', text }] });
   } catch (error: any) {
-    return res.status(500).json({ error: 'Failed to call Groq API', details: error.message });
+    console.error('Error calling Groq API:', error);
+    return res.status(500).json({ error: 'Serviço de IA indisponível' });
   }
 }

@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ========================================
    DRE RAIZ - DESIGN SYSTEM
    Baseado no guia oficial da Raiz Educação

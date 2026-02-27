@@ -5,12 +5,12 @@ import { DashboardEnhanced } from './components/DashboardEnhanced';
 import LoginScreen from './components/LoginScreen';
 import PendingApprovalScreen from './components/PendingApprovalScreen';
 import LoadingSpinner from './components/LoadingSpinner';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from 'sonner';
 
 // Lazy loading de views pesadas (carregam sob demanda)
 const KPIsView = React.lazy(() => import('./components/KPIsView'));
 const AnalysisView = React.lazy(() => import('./components/AnalysisView'));
-const DREView = React.lazy(() => import('./components/DREView'));
 const ManualChangesView = React.lazy(() => import('./components/ManualChangesView'));
 const TransactionsView = React.lazy(() => import('./components/TransactionsView'));
 const ForecastingView = React.lazy(() => import('./components/ForecastingView'));
@@ -1060,103 +1060,105 @@ const App: React.FC = () => {
             />
           )}
           {currentView === 'kpis' && (
-            <Suspense fallback={<LoadingSpinner message="Carregando KPIs..." />}>
-              <KPIsView
-                kpis={kpis}
-                transactions={filteredTransactions}
-                allowedMarcas={allowedMarcas}
-                allowedFiliais={allowedFiliais}
-                allowedCategories={allowedCategories}
-              />
-            </Suspense>
-          )}
-          {currentView === 'movements' && (
-            <Suspense fallback={<LoadingSpinner message="Carregando lançamentos..." />}>
-              <TransactionsView
-                transactions={filteredTransactions}
-                searchedTransactions={searchedTransactions}
-                setSearchedTransactions={setSearchedTransactions}
-                hasSearchedTransactions={hasSearchedTransactions}
-                setHasSearchedTransactions={setHasSearchedTransactions}
-                addTransaction={handleAddTransaction}
-                requestChange={handleRequestChange}
-                deleteTransaction={handleDeleteTransaction}
-                fetchFromCSV={handleImportData}
-                isSyncing={isSyncing}
-                externalFilters={drillDownFilters}
-                externalActiveTab={drillDownActiveTab}
-                clearGlobalFilters={clearGlobalFilters}
-                onBackToDRE={handleBackToDRE}
-                backToLabel={drillDownOriginView === 'soma_tags' ? 'Voltar para DRE Gerencial' : 'Voltar para DRE'}
-                allowedMarcas={allowedMarcas}
-                allowedFiliais={allowedFiliais}
-                allowedCategories={allowedCategories}
-                allowedTag01={allowedTag01}
-                allowedTag02={allowedTag02}
-                allowedTag03={allowedTag03}
-                userRole={user?.role}
-              />
-            </Suspense>
-          )}
-          {currentView === 'manual_changes' && (
-            <Suspense fallback={<LoadingSpinner message="Carregando alterações..." />}>
-              <ManualChangesView changes={manualChanges} approveChange={handleApproveChange} rejectChange={handleRejectChange} bulkApproveChanges={handleBulkApproveChanges} />
-            </Suspense>
-          )}
-          {hasMountedDRE && (
-            <div style={{ display: currentView === 'dre' ? undefined : 'none' }}>
-              <Suspense fallback={<LoadingSpinner message="Carregando DRE..." />}>
-                <DREView
-                  onDrillDown={handleDrillDown}
-                  presentationMode={presentationMode}
-                  setPresentationMode={setPresentationMode}
-                  onRegisterActions={setDreActions}
-                  onLoadingChange={setIsDreLoading}
+            <ErrorBoundary fallbackMessage="Erro ao carregar KPIs">
+              <Suspense fallback={<LoadingSpinner message="Carregando KPIs..." />}>
+                <KPIsView
+                  kpis={kpis}
+                  transactions={filteredTransactions}
+                  allowedMarcas={allowedMarcas}
+                  allowedFiliais={allowedFiliais}
+                  allowedCategories={allowedCategories}
                 />
               </Suspense>
-            </div>
+            </ErrorBoundary>
           )}
+          {currentView === 'movements' && (
+            <ErrorBoundary fallbackMessage="Erro ao carregar Lançamentos">
+              <Suspense fallback={<LoadingSpinner message="Carregando lançamentos..." />}>
+                <TransactionsView
+                  transactions={filteredTransactions}
+                  searchedTransactions={searchedTransactions}
+                  setSearchedTransactions={setSearchedTransactions}
+                  hasSearchedTransactions={hasSearchedTransactions}
+                  setHasSearchedTransactions={setHasSearchedTransactions}
+                  addTransaction={handleAddTransaction}
+                  requestChange={handleRequestChange}
+                  deleteTransaction={handleDeleteTransaction}
+                  fetchFromCSV={handleImportData}
+                  isSyncing={isSyncing}
+                  externalFilters={drillDownFilters}
+                  externalActiveTab={drillDownActiveTab}
+                  clearGlobalFilters={clearGlobalFilters}
+                  onBackToDRE={handleBackToDRE}
+                  backToLabel={drillDownOriginView === 'soma_tags' ? 'Voltar para DRE Gerencial' : 'Voltar para DRE'}
+                  allowedMarcas={allowedMarcas}
+                  allowedFiliais={allowedFiliais}
+                  allowedCategories={allowedCategories}
+                  allowedTag01={allowedTag01}
+                  allowedTag02={allowedTag02}
+                  allowedTag03={allowedTag03}
+                  userRole={user?.role}
+                />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {currentView === 'manual_changes' && (
+            <ErrorBoundary fallbackMessage="Erro ao carregar Aprovações">
+              <Suspense fallback={<LoadingSpinner message="Carregando alterações..." />}>
+                <ManualChangesView changes={manualChanges} approveChange={handleApproveChange} rejectChange={handleRejectChange} bulkApproveChanges={handleBulkApproveChanges} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {/* DREView removida — substituída por SomaTagsView (DRE Gerencial) */}
           {currentView === 'forecasting' && (
-            <Suspense fallback={<LoadingSpinner message="Carregando previsões..." />}>
-              <ForecastingView
-                transactions={filteredTransactions}
-                allowedMarcas={allowedMarcas}
-                allowedFiliais={allowedFiliais}
-                allowedCategories={allowedCategories}
-              />
-            </Suspense>
+            <ErrorBoundary fallbackMessage="Erro ao carregar Previsões">
+              <Suspense fallback={<LoadingSpinner message="Carregando previsões..." />}>
+                <ForecastingView
+                  transactions={filteredTransactions}
+                  allowedMarcas={allowedMarcas}
+                  allowedFiliais={allowedFiliais}
+                  allowedCategories={allowedCategories}
+                />
+              </Suspense>
+            </ErrorBoundary>
           )}
           {currentView === 'analysis' && (
-            <Suspense fallback={<LoadingSpinner message="Carregando análises..." />}>
-              <AnalysisView
-                transactions={filteredTransactions}
-                kpis={kpis}
-                allowedMarcas={allowedMarcas}
-                allowedFiliais={allowedFiliais}
-                allowedCategories={allowedCategories}
-              />
-            </Suspense>
+            <ErrorBoundary fallbackMessage="Erro ao carregar Análises">
+              <Suspense fallback={<LoadingSpinner message="Carregando análises..." />}>
+                <AnalysisView
+                  transactions={filteredTransactions}
+                  kpis={kpis}
+                  allowedMarcas={allowedMarcas}
+                  allowedFiliais={allowedFiliais}
+                  allowedCategories={allowedCategories}
+                />
+              </Suspense>
+            </ErrorBoundary>
           )}
           {hasMountedSomaTags && (
             <div style={{ display: currentView === 'soma_tags' ? undefined : 'none' }}>
-              <Suspense fallback={<LoadingSpinner message="Carregando DRE Gerencial..." />}>
-                <SomaTagsView
-                  onRegisterActions={setSomaTagsActions}
-                  onLoadingChange={setIsSomaTagsLoading}
-                  onDataChange={setHasSomaTagsData}
-                  onDrillDown={handleDrillDown}
-                  allowedTag01={allowedTag01.length > 0 ? allowedTag01 : undefined}
-                  allowedMarcas={allowedMarcas.length > 0 ? allowedMarcas : undefined}
-                  presentationMode={somaTagsPresentationMode}
-                  onPresentationModeChange={setSomaTagsPresentationMode}
-                />
-              </Suspense>
+              <ErrorBoundary fallbackMessage="Erro ao carregar DRE Gerencial">
+                <Suspense fallback={<LoadingSpinner message="Carregando DRE Gerencial..." />}>
+                  <SomaTagsView
+                    onRegisterActions={setSomaTagsActions}
+                    onLoadingChange={setIsSomaTagsLoading}
+                    onDataChange={setHasSomaTagsData}
+                    onDrillDown={handleDrillDown}
+                    allowedTag01={allowedTag01.length > 0 ? allowedTag01 : undefined}
+                    allowedMarcas={allowedMarcas.length > 0 ? allowedMarcas : undefined}
+                    presentationMode={somaTagsPresentationMode}
+                    onPresentationModeChange={setSomaTagsPresentationMode}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           )}
           {currentView === 'admin' && (
-            <Suspense fallback={<LoadingSpinner message="Carregando painel admin..." />}>
-              <AdminPanel />
-            </Suspense>
+            <ErrorBoundary fallbackMessage="Erro ao carregar Admin">
+              <Suspense fallback={<LoadingSpinner message="Carregando painel admin..." />}>
+                <AdminPanel />
+              </Suspense>
+            </ErrorBoundary>
           )}
         </div>
       </main>
