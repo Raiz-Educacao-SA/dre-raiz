@@ -1,8 +1,51 @@
 -- ═══════════════════════════════════════════════════════════════════
--- add_tag03_filter.sql
--- Adiciona p_tags03 ao get_soma_tags (8º parâmetro)
--- get_dre_dimension já possui p_tags03 — nenhuma alteração necessária lá
+-- fix_recurring_normalization.sql
+-- Normaliza o campo recurring em todas as tabelas e atualiza RPCs
+-- para comparação case-insensitive.
+--
+-- Problema: recurring contém variações (sim, SIM, não, NÃO, Nao, etc.)
+-- que não casam com o filtro 'Sim'/'Não' do frontend.
+--
+-- Solução em 2 partes:
+-- 1. UPDATE: normaliza dados existentes para 'Sim' ou 'Não'
+-- 2. SQL function: usa INITCAP(COALESCE(t.recurring, 'Sim'))
+--    para comparação case-insensitive mesmo com dados futuros
 -- ═══════════════════════════════════════════════════════════════════
+
+-- ══════════════════════════════════
+-- PARTE 1: Normalizar dados existentes
+-- ══════════════════════════════════
+
+-- transactions
+UPDATE transactions SET recurring = 'Sim'
+WHERE recurring IS NOT NULL AND LOWER(TRIM(recurring)) = 'sim' AND recurring != 'Sim';
+
+UPDATE transactions SET recurring = 'Não'
+WHERE recurring IS NOT NULL
+  AND LOWER(TRANSLATE(TRIM(recurring), 'ãÃ', 'aA')) IN ('nao', 'nAo')
+  AND recurring != 'Não';
+
+-- transactions_orcado
+UPDATE transactions_orcado SET recurring = 'Sim'
+WHERE recurring IS NOT NULL AND LOWER(TRIM(recurring)) = 'sim' AND recurring != 'Sim';
+
+UPDATE transactions_orcado SET recurring = 'Não'
+WHERE recurring IS NOT NULL
+  AND LOWER(TRANSLATE(TRIM(recurring), 'ãÃ', 'aA')) IN ('nao', 'nAo')
+  AND recurring != 'Não';
+
+-- transactions_ano_anterior
+UPDATE transactions_ano_anterior SET recurring = 'Sim'
+WHERE recurring IS NOT NULL AND LOWER(TRIM(recurring)) = 'sim' AND recurring != 'Sim';
+
+UPDATE transactions_ano_anterior SET recurring = 'Não'
+WHERE recurring IS NOT NULL
+  AND LOWER(TRANSLATE(TRIM(recurring), 'ãÃ', 'aA')) IN ('nao', 'nAo')
+  AND recurring != 'Não';
+
+-- ══════════════════════════════════
+-- PARTE 2: Atualizar get_soma_tags com comparação case-insensitive
+-- ══════════════════════════════════
 
 DROP FUNCTION IF EXISTS get_soma_tags(text, text, text[], text[], text[], text[], text);
 DROP FUNCTION IF EXISTS get_soma_tags(text, text, text[], text[], text[], text[], text, text[]);
@@ -101,3 +144,75 @@ $$;
 
 GRANT EXECUTE ON FUNCTION get_soma_tags(text, text, text[], text[], text[], text[], text, text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_soma_tags(text, text, text[], text[], text[], text[], text, text[]) TO anon;
+
+-- ══════════════════════════════════
+-- PARTE 3: Atualizar dre_agg com normalização
+-- ══════════════════════════════════
+
+SET statement_timeout = 0;
+
+DROP MATERIALIZED VIEW IF EXISTS dre_agg;
+
+CREATE MATERIALIZED VIEW dre_agg AS
+
+  -- Real
+  SELECT
+    COALESCE(tm.tag0, 'Sem Classificação') AS tag0,
+    t.tag01,
+    t.tag02,
+    t.tag03,
+    t.marca,
+    t.nome_filial,
+    t.vendor,
+    to_char(t.date::date,'YYYY-MM') AS month,
+    'Real' AS scenario,
+    SUM(t.amount) AS total,
+    INITCAP(COALESCE(t.recurring, 'Sim')) AS recurring
+  FROM transactions t
+  LEFT JOIN tag0_map tm ON LOWER(TRIM(t.tag01)) = LOWER(TRIM(tm.tag1_norm))
+  WHERE t.scenario IS NULL OR t.scenario = 'Real'
+  GROUP BY 1,2,3,4,5,6,7,8,9,11
+
+  UNION ALL
+
+  -- Orçado
+  SELECT
+    COALESCE(tm.tag0, 'Sem Classificação') AS tag0,
+    t.tag01,
+    t.tag02,
+    t.tag03,
+    t.marca,
+    t.nome_filial,
+    t.vendor,
+    to_char(t.date,'YYYY-MM') AS month,
+    'Orçado' AS scenario,
+    SUM(t.amount) AS total,
+    INITCAP(COALESCE(t.recurring, 'Sim')) AS recurring
+  FROM transactions_orcado t
+  LEFT JOIN tag0_map tm ON LOWER(TRIM(t.tag01)) = LOWER(TRIM(tm.tag1_norm))
+  GROUP BY 1,2,3,4,5,6,7,8,9,11
+
+  UNION ALL
+
+  -- A-1
+  SELECT
+    COALESCE(tm.tag0, 'Sem Classificação') AS tag0,
+    t.tag01,
+    t.tag02,
+    t.tag03,
+    t.marca,
+    t.nome_filial,
+    t.vendor,
+    to_char(t.date,'YYYY-MM') AS month,
+    'A-1' AS scenario,
+    SUM(t.amount) AS total,
+    INITCAP(COALESCE(t.recurring, 'Sim')) AS recurring
+  FROM transactions_ano_anterior t
+  LEFT JOIN tag0_map tm ON LOWER(TRIM(t.tag01)) = LOWER(TRIM(tm.tag1_norm))
+  GROUP BY 1,2,3,4,5,6,7,8,9,11
+;
+
+-- Índice para performance
+CREATE INDEX IF NOT EXISTS idx_dre_agg_recurring ON dre_agg(recurring);
+
+RESET statement_timeout;

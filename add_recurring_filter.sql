@@ -29,7 +29,7 @@ CREATE MATERIALIZED VIEW dre_agg AS
     'Real'                                    AS scenario,
     t.marca,
     t.nome_filial,
-    COALESCE(t.recurring, 'Sim')              AS recurring,
+    INITCAP(COALESCE(t.recurring, 'Sim'))     AS recurring,
     SUM(t.amount)                             AS total_amount,
     COUNT(*)                                  AS tx_count
   FROM transactions t
@@ -51,7 +51,7 @@ CREATE MATERIALIZED VIEW dre_agg AS
     'Orçado'                                  AS scenario,
     t.marca,
     t.nome_filial,
-    COALESCE(t.recurring, 'Sim')              AS recurring,
+    INITCAP(COALESCE(t.recurring, 'Sim'))     AS recurring,
     SUM(t.amount)                             AS total_amount,
     COUNT(*)                                  AS tx_count
   FROM transactions_orcado t
@@ -72,7 +72,7 @@ CREATE MATERIALIZED VIEW dre_agg AS
     'A-1'                                     AS scenario,
     t.marca,
     t.nome_filial,
-    COALESCE(t.recurring, 'Sim')              AS recurring,
+    INITCAP(COALESCE(t.recurring, 'Sim'))     AS recurring,
     SUM(t.amount)                             AS total_amount,
     COUNT(*)                                  AS tx_count
   FROM transactions_ano_anterior t
@@ -133,7 +133,7 @@ BEGIN
        AND ($8 IS NULL OR tag02 = ANY($8))
        AND ($9 IS NULL OR tag03 = ANY($9))
        AND ($10 IS NULL OR tag0 = $10)
-       AND ($11 IS NULL OR recurring = $11)
+       AND ($11 IS NULL OR INITCAP(recurring) = INITCAP($11))
      GROUP BY COALESCE(CAST(%I AS text), ''N/A''), year_month',
     p_dimension, p_dimension
   )
@@ -181,7 +181,7 @@ AS $$
     AND (p_nome_filiais IS NULL OR t.nome_filial = ANY(p_nome_filiais))
     AND (p_tags02       IS NULL OR t.tag02       = ANY(p_tags02))
     AND (p_tags01       IS NULL OR t.tag01       = ANY(p_tags01))
-    AND (p_recurring    IS NULL OR COALESCE(t.recurring, 'Sim') = p_recurring)
+    AND (p_recurring    IS NULL OR INITCAP(COALESCE(t.recurring, 'Sim')) = INITCAP(p_recurring))
   GROUP BY
     COALESCE(tm.tag0, 'Sem Classificação'),
     COALESCE(t.tag01, 'Sem Subclassificação'),
@@ -205,7 +205,7 @@ AS $$
     AND (p_nome_filiais IS NULL OR t.nome_filial = ANY(p_nome_filiais))
     AND (p_tags02       IS NULL OR t.tag02       = ANY(p_tags02))
     AND (p_tags01       IS NULL OR t.tag01       = ANY(p_tags01))
-    AND (p_recurring    IS NULL OR COALESCE(t.recurring, 'Sim') = p_recurring)
+    AND (p_recurring    IS NULL OR INITCAP(COALESCE(t.recurring, 'Sim')) = INITCAP(p_recurring))
   GROUP BY
     COALESCE(tm.tag0, 'Sem Classificação'),
     COALESCE(t.tag01, 'Sem Subclassificação'),
@@ -230,7 +230,7 @@ AS $$
     AND (p_nome_filiais IS NULL OR t.nome_filial = ANY(p_nome_filiais))
     AND (p_tags02       IS NULL OR t.tag02       = ANY(p_tags02))
     AND (p_tags01       IS NULL OR t.tag01       = ANY(p_tags01))
-    AND (p_recurring    IS NULL OR COALESCE(t.recurring, 'Sim') = p_recurring)
+    AND (p_recurring    IS NULL OR INITCAP(COALESCE(t.recurring, 'Sim')) = INITCAP(p_recurring))
   GROUP BY
     COALESCE(tm.tag0, 'Sem Classificação'),
     COALESCE(t.tag01, 'Sem Subclassificação'),
