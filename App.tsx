@@ -118,8 +118,9 @@ const App: React.FC = () => {
     }
   }, [applyFilters, currentFilters]);
 
-  // Loading combinado (Lançamentos/KPIs/outras views)
-  const isLoading = isLoadingTransactions || permissionsLoading;
+  // Loading global: apenas auth/permissões — NÃO inclui transações
+  // Transações carregam em background sem bloquear a UI
+  const isLoading = permissionsLoading;
 
   // ⚡ Dashboard — carrega via getSomaTags (mesma fonte do DRE Gerencial)
   useEffect(() => {
@@ -155,79 +156,64 @@ const App: React.FC = () => {
       .finally(() => setIsLoadingDashboard(false));
   }, [permissionsLoading, allowedMarcas, allowedFiliais, allowedTag01]);
 
-  // ✅ ÚNICO useEffect: Carregar dados brutos com permissões (para Lançamentos, KPIs, etc.)
-  const initialLoadRef = React.useRef(false);
-  useEffect(() => {
-    // Aguardar permissões carregarem antes de buscar dados
-    if (permissionsLoading || initialLoadRef.current) {
-      return;
-    }
+  // ⚡ LAZY LOAD: Carregar transações apenas quando o usuário navegar para views que precisam
+  // Views que precisam de transações: movements, kpis, forecasting, analysis
+  // Dashboard usa getSomaTags RPC (já carrega separadamente acima)
+  const viewsNeedingTransactions = ['movements', 'kpis', 'forecasting', 'analysis'];
+  const transactionsLoadedRef = React.useRef(false);
 
-    initialLoadRef.current = true;
+  const loadTransactionsIfNeeded = React.useCallback(() => {
+    if (transactionsLoadedRef.current || permissionsLoading) return;
+    transactionsLoadedRef.current = true;
 
-    console.log('🔍 Carregamento inicial com permissões:', {
+    console.log('🔍 Carregando transações sob demanda com permissões:', {
       hasPermissions,
       allowedMarcas,
       allowedFiliais,
       allowedCategories
     });
 
-    // ⚡ Carregar ANO COMPLETO (2026-01 até 2026-12)
     const year = 2026;
-
     const filters: any = {
-      monthFrom: `${year}-01`, // Janeiro
-      monthTo: `${year}-12`    // Dezembro (ano inteiro)
+      monthFrom: `${year}-01`,
+      monthTo: `${year}-12`
     };
 
-    // ✅ Aplicar filtros de permissão IMEDIATAMENTE (se existirem)
-    if (allowedMarcas.length > 0) {
-      filters.marca = allowedMarcas;
-      console.log('🔒 Filtro de marca aplicado:', allowedMarcas);
-    }
-
-    if (allowedFiliais.length > 0) {
-      filters.filial = allowedFiliais;
-      console.log('🔒 Filtro de filial aplicado:', allowedFiliais);
-    }
-
-    if (allowedCategories.length > 0) {
-      filters.category = allowedCategories;
-      console.log('🔒 Filtro de categoria aplicado:', allowedCategories);
-    }
-
-    // 🔥 ADICIONAR TAG01/TAG02/TAG03 (CORREÇÃO RLS)
-    if (allowedTag01.length > 0) {
-      filters.tag01 = allowedTag01;
-      console.log('🔒 Filtro de tag01 aplicado:', allowedTag01);
-    }
-
-    if (allowedTag02.length > 0) {
-      filters.tag02 = allowedTag02;
-      console.log('🔒 Filtro de tag02 aplicado:', allowedTag02);
-    }
-
-    if (allowedTag03.length > 0) {
-      filters.tag03 = allowedTag03;
-      console.log('🔒 Filtro de tag03 aplicado:', allowedTag03);
-    }
+    if (allowedMarcas.length > 0) filters.marca = allowedMarcas;
+    if (allowedFiliais.length > 0) filters.filial = allowedFiliais;
+    if (allowedCategories.length > 0) filters.category = allowedCategories;
+    if (allowedTag01.length > 0) filters.tag01 = allowedTag01;
+    if (allowedTag02.length > 0) filters.tag02 = allowedTag02;
+    if (allowedTag03.length > 0) filters.tag03 = allowedTag03;
 
     console.log('📤 Buscando transações com filtros:', filters);
     applyFilters(filters);
-  }, [
-    permissionsLoading,
-    hasPermissions,
-    allowedMarcas,
-    allowedFiliais,
-    allowedCategories,
-    allowedTag01,
-    allowedTag02,
-    allowedTag03,
-    applyFilters
-  ]);
+  }, [permissionsLoading, hasPermissions, allowedMarcas, allowedFiliais, allowedCategories, allowedTag01, allowedTag02, allowedTag03, applyFilters]);
 
-  // Carregar manual changes ao iniciar
+  // Dispara o carregamento quando o usuário navega para uma view que precisa de transações
   useEffect(() => {
+    if (viewsNeedingTransactions.includes(currentView)) {
+      loadTransactionsIfNeeded();
+    }
+  }, [currentView, loadTransactionsIfNeeded]);
+
+  // ⚡ LAZY LOAD: Carregar manual changes apenas quando navegar para Aprovações
+  // No boot, busca apenas a CONTAGEM de pendentes (query leve, <100ms)
+  const [pendingCountFast, setPendingCountFast] = React.useState(0);
+  const manualChangesLoadedRef = React.useRef(false);
+
+  // Boot: buscar apenas contagem de pendentes para o badge do Sidebar
+  useEffect(() => {
+    supabaseService.getPendingChangesCount?.()
+      .then(count => setPendingCountFast(count))
+      .catch(() => {}); // silencioso — badge mostra 0 se falhar
+  }, []);
+
+  // Carregar dados completos quando navegar para Aprovações
+  useEffect(() => {
+    if (currentView !== 'manual_changes' || manualChangesLoadedRef.current) return;
+    manualChangesLoadedRef.current = true;
+
     const loadManualChanges = async () => {
       try {
         console.log('🔵 Carregando manual changes do Supabase...');
@@ -235,17 +221,15 @@ const App: React.FC = () => {
         console.log('✅ Manual changes carregados:', {
           total: loadedChanges.length,
           pendentes: loadedChanges.filter(c => c.status === 'Pendente').length,
-          aplicados: loadedChanges.filter(c => c.status === 'Aplicado').length,
-          reprovados: loadedChanges.filter(c => c.status === 'Reprovado').length,
-          primeiros5IDs: loadedChanges.slice(0, 5).map(c => ({ id: c.id, type: c.type, status: c.status }))
         });
         setManualChanges(loadedChanges);
+        setPendingCountFast(loadedChanges.filter(c => c.status === 'Pendente').length);
       } catch (error) {
         console.error('❌ Erro ao carregar manual changes:', error);
       }
     };
     loadManualChanges();
-  }, []);
+  }, [currentView]);
 
   // Salvar filtros no sessionStorage quando mudarem
   useEffect(() => {
@@ -271,9 +255,13 @@ const App: React.FC = () => {
   }, [currentView]);
 
   // Contador de pendências para o Sidebar
-  const pendingApprovalsCount = useMemo(() =>
-    manualChanges.filter(c => c.status === 'Pendente').length
-  , [manualChanges]);
+  // Usa dados completos se carregados, senão usa contagem rápida do boot
+  const pendingApprovalsCount = useMemo(() => {
+    if (manualChanges.length > 0) {
+      return manualChanges.filter(c => c.status === 'Pendente').length;
+    }
+    return pendingCountFast;
+  }, [manualChanges, pendingCountFast]);
 
   // Marcas únicas presentes nos dados
   // ✅ Filtrar apenas marcas permitidas (RLS)
@@ -1030,13 +1018,22 @@ const App: React.FC = () => {
         </div>
 
         <div className="px-3 md:px-4 lg:px-6 pb-3 md:pb-4 lg:pb-6 relative">
-          {/* ⚡ OPÇÃO A: loading overlay só na área de conteúdo */}
+          {/* ⚡ Loading overlay — só durante auth/permissões (poucos segundos) */}
           {isLoading && (
             <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl min-h-[200px]">
               <div className="text-center">
                 <Loader2 className="animate-spin mx-auto mb-3 text-[#1B75BB]" size={40} />
-                <p className="text-sm font-semibold text-gray-700">Carregando dados...</p>
-                <p className="text-xs text-gray-400 mt-1">Conectando ao banco de dados</p>
+                <p className="text-sm font-semibold text-gray-700">Carregando permissões...</p>
+              </div>
+            </div>
+          )}
+          {/* Loading específico para views que carregam transações sob demanda */}
+          {!isLoading && isLoadingTransactions && viewsNeedingTransactions.includes(currentView) && (
+            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center rounded-xl min-h-[200px]">
+              <div className="text-center">
+                <Loader2 className="animate-spin mx-auto mb-3 text-[#1B75BB]" size={40} />
+                <p className="text-sm font-semibold text-gray-700">Carregando transações...</p>
+                <p className="text-xs text-gray-400 mt-1">Buscando dados do banco</p>
               </div>
             </div>
           )}

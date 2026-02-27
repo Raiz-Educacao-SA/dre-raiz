@@ -1364,6 +1364,19 @@ export const bulkAddTransactions = async (transactions: Omit<Transaction, 'id'>[
 
 // ========== MANUAL CHANGES ==========
 
+/** Query leve: apenas COUNT de pendentes — para badge do Sidebar no boot (<100ms) */
+export const getPendingChangesCount = async (): Promise<number> => {
+  const { count, error } = await supabase
+    .from('manual_changes')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'Pendente');
+  if (error) {
+    console.error('❌ Erro ao contar pendentes:', error);
+    return 0;
+  }
+  return count || 0;
+};
+
 export const getAllManualChanges = async (): Promise<ManualChange[]> => {
   debug('🟦 getAllManualChanges INICIADO');
 
