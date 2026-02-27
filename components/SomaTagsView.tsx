@@ -465,8 +465,10 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // ── Extração de valor para sort por coluna ────────────────────────────────
   const getSortValue = useCallback((item: Tag01Row | Tag01MonthlyItem, col: string): number => {
     if ('byMonth' in item) {
-      const [scen, ...rest] = col.split('_');
-      const key = rest.join('_');
+      // col format: "orc_2026-01" or "real_total" — split only on first "_"
+      const idx = col.indexOf('_');
+      const scen = col.slice(0, idx);
+      const key = col.slice(idx + 1);
       const months = key === 'total' ? monthsToShow : [key];
       const md = months.reduce(
         (acc, m) => { const d = (item as Tag01MonthlyItem).byMonth[m] || { real: 0, orcado: 0, a1: 0 };
@@ -693,6 +695,24 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       .reduce((s, r) => s + Number(r.total_amount), 0);
   };
 
+  /** Retorna o valor de sort correto para drill-down baseado em sortConfig.col */
+  const getDrillSortValue = (tag01: string, dim: string, dimVal: string, accFilters: Record<string, string>, col: string): number => {
+    const real   = getDrillTotal(tag01, dim, 'Real',   dimVal, accFilters);
+    const orcado = getDrillTotal(tag01, dim, 'Orçado', dimVal, accFilters);
+    const a1     = getDrillTotal(tag01, dim, 'A-1',    dimVal, accFilters);
+    const prefix = col.slice(0, col.indexOf('_'));
+    switch (prefix) {
+      case 'real': return real;
+      case 'orc':  return orcado;
+      case 'a1':   return a1;
+      case 'dao':  return real - orcado;
+      case 'dpo':  return orcado !== 0 ? (real - orcado) / Math.abs(orcado) : 0;
+      case 'da1':  return real - a1;
+      case 'dp1':  return a1 !== 0 ? (real - a1) / Math.abs(a1) : 0;
+      default:     return real;
+    }
+  };
+
   const getDrillMonthData = (tag01: string, dim: string, scenario: string, dimVal: string, accFilters: Record<string, string> = {}): Record<string, number> => {
     const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
     const key = `${scenario}|${tag01}|${dim}|${filtersKey}`;
@@ -838,8 +858,10 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       }
       let vals = Array.from(allVals);
       if (sortConfig.col === 'tag01') vals.sort((a, b) => a.localeCompare(b));
-      else if (sortConfig.dir === 'desc') vals.sort((a, b) => getDrill(tag01, dim, 'Real', b, af) - getDrill(tag01, dim, 'Real', a, af));
-      else vals.sort((a, b) => getDrill(tag01, dim, 'Real', a, af) - getDrill(tag01, dim, 'Real', b, af));
+      else {
+        const dir = sortConfig.dir === 'desc' ? -1 : 1;
+        vals.sort((a, b) => dir * (getDrillSortValue(tag01, dim, b, af, sortConfig.col) - getDrillSortValue(tag01, dim, a, af, sortConfig.col)));
+      }
 
       const bg     = depth === 0 ? BG.drillD0 : depth === 1 ? BG.drillD1 : BG.drillD2;
       const mark   = depth === 0 ? '◆ ' : '◇ ';
@@ -1085,10 +1107,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
     if (sortConfig.col === 'tag01') {
       vals.sort((a, b) => a.localeCompare(b));
-    } else if (sortConfig.dir === 'desc') {
-      vals.sort((a, b) => getDrillTotal(tag01, dim, 'Real', b, accFilters) - getDrillTotal(tag01, dim, 'Real', a, accFilters));
     } else {
-      vals.sort((a, b) => getDrillTotal(tag01, dim, 'Real', a, accFilters) - getDrillTotal(tag01, dim, 'Real', b, accFilters));
+      const dir = sortConfig.dir === 'desc' ? -1 : 1;
+      vals.sort((a, b) => dir * (getDrillSortValue(tag01, dim, b, accFilters, sortConfig.col) - getDrillSortValue(tag01, dim, a, accFilters, sortConfig.col)));
     }
 
     if (vals.length === 0) {
