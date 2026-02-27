@@ -86,7 +86,21 @@
       "Bash(netlify sites:list:*)",
       "Bash(netlify api:*)",
       "Bash(/tmp/remove_console.py:*)",
-      "Bash(git -C \"C:/Users/edmilson.serafim/OneDrive - Raiz Educação S A/Área de Trabalho/Ap proposta\" show 836bdbb --stat)"
+      "Bash(git -C \"C:/Users/edmilson.serafim/OneDrive - Raiz Educação S A/Área de Trabalho/Ap proposta\" show 836bdbb --stat)",
+      "Bash(cd \"C:\\\\Users\\\\edmilson.serafim\\\\OneDrive - Raiz Educação S A\\\\Área de Trabalho\\\\Ap proposta\" && netlify deploy --prod 2>&1)",
+      "Bash(head:*)",
+      "Bash(cd:*)",
+      "Bash(tail:*)",
+      "Bash(cd \"C:\\\\Users\\\\edmilson.serafim\\\\OneDrive - Raiz Educação S A\\\\Área de Trabalho\\\\Ap proposta\" && npx firebase deploy --only hosting 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\edmilson.serafim\\\\OneDrive - Raiz Educação S A\\\\Área de Trabalho\\\\Ap proposta\" && firebase deploy --only hosting 2>&1)",
+      "Bash(cd \"C:\\\\Users\\\\edmilson.serafim\\\\OneDrive - Raiz Educação S A\\\\Área de Trabalho\\\\Ap proposta\" && cmd /c \"firebase deploy --only hosting\" 2>&1)",
+      "Bash(cmd:*)",
+      "Bash(powershell:*)",
+      "Bash(/c/Users/edmilson.serafim/AppData/Roaming/npm/vercel:*)",
+      "Bash(rm:*)",
+      "Bash(npm ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(do echo:*)"
     ]
   }
 }
