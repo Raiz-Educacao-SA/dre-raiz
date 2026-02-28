@@ -16,6 +16,7 @@ const TransactionsView = React.lazy(() => import('./components/TransactionsView'
 const ForecastingView = React.lazy(() => import('./components/ForecastingView'));
 const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 const SomaTagsView = React.lazy(() => import('./components/SomaTagsView'));
+const ExecutiveDashboard = React.lazy(() => import('./components/agentTeam/ExecutiveDashboard'));
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
 import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown } from 'lucide-react';
@@ -1154,6 +1155,13 @@ const App: React.FC = () => {
             <ErrorBoundary fallbackMessage="Erro ao carregar Admin">
               <Suspense fallback={<LoadingSpinner message="Carregando painel admin..." />}>
                 <AdminPanel />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {currentView === 'executive_dashboard' && (
+            <ErrorBoundary fallbackMessage="Erro ao carregar CEO Dashboard">
+              <Suspense fallback={<LoadingSpinner message="Carregando dashboard executivo..." />}>
+                <ExecutiveDashboard />
               </Suspense>
             </ErrorBoundary>
           )}

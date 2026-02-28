@@ -78,6 +78,11 @@ export default defineConfig(({ mode }) => {
         // Source maps apenas em dev
         sourcemap: false
       },
+      // Vitest
+      test: {
+        include: ['core/__tests__/**/*.test.ts'],
+        exclude: ['**/*.spec.ts', 'node_modules'],
+      },
       // Otimizações de dependências
       optimizeDeps: {
         include: [
