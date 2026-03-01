@@ -41,6 +41,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
     { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
     ...(isAdmin ? [
       { id: 'executive_dashboard', label: 'CEO Dashboard', icon: TrendingUp },
+      { id: 'holding_dashboard', label: 'Holding', icon: Building2 },
+      { id: 'agent_team', label: 'Equipe IA', icon: Brain },
       { id: 'admin', label: 'Admin', icon: Shield },
     ] : []),
   ];

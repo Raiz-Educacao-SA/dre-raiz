@@ -358,7 +358,7 @@ export async function processNextStep(runId: string): Promise<void> {
       .eq('id', step.id);
 
     // 8. Chamar Claude via proxy /api/anthropic
-    const isConsolidation = step.step_type === 'consolidate';
+    const isConsolidation = step.step_type === 'consolidate' || step.step_type === 'review';
     const claudeResult = await callClaudeViaProxy(system, user, isConsolidation);
 
     // 9. Validar com Zod (safeParse — não explode)

@@ -184,7 +184,7 @@ Retorne APENAS o JSON válido, sem markdown ou texto adicional.
       throw new Error("ANTHROPIC_API_KEY não configurado no .env");
     }
 
-    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";
+    const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250514";
 
     const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",

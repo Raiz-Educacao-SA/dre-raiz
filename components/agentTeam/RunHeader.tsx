@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Target, Users, Clock, Loader2, CheckCircle2, XCircle, RefreshCw, Play, Activity } from 'lucide-react';
+import { Target, Users, Clock, Loader2, CheckCircle2, XCircle, RefreshCw, Play, Activity, StopCircle } from 'lucide-react';
 import type { AgentRun, AgentStep } from '../../types/agentTeam';
 
 // --------------------------------------------
@@ -13,7 +13,34 @@ interface RunHeaderProps {
   isAdmin: boolean;
   onContinue?: () => void;
   onRerun?: () => void;
+  onCancel?: () => void;
 }
+
+// --------------------------------------------
+// Agent colors
+// --------------------------------------------
+
+const AGENT_COLORS: Record<string, string> = {
+  alex:     '#8b5cf6',
+  bruna:    '#f59e0b',
+  carlos:   '#3b82f6',
+  denilson: '#10b981',
+  edmundo:  '#6366f1',
+  falcao:   '#ef4444',
+  diretor:  '#475569',
+  ceo:      '#1e293b',
+};
+
+const AGENT_NAMES: Record<string, string> = {
+  alex:     'Alex',
+  bruna:    'Bruna',
+  carlos:   'Carlos',
+  denilson: 'Denilson',
+  edmundo:  'Edmundo',
+  falcao:   'Falcão',
+  diretor:  'Diretor',
+  ceo:      'CEO',
+};
 
 // --------------------------------------------
 // Status config
@@ -53,22 +80,21 @@ function formatDateTime(iso: string): string {
 // Component
 // --------------------------------------------
 
-const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, onContinue, onRerun }) => {
+const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, onContinue, onRerun, onCancel }) => {
   const statusCfg = STATUS_CONFIG[run.status] || STATUS_CONFIG.pending;
 
-  // 1. Progresso
   const completedSteps = useMemo(
     () => steps.filter((s) => s.status === 'completed').length,
     [steps],
   );
 
-  // 2. Pipeline travado
+  const overallPct = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0;
+
   const isRunning = run.status === 'running';
   const hasPendingStep = steps.some((s) => s.status === 'pending');
   const hasRunningStep = steps.some((s) => s.status === 'running');
   const isStuck = isRunning && !hasRunningStep && hasPendingStep;
 
-  // 3. Duração
   const durationMs = useMemo(() => {
     if (!run.started_at) return 0;
     const start = new Date(run.started_at).getTime();
@@ -86,13 +112,18 @@ const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, on
           <Target size={16} className="text-indigo-500 mt-0.5 shrink-0" />
           <p className="text-sm font-semibold text-gray-900 leading-snug">{run.objective}</p>
         </div>
-        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase shrink-0 ${statusCfg.bg} ${statusCfg.text}`}>
-          {statusCfg.icon}
-          {statusCfg.label}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {isRunning && (
+            <span className="text-sm font-bold text-blue-600 tabular-nums">{overallPct}%</span>
+          )}
+          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${statusCfg.bg} ${statusCfg.text}`}>
+            {statusCfg.icon}
+            {statusCfg.label}
+          </span>
+        </div>
       </div>
 
-      {/* Row 2: Meta — grid 2 cols on desktop */}
+      {/* Row 2: Meta */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-500">
         <span className="inline-flex items-center gap-1">
           <Users size={12} className="text-gray-400" />
@@ -114,20 +145,69 @@ const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, on
         )}
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar — segmented by agent with labels */}
       {steps.length > 0 && (
-        <div className="flex gap-1 h-1.5 rounded-full overflow-hidden bg-gray-100">
-          {steps.map((s) => (
-            <div
-              key={s.id}
-              className={`flex-1 rounded-full transition-colors ${
-                s.status === 'completed' ? 'bg-green-400' :
-                s.status === 'running' ? 'bg-blue-400 animate-pulse' :
-                s.status === 'failed' ? 'bg-red-400' :
-                'bg-gray-200'
-              }`}
-            />
-          ))}
+        <div className="space-y-1">
+          <div className="flex gap-0.5 h-3 rounded-full overflow-hidden bg-gray-100">
+            {steps.map((s) => {
+              const color = AGENT_COLORS[s.agent_code] || '#6b7280';
+              const isStepCompleted = s.status === 'completed';
+              const isStepRunning = s.status === 'running';
+              const isStepFailed = s.status === 'failed';
+
+              return (
+                <div
+                  key={s.id}
+                  className="flex-1 relative transition-all duration-500"
+                  title={`${AGENT_NAMES[s.agent_code] || s.agent_code} — ${s.status}`}
+                  style={{
+                    backgroundColor: isStepCompleted ? color :
+                                     isStepFailed ? '#ef4444' :
+                                     isStepRunning ? undefined : '#e5e7eb',
+                  }}
+                >
+                  {isStepRunning && (
+                    <>
+                      <div
+                        className="absolute inset-0 animate-pulse rounded-sm"
+                        style={{ backgroundColor: color, opacity: 0.4 }}
+                      />
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-sm transition-all duration-1000"
+                        style={{
+                          width: '60%',
+                          backgroundColor: color,
+                          animation: 'progressPulse 2s ease-in-out infinite',
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {/* Agent name labels */}
+          <div className="flex gap-0.5">
+            {steps.map((s) => {
+              const color = AGENT_COLORS[s.agent_code] || '#6b7280';
+              const isStepCompleted = s.status === 'completed';
+              const isStepRunning = s.status === 'running';
+              return (
+                <div key={s.id} className="flex-1 text-center">
+                  <span
+                    className={`text-[9px] font-medium ${
+                      isStepCompleted ? 'opacity-100' :
+                      isStepRunning ? 'opacity-100 font-bold' :
+                      'opacity-40'
+                    }`}
+                    style={{ color: isStepCompleted || isStepRunning ? color : '#9ca3af' }}
+                  >
+                    {AGENT_NAMES[s.agent_code] || s.agent_code}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -151,6 +231,15 @@ const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, on
             >
               <RefreshCw size={12} />
               Reexecutar Pipeline
+            </button>
+          )}
+          {isRunning && onCancel && (
+            <button
+              onClick={onCancel}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+            >
+              <StopCircle size={12} />
+              Cancelar Análise
             </button>
           )}
         </div>

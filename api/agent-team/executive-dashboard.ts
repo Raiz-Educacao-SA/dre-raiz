@@ -11,6 +11,12 @@ import {
   safePct,
 } from '../../core/DecisionEngine';
 import { buildExecutiveSummary } from '../../executive/executiveSummaryBuilder';
+import { compareWithBenchmark } from '../../core/benchmarkEngine';
+import type { BenchmarkData, CompanyMetrics, BenchmarkComparison } from '../../core/benchmarkEngine';
+import { applyMacroImpact, calculateMacroRiskIndex, buildMacroSnapshot } from '../../core/macroImpactEngine';
+import type { MacroRiskIndex, MacroImpactResult, MacroAssumptions, MacroMaturityReport } from '../../core/macroTypes';
+import { DEFAULT_MACRO_ASSUMPTIONS } from '../../core/macroTypes';
+import { generateMacroMaturityReport } from '../../core/macroMaturityEngine';
 
 // --------------------------------------------
 // Types
@@ -127,6 +133,31 @@ export async function handler(req: { method: string }, res: {
     // 8. Trend últimos 6 meses
     const trend = buildTrend(financialSummary);
 
+    // 9. Benchmark — comparar com dados do segmento
+    let benchmark: BenchmarkComparison | null = null;
+    try {
+      benchmark = await fetchAndCompareBenchmark(
+        sb,
+        financialSummary,
+        analysis.score.score,
+      );
+    } catch {
+      // Benchmark é opcional — não bloqueia o dashboard
+    }
+
+    // 10. Macro Intelligence — indicadores macroeconômicos
+    let macroRisk: MacroRiskIndex | null = null;
+    let macroImpact: MacroImpactResult | null = null;
+    let macroMaturity: MacroMaturityReport | null = null;
+    try {
+      const macroResult = await fetchAndCalculateMacro(sb, financials);
+      macroRisk = macroResult.risk;
+      macroImpact = macroResult.impact;
+      macroMaturity = macroResult.maturity;
+    } catch {
+      // Macro é opcional — não bloqueia o dashboard
+    }
+
     return res.status(200).json({
       summary,
       financial_summary: financialSummary,
@@ -135,6 +166,10 @@ export async function handler(req: { method: string }, res: {
       optimization: optimizationResult,
       alerts: analysis.alerts,
       trend_last_6_months: trend,
+      benchmark,
+      macro_risk: macroRisk,
+      macro_impact: macroImpact,
+      macro_maturity: macroMaturity,
     });
 
   } catch (error: unknown) {
@@ -212,6 +247,108 @@ function buildCutCandidates(summary: FinancialSummary): CutCandidate[] {
  */
 function buildTrend(summary: FinancialSummary): { mes: string; receita: number; ebitda: number }[] {
   return summary.tendencia_mensal.slice(-6);
+}
+
+// --------------------------------------------
+// Benchmark — fetch + compare
+// --------------------------------------------
+
+/**
+ * Busca benchmark_aggregates do segmento educacional e compara com
+ * as métricas atuais da empresa. Retorna null se sem dados.
+ */
+async function fetchAndCompareBenchmark(
+  sb: ReturnType<typeof supabaseAdmin>,
+  financialSummary: FinancialSummary,
+  currentScore: number,
+): Promise<BenchmarkComparison | null> {
+  // Buscar benchmark mais recente do segmento educacional
+  const { data: rows, error } = await sb
+    .from('benchmark_aggregates')
+    .select('*')
+    .eq('industry_segment', 'educacao')
+    .eq('revenue_range', 'medium')
+    .order('reference_period', { ascending: false })
+    .limit(1);
+
+  if (error || !rows || rows.length === 0) return null;
+
+  const benchmarkRow = rows[0] as BenchmarkData;
+
+  // Calcular métricas da empresa
+  const growthYoY = financialSummary.receita.a1 !== 0
+    ? ((financialSummary.receita.real - financialSummary.receita.a1) / Math.abs(financialSummary.receita.a1)) * 100
+    : 0;
+
+  const companyMetrics: CompanyMetrics = {
+    margin: financialSummary.margem_contribuicao.pct_real,
+    ebitda: financialSummary.ebitda.real,
+    score: currentScore,
+    growth: Math.round(growthYoY * 100) / 100,
+  };
+
+  return compareWithBenchmark(companyMetrics, benchmarkRow);
+}
+
+// --------------------------------------------
+// Macro — fetch + calculate
+// --------------------------------------------
+
+/**
+ * Busca indicadores macro e premissas do Supabase, calcula
+ * MacroRiskIndex e MacroImpactResult. Retorna nulls se sem dados.
+ */
+async function fetchAndCalculateMacro(
+  sb: ReturnType<typeof supabaseAdmin>,
+  financials: ReturnType<typeof normalizeFinancialInputs>,
+): Promise<{ risk: MacroRiskIndex | null; impact: MacroImpactResult | null; maturity: MacroMaturityReport | null }> {
+  // Buscar indicadores macro mais recentes
+  const { data: indicators, error: indError } = await sb
+    .from('macro_indicators')
+    .select('indicator_type, value, period, is_projection')
+    .order('period', { ascending: false })
+    .limit(50);
+
+  // Buscar premissas da organização (ou usar default)
+  let assumptions: MacroAssumptions = DEFAULT_MACRO_ASSUMPTIONS;
+  let hasCustomAssumptions = false;
+  const { data: assumptionRows } = await sb
+    .from('macro_assumptions')
+    .select('*')
+    .eq('organization_id', 'raiz')
+    .limit(1);
+
+  if (assumptionRows && assumptionRows.length > 0) {
+    const row = assumptionRows[0];
+    assumptions = {
+      inflation_sensitivity: row.inflation_sensitivity ?? DEFAULT_MACRO_ASSUMPTIONS.inflation_sensitivity,
+      revenue_elasticity: row.revenue_elasticity ?? DEFAULT_MACRO_ASSUMPTIONS.revenue_elasticity,
+      cost_elasticity: row.cost_elasticity ?? DEFAULT_MACRO_ASSUMPTIONS.cost_elasticity,
+      interest_sensitivity: row.interest_sensitivity ?? DEFAULT_MACRO_ASSUMPTIONS.interest_sensitivity,
+      unemployment_sensitivity: row.unemployment_sensitivity ?? DEFAULT_MACRO_ASSUMPTIONS.unemployment_sensitivity,
+    };
+    hasCustomAssumptions = true;
+  }
+
+  // Maturity report usa apenas financials + assumptions (não precisa de indicadores)
+  const maturity = generateMacroMaturityReport(financials, assumptions, hasCustomAssumptions);
+
+  // Se não há indicadores, retornar apenas maturity
+  if (indError || !indicators || indicators.length === 0) {
+    return { risk: null, impact: null, maturity };
+  }
+
+  // Construir snapshot macro
+  const year = new Date().getUTCFullYear().toString();
+  const macroSnapshot = buildMacroSnapshot(indicators, year);
+
+  // Calcular Risk Index
+  const risk = calculateMacroRiskIndex(macroSnapshot);
+
+  // Calcular Impacto nos financials
+  const impact = applyMacroImpact(financials, macroSnapshot, assumptions);
+
+  return { risk, impact, maturity };
 }
 
 export default handler;

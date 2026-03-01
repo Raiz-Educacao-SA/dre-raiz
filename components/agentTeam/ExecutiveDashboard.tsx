@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Shield,
   TrendingUp,
@@ -11,12 +11,20 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
+  FlaskConical,
+  Lightbulb,
+  LayoutDashboard,
 } from 'lucide-react';
 import type {
   ScoreResult,
   ForecastResult,
   OptimizationResult,
   AlertDecision,
+  FinancialInputs,
+  ScoreInputs,
+  TimeSeriesPoint,
+  CutCandidate,
+  OptimizationInput,
 } from '../../core/decisionTypes';
 import type { FinancialSummary } from '../../types/agentTeam';
 import type {
@@ -25,6 +33,30 @@ import type {
   ExecutiveRisk,
   ExecutiveAction,
 } from '../../executive/executiveSummaryBuilder';
+import type { BenchmarkComparison } from '../../core/benchmarkEngine';
+import type { SimulationBaseData, ScenarioSimulationResult } from '../../core/scenarioEngine';
+import type { ScenarioComparisonResult } from '../../core/scenarioComparison';
+import type { StrategicRiskAssessment } from '../../core/strategicRiskEngine';
+import type { MacroRiskIndex, MacroImpactResult, MacroMaturityReport } from '../../core/macroTypes';
+import { DEFAULT_MACRO_ASSUMPTIONS } from '../../core/macroTypes';
+import BenchmarkPositionPanel from './BenchmarkPositionPanel';
+import MacroContextPanel from './MacroContextPanel';
+import MacroMaturityPanel from './MacroMaturityPanel';
+import StrategicLab from './StrategicLab';
+import DecisionAnalysisPanel from './DecisionAnalysisPanel';
+// Client-side data fetching + pure engines
+import { getSomaTags } from '../../services/supabaseService';
+import { buildFinancialSummary } from '../../api/agent-team/_lib/buildFinancialSummary';
+import {
+  runAnalysis,
+  forecast as runForecast,
+  optimize,
+  deriveMetrics,
+  normalizeFinancialInputs,
+  safePct,
+} from '../../core/DecisionEngine';
+import { buildExecutiveSummary } from '../../executive/executiveSummaryBuilder';
+import { generateMacroMaturityReport } from '../../core/macroMaturityEngine';
 
 // --------------------------------------------
 // Types
@@ -38,7 +70,25 @@ interface DashboardData {
   optimization: OptimizationResult | null;
   alerts: AlertDecision[];
   trend_last_6_months: { mes: string; receita: number; ebitda: number }[];
+  benchmark: BenchmarkComparison | null;
+  macro_risk: MacroRiskIndex | null;
+  macro_impact: MacroImpactResult | null;
+  macro_maturity: MacroMaturityReport | null;
 }
+
+type TabId = 'dashboard' | 'simulation' | 'decisions';
+
+interface TabDef {
+  id: TabId;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const TABS: TabDef[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
+  { id: 'simulation', label: 'Simulação', icon: <FlaskConical className="w-3.5 h-3.5" /> },
+  { id: 'decisions', label: 'Decisões', icon: <Lightbulb className="w-3.5 h-3.5" /> },
+];
 
 // --------------------------------------------
 // Color maps
@@ -87,6 +137,42 @@ function riskLabel(level: string): string {
 }
 
 // --------------------------------------------
+// Data extraction helpers (adapted from api/agent-team/executive-dashboard.ts)
+// --------------------------------------------
+
+interface SomaRow { tag0: string; tag01: string; scenario: string; month: string; total: number }
+
+function buildTimeSeries(rows: SomaRow[]): TimeSeriesPoint[] {
+  const months = new Map<string, { receita: number; cv: number; cf: number; rateio: number; receita_orc: number }>();
+  for (const row of rows) {
+    if (row.scenario !== 'Real') continue;
+    if (!months.has(row.month)) months.set(row.month, { receita: 0, cv: 0, cf: 0, rateio: 0, receita_orc: 0 });
+    const e = months.get(row.month)!;
+    if (row.tag0?.startsWith('01.')) e.receita += row.total;
+    else if (row.tag0?.startsWith('02.')) e.cv += row.total;
+    else if (row.tag0?.startsWith('03.')) e.cf += row.total;
+    else if (row.tag0?.startsWith('06.')) e.rateio += row.total;
+  }
+  for (const row of rows) {
+    if (row.scenario !== 'Orçado') continue;
+    const e = months.get(row.month);
+    if (e && row.tag0?.startsWith('01.')) e.receita_orc += row.total;
+  }
+  return [...months.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, d]) => {
+    const margin = safePctCalc(d.receita + d.cv, d.receita);
+    const ebitda = d.receita + d.cv + d.cf + d.rateio;
+    const marginGap = Math.max(0, safePctCalc(d.receita_orc, d.receita_orc) - margin);
+    const score = Math.max(0, Math.min(100, 100 - marginGap * 0.5));
+    return { score, margin, ebitda };
+  });
+}
+
+function buildCutCands(summary: FinancialSummary): CutCandidate[] {
+  return summary.top5_variacoes
+    .filter((v) => v.delta_pct > 0)
+    .map((v) => ({ area: v.tag01, gap: v.real - v.orcado, volume: Math.abs(v.real) }));
+}
+
 // Format helpers
 // --------------------------------------------
 
@@ -102,6 +188,11 @@ function fmtBRL(n: number): string {
 
 function fmtPct(n: number): string {
   return `${n.toFixed(1)}%`;
+}
+
+function safePctCalc(num: number, den: number): number {
+  if (!den || !isFinite(den) || !isFinite(num)) return 0;
+  return Math.round((num / Math.abs(den)) * 10000) / 100;
 }
 
 // --------------------------------------------
@@ -215,94 +306,16 @@ const ActionItem: React.FC<{ action: ExecutiveAction; index: number }> = ({ acti
 );
 
 // --------------------------------------------
-// Main Component
+// Dashboard Content (inner component)
 // --------------------------------------------
 
-const ExecutiveDashboard: React.FC = () => {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/agent-team/executive-dashboard');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setData(json);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao carregar dashboard';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 size={24} className="animate-spin text-gray-400" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-sm text-red-600">{error}</p>
-        <button
-          onClick={loadData}
-          className="mt-3 text-xs text-indigo-600 hover:underline"
-        >
-          Tentar novamente
-        </button>
-      </div>
-    );
-  }
-
-  if (!data || !data.summary) {
-    return (
-      <div className="text-center py-12 text-sm text-gray-400">
-        Sem dados disponíveis para o dashboard executivo.
-      </div>
-    );
-  }
-
+const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({ data, loading }) => {
   const { summary, financial_summary, score, forecast, optimization, alerts, trend_last_6_months } = data;
 
-  return (
-    <div className="p-6 max-w-5xl mx-auto space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div
-            className="p-2 rounded-xl"
-            style={{ backgroundColor: scoreBg(summary.overall_health_score) }}
-          >
-            <Shield size={22} style={{ color: scoreColor(summary.overall_health_score) }} />
-          </div>
-          <div>
-            <h1 className="text-lg font-black tracking-tight text-gray-900">
-              Dashboard Executivo
-            </h1>
-            <p className="text-[10px] text-gray-400">Decision Intelligence Platform</p>
-          </div>
-        </div>
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-all"
-          title="Atualizar"
-        >
-          <RefreshCw size={16} className="text-gray-400" />
-        </button>
-      </div>
+  if (!summary) return null;
 
+  return (
+    <div className="space-y-5">
       {/* LINHA 1 — Score + Risk + Confidence */}
       <div className="grid grid-cols-3 gap-4">
         {/* Health Score — grande */}
@@ -540,6 +553,15 @@ const ExecutiveDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Benchmark + Macro Context — side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <BenchmarkPositionPanel comparison={data.benchmark} loading={loading} />
+        <MacroContextPanel macroRisk={data.macro_risk} macroImpact={data.macro_impact} loading={loading} />
+      </div>
+
+      {/* Macro Maturity Report */}
+      <MacroMaturityPanel report={data.macro_maturity} loading={loading} />
+
       {/* Narrative */}
       {summary.executive_narrative.length > 0 && (
         <div className="bg-white rounded-xl p-5 border border-gray-200">
@@ -555,6 +577,302 @@ const ExecutiveDashboard: React.FC = () => {
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+};
+
+// --------------------------------------------
+// Main Component — Container with Tabs
+// --------------------------------------------
+
+const ExecutiveDashboard: React.FC = () => {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+
+  // Simulation state (shared between Simulation and Decisions tabs)
+  const [simResults, setSimResults] = useState<ScenarioSimulationResult[] | null>(null);
+  const [simComparison, setSimComparison] = useState<ScenarioComparisonResult | null>(null);
+  const [simRiskAssessment, setSimRiskAssessment] = useState<StrategicRiskAssessment | null>(null);
+
+  const handleSimulationComplete = useCallback((
+    results: ScenarioSimulationResult[],
+    comparison: ScenarioComparisonResult | null,
+    riskAssessment: StrategicRiskAssessment | null,
+  ) => {
+    setSimResults(results);
+    setSimComparison(comparison);
+    setSimRiskAssessment(riskAssessment);
+  }, []);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const year = new Date().getUTCFullYear().toString();
+
+      // 1. Buscar dados DRE via Supabase (mesmo RPC que SomaTagsView usa)
+      const dreSnapshot = await getSomaTags(`${year}-01`, `${year}-12`);
+      if (!dreSnapshot || dreSnapshot.length === 0) {
+        setData({
+          summary: null,
+          financial_summary: null,
+          score: null,
+          forecast: null,
+          optimization: null,
+          alerts: [],
+          trend_last_6_months: [],
+          benchmark: null,
+          macro_risk: null,
+          macro_impact: null,
+          macro_maturity: null,
+        });
+        return;
+      }
+
+      // 2. Build financial summary (função pura)
+      let financialSummary: FinancialSummary;
+      try {
+        financialSummary = buildFinancialSummary(dreSnapshot);
+      } catch (e) {
+        console.error('❌ buildFinancialSummary falhou:', e);
+        setError('Erro ao processar dados financeiros. Verifique se há dados DRE no período.');
+        return;
+      }
+
+      // 3. Converter para inputs do DecisionEngine
+      // normalizeFinancialInputs espera formato aninhado { receita: { real, orcado }, ... }
+      const financials = normalizeFinancialInputs(financialSummary);
+
+      const metrics = deriveMetrics(financials);
+
+      const scoreInputs: ScoreInputs = {
+        confidence: 80,
+        margin_real: metrics.margin,
+        margin_orcado: safePct(
+          financialSummary.margem_contribuicao.orcado,
+          financialSummary.receita.orcado,
+        ),
+        ebitda_real: metrics.ebitda,
+        ebitda_a1: financialSummary.ebitda.a1,
+        high_priority_count: 0,
+        conflicts_count: 0,
+      };
+
+      // 4. DecisionEngine — análise completa
+      const analysis = runAnalysis(scoreInputs, financials);
+
+      // 5. Forecast — montar série temporal dos últimos meses
+      const timeSeries = buildTimeSeries(dreSnapshot);
+      const forecastResult = timeSeries.length >= 3 ? runForecast(timeSeries) : null;
+
+      // 6. Optimization — candidatos a corte
+      const candidates = buildCutCands(financialSummary);
+      let optimizationResult: OptimizationResult | null = null;
+      if (candidates.length > 0 && analysis.score.score < 85) {
+        const optInput: OptimizationInput = {
+          current_financials: financials,
+          current_score_inputs: scoreInputs,
+          target_score: 85,
+          candidates,
+        };
+        optimizationResult = optimize(optInput);
+      }
+
+      // 7. Executive Summary
+      const summary = buildExecutiveSummary({
+        scoreResult: analysis.score,
+        metrics: analysis.metrics,
+        forecastResult,
+        optimizationResult,
+        alerts: analysis.alerts,
+      });
+
+      // 8. Trend últimos 6 meses
+      const trend = financialSummary.tendencia_mensal.slice(-6);
+
+      // 9. Macro Maturity (client-side, sem indicadores macro do banco)
+      let macroMaturity: MacroMaturityReport | null = null;
+      try {
+        macroMaturity = generateMacroMaturityReport(financials, DEFAULT_MACRO_ASSUMPTIONS, false);
+      } catch { /* opcional */ }
+
+      setData({
+        summary,
+        financial_summary: financialSummary,
+        score: analysis.score,
+        forecast: forecastResult,
+        optimization: optimizationResult,
+        alerts: analysis.alerts,
+        trend_last_6_months: trend,
+        benchmark: null, // Benchmark requer tabela benchmark_aggregates (opcional)
+        macro_risk: null, // Requer tabela macro_indicators (opcional)
+        macro_impact: null, // Requer tabela macro_indicators (opcional)
+        macro_maturity: macroMaturity,
+      });
+    } catch (err: unknown) {
+      console.error('❌ CEO Dashboard loadData error:', err);
+      const msg = err instanceof Error ? `${err.message}` : 'Erro ao carregar dashboard';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Build SimulationBaseData from dashboard data for StrategicLab
+  const simulationBaseData = useMemo<SimulationBaseData | null>(() => {
+    if (!data?.financial_summary || !data?.score) return null;
+
+    const fs = data.financial_summary;
+
+    const financials: FinancialInputs = {
+      receita_real: fs.receita.real,
+      receita_orcado: fs.receita.orcado,
+      custos_variaveis_real: fs.custos_variaveis.real,
+      custos_variaveis_orcado: fs.custos_variaveis.orcado,
+      custos_fixos_real: fs.custos_fixos.real,
+      custos_fixos_orcado: fs.custos_fixos.orcado,
+      sga_real: fs.sga.real,
+      sga_orcado: fs.sga.orcado,
+      rateio_real: fs.rateio.real,
+      rateio_orcado: fs.rateio.orcado,
+    };
+
+    const score_inputs: ScoreInputs = {
+      confidence: 80,
+      margin_real: fs.margem_contribuicao.pct_real,
+      margin_orcado: fs.margem_contribuicao.pct_orcado,
+      ebitda_real: fs.ebitda.real,
+      ebitda_a1: fs.ebitda.a1,
+      high_priority_count: 0,
+      conflicts_count: 0,
+    };
+
+    // Build time series from trend data
+    const historical_series: TimeSeriesPoint[] = data.trend_last_6_months.map((t) => {
+      const margin = safePctCalc(t.receita + (t.ebitda - t.receita), t.receita);
+      return {
+        score: data.score!.score,
+        margin,
+        ebitda: t.ebitda,
+      };
+    });
+
+    // Build cut candidates from top5 variations (costs above budget)
+    const cut_candidates: CutCandidate[] = fs.top5_variacoes
+      .filter((v) => v.delta_pct > 0)
+      .map((v) => ({
+        area: v.tag01,
+        gap: v.real - v.orcado,
+        volume: Math.abs(v.real),
+      }));
+
+    return { financials, score_inputs, historical_series, cut_candidates };
+  }, [data]);
+
+  // Loading state
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 size={24} className="animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-sm text-red-600">{error}</p>
+        <button
+          onClick={loadData}
+          className="mt-3 text-xs text-indigo-600 hover:underline"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  if (!data || !data.summary) {
+    return (
+      <div className="text-center py-12 text-sm text-gray-400">
+        Sem dados disponíveis para o dashboard executivo.
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-5xl mx-auto">
+      {/* Header + Tabs */}
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div
+            className="p-2 rounded-xl"
+            style={{ backgroundColor: scoreBg(data.summary!.overall_health_score) }}
+          >
+            <Shield size={22} style={{ color: scoreColor(data.summary!.overall_health_score) }} />
+          </div>
+          <div>
+            <h1 className="text-lg font-black tracking-tight text-gray-900">
+              Decision Intelligence
+            </h1>
+            <p className="text-[10px] text-gray-400">Plataforma de Inteligência Estratégica</p>
+          </div>
+        </div>
+        <button
+          onClick={loadData}
+          disabled={loading}
+          className="p-2 rounded-lg hover:bg-gray-100 transition-all"
+          title="Atualizar"
+        >
+          <RefreshCw size={16} className={`text-gray-400 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex items-center gap-1 mb-5 border-b border-gray-200 pb-px">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg border-b-2 transition-all ${
+              activeTab === tab.id
+                ? 'border-indigo-600 text-indigo-700 bg-indigo-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'dashboard' && (
+        <DashboardContent data={data} loading={loading} />
+      )}
+
+      {activeTab === 'simulation' && (
+        <StrategicLab
+          baseData={simulationBaseData}
+          loading={loading}
+          onSimulationComplete={handleSimulationComplete}
+        />
+      )}
+
+      {activeTab === 'decisions' && (
+        <DecisionAnalysisPanel
+          scenarios={simResults}
+          comparison={simComparison}
+          riskAssessment={simRiskAssessment}
+          loading={loading}
+        />
       )}
     </div>
   );

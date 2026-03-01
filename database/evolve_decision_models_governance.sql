@@ -14,6 +14,7 @@ ALTER TABLE decision_models
 
 -- Constraint: justificativa obrigatória com mínimo 30 caracteres para novos registros
 -- (não aplicável retroativamente a registros existentes)
+ALTER TABLE decision_models DROP CONSTRAINT IF EXISTS chk_justification_length;
 ALTER TABLE decision_models
   ADD CONSTRAINT chk_justification_length
   CHECK (justification IS NULL OR length(justification) >= 30);

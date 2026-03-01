@@ -26,6 +26,7 @@ CREATE INDEX IF NOT EXISTS idx_system_logs_context
 ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
 
 -- Leitura: apenas admin
+DROP POLICY IF EXISTS "system_logs_select_admin" ON system_logs;
 CREATE POLICY "system_logs_select_admin" ON system_logs
   FOR SELECT TO authenticated
   USING (
@@ -34,9 +35,9 @@ CREATE POLICY "system_logs_select_admin" ON system_logs
 
 -- Escrita: service_role (backend insere via supabaseAdmin)
 -- Authenticated users não podem inserir/modificar logs
+DROP POLICY IF EXISTS "system_logs_insert_service" ON system_logs;
 CREATE POLICY "system_logs_insert_service" ON system_logs
   FOR INSERT TO authenticated
-  USING (false)
   WITH CHECK (false);
 
 -- Cleanup automático: logs > 90 dias (descomentar se pg_cron disponível)

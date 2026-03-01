@@ -7,6 +7,7 @@ ALTER TABLE agent_schedules
   ADD COLUMN IF NOT EXISTS justification TEXT;
 
 -- Constraint: justificativa obrigatória ao desativar (is_active = false)
+ALTER TABLE agent_schedules DROP CONSTRAINT IF EXISTS chk_schedule_justification_on_deactivation;
 ALTER TABLE agent_schedules
   ADD CONSTRAINT chk_schedule_justification_on_deactivation
   CHECK (is_active = true OR (justification IS NOT NULL AND length(justification) >= 30));

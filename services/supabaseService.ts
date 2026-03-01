@@ -2028,3 +2028,94 @@ export const getContaContabilOptions = async (): Promise<ContaContabilOption[]> 
     return [];
   }
 };
+
+// ============================================
+// Multi-Company Intelligence — Holding Functions
+// ============================================
+
+import type { CompanyFinancialSnapshot } from '../core/holdingTypes';
+
+/**
+ * Busca o holding do usuário logado via user_holdings.
+ * Retorna null se o usuário não pertence a nenhum holding.
+ */
+export const getUserHolding = async (): Promise<{ id: string; name: string; description: string | null } | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('user_holdings')
+      .select('holding_id, holdings(id, name, description)')
+      .limit(1)
+      .single();
+
+    if (error || !data) return null;
+
+    const h = (data as any).holdings;
+    return h ? { id: h.id, name: h.name, description: h.description } : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Busca todas as empresas ativas do holding do usuário,
+ * com o snapshot financeiro mais recente de cada.
+ */
+export const getHoldingCompanies = async (holdingId: string): Promise<CompanyFinancialSnapshot[]> => {
+  try {
+    // 1. Buscar empresas ativas do holding
+    const { data: companies, error: compErr } = await supabase
+      .from('holding_companies')
+      .select('organization_id, display_name, portfolio_weight, is_active')
+      .eq('holding_id', holdingId)
+      .eq('is_active', true);
+
+    if (compErr || !companies || companies.length === 0) return [];
+
+    // 2. Para cada empresa, buscar o snapshot mais recente
+    const orgIds = companies.map((c) => c.organization_id);
+
+    const { data: snapshots, error: snapErr } = await supabase
+      .from('company_financial_snapshots')
+      .select('*')
+      .in('organization_id', orgIds)
+      .order('period', { ascending: false });
+
+    if (snapErr) {
+      console.error('❌ Erro ao buscar snapshots:', snapErr);
+      return [];
+    }
+
+    // 3. Pegar o snapshot mais recente de cada empresa
+    const latestByOrg = new Map<string, any>();
+    for (const s of (snapshots || [])) {
+      if (!latestByOrg.has(s.organization_id)) {
+        latestByOrg.set(s.organization_id, s);
+      }
+    }
+
+    // 4. Montar CompanyFinancialSnapshot[]
+    return companies.map((c) => {
+      const snap = latestByOrg.get(c.organization_id);
+      return {
+        organization_id: c.organization_id,
+        display_name: c.display_name,
+        period: snap?.period || '—',
+        receita_real: Number(snap?.receita_real || 0),
+        receita_orcado: Number(snap?.receita_orcado || 0),
+        custos_variaveis_real: Number(snap?.custos_variaveis_real || 0),
+        custos_fixos_real: Number(snap?.custos_fixos_real || 0),
+        sga_real: Number(snap?.sga_real || 0),
+        rateio_real: Number(snap?.rateio_real || 0),
+        ebitda: Number(snap?.ebitda || 0),
+        margem_contribuicao_pct: Number(snap?.margem_contribuicao_pct || 0),
+        health_score: Number(snap?.health_score || 0),
+        growth_yoy: Number(snap?.growth_yoy || 0),
+        portfolio_weight: Number(c.portfolio_weight),
+        headcount: snap?.headcount ? Number(snap.headcount) : undefined,
+      };
+    });
+  } catch (e) {
+    console.error('❌ Erro ao buscar holding companies:', e);
+    return [];
+  }
+};

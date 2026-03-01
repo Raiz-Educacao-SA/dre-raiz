@@ -94,14 +94,9 @@ export async function handler(req: any, res: any) {
       error: err.message,
     });
 
-    // Marcar run como failed
-    await sb
-      .from('agent_runs')
-      .update({
-        status: 'failed',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', body.runId);
+    // Verificar se run deve ser marcado como failed via markRunCompletedIfFinished
+    // (que checa se algum step falhou)
+    await markRunCompletedIfFinished(sb, body.runId);
 
     return res.status(500).json({ error: 'Step falhou', message: err.message });
   }

@@ -36,6 +36,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_trail_created_at
 ALTER TABLE decision_audit_trail ENABLE ROW LEVEL SECURITY;
 
 -- Leitura: apenas admin
+DROP POLICY IF EXISTS "audit_trail_select_admin" ON decision_audit_trail;
 CREATE POLICY "audit_trail_select_admin" ON decision_audit_trail
   FOR SELECT TO authenticated
   USING (
@@ -44,9 +45,9 @@ CREATE POLICY "audit_trail_select_admin" ON decision_audit_trail
 
 -- Escrita: service_role (backend insere via supabaseAdmin)
 -- Registros de auditoria são imutáveis — sem UPDATE/DELETE para authenticated
+DROP POLICY IF EXISTS "audit_trail_insert_service" ON decision_audit_trail;
 CREATE POLICY "audit_trail_insert_service" ON decision_audit_trail
   FOR INSERT TO authenticated
-  USING (false)
   WITH CHECK (false);
 
 -- Comentários

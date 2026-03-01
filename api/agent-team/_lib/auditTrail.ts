@@ -19,7 +19,9 @@ export type AuditActionType =
   | 'override'
   | 'weight_change'
   | 'approval'
-  | 'rejection';
+  | 'rejection'
+  | 'decision'
+  | 'pipeline_halt';
 
 export interface AuditEntry {
   run_id?: string;

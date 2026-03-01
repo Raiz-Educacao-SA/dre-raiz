@@ -190,7 +190,7 @@ export async function executeStep(
 
     // 2g-bis. Verificar halt conditions (Bruna e Falcão podem bloquear)
     const haltCheck = shouldHaltPipeline(
-      step.agent_code as 'alex' | 'bruna' | 'carlos' | 'denilson' | 'edmundo' | 'falcao',
+      step.agent_code as 'alex' | 'bruna' | 'carlos' | 'denilson' | 'edmundo' | 'falcao' | 'diretor' | 'ceo',
       validated as Record<string, unknown>,
     );
     if (haltCheck.halt) {
@@ -379,7 +379,7 @@ async function callClaudeWithRetry(
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurado');
 
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
-  const isConsolidation = step.step_type === 'consolidate';
+  const isConsolidation = step.step_type === 'consolidate' || step.step_type === 'review';
 
   // Forçar JSON via system prompt
   const jsonSystemSuffix = '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO nos textos — máximo 2 frases por campo string. Priorize dados numéricos sobre narrativa.';

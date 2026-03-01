@@ -4,18 +4,45 @@ import type {
   AgentStep,
   SupervisorPlanOutput,
   DataQualityOutput,
+  FragilityPoint,
+  NormalizationAction,
   PerformanceAnalysisOutput,
+  RankedVariation,
+  DRELineAnalysis,
   OptimizationOutput,
+  BrandActionPlan,
+  ProposedAction,
+  ActionPrioritizationEntry,
   ForecastOutput,
+  BrandProjection,
+  TagOpportunityRiskEntry,
+  BrandGap,
+  TagGapBreakdown,
+  SacrificeEntry,
+  TagConfidence,
   RiskOutput,
-  ConsolidationOutput,
-  DataIssue,
-  PerformanceDeviation,
-  OptimizationAction,
+  BrandRiskExposure,
   RiskAlert,
-  StressTest,
+  TagRiskEntry,
+  PlanSustainabilityReview,
+  CurveFragilityNote,
+  RiskAcceptabilityEntry,
+  ExecutiveRiskSummary,
+  ConsolidationOutput,
   Recommendation,
   PresentationSlide,
+  DirectorReviewOutput,
+  DirectorQuestion,
+  ExpectedDirectorAnswer,
+  ExecutionOwnershipReview,
+  ExecutiveMaterialReadiness,
+  PreCEOReinforcement,
+  CEOReviewOutput,
+  CEOQuestion,
+  ExpectedAnswer,
+  WeaknessReport,
+  DecisionReadinessAssessment,
+  ExecutiveRehearsalEntry,
 } from '../../types/agentTeam';
 
 // --------------------------------------------
@@ -149,56 +176,142 @@ function SupervisorPlanView({ data }: { data: SupervisorPlanOutput }) {
 // BRUNA — Data Quality View
 // ============================================
 
+const CAUTION_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  high_confidence:                        { bg: 'bg-green-50',  text: 'text-green-700',  label: 'Alta Confiança' },
+  proceed_with_moderate_reservations:     { bg: 'bg-yellow-50', text: 'text-yellow-700', label: 'Ressalvas Moderadas' },
+  proceed_with_critical_reservations:     { bg: 'bg-red-50',    text: 'text-red-700',    label: 'Ressalvas Críticas' },
+};
+
+const CLASSIFICATION_STYLES: Record<string, { bg: string; text: string }> = {
+  'excelente': { bg: 'bg-green-100',  text: 'text-green-700' },
+  'adequada':  { bg: 'bg-blue-100',   text: 'text-blue-700' },
+  'atenção':   { bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  'crítica':   { bg: 'bg-red-100',    text: 'text-red-700' },
+};
+
 function DataQualityView({ data }: { data: DataQualityOutput }) {
   const score = data.quality_score ?? 0;
-  const issues = data.inconsistencies_found || [];
+  // Compatibilidade: aceitar formato antigo (summary) e novo (executive_data_quality_summary)
+  const summary = data.executive_data_quality_summary || (data as any).summary || '';
+  const classification = data.quality_classification || (score >= 85 ? 'excelente' : score >= 65 ? 'adequada' : score >= 40 ? 'atenção' : 'crítica');
+  const classStyle = CLASSIFICATION_STYLES[classification] || CLASSIFICATION_STYLES['atenção'];
+  const cautionLevel = data.recommended_caution_level || 'high_confidence';
+  const cautionStyle = CAUTION_STYLES[cautionLevel] || CAUTION_STYLES.high_confidence;
+  const fragilityPoints = data.fragility_points || (data as any).inconsistencies_found || [];
+  const normActions = data.normalization_actions || [];
+  const riskSummary = data.data_integrity_risk_summary;
+
   return (
     <div className="space-y-3">
+      {/* Score + Classification + Caution Level */}
       <Card>
         <div className="flex items-center justify-between">
           <SectionTitle icon={<Shield size={12} className="text-amber-500" />}>Qualidade de Dados</SectionTitle>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-gray-500">Score:</span>
+          <div className="flex items-center gap-2">
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${classStyle.bg} ${classStyle.text}`}>
+              {classification}
+            </span>
             <span className={`text-sm font-bold ${score >= 80 ? 'text-green-600' : score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
               {Math.round(score)}
             </span>
             <span className="text-[10px] text-gray-400">/100</span>
           </div>
         </div>
-        <TextBlock text={data.summary} />
-        {data.recommendation_to_proceed === false && (
-          <div className="flex items-center gap-2 bg-red-50 rounded-lg px-3 py-2 text-xs text-red-700 font-bold">
-            <AlertTriangle size={14} /> Pipeline bloqueado — base inviável
-          </div>
+        <TextBlock text={summary} />
+        {/* Caution Level Banner */}
+        <div className={`flex items-center gap-2 ${cautionStyle.bg} rounded-lg px-3 py-2 text-xs ${cautionStyle.text} font-semibold`}>
+          <Shield size={14} />
+          Nível de Cautela: {cautionStyle.label}
+        </div>
+        {data.rationale_for_recommendation && (
+          <p className="text-[11px] text-gray-500 italic">{data.rationale_for_recommendation}</p>
         )}
       </Card>
-      {issues.length > 0 && (
+
+      {/* Fragility Points */}
+      {fragilityPoints.length > 0 && (
         <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-red-500" />}>Inconsistências ({issues.length})</SectionTitle>
+          <SectionTitle icon={<AlertTriangle size={12} className="text-red-500" />}>Fragilidades ({fragilityPoints.length})</SectionTitle>
           <div className="space-y-2">
-            {issues.map((issue: DataIssue, i: number) => (
+            {fragilityPoints.map((fp: FragilityPoint, i: number) => (
               <div key={i} className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                <SeverityBadge level={issue.severity} />
+                <SeverityBadge level={fp.severity || (fp as any).severity || 'low'} />
                 <div className="space-y-0.5">
-                  <p className="text-xs font-medium text-gray-900">{issue.area}</p>
-                  <p className="text-[11px] text-gray-600">{issue.description}</p>
-                  <p className="text-[10px] text-gray-400">Valor: {issue.affected_value || '—'}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-medium text-gray-900">{fp.affected_area || (fp as any).area || '—'}</p>
+                    {fp.type && (
+                      <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px] font-mono">{fp.type}</span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-600">{fp.description}</p>
+                  {fp.probable_cause && <p className="text-[10px] text-gray-400">Causa: {fp.probable_cause}</p>}
+                  {fp.analysis_impact && <p className="text-[10px] text-blue-500">Impacto: {fp.analysis_impact}</p>}
+                  {fp.suggested_fix && <p className="text-[10px] text-green-600">Correção: {fp.suggested_fix}</p>}
                 </div>
               </div>
             ))}
           </div>
         </Card>
       )}
-      {(data.highlights?.length ?? 0) > 0 && (
+
+      {/* Data Integrity Risk Summary */}
+      {riskSummary && (
         <Card>
-          <SectionTitle icon={<TrendingUp size={12} className="text-green-500" />}>Destaques</SectionTitle>
-          <BulletList items={data.highlights} />
+          <SectionTitle icon={<Shield size={12} className="text-orange-500" />}>Risco Informacional</SectionTitle>
+          {typeof riskSummary === 'string' ? (
+            <TextBlock text={riskSummary} />
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-gray-500">Risco Geral:</span>
+                <SeverityBadge level={riskSummary.overall_risk_level || 'low'} />
+              </div>
+              {riskSummary.most_sensitive_areas?.length > 0 && (
+                <div>
+                  <span className="text-[10px] text-gray-500">Áreas sensíveis:</span>
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {riskSummary.most_sensitive_areas.map((a: string, i: number) => (
+                      <span key={i} className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 text-[9px] font-medium">{a}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {riskSummary.impact_on_performance && <p className="text-[10px] text-gray-600"><span className="font-medium">Performance:</span> {riskSummary.impact_on_performance}</p>}
+              {riskSummary.impact_on_optimization && <p className="text-[10px] text-gray-600"><span className="font-medium">Otimização:</span> {riskSummary.impact_on_optimization}</p>}
+              {riskSummary.impact_on_forecast && <p className="text-[10px] text-gray-600"><span className="font-medium">Forecast:</span> {riskSummary.impact_on_forecast}</p>}
+              {riskSummary.interpretive_caution && <p className="text-[10px] text-amber-600 font-medium mt-1">{riskSummary.interpretive_caution}</p>}
+            </div>
+          )}
         </Card>
       )}
-      {(data.normalization_actions?.length ?? 0) > 0 && (
+
+      {/* Normalization Actions */}
+      {normActions.length > 0 && (
         <Card>
-          <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Ações de Normalização</SectionTitle>
-          <BulletList items={data.normalization_actions} />
+          <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Ações de Normalização ({normActions.length})</SectionTitle>
+          <div className="space-y-2">
+            {normActions.map((action: NormalizationAction | string, i: number) => {
+              if (typeof action === 'string') {
+                return (
+                  <li key={i} className="flex items-start gap-2 text-xs text-gray-700">
+                    <span className="mt-1.5 w-1 h-1 rounded-full bg-gray-400 shrink-0" />
+                    {action}
+                  </li>
+                );
+              }
+              return (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <SeverityBadge level={action.priority || 'medium'} />
+                    <span className="text-xs font-medium text-gray-900">{action.action_title}</span>
+                  </div>
+                  {action.target_area && <p className="text-[10px] text-gray-500">Área: {action.target_area}</p>}
+                  {action.expected_benefit && <p className="text-[10px] text-green-600">{action.expected_benefit}</p>}
+                  {action.owner_suggestion && <p className="text-[10px] text-gray-400">Responsável sugerido: {action.owner_suggestion}</p>}
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
     </div>
@@ -209,103 +322,257 @@ function DataQualityView({ data }: { data: DataQualityOutput }) {
 // CARLOS — Performance View
 // ============================================
 
-function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
-  const margin = data.margin_analysis;
-  const deviations = data.key_deviations || [];
+const NATURE_LABELS: Record<string, { label: string; color: string }> = {
+  erro_de_orcamento:              { label: 'Erro Orçamento',       color: 'bg-orange-100 text-orange-700' },
+  delta_operacional:              { label: 'Delta Operacional',    color: 'bg-blue-100 text-blue-700' },
+  descasamento_temporal:          { label: 'Timing',               color: 'bg-purple-100 text-purple-700' },
+  vazamento_entre_linhas:         { label: 'Vazamento',            color: 'bg-yellow-100 text-yellow-700' },
+  nao_recorrente:                 { label: 'Não Recorrente',       color: 'bg-gray-100 text-gray-700' },
+  estrutural:                     { label: 'Estrutural',           color: 'bg-red-100 text-red-700' },
+  possivel_erro_de_classificacao: { label: 'Erro Classificação?',  color: 'bg-pink-100 text-pink-700' },
+};
 
-  // Defensivo: IA pode retornar margin_analysis com shape diferente do esperado
-  const marginReal = typeof margin?.current_margin_pct === 'number' ? margin.current_margin_pct
-    : typeof (margin as any)?.reported_margin === 'number' ? (margin as any).reported_margin : null;
-  const marginOrcado = typeof margin?.budget_margin_pct === 'number' ? margin.budget_margin_pct
-    : typeof (margin as any)?.budgeted_margin === 'number' ? (margin as any).budgeted_margin : null;
-  const marginA1 = typeof margin?.prior_year_margin_pct === 'number' ? margin.prior_year_margin_pct
-    : typeof (margin as any)?.prior_year_margin === 'number' ? (margin as any).prior_year_margin : null;
-  const marginAssessment = typeof margin?.assessment === 'string' ? margin.assessment
-    : typeof (margin as any)?.variance_explanation === 'string' ? (margin as any).variance_explanation
-    : typeof (margin as any)?.sustainability_assessment === 'string' ? (margin as any).sustainability_assessment : null;
+const RELEVANCE_STYLES: Record<string, string> = {
+  alta:  'bg-red-50 text-red-700',
+  media: 'bg-yellow-50 text-yellow-700',
+  baixa: 'bg-gray-50 text-gray-600',
+};
+
+function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
+  const rankedVariations = data.ranked_variations || (data as any).key_deviations || [];
+  const dreLines = data.dre_line_analysis || [];
+  const impact = data.margin_ebitda_impact;
+  const actions = data.recommended_analytical_actions;
+  // Compatibilidade com formato antigo
+  const hasOldFormat = !!(data as any).revenue_analysis || !!(data as any).key_deviations;
 
   return (
     <div className="space-y-3">
+      {/* Executive Summary */}
       <Card>
-        <SectionTitle icon={<FileText size={12} className="text-blue-500" />}>Resumo</SectionTitle>
+        <SectionTitle icon={<FileText size={12} className="text-blue-500" />}>Resumo Executivo</SectionTitle>
         <TextBlock text={typeof data.executive_performance_summary === 'string' ? data.executive_performance_summary : null} />
       </Card>
-      {margin && (marginReal !== null || marginOrcado !== null || marginA1 !== null) && (
+
+      {/* Ranked Variations — entregável principal */}
+      {rankedVariations.length > 0 && (
         <Card>
-          <SectionTitle icon={<TrendingUp size={12} className="text-green-500" />}>Análise de Margem</SectionTitle>
-          <div className="grid grid-cols-3 gap-3 mt-1">
-            <div className="bg-gray-50 rounded-lg px-3 py-2 text-center">
-              <p className="text-[10px] text-gray-500 uppercase">Real</p>
-              <p className="text-sm font-bold text-gray-900">{marginReal !== null ? `${marginReal.toFixed(1)}%` : '—'}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg px-3 py-2 text-center">
-              <p className="text-[10px] text-gray-500 uppercase">Orçado</p>
-              <p className="text-sm font-bold text-gray-900">{marginOrcado !== null ? `${marginOrcado.toFixed(1)}%` : '—'}</p>
-            </div>
-            <div className="bg-gray-50 rounded-lg px-3 py-2 text-center">
-              <p className="text-[10px] text-gray-500 uppercase">A-1</p>
-              <p className="text-sm font-bold text-gray-900">{marginA1 !== null ? `${marginA1.toFixed(1)}%` : '—'}</p>
-            </div>
-          </div>
-          <TextBlock text={marginAssessment} />
-        </Card>
-      )}
-      <Card>
-        <SectionTitle icon={<BarChart3 size={12} className="text-indigo-500" />}>EBITDA</SectionTitle>
-        <TextBlock text={typeof data.ebitda_analysis === 'string' ? data.ebitda_analysis : null} />
-      </Card>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card>
-          <SectionTitle icon={<ArrowUpRight size={12} className="text-green-500" />}>Receita</SectionTitle>
-          <TextBlock text={typeof data.revenue_analysis === 'string' ? data.revenue_analysis : null} />
-        </Card>
-        <Card>
-          <SectionTitle icon={<ArrowDownRight size={12} className="text-red-500" />}>Custos</SectionTitle>
-          <TextBlock text={typeof data.cost_analysis === 'string' ? data.cost_analysis : null} />
-        </Card>
-      </div>
-      {deviations.length > 0 && (
-        <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Desvios ({deviations.length})</SectionTitle>
-          <div className="space-y-2">
-            {deviations.map((d: PerformanceDeviation, i: number) => (
-              <div key={i} className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                <span className={`mt-0.5 shrink-0 ${d.direction === 'positive' ? 'text-green-500' : 'text-red-500'}`}>
-                  {d.direction === 'positive' ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                </span>
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-gray-900">{d.tag01}</span>
-                    <SeverityBadge level={d.materiality} />
-                    <span className={`text-[10px] font-bold ${d.direction === 'positive' ? 'text-green-600' : 'text-red-600'}`}>
-                      R$ {Math.abs(d.absolute_gap ?? 0).toLocaleString('pt-BR')} ({(d.percentage_gap ?? 0).toFixed(1)}%)
+          <SectionTitle icon={<BarChart3 size={12} className="text-indigo-500" />}>
+            Ranking de Variações ({rankedVariations.length})
+          </SectionTitle>
+          <div className="space-y-3">
+            {rankedVariations.map((v: RankedVariation, i: number) => {
+              const nature = NATURE_LABELS[v.variation_nature] || NATURE_LABELS.delta_operacional;
+              const gapBudget = v.gap_vs_budget_value ?? (v as any).absolute_gap ?? 0;
+              const gapBudgetPct = v.gap_vs_budget_pct ?? (v as any).percentage_gap ?? 0;
+              const gapA1 = v.gap_vs_a1_value ?? 0;
+              const gapA1Pct = v.gap_vs_a1_pct ?? 0;
+              const isNeg = gapBudget < 0;
+              const relevance = RELEVANCE_STYLES[v.executive_relevance] || RELEVANCE_STYLES.media;
+
+              return (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
+                  {/* Header: position + line + nature + relevance */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="w-5 h-5 flex items-center justify-center rounded bg-indigo-100 text-indigo-700 text-[10px] font-bold shrink-0">
+                      {v.ranking_position || i + 1}
                     </span>
+                    <span className="text-xs font-bold text-gray-900">{v.dre_line || (v as any).area || v.tag01}</span>
+                    {v.tag01 && v.tag01 !== v.dre_line && (
+                      <span className="px-1 py-0.5 rounded bg-blue-50 text-blue-600 text-[9px] font-medium">{v.tag01}</span>
+                    )}
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${nature.color}`}>{nature.label}</span>
+                    {v.executive_relevance && (
+                      <span className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${relevance}`}>{v.executive_relevance}</span>
+                    )}
                   </div>
-                  <p className="text-[11px] text-gray-600">{d.description}</p>
-                  <p className="text-[10px] text-gray-400">Driver: {d.probable_driver}</p>
+                  {/* Gap values */}
+                  <div className="flex items-center gap-3 text-[10px]">
+                    <span className={`font-bold ${isNeg ? 'text-red-600' : 'text-green-600'}`}>
+                      {isNeg ? '' : '+'}R$ {Math.abs(gapBudget).toLocaleString('pt-BR')} vs Orçado ({gapBudgetPct.toFixed(1)}%)
+                    </span>
+                    {gapA1 !== 0 && (
+                      <span className={`font-medium ${gapA1 < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                        {gapA1 < 0 ? '' : '+'}R$ {Math.abs(gapA1).toLocaleString('pt-BR')} vs A-1 ({gapA1Pct.toFixed(1)}%)
+                      </span>
+                    )}
+                  </div>
+                  {/* Cause + context */}
+                  <p className="text-[11px] text-gray-700">{v.cause_explanation || (v as any).description || ''}</p>
+                  {/* Supplier / Description */}
+                  {(v.supplier_main_reference || v.description_main_reference) && (
+                    <p className="text-[10px] text-gray-400">
+                      {v.supplier_main_reference && <>Fornecedor: {v.supplier_main_reference}</>}
+                      {v.supplier_main_reference && v.description_main_reference && ' | '}
+                      {v.description_main_reference && <>Desc: {v.description_main_reference}</>}
+                    </p>
+                  )}
+                  {/* Investigation details */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[9px] text-gray-400">
+                    {v.budget_cross_check && <span>Orçamento: {v.budget_cross_check}</span>}
+                    {v.timing_assessment && <span>Timing: {v.timing_assessment}</span>}
+                    {v.leakage_assessment && <span>Vazamento: {v.leakage_assessment}</span>}
+                    {v.recurrence_expectation && <span>Recorrência: {v.recurrence_expectation.replace(/_/g, ' ')}</span>}
+                  </div>
+                  {/* Signal to Bruna */}
+                  {v.classification_review_suggestion_to_bruna && (
+                    <p className="text-[10px] text-pink-600 font-medium">
+                      Sinalização Bruna: {v.classification_review_suggestion_to_bruna}
+                    </p>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}
-      {(data.key_positive_drivers?.length ?? 0) > 0 && (
+
+      {/* DRE Line Analysis */}
+      {dreLines.length > 0 && (
         <Card>
-          <SectionTitle icon={<ArrowUpRight size={12} className="text-green-500" />}>Drivers Positivos</SectionTitle>
-          <BulletList items={data.key_positive_drivers} />
+          <SectionTitle icon={<TrendingUp size={12} className="text-green-500" />}>Análise por Linha da DRE ({dreLines.length})</SectionTitle>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px]">
+              <thead>
+                <tr className="text-gray-500 text-left border-b border-gray-100">
+                  <th className="pb-1 font-medium">Linha</th>
+                  <th className="pb-1 font-medium text-right">Real</th>
+                  <th className="pb-1 font-medium text-right">Orçado</th>
+                  <th className="pb-1 font-medium text-right">Gap</th>
+                  <th className="pb-1 font-medium text-right">Gap %</th>
+                  <th className="pb-1 font-medium">Natureza</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dreLines.map((l: DRELineAnalysis, i: number) => {
+                  const nature = NATURE_LABELS[l.variation_nature] || NATURE_LABELS.delta_operacional;
+                  const isNeg = (l.gap_vs_budget_value ?? 0) < 0;
+                  return (
+                    <tr key={i} className="border-t border-gray-50">
+                      <td className="py-1 text-gray-700 font-medium">{l.dre_line}</td>
+                      <td className="py-1 text-right text-gray-900">R$ {(l.real_value ?? 0).toLocaleString('pt-BR')}</td>
+                      <td className="py-1 text-right text-gray-600">R$ {(l.budget_value ?? 0).toLocaleString('pt-BR')}</td>
+                      <td className={`py-1 text-right font-medium ${isNeg ? 'text-red-600' : 'text-green-600'}`}>
+                        R$ {Math.abs(l.gap_vs_budget_value ?? 0).toLocaleString('pt-BR')}
+                      </td>
+                      <td className={`py-1 text-right ${isNeg ? 'text-red-500' : 'text-green-500'}`}>
+                        {(l.gap_vs_budget_pct ?? 0).toFixed(1)}%
+                      </td>
+                      <td className="py-1">
+                        <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${nature.color}`}>{nature.label}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
-      {(data.key_negative_drivers?.length ?? 0) > 0 && (
+
+      {/* Margin & EBITDA Impact */}
+      {impact && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Card>
+            <SectionTitle icon={<ArrowDownRight size={12} className="text-red-500" />}>Pressões</SectionTitle>
+            {(impact.margin_pressures?.length ?? 0) > 0 && (
+              <div className="space-y-0.5">
+                <p className="text-[10px] text-gray-500 font-medium">Margem</p>
+                <BulletList items={impact.margin_pressures} />
+              </div>
+            )}
+            {(impact.ebitda_pressures?.length ?? 0) > 0 && (
+              <div className="space-y-0.5 mt-2">
+                <p className="text-[10px] text-gray-500 font-medium">EBITDA</p>
+                <BulletList items={impact.ebitda_pressures} />
+              </div>
+            )}
+          </Card>
+          <Card>
+            <SectionTitle icon={<ArrowUpRight size={12} className="text-green-500" />}>Alívios</SectionTitle>
+            {(impact.margin_reliefs?.length ?? 0) > 0 && (
+              <div className="space-y-0.5">
+                <p className="text-[10px] text-gray-500 font-medium">Margem</p>
+                <BulletList items={impact.margin_reliefs} />
+              </div>
+            )}
+            {(impact.ebitda_reliefs?.length ?? 0) > 0 && (
+              <div className="space-y-0.5 mt-2">
+                <p className="text-[10px] text-gray-500 font-medium">EBITDA</p>
+                <BulletList items={impact.ebitda_reliefs} />
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+      {impact?.consolidated_impact_reading && (
         <Card>
-          <SectionTitle icon={<ArrowDownRight size={12} className="text-red-500" />}>Drivers Negativos</SectionTitle>
-          <BulletList items={data.key_negative_drivers} />
+          <SectionTitle icon={<BarChart3 size={12} className="text-indigo-500" />}>Leitura Consolidada de Impacto</SectionTitle>
+          <TextBlock text={impact.consolidated_impact_reading} />
         </Card>
       )}
-      {(data.recommended_actions?.length ?? 0) > 0 && (
+
+      {/* Recommended Analytical Actions */}
+      {actions && (
         <Card>
-          <SectionTitle icon={<Target size={12} className="text-indigo-500" />}>Recomendações</SectionTitle>
-          <BulletList items={data.recommended_actions} />
+          <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Ações Analíticas Recomendadas</SectionTitle>
+          <div className="space-y-2">
+            {(actions.items_to_deepen?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 font-medium mb-0.5">Aprofundar</p>
+                <BulletList items={actions.items_to_deepen} />
+              </div>
+            )}
+            {(actions.lines_to_monitor?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 font-medium mb-0.5">Monitorar</p>
+                <BulletList items={actions.lines_to_monitor} />
+              </div>
+            )}
+            {(actions.budget_assumptions_to_review?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 font-medium mb-0.5">Premissas a Revisar</p>
+                <BulletList items={actions.budget_assumptions_to_review} />
+              </div>
+            )}
+            {(actions.points_to_validate_with_bruna?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-pink-500 font-medium mb-0.5">Validar com Bruna</p>
+                <BulletList items={actions.points_to_validate_with_bruna} />
+              </div>
+            )}
+            {(actions.reclassification_candidates?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-pink-500 font-medium mb-0.5">Candidatos a Reclassificação</p>
+                <BulletList items={actions.reclassification_candidates} />
+              </div>
+            )}
+          </div>
         </Card>
+      )}
+
+      {/* Fallback: old format fields */}
+      {hasOldFormat && !actions && (
+        <>
+          {((data as any).key_positive_drivers?.length ?? 0) > 0 && (
+            <Card>
+              <SectionTitle icon={<ArrowUpRight size={12} className="text-green-500" />}>Drivers Positivos</SectionTitle>
+              <BulletList items={(data as any).key_positive_drivers} />
+            </Card>
+          )}
+          {((data as any).key_negative_drivers?.length ?? 0) > 0 && (
+            <Card>
+              <SectionTitle icon={<ArrowDownRight size={12} className="text-red-500" />}>Drivers Negativos</SectionTitle>
+              <BulletList items={(data as any).key_negative_drivers} />
+            </Card>
+          )}
+          {((data as any).recommended_actions?.length ?? 0) > 0 && (
+            <Card>
+              <SectionTitle icon={<Target size={12} className="text-indigo-500" />}>Recomendações</SectionTitle>
+              <BulletList items={(data as any).recommended_actions} />
+            </Card>
+          )}
+        </>
       )}
     </div>
   );
@@ -315,78 +582,234 @@ function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
 // DENILSON — Optimization View
 // ============================================
 
+const ACTION_TYPE_LABELS: Record<string, string> = {
+  reduce_cost: 'Reduzir Custo',
+  revise_allocation: 'Revisar Alocação',
+  renegotiate: 'Renegociar',
+  remove_non_recurring_pressure: 'Não Recorrente',
+  correct_operational_premise: 'Corrigir Premissa',
+  optimize_mix: 'Otimizar Mix',
+  monitor_only: 'Monitorar',
+  reframe_budget_line: 'Reenquadrar',
+};
+
+const IMPACT_TYPE_STYLES: Record<string, { label: string; color: string }> = {
+  real_financial_gain:          { label: 'Ganho Real',      color: 'bg-green-100 text-green-700' },
+  analytical_reframing:         { label: 'Reenquadramento', color: 'bg-blue-100 text-blue-700' },
+  operational_efficiency_gain:  { label: 'Eficiência',      color: 'bg-purple-100 text-purple-700' },
+  mixed_effect:                 { label: 'Misto',           color: 'bg-yellow-100 text-yellow-700' },
+};
+
 function OptimizationView({ data }: { data: OptimizationOutput }) {
-  const actions = data.proposed_actions || [];
-  const infeasible = data.infeasible_actions || [];
-  const impact = data.expected_impact;
+  const brandPlans = data.brand_plans || [];
+  const summary = data.optimization_summary;
+  const impact = data.estimated_impact;
+  const constraints = data.constraints_feasibility;
+  const matrix = data.action_prioritization_matrix || [];
+  // Compatibilidade com formato antigo
+  const hasOldFormat = !!(data as any).optimization_objective && !brandPlans.length;
+
+  if (hasOldFormat) {
+    const oldActions = (data as any).proposed_actions || [];
+    return (
+      <div className="space-y-3">
+        <Card>
+          <SectionTitle icon={<Zap size={12} className="text-emerald-500" />}>Objetivo</SectionTitle>
+          <TextBlock text={(data as any).optimization_objective} />
+        </Card>
+        {oldActions.length > 0 && (
+          <Card>
+            <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Ações ({oldActions.length})</SectionTitle>
+            <div className="space-y-2">
+              {oldActions.map((a: any, i: number) => (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <SeverityBadge level={a.implementation_priority || 'medium'} />
+                    <span className="text-xs font-medium text-gray-900">{a.area || a.action_title}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-700">{a.suggested_adjustment || a.rationale}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+        <Card>
+          <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Racional</SectionTitle>
+          <TextBlock text={(data as any).optimization_rationale} />
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
-      <Card>
-        <SectionTitle icon={<Zap size={12} className="text-emerald-500" />}>Objetivo da Otimização</SectionTitle>
-        <TextBlock text={data.optimization_objective} />
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-[10px] text-gray-500">Status:</span>
-          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-            data.feasibility_status === 'feasible' ? 'bg-green-100 text-green-700' :
-            data.feasibility_status === 'partial' ? 'bg-yellow-100 text-yellow-700' :
-            'bg-red-100 text-red-700'
-          }`}>{data.feasibility_status}</span>
-        </div>
-      </Card>
+      {/* Summary + Impact Overview */}
+      {summary && (
+        <Card>
+          <SectionTitle icon={<Zap size={12} className="text-emerald-500" />}>Resumo da Otimização</SectionTitle>
+          <TextBlock text={summary.best_plan_synthesis} />
+          {(summary.main_levers?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] text-gray-500 font-medium">Principais Alavancas:</p>
+              <BulletList items={summary.main_levers} />
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Estimated Impact */}
       {impact && (
         <Card>
           <SectionTitle icon={<TrendingUp size={12} className="text-green-500" />}>Impacto Estimado</SectionTitle>
           <div className="grid grid-cols-3 gap-3 mt-1">
             <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
               <p className="text-[10px] text-gray-500">EBITDA</p>
-              <p className="text-sm font-bold text-green-700">+R$ {(impact.total_ebitda_gain ?? 0).toLocaleString('pt-BR')}</p>
+              <p className="text-sm font-bold text-green-700">+R$ {(impact.total_ebitda_impact ?? (impact as any).total_ebitda_gain ?? 0).toLocaleString('pt-BR')}</p>
             </div>
             <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
               <p className="text-[10px] text-gray-500">Margem</p>
-              <p className="text-sm font-bold text-green-700">+{(impact.total_margin_gain ?? 0).toFixed(1)}pp</p>
+              <p className="text-sm font-bold text-green-700">+{(impact.total_margin_impact ?? (impact as any).total_margin_gain ?? 0).toFixed(1)}pp</p>
             </div>
             <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
               <p className="text-[10px] text-gray-500">Score</p>
-              <p className="text-sm font-bold text-green-700">+{(impact.total_score_gain ?? 0).toFixed(0)}pts</p>
+              <p className="text-sm font-bold text-green-700">+{(impact.total_score_impact ?? (impact as any).total_score_gain ?? 0).toFixed(0)}pts</p>
             </div>
           </div>
+          {/* Gain type breakdown */}
+          {(impact.real_gain_total > 0 || impact.analytical_reframing_total > 0) && (
+            <div className="flex items-center gap-3 mt-2 text-[10px]">
+              {impact.real_gain_total > 0 && (
+                <span className="text-green-600 font-medium">Ganho Real: R$ {impact.real_gain_total.toLocaleString('pt-BR')}</span>
+              )}
+              {impact.analytical_reframing_total > 0 && (
+                <span className="text-blue-600 font-medium">Reenquadramento: R$ {impact.analytical_reframing_total.toLocaleString('pt-BR')}</span>
+              )}
+              {impact.mixed_gain_total > 0 && (
+                <span className="text-yellow-600 font-medium">Misto: R$ {impact.mixed_gain_total.toLocaleString('pt-BR')}</span>
+              )}
+            </div>
+          )}
         </Card>
       )}
-      {actions.length > 0 && (
-        <Card>
-          <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Ações Propostas ({actions.length})</SectionTitle>
-          <div className="space-y-2">
-            {actions.map((a: OptimizationAction, i: number) => (
-              <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
-                <div className="flex items-center gap-2">
-                  <SeverityBadge level={a.implementation_priority} />
-                  <span className="text-xs font-medium text-gray-900">{a.area}</span>
-                </div>
-                <p className="text-[11px] text-gray-700">{a.suggested_adjustment}</p>
-                <p className="text-[10px] text-gray-400">
-                  EBITDA: +R$ {(a.estimated_impact_ebitda ?? 0).toLocaleString('pt-BR')} | Margem: +{(a.estimated_impact_margin ?? 0).toFixed(1)}pp
-                </p>
+
+      {/* Brand Plans — main deliverable */}
+      {brandPlans.map((bp: BrandActionPlan, bi: number) => (
+        <div key={bi} className="border-2 border-emerald-200 rounded-lg overflow-hidden">
+          <div className="bg-emerald-50 px-4 py-2 border-b border-emerald-200">
+            <div className="flex items-center gap-2">
+              <Zap size={14} className="text-emerald-600" />
+              <h3 className="text-xs font-bold text-emerald-900">{bp.brand_name}</h3>
+            </div>
+            <p className="text-[10px] text-emerald-700 mt-0.5">{bp.objective_of_plan}</p>
+          </div>
+          <div className="px-4 py-3 space-y-2">
+            {/* Issues */}
+            {(bp.current_main_issues?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-gray-500 font-medium">Problemas Atuais:</p>
+                <BulletList items={bp.current_main_issues} />
               </div>
-            ))}
+            )}
+            {/* Proposed Actions */}
+            {(bp.proposed_actions?.length ?? 0) > 0 && (
+              <div className="space-y-2 mt-1">
+                <p className="text-[10px] text-gray-500 font-medium">Ações Propostas ({bp.proposed_actions.length}):</p>
+                {bp.proposed_actions.map((a: ProposedAction, ai: number) => {
+                  const impType = IMPACT_TYPE_STYLES[a.impact_type] || IMPACT_TYPE_STYLES.real_financial_gain;
+                  return (
+                    <div key={ai} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <SeverityBadge level={a.implementation_priority || 'medium'} />
+                        <span className="text-xs font-medium text-gray-900">{a.action_title}</span>
+                        <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${impType.color}`}>{impType.label}</span>
+                        {a.action_type && (
+                          <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px]">
+                            {ACTION_TYPE_LABELS[a.action_type] || a.action_type}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-700">{a.rationale}</p>
+                      <div className="flex items-center gap-3 text-[10px]">
+                        <span className="text-green-600 font-medium">
+                          EBITDA: +R$ {(a.expected_impact_ebitda ?? 0).toLocaleString('pt-BR')}
+                        </span>
+                        <span className="text-green-600">
+                          Margem: +{(a.expected_impact_margin ?? 0).toFixed(1)}pp
+                        </span>
+                        {a.feasibility_level && (
+                          <span className="text-gray-400">Viabilidade: {a.feasibility_level}</span>
+                        )}
+                      </div>
+                      {a.observation && <p className="text-[10px] text-gray-400 italic">{a.observation}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {/* Gain summary */}
+            {bp.expected_gain_summary && (
+              <p className="text-[10px] text-emerald-700 font-medium mt-1">{bp.expected_gain_summary}</p>
+            )}
+            {/* Notes */}
+            {bp.notes_for_risk_review && (
+              <p className="text-[10px] text-red-500">Falcão: {bp.notes_for_risk_review}</p>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {/* Constraints & Feasibility */}
+      {constraints && (
+        <Card>
+          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Restrições e Viabilidade</SectionTitle>
+          {(constraints.operational_constraints?.length ?? 0) > 0 && (
+            <div className="mb-1">
+              <p className="text-[10px] text-gray-500 font-medium">Restrições Operacionais:</p>
+              <BulletList items={constraints.operational_constraints} />
+            </div>
+          )}
+          {(constraints.items_for_falcao_risk_review?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] text-red-500 font-medium">Para Avaliação do Falcão:</p>
+              <BulletList items={constraints.items_for_falcao_risk_review} />
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Prioritization Matrix */}
+      {matrix.length > 0 && (
+        <Card>
+          <SectionTitle icon={<BarChart3 size={12} className="text-indigo-500" />}>Matriz de Priorização ({matrix.length})</SectionTitle>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px]">
+              <thead>
+                <tr className="text-gray-500 text-left border-b border-gray-100">
+                  <th className="pb-1 font-medium">Ação</th>
+                  <th className="pb-1 font-medium">Marca</th>
+                  <th className="pb-1 font-medium">Prioridade</th>
+                  <th className="pb-1 font-medium">Tipo</th>
+                  <th className="pb-1 font-medium">Impacto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.map((m: ActionPrioritizationEntry, i: number) => {
+                  const gt = IMPACT_TYPE_STYLES[m.gain_type] || IMPACT_TYPE_STYLES.real_financial_gain;
+                  return (
+                    <tr key={i} className="border-t border-gray-50">
+                      <td className="py-1 text-gray-700 font-medium">{m.action_title}</td>
+                      <td className="py-1 text-gray-600">{m.brand}</td>
+                      <td className="py-1"><SeverityBadge level={m.priority || 'medium'} /></td>
+                      <td className="py-1"><span className={`px-1 py-0.5 rounded text-[8px] font-bold ${gt.color}`}>{gt.label}</span></td>
+                      <td className="py-1 text-gray-600">{m.expected_impact}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </Card>
       )}
-      {infeasible.length > 0 && (
-        <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-red-500" />}>Ações Inviáveis ({infeasible.length})</SectionTitle>
-          <div className="space-y-1">
-            {infeasible.map((a, i) => (
-              <div key={i} className="text-xs text-gray-600 bg-red-50 rounded px-3 py-1.5">
-                <span className="font-medium">{a.area}:</span> {a.reason}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-      <Card>
-        <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Racional</SectionTitle>
-        <TextBlock text={data.optimization_rationale} />
-      </Card>
     </div>
   );
 }
@@ -395,68 +818,286 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
 // EDMUNDO — Forecast View
 // ============================================
 
+const CONFIDENCE_COLORS: Record<string, string> = {
+  high: 'text-green-600 bg-green-50',
+  medium: 'text-yellow-600 bg-yellow-50',
+  low: 'text-red-600 bg-red-50',
+};
+
+const TAG_CLASS_STYLES: Record<string, { label: string; color: string }> = {
+  opportunity: { label: 'Oportunidade', color: 'text-green-700 bg-green-50' },
+  risk: { label: 'Risco', color: 'text-red-700 bg-red-50' },
+};
+
 function ForecastView({ data }: { data: ForecastOutput }) {
-  const confidence = data.confidence_level ?? 0;
-  return (
-    <div className="space-y-3">
-      <Card>
-        <div className="flex items-center justify-between">
-          <SectionTitle icon={<TrendingUp size={12} className="text-indigo-500" />}>Forecast — {data.forecast_horizon}</SectionTitle>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-gray-500">Confiança:</span>
-            <span className={`text-sm font-bold ${confidence >= 70 ? 'text-green-600' : confidence >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>
-              {Math.round(confidence)}%
-            </span>
-          </div>
-        </div>
-        <TextBlock text={data.trend_interpretation} />
-      </Card>
-      {/* Projections table */}
-      {(data.base_projection?.length ?? 0) > 0 && (
+  const brandProjections = data.brand_projections || [];
+  const curve = data.adjusted_year_end_curve;
+  const tagMap = data.tag_opportunity_risk_map || [];
+  const gapPlan = data.closing_gap_plan;
+  const sacrifice = data.sacrifice_map;
+  const confidence = data.confidence_report;
+  const signals = data.curve_confirmation_signals;
+
+  // Backward compat with old format
+  const hasOldFormat = !!(data as any).forecast_horizon && !brandProjections.length;
+  if (hasOldFormat) {
+    const oldBase = (data as any).base_projection || [];
+    return (
+      <div className="space-y-3">
         <Card>
-          <SectionTitle icon={<BarChart3 size={12} className="text-blue-500" />}>Projeções</SectionTitle>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
-              <thead>
-                <tr className="text-gray-500 text-left">
-                  <th className="pb-1 font-medium">Período</th>
-                  <th className="pb-1 font-medium text-right">Base</th>
-                  <th className="pb-1 font-medium text-right text-red-500">Downside</th>
-                  <th className="pb-1 font-medium text-right text-green-500">Upside</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.base_projection.map((b, i) => (
+          <SectionTitle icon={<TrendingUp size={12} className="text-indigo-500" />}>Forecast — {(data as any).forecast_horizon}</SectionTitle>
+          <TextBlock text={(data as any).trend_interpretation} />
+        </Card>
+        {oldBase.length > 0 && (
+          <Card>
+            <SectionTitle icon={<BarChart3 size={12} className="text-blue-500" />}>Projeções</SectionTitle>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead><tr className="text-gray-500 text-left"><th className="pb-1 font-medium">Período</th><th className="pb-1 font-medium text-right">Receita</th><th className="pb-1 font-medium text-right">EBITDA</th></tr></thead>
+                <tbody>{oldBase.map((b: any, i: number) => (
                   <tr key={i} className="border-t border-gray-50">
                     <td className="py-1 text-gray-700 font-medium">{b.period}</td>
                     <td className="py-1 text-right text-gray-900">R$ {(b.receita ?? 0).toLocaleString('pt-BR')}</td>
-                    <td className="py-1 text-right text-red-600">
-                      {data.downside_projection?.[i] ? `R$ ${(data.downside_projection[i].receita ?? 0).toLocaleString('pt-BR')}` : '—'}
-                    </td>
-                    <td className="py-1 text-right text-green-600">
-                      {data.upside_projection?.[i] ? `R$ ${(data.upside_projection[i].receita ?? 0).toLocaleString('pt-BR')}` : '—'}
-                    </td>
+                    <td className="py-1 text-right text-green-600">R$ {(b.ebitda ?? 0).toLocaleString('pt-BR')}</td>
                   </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+        {((data as any).forecast_risks?.length ?? 0) > 0 && (
+          <Card>
+            <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Riscos</SectionTitle>
+            <BulletList items={(data as any).forecast_risks} />
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Confidence Report */}
+      {confidence && (
+        <Card>
+          <div className="flex items-center justify-between">
+            <SectionTitle icon={<Shield size={12} className="text-indigo-500" />}>Confiança da Projeção</SectionTitle>
+            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${CONFIDENCE_COLORS[confidence.brand_confidence_level] || CONFIDENCE_COLORS.medium}`}>
+              {confidence.brand_confidence_level?.toUpperCase()}
+            </span>
+          </div>
+          <TextBlock text={confidence.confidence_rationale} />
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {(confidence.factors_increasing_confidence?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-green-600 font-medium">Fatores positivos:</p>
+                <BulletList items={confidence.factors_increasing_confidence} />
+              </div>
+            )}
+            {(confidence.factors_reducing_confidence?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-red-500 font-medium">Fatores negativos:</p>
+                <BulletList items={confidence.factors_reducing_confidence} />
+              </div>
+            )}
+          </div>
+          {(confidence.tag_confidence_breakdown?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] text-gray-500 font-medium">Confiança por Tag:</p>
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {confidence.tag_confidence_breakdown.map((tc: TagConfidence, i: number) => (
+                  <span key={i} className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${CONFIDENCE_COLORS[tc.confidence_level] || CONFIDENCE_COLORS.medium}`}>
+                    {tc.tag_name}: {tc.confidence_level}
+                  </span>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Brand Projections — 3 scenarios per brand */}
+      {brandProjections.map((bp: BrandProjection, bi: number) => (
+        <div key={bi} className="border-2 border-indigo-200 rounded-lg overflow-hidden">
+          <div className="bg-indigo-50 px-4 py-2 border-b border-indigo-200">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={14} className="text-indigo-600" />
+              <h3 className="text-xs font-bold text-indigo-900">{bp.brand_name}</h3>
+            </div>
+            <p className="text-[10px] text-indigo-700 mt-0.5">{bp.current_position_summary}</p>
+          </div>
+          <div className="px-4 py-3 space-y-2">
+            <TextBlock text={bp.projection_narrative} />
+            {/* Scenario comparison */}
+            <div className="grid grid-cols-3 gap-2 mt-1">
+              {[bp.base_case, bp.target_case, bp.stress_case].map((sc, si) => {
+                if (!sc) return null;
+                const colors = si === 0 ? 'bg-gray-50 border-gray-200' : si === 1 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
+                return (
+                  <div key={si} className={`rounded-lg px-2 py-2 border ${colors}`}>
+                    <p className="text-[10px] font-bold text-gray-700">{sc.label || ['Base', 'Target', 'Stress'][si]}</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">{sc.description}</p>
+                    <div className="mt-1 space-y-0.5 text-[10px]">
+                      <p><span className="text-gray-400">EBITDA:</span> <span className="font-medium">R$ {(sc.projected_ebitda ?? 0).toLocaleString('pt-BR')}</span></p>
+                      <p><span className="text-gray-400">Margem:</span> <span className="font-medium">{(sc.projected_margin ?? 0).toFixed(1)}%</span></p>
+                      <p><span className="text-gray-400">Receita:</span> <span className="font-medium">R$ {(sc.projected_revenue ?? 0).toLocaleString('pt-BR')}</span></p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {bp.year_end_projection && (
+              <p className="text-[10px] text-indigo-700 font-medium mt-1">{bp.year_end_projection}</p>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {/* Adjusted Year-End Curve */}
+      {curve && (
+        <Card>
+          <SectionTitle icon={<BarChart3 size={12} className="text-blue-500" />}>Curva Ajustada de Fechamento</SectionTitle>
+          <TextBlock text={curve.interpretation_of_adjusted_trajectory} />
+          {(curve.identified_outliers?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] text-amber-600 font-medium">Outliers Identificados ({curve.identified_outliers.length}):</p>
+              <div className="space-y-1 mt-0.5">
+                {curve.identified_outliers.map((o, i) => (
+                  <div key={i} className="bg-amber-50 rounded px-2 py-1 text-[10px]">
+                    <span className="font-medium text-amber-800">{o.month}:</span>{' '}
+                    <span className="text-gray-700">{o.event_description}</span>
+                    {o.impact_value !== 0 && (
+                      <span className="text-amber-600 ml-1">(R$ {Math.abs(o.impact_value).toLocaleString('pt-BR')})</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {curve.outlier_adjustment_rationale && (
+                <p className="text-[10px] text-gray-500 mt-1 italic">{curve.outlier_adjustment_rationale}</p>
+              )}
+            </div>
+          )}
+          {curve.difference_between_original_and_adjusted_curve && (
+            <p className="text-[10px] text-blue-600 mt-1">{curve.difference_between_original_and_adjusted_curve}</p>
+          )}
+        </Card>
+      )}
+
+      {/* Tag Opportunity & Risk Map */}
+      {tagMap.length > 0 && (
+        <Card>
+          <SectionTitle icon={<Target size={12} className="text-purple-500" />}>Mapa de Oportunidades e Riscos por Tag ({tagMap.length})</SectionTitle>
+          <div className="space-y-1.5 mt-1">
+            {tagMap.map((t: TagOpportunityRiskEntry, i: number) => {
+              const cls = TAG_CLASS_STYLES[t.classification] || TAG_CLASS_STYLES.risk;
+              const conf = CONFIDENCE_COLORS[t.confidence_level_for_tag] || CONFIDENCE_COLORS.medium;
+              return (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${cls.color}`}>{cls.label}</span>
+                    <span className="text-xs font-medium text-gray-900">{t.tag_name}</span>
+                    <span className="text-[8px] text-gray-400">{t.tag_level}</span>
+                    <span className={`px-1 py-0.5 rounded text-[8px] ${conf}`}>{t.confidence_level_for_tag}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-700">{t.rationale}</p>
+                  <p className="text-[10px] text-indigo-600">{t.executable_action_plan}</p>
+                  <div className="flex gap-3 text-[9px] text-gray-400">
+                    {t.projected_effect_on_year_end && <span>Efeito: {t.projected_effect_on_year_end}</span>}
+                    {t.urgency && <span>Urgência: {t.urgency}</span>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
-      <Card>
-        <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Erro Histórico</SectionTitle>
-        <TextBlock text={data.historical_error_summary} />
-      </Card>
-      {(data.forecast_risks?.length ?? 0) > 0 && (
+
+      {/* Closing Gap Plan */}
+      {gapPlan && (gapPlan.brand_gaps?.length ?? 0) > 0 && (
         <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Riscos da Projeção</SectionTitle>
-          <BulletList items={data.forecast_risks} />
+          <SectionTitle icon={<ArrowUpRight size={12} className="text-orange-500" />}>Gap até o Alvo</SectionTitle>
+          {gapPlan.brand_gaps.map((bg: BrandGap, i: number) => (
+            <div key={i} className="mt-1 bg-gray-50 rounded-lg px-3 py-2 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-900">{bg.brand_name}</span>
+                <span className={`text-xs font-bold ${bg.gap_to_target >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  Gap: R$ {(bg.gap_to_target ?? 0).toLocaleString('pt-BR')}
+                </span>
+              </div>
+              <div className="flex gap-4 text-[10px]">
+                <span className="text-gray-500">Target: R$ {(bg.target_year_end_value ?? 0).toLocaleString('pt-BR')}</span>
+                <span className="text-gray-500">Projetado: R$ {(bg.projected_year_end_value ?? 0).toLocaleString('pt-BR')}</span>
+              </div>
+              {(bg.gap_breakdown_by_tag?.length ?? 0) > 0 && (
+                <div className="mt-0.5">
+                  <p className="text-[9px] text-gray-400 font-medium">Composição do gap:</p>
+                  {bg.gap_breakdown_by_tag.map((tg: TagGapBreakdown, j: number) => (
+                    <div key={j} className="flex items-center gap-2 text-[10px]">
+                      <span className="text-gray-600">{tg.tag}:</span>
+                      <span className="font-medium text-red-600">R$ {(tg.contribution_to_gap ?? 0).toLocaleString('pt-BR')}</span>
+                      <span className={`text-[8px] ${tg.whether_gap_is_recoverable ? 'text-green-500' : 'text-red-500'}`}>
+                        {tg.whether_gap_is_recoverable ? 'recuperável' : 'difícil'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {bg.comments_on_feasibility && (
+                <p className="text-[10px] text-gray-400 italic">{bg.comments_on_feasibility}</p>
+              )}
+            </div>
+          ))}
         </Card>
       )}
-      {(data.projection_assumptions?.length ?? 0) > 0 && (
+
+      {/* Sacrifice Map */}
+      {sacrifice && (
         <Card>
-          <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Premissas</SectionTitle>
-          <BulletList items={data.projection_assumptions} />
+          <SectionTitle icon={<AlertTriangle size={12} className="text-red-500" />}>Sacrifícios Necessários</SectionTitle>
+          {[
+            { label: 'Comerciais', items: sacrifice.commercial_sacrifices, color: 'text-orange-600' },
+            { label: 'Operacionais', items: sacrifice.operational_sacrifices, color: 'text-amber-600' },
+            { label: 'Financeiros', items: sacrifice.financial_sacrifices, color: 'text-red-600' },
+          ].map((group, gi) => (
+            (group.items?.length ?? 0) > 0 ? (
+              <div key={gi} className="mt-1">
+                <p className={`text-[10px] font-medium ${group.color}`}>{group.label}:</p>
+                {group.items.map((s: SacrificeEntry, si: number) => (
+                  <div key={si} className="bg-gray-50 rounded px-2 py-1 mt-0.5 text-[10px]">
+                    <p className="font-medium text-gray-800">{s.description}</p>
+                    {s.rationale && <p className="text-gray-500">{s.rationale}</p>}
+                  </div>
+                ))}
+              </div>
+            ) : null
+          ))}
+        </Card>
+      )}
+
+      {/* Curve Confirmation Signals */}
+      {signals && (
+        <Card>
+          <SectionTitle icon={<Target size={12} className="text-green-500" />}>Sinais de Confirmação da Curva</SectionTitle>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            {(signals.confirmation_signals?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-green-600 font-medium">Confirmação:</p>
+                <BulletList items={signals.confirmation_signals} />
+              </div>
+            )}
+            {(signals.invalidation_signals?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] text-red-500 font-medium">Invalidação:</p>
+                <BulletList items={signals.invalidation_signals} />
+              </div>
+            )}
+          </div>
+          {(signals.projection_revision_triggers?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] text-amber-600 font-medium">Gatilhos de revisão:</p>
+              <BulletList items={signals.projection_revision_triggers} />
+            </div>
+          )}
         </Card>
       )}
     </div>
@@ -467,74 +1108,331 @@ function ForecastView({ data }: { data: ForecastOutput }) {
 // FALCÃO — Risk View
 // ============================================
 
+const RISK_LEVEL_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  low:      { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200' },
+  moderate: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200' },
+  high:     { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  critical: { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200' },
+};
+
+const ACCEPTABILITY_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  acceptable:                  { bg: 'bg-green-100',  text: 'text-green-800',  label: 'Aceitável' },
+  acceptable_with_mitigation:  { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Aceitável c/ Mitigação' },
+  non_negotiable:              { bg: 'bg-red-100',    text: 'text-red-800',    label: 'Não Negociável' },
+};
+
+const SUSTAINABILITY_STYLES: Record<string, { bg: string; text: string }> = {
+  sustainable:           { bg: 'bg-green-100',  text: 'text-green-800' },
+  partially_sustainable: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+  fragile:               { bg: 'bg-orange-100', text: 'text-orange-800' },
+  unsustainable:         { bg: 'bg-red-100',    text: 'text-red-800' },
+};
+
 function RiskView({ data }: { data: RiskOutput }) {
-  const allAlerts = [
-    ...(data.critical_alerts || []),
-    ...(data.medium_alerts || []),
-    ...(data.low_alerts || []),
-  ];
-  const stressTests = data.stress_tests || [];
+  // New format detection
+  const hasNewFormat = Array.isArray(data.risk_exposure_by_brand);
+
+  // --- Backward compat: old format ---
+  if (!hasNewFormat) {
+    const oldData = data as any;
+    const allAlerts = [
+      ...(oldData.critical_alerts || []),
+      ...(oldData.medium_alerts || []),
+      ...(oldData.low_alerts || []),
+    ];
+    return (
+      <div className="space-y-3">
+        <Card>
+          <SectionTitle icon={<Shield size={12} className="text-red-500" />}>Risco Geral</SectionTitle>
+          <SeverityBadge level={oldData.overall_risk_level || 'low'} />
+          <TextBlock text={oldData.strategic_risk_summary} />
+        </Card>
+        {allAlerts.length > 0 && (
+          <Card>
+            <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Alertas ({allAlerts.length})</SectionTitle>
+            <div className="space-y-2">
+              {allAlerts.map((a: any, i: number) => (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <SeverityBadge level={a.severity || 'medium'} />
+                    <span className="text-xs font-medium text-gray-900">{a.title}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-600">{a.description}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  // --- New 7-deliverable format ---
+  const brandExposures = data.risk_exposure_by_brand || [];
+  const alertsPack = data.critical_alerts_pack;
+  const alerts: RiskAlert[] = alertsPack?.critical_alerts || [];
+  const tagRiskMap: TagRiskEntry[] = data.tag_risk_map || [];
+  const sustainability: PlanSustainabilityReview | undefined = data.plan_sustainability_review;
+  const fragility: CurveFragilityNote | undefined = data.curve_fragility_note;
+  const acceptability: RiskAcceptabilityEntry[] = data.risk_acceptability_matrix || [];
+  const execSummary: ExecutiveRiskSummary | undefined = data.executive_risk_summary;
+
   return (
     <div className="space-y-3">
-      <Card>
-        <div className="flex items-center justify-between">
-          <SectionTitle icon={<Shield size={12} className="text-red-500" />}>Risco Geral</SectionTitle>
-          <div className="flex items-center gap-2">
-            <SeverityBadge level={data.overall_risk_level} />
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-gray-500">Macro:</span>
-              <span className={`text-sm font-bold ${
-                (data.macro_risk_index ?? 0) >= 70 ? 'text-red-600' :
-                (data.macro_risk_index ?? 0) >= 40 ? 'text-yellow-600' : 'text-green-600'
-              }`}>{Math.round(data.macro_risk_index ?? 0)}</span>
-            </div>
-          </div>
-        </div>
-        <TextBlock text={data.strategic_risk_summary} />
-      </Card>
-      {allAlerts.length > 0 && (
+      {/* 1. Executive Risk Summary */}
+      {execSummary && (
         <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Alertas ({allAlerts.length})</SectionTitle>
+          <SectionTitle icon={<Shield size={12} className="text-red-500" />}>Resumo Executivo de Risco</SectionTitle>
+          <TextBlock text={execSummary.strategic_risk_narrative} />
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-[10px] text-gray-500">Confiança geral:</span>
+            <span className={`text-sm font-bold ${
+              (execSummary.overall_risk_confidence ?? 0) >= 70 ? 'text-green-600' :
+              (execSummary.overall_risk_confidence ?? 0) >= 40 ? 'text-yellow-600' : 'text-red-600'
+            }`}>{Math.round(execSummary.overall_risk_confidence ?? 0)}%</span>
+          </div>
+          {(execSummary.non_negotiable_risks?.length ?? 0) > 0 && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+              <p className="text-[10px] font-bold text-red-700 mb-1">Riscos Não Negociáveis:</p>
+              <BulletList items={execSummary.non_negotiable_risks} />
+            </div>
+          )}
+          {(execSummary.mandatory_caveats_for_board?.length ?? 0) > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-amber-700">Ressalvas obrigatórias para diretoria:</p>
+              <BulletList items={execSummary.mandatory_caveats_for_board} />
+            </div>
+          )}
+          {(execSummary.recommended_next_steps?.length ?? 0) > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-blue-600">Próximos passos recomendados:</p>
+              <BulletList items={execSummary.recommended_next_steps} />
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 2. Risk Exposure by Brand */}
+      {brandExposures.length > 0 && (
+        <Card>
+          <SectionTitle icon={<Target size={12} className="text-orange-500" />}>Exposição de Risco por Marca ({brandExposures.length})</SectionTitle>
           <div className="space-y-2">
-            {allAlerts.map((a: RiskAlert, i: number) => (
-              <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
+            {brandExposures.map((b: BrandRiskExposure, i: number) => {
+              const style = RISK_LEVEL_STYLES[b.overall_risk_level] || RISK_LEVEL_STYLES.moderate;
+              return (
+                <div key={i} className={`rounded-lg px-3 py-2 border ${style.bg} ${style.border}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-900">{b.brand}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${style.bg} ${style.text}`}>
+                      {b.overall_risk_level}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-700 mt-0.5">{b.risk_narrative}</p>
+                  {b.key_risk_drivers?.length > 0 && (
+                    <div className="mt-1">
+                      <p className="text-[10px] text-gray-500">Drivers:</p>
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {b.key_risk_drivers.map((d: string, j: number) => (
+                          <span key={j} className="px-1.5 py-0.5 bg-white/60 rounded text-[9px] text-gray-600">{d}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {b.school_operation_impact && (
+                    <p className="text-[10px] text-purple-600 mt-1">Operação escolar: {b.school_operation_impact}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* 3. Critical Alerts Pack */}
+      {alerts.length > 0 && (
+        <Card>
+          <SectionTitle icon={<AlertTriangle size={12} className="text-red-500" />}>
+            Alertas Críticos ({alerts.length})
+            {alertsPack?.total_critical_count != null && (
+              <span className="ml-1 text-[9px] text-gray-400">/ {alertsPack.total_critical_count} total</span>
+            )}
+          </SectionTitle>
+          <div className="space-y-2">
+            {alerts.map((a: RiskAlert, i: number) => (
+              <div key={i} className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 space-y-0.5">
                 <div className="flex items-center gap-2">
                   <SeverityBadge level={a.severity} />
-                  <span className="text-xs font-medium text-gray-900">{a.title}</span>
+                  <span className="text-[9px] text-gray-400 uppercase">{a.alert_type}</span>
+                  <span className="text-xs font-medium text-gray-900">{a.alert_title}</span>
                 </div>
+                {a.brand && <span className="text-[9px] text-orange-600">Marca: {a.brand}</span>}
                 <p className="text-[11px] text-gray-600">{a.description}</p>
-                <p className="text-[10px] text-gray-400">
-                  {a.related_metric}: {a.current_value} (limite: {a.threshold})
-                </p>
+                {a.quantified_impact && (
+                  <p className="text-[10px] font-medium text-red-600">Impacto: {a.quantified_impact}</p>
+                )}
                 <p className="text-[10px] text-blue-600">Resposta: {a.recommended_response}</p>
+                {a.school_sensitivity && (
+                  <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-medium mt-0.5 ${
+                    a.school_sensitivity === 'high' ? 'bg-red-100 text-red-700' :
+                    a.school_sensitivity === 'moderate' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
+                  }`}>Sensibilidade escolar: {a.school_sensitivity}</span>
+                )}
               </div>
             ))}
           </div>
         </Card>
       )}
-      {stressTests.length > 0 && (
+
+      {/* 4. Tag Risk Map */}
+      {tagRiskMap.length > 0 && (
         <Card>
-          <SectionTitle icon={<Zap size={12} className="text-orange-500" />}>Stress Tests ({stressTests.length})</SectionTitle>
+          <SectionTitle icon={<BarChart3 size={12} className="text-amber-500" />}>Mapa de Risco por Tag ({tagRiskMap.length})</SectionTitle>
           <div className="space-y-2">
-            {stressTests.map((s: StressTest, i: number) => (
-              <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <SeverityBadge level={s.probability} />
-                  <span className="text-xs font-medium text-gray-900">{s.scenario}</span>
+            {tagRiskMap.map((t: TagRiskEntry, i: number) => {
+              const style = RISK_LEVEL_STYLES[t.risk_level] || RISK_LEVEL_STYLES.moderate;
+              return (
+                <div key={i} className={`rounded-lg px-3 py-2 border ${style.bg} ${style.border}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-medium text-gray-900">{t.tag}</span>
+                      {t.brand && <span className="text-[9px] text-gray-500 ml-1">({t.brand})</span>}
+                    </div>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${style.bg} ${style.text}`}>
+                      {t.risk_level}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-600 mt-0.5">{t.risk_explanation}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500">
+                    {t.risk_type && <span>Tipo: {t.risk_type}</span>}
+                    {t.ebitda_impact_estimate && <span>Impacto EBITDA: {t.ebitda_impact_estimate}</span>}
+                  </div>
+                  {(t.family_impact || t.student_safety_impact) && (
+                    <div className="flex gap-3 mt-1 text-[9px]">
+                      {t.family_impact && <span className="text-purple-600">Famílias: {t.family_impact}</span>}
+                      {t.student_safety_impact && <span className="text-red-600">Segurança: {t.student_safety_impact}</span>}
+                    </div>
+                  )}
+                  {t.mitigation_suggestion && (
+                    <p className="text-[10px] text-blue-600 mt-0.5">Mitigação: {t.mitigation_suggestion}</p>
+                  )}
                 </div>
-                <p className="text-[11px] text-gray-600">{s.impact_description}</p>
-                <p className={`text-[10px] font-bold ${(s.ebitda_impact_pct ?? 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  Impacto EBITDA: {(s.ebitda_impact_pct ?? 0).toFixed(1)}%
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}
-      {(data.mitigation_actions?.length ?? 0) > 0 && (
+
+      {/* 5. Plan Sustainability Review */}
+      {sustainability && (
         <Card>
-          <SectionTitle icon={<Shield size={12} className="text-green-500" />}>Ações de Mitigação</SectionTitle>
-          <BulletList items={data.mitigation_actions} />
+          <SectionTitle icon={<TrendingUp size={12} className="text-green-500" />}>Sustentabilidade do Plano</SectionTitle>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] text-gray-500">Classificação:</span>
+            {(() => {
+              const ss = SUSTAINABILITY_STYLES[sustainability.sustainability_level] || SUSTAINABILITY_STYLES.fragile;
+              return (
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ss.bg} ${ss.text}`}>
+                  {sustainability.sustainability_level}
+                </span>
+              );
+            })()}
+          </div>
+          <TextBlock text={sustainability.justification} />
+          {(sustainability.execution_risks?.length ?? 0) > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-orange-600">Riscos de execução:</p>
+              <BulletList items={sustainability.execution_risks} />
+            </div>
+          )}
+          {(sustainability.dependency_risks?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] font-medium text-amber-600">Dependências críticas:</p>
+              <BulletList items={sustainability.dependency_risks} />
+            </div>
+          )}
+          {sustainability.recommended_adjustments && (
+            <div className="mt-1">
+              <p className="text-[10px] font-medium text-blue-600">Ajustes recomendados:</p>
+              <TextBlock text={sustainability.recommended_adjustments} />
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 6. Curve Fragility Note */}
+      {fragility && (
+        <Card>
+          <SectionTitle icon={<Zap size={12} className="text-orange-500" />}>Fragilidade da Curva</SectionTitle>
+          <div className="grid grid-cols-2 gap-2">
+            {(fragility.fragile_segments?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-red-600">Segmentos frágeis:</p>
+                <BulletList items={fragility.fragile_segments} />
+              </div>
+            )}
+            {(fragility.robust_segments?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-green-600">Segmentos robustos:</p>
+                <BulletList items={fragility.robust_segments} />
+              </div>
+            )}
+            {(fragility.assumptions_at_risk?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-amber-600">Premissas em risco:</p>
+                <BulletList items={fragility.assumptions_at_risk} />
+              </div>
+            )}
+            {(fragility.external_dependency_risks?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-purple-600">Dependências externas:</p>
+                <BulletList items={fragility.external_dependency_risks} />
+              </div>
+            )}
+          </div>
+          {(fragility.invalidation_signals?.length ?? 0) > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-red-500">Sinais de invalidação:</p>
+              <BulletList items={fragility.invalidation_signals} />
+            </div>
+          )}
+          {(fragility.confidence_boosters?.length ?? 0) > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] font-medium text-green-500">Reforços de confiança:</p>
+              <BulletList items={fragility.confidence_boosters} />
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 7. Risk Acceptability Matrix */}
+      {acceptability.length > 0 && (
+        <Card>
+          <SectionTitle icon={<Shield size={12} className="text-indigo-500" />}>Matriz de Aceitabilidade ({acceptability.length})</SectionTitle>
+          <div className="space-y-2">
+            {acceptability.map((r: RiskAcceptabilityEntry, i: number) => {
+              const aStyle = ACCEPTABILITY_STYLES[r.acceptability] || ACCEPTABILITY_STYLES.acceptable_with_mitigation;
+              return (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-gray-900">{r.risk_item}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${aStyle.bg} ${aStyle.text}`}>
+                      {aStyle.label}
+                    </span>
+                  </div>
+                  {r.brand && <span className="text-[9px] text-orange-600">Marca: {r.brand}</span>}
+                  <p className="text-[11px] text-gray-600">{r.justification}</p>
+                  {r.mitigation_plan && (
+                    <p className="text-[10px] text-blue-600">Mitigação: {r.mitigation_plan}</p>
+                  )}
+                  <div className="flex flex-wrap gap-3 text-[9px] text-gray-500 mt-0.5">
+                    {r.review_trigger && <span>Revisão: {r.review_trigger}</span>}
+                    {r.escalation_trigger && <span className="text-amber-600">Escalação: {r.escalation_trigger}</span>}
+                    {r.stop_trigger && <span className="text-red-600">Parada: {r.stop_trigger}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
     </div>
@@ -634,6 +1532,420 @@ function ConsolidationView({ data }: { data: ConsolidationOutput }) {
 }
 
 // ============================================
+// CEO — Executive Challenge & Decision Readiness View
+// ============================================
+
+const PRIORITY_STYLES: Record<string, { bg: string; text: string }> = {
+  critical: { bg: 'bg-red-100',    text: 'text-red-800' },
+  high:     { bg: 'bg-orange-100', text: 'text-orange-800' },
+  medium:   { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+  low:      { bg: 'bg-gray-100',   text: 'text-gray-600' },
+};
+
+const CONFIDENCE_BADGE: Record<string, { bg: string; text: string; label: string }> = {
+  high:   { bg: 'bg-green-100',  text: 'text-green-800',  label: 'Alta' },
+  medium: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Média' },
+  low:    { bg: 'bg-red-100',    text: 'text-red-800',    label: 'Baixa' },
+};
+
+const READINESS_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  ready:                 { bg: 'bg-green-50',  text: 'text-green-800',  border: 'border-green-300', label: 'Pronto' },
+  ready_with_adjustments: { bg: 'bg-yellow-50', text: 'text-yellow-800', border: 'border-yellow-300', label: 'Pronto com Ajustes' },
+  not_ready:             { bg: 'bg-red-50',    text: 'text-red-800',    border: 'border-red-300', label: 'Não Pronto' },
+};
+
+function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
+  const questions: DirectorQuestion[] = data.director_question_pack || [];
+  const answers: ExpectedDirectorAnswer[] = data.expected_director_answer_pack || [];
+  const ownership: ExecutionOwnershipReview | undefined = data.execution_ownership_review;
+  const readiness: ExecutiveMaterialReadiness | undefined = data.executive_material_readiness;
+  const reinforcement: PreCEOReinforcement | undefined = data.pre_ceo_reinforcement;
+
+  const answerMap = new Map<string, ExpectedDirectorAnswer>();
+  answers.forEach(a => answerMap.set(a.linked_question_id, a));
+
+  return (
+    <div className="space-y-3">
+      {/* 1. Executive Material Readiness */}
+      {readiness && (() => {
+        const rs = READINESS_STYLES[readiness.readiness_level] || READINESS_STYLES.ready_with_adjustments;
+        return (
+          <Card>
+            <div className="flex items-center justify-between">
+              <SectionTitle icon={<Target size={12} className="text-slate-600" />}>Prontidão para Comitê/Diretoria</SectionTitle>
+              <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${rs.bg} ${rs.text} ${rs.border}`}>
+                {rs.label}
+              </span>
+            </div>
+            <TextBlock text={readiness.readiness_rationale} />
+            {readiness.strengths_of_material.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[10px] font-medium text-green-600">Pontos fortes:</p>
+                <BulletList items={readiness.strengths_of_material} />
+              </div>
+            )}
+            {readiness.weak_points_of_material.length > 0 && (
+              <div className="mt-1">
+                <p className="text-[10px] font-medium text-red-600">Pontos fracos:</p>
+                <BulletList items={readiness.weak_points_of_material} />
+              </div>
+            )}
+            {readiness.mandatory_adjustments_before_ceo.length > 0 && (
+              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
+                <p className="text-[10px] font-bold text-amber-700 mb-1">Ajustes obrigatórios antes do CEO:</p>
+                <BulletList items={readiness.mandatory_adjustments_before_ceo} />
+              </div>
+            )}
+            {readiness.recommendation_to_proceed_to_ceo && (
+              <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded">
+                <p className="text-[10px] font-bold text-slate-700">Recomendação para seguir ao CEO:</p>
+                <TextBlock text={readiness.recommendation_to_proceed_to_ceo} />
+              </div>
+            )}
+          </Card>
+        );
+      })()}
+
+      {/* 2. Director Question Pack + Expected Answers */}
+      {questions.length > 0 && (
+        <Card>
+          <SectionTitle icon={<Users size={12} className="text-slate-600" />}>
+            Perguntas da Diretoria ({questions.length})
+          </SectionTitle>
+          <div className="space-y-3">
+            {questions.map((q: DirectorQuestion, i: number) => {
+              const ps = PRIORITY_STYLES[q.priority] || PRIORITY_STYLES.medium;
+              const answer = answerMap.get(q.question_id);
+              const ac = answer ? (CONFIDENCE_BADGE[answer.answer_confidence] || CONFIDENCE_BADGE.medium) : null;
+              return (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
+                  <div className="flex items-start gap-2">
+                    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${ps.bg} ${ps.text}`}>
+                      {q.priority}
+                    </span>
+                    <span className="text-[9px] text-gray-400 shrink-0">{q.question_category}</span>
+                  </div>
+                  <p className="text-xs font-medium text-gray-900 italic">"{q.question_text}"</p>
+                  <p className="text-[10px] text-gray-500">{q.why_director_would_ask}</p>
+                  {q.linked_material_section && (
+                    <p className="text-[9px] text-blue-500">Seção: {q.linked_material_section}</p>
+                  )}
+                  {answer && (
+                    <div className="mt-1.5 pl-3 border-l-2 border-slate-300 space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-slate-600">RESPOSTA ESPERADA</span>
+                        {ac && (
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${ac.bg} ${ac.text}`}>
+                            {ac.label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-800 font-medium">{answer.direct_answer}</p>
+                      {answer.main_number && (
+                        <p className="text-[10px] text-blue-700 font-medium">Dado: {answer.main_number}</p>
+                      )}
+                      {answer.justification && (
+                        <p className="text-[10px] text-gray-600">{answer.justification}</p>
+                      )}
+                      <div className="flex flex-wrap gap-3 text-[10px] mt-0.5">
+                        {answer.owner && <span className="text-purple-700">Dono: {answer.owner}</span>}
+                        {answer.deadline && <span className="text-orange-700">Prazo: {answer.deadline}</span>}
+                      </div>
+                      {answer.associated_decision && (
+                        <p className="text-[10px] text-green-700">Decisão: {answer.associated_decision}</p>
+                      )}
+                      {answer.answer_gap_note && (
+                        <p className="text-[10px] text-amber-600">Lacuna: {answer.answer_gap_note}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* 3. Execution & Ownership Review */}
+      {ownership && (
+        <Card>
+          <SectionTitle icon={<FileText size={12} className="text-purple-500" />}>Execução e Ownership</SectionTitle>
+          <div className="grid grid-cols-2 gap-2">
+            {ownership.actions_without_owner.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-red-600">Sem dono:</p>
+                <BulletList items={ownership.actions_without_owner} />
+              </div>
+            )}
+            {ownership.actions_without_deadline.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-orange-600">Sem prazo:</p>
+                <BulletList items={ownership.actions_without_deadline} />
+              </div>
+            )}
+            {ownership.actions_without_metric.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-amber-600">Sem métrica:</p>
+                <BulletList items={ownership.actions_without_metric} />
+              </div>
+            )}
+            {ownership.vague_execution_points.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-purple-600">Execução vaga:</p>
+                <BulletList items={ownership.vague_execution_points} />
+              </div>
+            )}
+          </div>
+          {ownership.missing_governance_items.length > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-red-500">Governança faltando:</p>
+              <BulletList items={ownership.missing_governance_items} />
+            </div>
+          )}
+          {ownership.required_execution_clarifications.length > 0 && (
+            <div className="mt-1">
+              <p className="text-[10px] font-medium text-blue-600">Esclarecimentos necessários:</p>
+              <BulletList items={ownership.required_execution_clarifications} />
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 4. Pre-CEO Reinforcement Pack */}
+      {reinforcement && (
+        <Card>
+          <SectionTitle icon={<Shield size={12} className="text-amber-500" />}>Preparação para o CEO</SectionTitle>
+          <div className="grid grid-cols-2 gap-2">
+            {reinforcement.points_to_reinforce_before_ceo.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-blue-600">Reforçar:</p>
+                <BulletList items={reinforcement.points_to_reinforce_before_ceo} />
+              </div>
+            )}
+            {reinforcement.numbers_that_must_be_ready.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-green-600">Números prontos:</p>
+                <BulletList items={reinforcement.numbers_that_must_be_ready} />
+              </div>
+            )}
+            {reinforcement.fragile_arguments_to_strengthen.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-red-600">Argumentos frágeis:</p>
+                <BulletList items={reinforcement.fragile_arguments_to_strengthen} />
+              </div>
+            )}
+            {reinforcement.ownership_points_to_make_explicit.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-purple-600">Ownership a explicitar:</p>
+                <BulletList items={reinforcement.ownership_points_to_make_explicit} />
+              </div>
+            )}
+          </div>
+          {reinforcement.likely_escalation_topics.length > 0 && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+              <p className="text-[10px] font-bold text-red-700 mb-1">Temas prováveis de escalação:</p>
+              <BulletList items={reinforcement.likely_escalation_topics} />
+            </div>
+          )}
+          {reinforcement.presentation_adjustments_recommended.length > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-amber-600">Ajustes na apresentação:</p>
+              <BulletList items={reinforcement.presentation_adjustments_recommended} />
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function CEOReviewView({ data }: { data: CEOReviewOutput }) {
+  const questions: CEOQuestion[] = data.ceo_question_pack || [];
+  const answers: ExpectedAnswer[] = data.expected_answer_pack || [];
+  const weakness: WeaknessReport | undefined = data.weakness_exposure_report;
+  const readiness: DecisionReadinessAssessment | undefined = data.decision_readiness;
+  const rehearsal: ExecutiveRehearsalEntry[] = data.executive_rehearsal || [];
+
+  // Build answer lookup for Q&A pairing
+  const answerMap = new Map<string, ExpectedAnswer>();
+  answers.forEach(a => answerMap.set(a.linked_question_id, a));
+
+  return (
+    <div className="space-y-3">
+      {/* 1. Decision Readiness Assessment */}
+      {readiness && (() => {
+        const rs = READINESS_STYLES[readiness.readiness_level] || READINESS_STYLES.ready_with_adjustments;
+        return (
+          <Card>
+            <div className="flex items-center justify-between">
+              <SectionTitle icon={<Target size={12} className="text-slate-700" />}>Prontidão para Reunião</SectionTitle>
+              <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${rs.bg} ${rs.text} ${rs.border}`}>
+                {rs.label}
+              </span>
+            </div>
+            <TextBlock text={readiness.readiness_rationale} />
+            {readiness.what_is_ready.length > 0 && (
+              <div className="mt-2">
+                <p className="text-[10px] font-medium text-green-600">Pronto:</p>
+                <BulletList items={readiness.what_is_ready} />
+              </div>
+            )}
+            {readiness.what_is_not_ready.length > 0 && (
+              <div className="mt-1">
+                <p className="text-[10px] font-medium text-red-600">Não está pronto:</p>
+                <BulletList items={readiness.what_is_not_ready} />
+              </div>
+            )}
+            {readiness.mandatory_fixes_before_meeting.length > 0 && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                <p className="text-[10px] font-bold text-red-700 mb-1">Ajustes obrigatórios antes da reunião:</p>
+                <BulletList items={readiness.mandatory_fixes_before_meeting} />
+              </div>
+            )}
+            {readiness.final_recommendation && (
+              <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded">
+                <p className="text-[10px] font-bold text-slate-700">Recomendação final:</p>
+                <TextBlock text={readiness.final_recommendation} />
+              </div>
+            )}
+          </Card>
+        );
+      })()}
+
+      {/* 2. CEO Question Pack + Expected Answers */}
+      {questions.length > 0 && (
+        <Card>
+          <SectionTitle icon={<Users size={12} className="text-slate-700" />}>
+            Perguntas do CEO ({questions.length})
+          </SectionTitle>
+          <div className="space-y-3">
+            {questions.map((q: CEOQuestion, i: number) => {
+              const ps = PRIORITY_STYLES[q.priority] || PRIORITY_STYLES.medium;
+              const answer = answerMap.get(q.question_id);
+              const ac = answer ? (CONFIDENCE_BADGE[answer.answer_confidence] || CONFIDENCE_BADGE.medium) : null;
+              return (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
+                  {/* Question */}
+                  <div className="flex items-start gap-2">
+                    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${ps.bg} ${ps.text}`}>
+                      {q.priority}
+                    </span>
+                    <span className="text-[9px] text-gray-400 shrink-0">{q.question_category}</span>
+                  </div>
+                  <p className="text-xs font-medium text-gray-900 italic">"{q.question_text}"</p>
+                  <p className="text-[10px] text-gray-500">{q.why_ceo_would_ask}</p>
+                  {q.linked_agent_output && (
+                    <p className="text-[9px] text-blue-500">Fonte: {q.linked_agent_output}</p>
+                  )}
+                  {/* Answer */}
+                  {answer && (
+                    <div className="mt-1.5 pl-3 border-l-2 border-slate-300 space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-bold text-slate-600">RESPOSTA ESPERADA</span>
+                        {ac && (
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${ac.bg} ${ac.text}`}>
+                            Confiança: {ac.label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-800 font-medium">{answer.direct_answer}</p>
+                      {answer.main_number && (
+                        <p className="text-[10px] text-blue-700 font-medium">Dado: {answer.main_number}</p>
+                      )}
+                      {answer.justification && (
+                        <p className="text-[10px] text-gray-600">{answer.justification}</p>
+                      )}
+                      {answer.associated_action && (
+                        <p className="text-[10px] text-green-700">Ação: {answer.associated_action}</p>
+                      )}
+                      {answer.answer_fragility_note && (
+                        <p className="text-[10px] text-amber-600">Ressalva: {answer.answer_fragility_note}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* 3. Weakness & Exposure Report */}
+      {weakness && (
+        <Card>
+          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Fragilidades e Exposições</SectionTitle>
+          <div className="grid grid-cols-2 gap-2">
+            {weakness.weak_points.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-red-600">Pontos fracos:</p>
+                <BulletList items={weakness.weak_points} />
+              </div>
+            )}
+            {weakness.unsupported_claims.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-orange-600">Afirmações sem suporte:</p>
+                <BulletList items={weakness.unsupported_claims} />
+              </div>
+            )}
+            {weakness.vague_sections.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-amber-600">Seções vagas:</p>
+                <BulletList items={weakness.vague_sections} />
+              </div>
+            )}
+            {weakness.missing_numbers.length > 0 && (
+              <div>
+                <p className="text-[10px] font-medium text-purple-600">Números faltando:</p>
+                <BulletList items={weakness.missing_numbers} />
+              </div>
+            )}
+          </div>
+          {weakness.likely_ceo_discomfort_points.length > 0 && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+              <p className="text-[10px] font-bold text-red-700 mb-1">Pontos de desconforto provável:</p>
+              <BulletList items={weakness.likely_ceo_discomfort_points} />
+            </div>
+          )}
+          {weakness.points_requiring_reinforcement.length > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-medium text-blue-600">Requer reforço:</p>
+              <BulletList items={weakness.points_requiring_reinforcement} />
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* 4. Executive Rehearsal Simulation */}
+      {rehearsal.length > 0 && (
+        <Card>
+          <SectionTitle icon={<Presentation size={12} className="text-indigo-500" />}>Ensaio Executivo ({rehearsal.length})</SectionTitle>
+          <div className="space-y-3">
+            {rehearsal.map((r: ExecutiveRehearsalEntry, i: number) => (
+              <div key={i} className="bg-slate-50 rounded-lg px-3 py-2 space-y-1">
+                <p className="text-xs font-medium text-gray-900 italic">"{r.simulated_question}"</p>
+                <div className="pl-3 border-l-2 border-green-300 space-y-0.5">
+                  <p className="text-[10px] font-medium text-green-700">Resposta ideal:</p>
+                  <p className="text-[11px] text-gray-700">{r.ideal_answer}</p>
+                </div>
+                {r.risk_if_answered_badly && (
+                  <p className="text-[10px] text-red-600">Risco se mal respondida: {r.risk_if_answered_badly}</p>
+                )}
+                {r.follow_up_question && (
+                  <p className="text-[10px] text-amber-700 italic">Follow-up: "{r.follow_up_question}"</p>
+                )}
+                {r.best_reinforcement_point && (
+                  <p className="text-[10px] text-blue-600">Reforço: {r.best_reinforcement_point}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // Main Component
 // ============================================
 
@@ -662,6 +1974,12 @@ const OutputRenderer: React.FC<OutputRendererProps> = ({ step }) => {
   }
   if (agent_code === 'alex' && step_type === 'consolidate') {
     return <ConsolidationView data={output_data as ConsolidationOutput} />;
+  }
+  if (agent_code === 'diretor' && step_type === 'review') {
+    return <DirectorReviewView data={output_data as DirectorReviewOutput} />;
+  }
+  if (agent_code === 'ceo' && step_type === 'review') {
+    return <CEOReviewView data={output_data as CEOReviewOutput} />;
   }
 
   // Fallback — render raw JSON

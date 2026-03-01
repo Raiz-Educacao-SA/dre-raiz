@@ -9,17 +9,9 @@
 -- PARTE 1 — COLUNAS
 -- ============================================
 
--- 1a. organization_id (UUID, obrigatório)
--- Se já existir como TEXT do evolve anterior, altera para UUID
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'agent_schedules' AND column_name = 'organization_id'
-  ) THEN
-    ALTER TABLE agent_schedules ADD COLUMN organization_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'::uuid;
-  END IF;
-END $$;
+-- 1a. organization_id (já existe como TEXT via add_organization_id.sql)
+-- Apenas garantir que existe
+ALTER TABLE agent_schedules ADD COLUMN IF NOT EXISTS organization_id TEXT NOT NULL DEFAULT 'default';
 
 -- 1b. frequency (daily | weekly | monthly)
 ALTER TABLE agent_schedules ADD COLUMN IF NOT EXISTS frequency TEXT NOT NULL DEFAULT 'daily';
@@ -120,65 +112,32 @@ DROP POLICY IF EXISTS "agent_schedules_insert" ON agent_schedules;
 DROP POLICY IF EXISTS "agent_schedules_update" ON agent_schedules;
 DROP POLICY IF EXISTS "agent_schedules_delete" ON agent_schedules;
 
--- SELECT: admin vê todos, usuário vê só sua org
+-- SELECT: admin pode ver tudo (single-tenant por enquanto)
 CREATE POLICY "agent_schedules_select_by_org" ON agent_schedules
   FOR SELECT TO authenticated
   USING (
-    organization_id IN (
-      SELECT (raw_user_meta_data->>'organization_id')::uuid
-      FROM auth.users WHERE id = auth.uid()
-    )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin'
-    )
+    EXISTS (SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin')
   );
 
--- INSERT: admin ou membro da org
+-- INSERT: admin
 CREATE POLICY "agent_schedules_insert_by_org" ON agent_schedules
   FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id IN (
-      SELECT (raw_user_meta_data->>'organization_id')::uuid
-      FROM auth.users WHERE id = auth.uid()
-    )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin'
-    )
+    EXISTS (SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin')
   );
 
--- UPDATE: admin ou membro da org
+-- UPDATE: admin
 CREATE POLICY "agent_schedules_update_by_org" ON agent_schedules
   FOR UPDATE TO authenticated
   USING (
-    organization_id IN (
-      SELECT (raw_user_meta_data->>'organization_id')::uuid
-      FROM auth.users WHERE id = auth.uid()
-    )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin'
-    )
-  )
-  WITH CHECK (
-    organization_id IN (
-      SELECT (raw_user_meta_data->>'organization_id')::uuid
-      FROM auth.users WHERE id = auth.uid()
-    )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin'
-    )
+    EXISTS (SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin')
   );
 
--- DELETE: admin ou membro da org
+-- DELETE: admin
 CREATE POLICY "agent_schedules_delete_by_org" ON agent_schedules
   FOR DELETE TO authenticated
   USING (
-    organization_id IN (
-      SELECT (raw_user_meta_data->>'organization_id')::uuid
-      FROM auth.users WHERE id = auth.uid()
-    )
-    OR EXISTS (
-      SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin'
-    )
+    EXISTS (SELECT 1 FROM users WHERE email = auth.email() AND role = 'admin')
   );
 
 -- Service role bypassa RLS automaticamente (usado pelo cron endpoint)
