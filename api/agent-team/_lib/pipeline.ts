@@ -82,6 +82,26 @@ export async function executeStep(
   step: ClaimedStep,
 ): Promise<void> {
   const startTime = Date.now();
+  const STEP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos máximo por step
+
+  // Safety net: se o step não terminar em 5 min, marcar como failed
+  const stepTimeoutId = setTimeout(async () => {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    logError(CTX, 'Step timeout — excedeu 5 minutos', {
+      stepId: step.id,
+      agentCode: step.agent_code,
+      stepOrder: step.step_order,
+      elapsedSeconds: elapsed,
+    });
+    await sb
+      .from('agent_steps')
+      .update({
+        status: 'failed',
+        error_message: `Timeout: step excedeu limite de 5 minutos (${elapsed}s)`,
+        duration_ms: Date.now() - startTime,
+      })
+      .eq('id', step.id);
+  }, STEP_TIMEOUT_MS);
 
   try {
     // 2a. Ler run para financial_summary, objective e filter_context
@@ -206,6 +226,7 @@ export async function executeStep(
       })
       .eq('id', step.id);
 
+    clearTimeout(stepTimeoutId);
     logInfo(CTX, 'Step executado com sucesso', {
       stepOrder: step.step_order,
       agentCode: step.agent_code,
@@ -217,6 +238,7 @@ export async function executeStep(
     });
 
   } catch (err: any) {
+    clearTimeout(stepTimeoutId);
     const durationMs = Date.now() - startTime;
     const errorMsg = err.message || 'Erro desconhecido';
 

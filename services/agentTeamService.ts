@@ -261,6 +261,8 @@ export async function startPipeline(
 // --------------------------------------------
 
 export async function processNextStep(runId: string): Promise<void> {
+  const PIPELINE_STEP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos máximo por step
+
   // 1. Claim próximo step pending via RPC
   const { data: stepId, error: claimError } = await supabase
     .rpc('claim_next_pending_step', { p_run_id: runId });
@@ -278,6 +280,26 @@ export async function processNextStep(runId: string): Promise<void> {
   if (stepError || !step) throw new Error(`Step ${stepId} não encontrado`);
 
   const startTime = Date.now();
+
+  // Safety net: timeout de 5 min para o step inteiro
+  const stepTimeoutId = setTimeout(() => {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    console.error(`⏰ Step ${step.step_order} (${step.agent_code}) excedeu timeout de 5min (${elapsed}s)`);
+    supabase
+      .from('agent_steps')
+      .update({
+        status: 'failed',
+        error_message: `Timeout: step excedeu limite de 5 minutos (${elapsed}s)`,
+        duration_ms: Date.now() - startTime,
+      })
+      .eq('id', step.id)
+      .then(() => {
+        supabase
+          .from('agent_runs')
+          .update({ status: 'failed', completed_at: new Date().toISOString() })
+          .eq('id', runId);
+      });
+  }, PIPELINE_STEP_TIMEOUT_MS);
 
   try {
     // 3. Buscar run (financial_summary + objective + filter_context)
@@ -363,6 +385,7 @@ export async function processNextStep(runId: string): Promise<void> {
       })
       .eq('id', step.id);
 
+    clearTimeout(stepTimeoutId);
     console.log(`✅ Step ${step.step_order} (${step.agent_code}/${step.step_type}) concluído em ${durationMs}ms`);
 
     // 11. Verificar se pipeline terminou
@@ -383,8 +406,11 @@ export async function processNextStep(runId: string): Promise<void> {
     }
 
   } catch (err: any) {
+    clearTimeout(stepTimeoutId);
     const durationMs = Date.now() - startTime;
-    const errorMsg = err.message || 'Erro desconhecido';
+    const errorMsg = err.name === 'AbortError'
+      ? `Timeout: step excedeu limite de 5 minutos`
+      : (err.message || 'Erro desconhecido');
 
     await supabase
       .from('agent_steps')
@@ -404,7 +430,7 @@ export async function processNextStep(runId: string): Promise<void> {
       })
       .eq('id', runId);
 
-    console.error(`❌ Step ${step.step_order} (${step.agent_code}) falhou:`, errorMsg);
+    console.error(`❌ Step ${step.step_order} (${step.agent_code}) falhou em ${durationMs}ms:`, errorMsg);
     throw err;
   }
 }
@@ -559,6 +585,11 @@ async function callClaudeViaProxy(
   // Forçar JSON via prompt (sem output_config)
   const fullSystem = system + '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO — máximo 2 frases por campo string.';
 
+  // Timeout de 5 minutos para qualquer chamada
+  const controller = new AbortController();
+  const STEP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
+  const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT_MS);
+
   const res = await fetch('/api/anthropic', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -568,7 +599,8 @@ async function callClaudeViaProxy(
       system: fullSystem,
       messages: [{ role: 'user', content: user }],
     }),
-  });
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
 
   if (!res.ok) {
     const body = await res.text();
