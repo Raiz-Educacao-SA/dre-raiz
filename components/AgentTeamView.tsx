@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays } from 'lucide-react';
+import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getSomaTags, getDREFilterOptions } from '../services/supabaseService';
 import type { DREFilterOptions } from '../services/supabaseService';
@@ -43,6 +43,10 @@ const AgentTeamView: React.FC = () => {
   const [selectedTags01, setSelectedTags01] = useState<string[]>([]);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
 
+  // View mode: 'cards' (grid with expand/collapse) or 'tabs' (single tab view)
+  const [viewMode, setViewMode] = useState<'cards' | 'tabs'>('cards');
+  const [activeTabStepId, setActiveTabStepId] = useState<string | null>(null);
+
   // Polling ref
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -58,6 +62,16 @@ const AgentTeamView: React.FC = () => {
   );
 
   const isRunning = activeRun?.status === 'running';
+
+  // Auto-select tab in tabs mode
+  useEffect(() => {
+    if (viewMode !== 'tabs' || activeSteps.length === 0) return;
+    const running = activeSteps.find(s => s.status === 'running');
+    if (running) { setActiveTabStepId(running.id); return; }
+    if (activeTabStepId && activeSteps.some(s => s.id === activeTabStepId)) return;
+    const lastCompleted = [...activeSteps].reverse().find(s => s.status === 'completed');
+    setActiveTabStepId(lastCompleted?.id ?? activeSteps[0].id);
+  }, [activeSteps, viewMode]);
 
   // Filiais cascata — filtra por marca selecionada
   const filiaisFiltradas = useMemo(() => {
@@ -390,19 +404,113 @@ const AgentTeamView: React.FC = () => {
         />
       )}
 
-      {/* Agent Workstations Grid */}
+      {/* Agent Workstations — Cards or Tabs */}
       {activeSteps.length > 0 && (
-        <div className="grid md:grid-cols-2 gap-4">
-          {activeSteps.map((step) => (
-            <AgentWorkstation
-              key={step.id}
-              step={step}
-              totalSteps={activeSteps.length}
-              isAdmin={isAdmin}
-              onReview={handleReview}
-              onRerun={handleRerun}
-            />
-          ))}
+        <div className="space-y-2">
+          {/* View mode toggle */}
+          <div className="flex justify-end">
+            <div className="inline-flex items-center bg-gray-100 rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-all ${
+                  viewMode === 'cards' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <LayoutGrid size={13} />
+                Cards
+              </button>
+              <button
+                onClick={() => setViewMode('tabs')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold transition-all ${
+                  viewMode === 'tabs' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Columns size={13} />
+                Guias
+              </button>
+            </div>
+          </div>
+
+          {/* Cards view */}
+          {viewMode === 'cards' && (
+            <div className="grid md:grid-cols-2 gap-4">
+              {activeSteps.map((step) => (
+                <AgentWorkstation
+                  key={step.id}
+                  step={step}
+                  totalSteps={activeSteps.length}
+                  isAdmin={isAdmin}
+                  onReview={handleReview}
+                  onRerun={handleRerun}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Tabs view */}
+          {viewMode === 'tabs' && (() => {
+            const TAB_META: Record<string, { name: string; color: string }> = {
+              alex: { name: 'Alex', color: '#8b5cf6' },
+              bruna: { name: 'Bruna', color: '#f59e0b' },
+              carlos: { name: 'Carlos', color: '#3b82f6' },
+              denilson: { name: 'Denilson', color: '#10b981' },
+              edmundo: { name: 'Edmundo', color: '#6366f1' },
+              falcao: { name: 'Falcão', color: '#ef4444' },
+              diretor: { name: 'Diretor', color: '#475569' },
+              ceo: { name: 'CEO', color: '#1e293b' },
+            };
+            const TAB_STEP: Record<string, string> = {
+              plan: 'Plan', execute: 'Exec', consolidate: 'Consol', review: 'Review',
+            };
+            const selectedStep = activeSteps.find(s => s.id === activeTabStepId) ?? null;
+            return (
+              <div>
+                {/* Tab bar */}
+                <div className="flex gap-0.5 overflow-x-auto bg-gray-100 rounded-t-lg p-1">
+                  {activeSteps.map((step) => {
+                    const meta = TAB_META[step.agent_code] || { name: step.agent_code, color: '#6b7280' };
+                    const isActive = step.id === activeTabStepId;
+                    const isStepRunning = step.status === 'running';
+                    const isStepCompleted = step.status === 'completed';
+                    const isStepFailed = step.status === 'failed';
+                    return (
+                      <button
+                        key={step.id}
+                        onClick={() => setActiveTabStepId(step.id)}
+                        className={`relative flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-semibold whitespace-nowrap transition-all ${
+                          isActive ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${isStepRunning ? 'animate-pulse' : ''}`}
+                          style={{
+                            backgroundColor: isStepCompleted ? meta.color : isStepFailed ? '#ef4444' : isStepRunning ? meta.color : '#d1d5db',
+                          }}
+                        />
+                        {meta.name}
+                        <span className="text-[9px] text-gray-400 font-normal">{TAB_STEP[step.step_type] || step.step_type}</span>
+                        {isActive && (
+                          <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full" style={{ backgroundColor: meta.color }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Tab content */}
+                {selectedStep && (
+                  <AgentWorkstation
+                    key={selectedStep.id}
+                    step={selectedStep}
+                    totalSteps={activeSteps.length}
+                    isAdmin={isAdmin}
+                    onReview={handleReview}
+                    onRerun={handleRerun}
+                    defaultExpanded
+                  />
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 

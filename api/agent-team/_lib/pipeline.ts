@@ -390,9 +390,10 @@ async function callClaudeWithRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutMs = isConsolidation ? 120000 : 90000;
+      const isHeavyOutput = ['carlos', 'denilson', 'edmundo', 'falcao'].includes(step.agent_code);
+      const timeoutMs = isConsolidation ? 120000 : isHeavyOutput ? 120000 : 90000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const maxTokens = isConsolidation ? 8192 : 6144;
+      const maxTokens = isConsolidation ? 8192 : isHeavyOutput ? 8192 : 6144;
 
       logInfo(CTX, 'Chamando Claude API', {
         attempt: attempt + 1,

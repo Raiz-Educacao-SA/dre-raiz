@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CheckCircle2, XCircle, Clock, RotateCcw, ThumbsUp, MessageSquareWarning, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, RotateCcw, ThumbsUp, MessageSquareWarning, AlertTriangle, ChevronDown } from 'lucide-react';
 import type { AgentStep } from '../../types/agentTeam';
 import OutputRenderer from './OutputRenderer';
 
@@ -13,6 +13,7 @@ interface AgentWorkstationProps {
   isAdmin: boolean;
   onReview: (stepId: string, action: 'approved' | 'revision_requested', comment: string) => void;
   onRerun: (stepId: string) => void;
+  defaultExpanded?: boolean;
 }
 
 // --------------------------------------------
@@ -92,9 +93,10 @@ function useProgressBar(isRunning: boolean, avgSeconds: number): number {
 // Component
 // --------------------------------------------
 
-const AgentWorkstation: React.FC<AgentWorkstationProps> = ({ step, totalSteps, isAdmin, onReview, onRerun }) => {
+const AgentWorkstation: React.FC<AgentWorkstationProps> = ({ step, totalSteps, isAdmin, onReview, onRerun, defaultExpanded = false }) => {
   const [reviewComment, setReviewComment] = useState('');
   const [showReviewInput, setShowReviewInput] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   const statusCfg = STATUS_CONFIG[step.status] || STATUS_CONFIG.pending;
   const reviewCfg = REVIEW_CONFIG[step.review_status] || REVIEW_CONFIG.pending;
@@ -136,8 +138,11 @@ const AgentWorkstation: React.FC<AgentWorkstationProps> = ({ step, totalSteps, i
       isFailed ? 'border-red-200' :
       'border-gray-200'
     }`}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50">
+      {/* Header — clicável para expandir/recolher quando completed */}
+      <div
+        className={`flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 ${isCompleted ? 'cursor-pointer select-none' : ''}`}
+        onClick={isCompleted ? () => setIsExpanded(prev => !prev) : undefined}
+      >
         <div className="flex items-center gap-3">
           {/* Avatar circle with agent color */}
           <span
@@ -180,6 +185,14 @@ const AgentWorkstation: React.FC<AgentWorkstationProps> = ({ step, totalSteps, i
             {isPending && <Clock size={10} />}
             {statusCfg.label}
           </span>
+
+          {/* Expand/Collapse chevron — only when completed */}
+          {isCompleted && (
+            <ChevronDown
+              size={16}
+              className={`text-gray-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`}
+            />
+          )}
         </div>
       </div>
 
@@ -241,8 +254,8 @@ const AgentWorkstation: React.FC<AgentWorkstationProps> = ({ step, totalSteps, i
           </div>
         )}
 
-        {/* Completed — output */}
-        {isCompleted && step.output_data && (
+        {/* Completed — output (expandable) */}
+        {isCompleted && step.output_data && isExpanded && (
           <OutputRenderer step={step} />
         )}
 
@@ -255,8 +268,8 @@ const AgentWorkstation: React.FC<AgentWorkstationProps> = ({ step, totalSteps, i
         )}
       </div>
 
-      {/* Review + Actions */}
-      {isCompleted && (
+      {/* Review + Actions (only when expanded) */}
+      {isCompleted && isExpanded && (
         <div className="px-4 py-3 border-t border-gray-100 space-y-2">
           {/* Review status */}
           <div className="flex items-center justify-between">
