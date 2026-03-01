@@ -1,13 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Brain, Play, Loader2, ChevronDown, Users, Clock } from 'lucide-react';
+import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getSomaTags } from '../services/supabaseService';
+import { getSomaTags, getDREFilterOptions } from '../services/supabaseService';
+import type { DREFilterOptions } from '../services/supabaseService';
 import type { Team, Agent, TeamAgent, AgentRun, AgentStep } from '../types/agentTeam';
 import * as agentTeamService from '../services/agentTeamService';
+import MultiSelectFilter from './MultiSelectFilter';
 import RunHeader from './agentTeam/RunHeader';
 import AgentWorkstation from './agentTeam/AgentWorkstation';
 import ConsolidationPanel from './agentTeam/ConsolidationPanel';
 import ScheduleManager from './agentTeam/ScheduleManager';
+
+const MONTH_OPTIONS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+const MONTH_MAP: Record<string, string> = {
+  Jan:'01', Fev:'02', Mar:'03', Abr:'04', Mai:'05', Jun:'06',
+  Jul:'07', Ago:'08', Set:'09', Out:'10', Nov:'11', Dez:'12',
+};
 
 const AgentTeamView: React.FC = () => {
   const { user, isAdmin } = useAuth();
@@ -28,6 +36,13 @@ const AgentTeamView: React.FC = () => {
   // History
   const [runs, setRuns] = useState<AgentRun[]>([]);
 
+  // Filters
+  const [filterOptions, setFilterOptions] = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
+  const [selectedMarcas, setSelectedMarcas] = useState<string[]>([]);
+  const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
+  const [selectedTags01, setSelectedTags01] = useState<string[]>([]);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+
   // Polling ref
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -44,13 +59,29 @@ const AgentTeamView: React.FC = () => {
 
   const isRunning = activeRun?.status === 'running';
 
-  // 1. Carregar teams no mount
+  // Filiais cascata — filtra por marca selecionada
+  const filiaisFiltradas = useMemo(() => {
+    if (selectedMarcas.length === 0) return filterOptions.nome_filiais;
+    return filterOptions.nome_filiais.filter(f =>
+      selectedMarcas.some(m => f.startsWith(m + ' - ') || f.startsWith(m + '-'))
+    );
+  }, [selectedMarcas, filterOptions.nome_filiais]);
+
+  // Limpar filiais quando marca muda e invalida seleção
+  useEffect(() => {
+    if (selectedMarcas.length > 0) {
+      setSelectedFiliais(prev => prev.filter(f => filiaisFiltradas.includes(f)));
+    }
+  }, [filiaisFiltradas, selectedMarcas.length]);
+
+  // 1. Carregar teams + filter options no mount
   useEffect(() => {
     agentTeamService.getTeams().then((data) => {
       setTeams(data);
       if (data.length === 1) setSelectedTeamId(data[0].id);
     });
     agentTeamService.listRuns(10).then((data) => setRuns(data.runs));
+    getDREFilterOptions({ monthFrom: '2026-01', monthTo: '2026-12' }).then(setFilterOptions);
   }, []);
 
   // 2. Carregar agents quando team muda
@@ -96,12 +127,35 @@ const AgentTeamView: React.FC = () => {
     setError(null);
 
     try {
-      const dreSnapshot = await getSomaTags('2026-01', '2026-12');
+      // Calcular range de meses
+      const sortedMonths = selectedMonths.map(m => MONTH_MAP[m]).sort();
+      const mFrom = sortedMonths.length > 0 ? `2026-${sortedMonths[0]}` : '2026-01';
+      const mTo = sortedMonths.length > 0 ? `2026-${sortedMonths[sortedMonths.length - 1]}` : '2026-12';
+
+      const dreSnapshot = await getSomaTags(
+        mFrom,
+        mTo,
+        selectedMarcas.length > 0 ? selectedMarcas : undefined,
+        selectedFiliais.length > 0 ? selectedFiliais : undefined,
+        undefined, // tags02
+        selectedTags01.length > 0 ? selectedTags01 : undefined,
+      );
+
+      // Contexto de filtros para os agentes
+      const monthsLabel = selectedMonths.length > 0 ? selectedMonths.join(', ') : 'Jan-Dez';
+      const filterContext: Record<string, unknown> = {
+        year: '2026',
+        months_range: monthsLabel,
+      };
+      if (selectedMarcas.length > 0) filterContext.marcas = selectedMarcas;
+      if (selectedFiliais.length > 0) filterContext.filiais = selectedFiliais;
+      if (selectedTags01.length > 0) filterContext.tags01 = selectedTags01;
+
       const { runId } = await agentTeamService.startPipeline(
         selectedTeamId,
         objective.trim(),
         dreSnapshot as Record<string, unknown>[],
-        { year: '2026', months_range: 'Jan-Dez' },
+        filterContext,
         user.email,
         user.name
       );
@@ -113,7 +167,22 @@ const AgentTeamView: React.FC = () => {
     } finally {
       setIsStarting(false);
     }
-  }, [selectedTeamId, objective, user]);
+  }, [selectedTeamId, objective, user, selectedMarcas, selectedFiliais, selectedTags01, selectedMonths]);
+
+  // 4b. Cancelar pipeline
+  const handleCancel = useCallback(async () => {
+    if (!activeRunId) return;
+    try {
+      await agentTeamService.cancelRun(activeRunId);
+      setActiveRunId(null);
+      setActiveRun(null);
+      setActiveSteps([]);
+      agentTeamService.listRuns(10).then((data) => setRuns(data.runs));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao cancelar';
+      setError(msg);
+    }
+  }, [activeRunId]);
 
   // 5. Continuar pipeline (fallback manual)
   const handleContinue = useCallback(async () => {
@@ -230,6 +299,51 @@ const AgentTeamView: React.FC = () => {
           </div>
         )}
 
+        {/* Filtros DRE */}
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1.5">
+            Filtros de dados
+          </label>
+          <div className="flex items-start gap-2 flex-wrap">
+            <MultiSelectFilter
+              label="Marca"
+              icon={<Flag size={12} />}
+              options={filterOptions.marcas}
+              selected={selectedMarcas}
+              onChange={setSelectedMarcas}
+              colorScheme="orange"
+              compact
+            />
+            <MultiSelectFilter
+              label="Filial"
+              icon={<Building2 size={12} />}
+              options={filiaisFiltradas}
+              selected={selectedFiliais}
+              onChange={setSelectedFiliais}
+              colorScheme="blue"
+              compact
+            />
+            <MultiSelectFilter
+              label="Tag01"
+              icon={<Layers size={12} />}
+              options={filterOptions.tags01}
+              selected={selectedTags01}
+              onChange={setSelectedTags01}
+              colorScheme="purple"
+              compact
+            />
+            <MultiSelectFilter
+              label="Mês"
+              icon={<CalendarDays size={12} />}
+              options={MONTH_OPTIONS}
+              selected={selectedMonths}
+              onChange={setSelectedMonths}
+              colorScheme="blue"
+              compact
+            />
+          </div>
+        </div>
+
         {/* Objective */}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">
@@ -272,6 +386,7 @@ const AgentTeamView: React.FC = () => {
           isAdmin={isAdmin}
           onContinue={handleContinue}
           onRerun={handleFullRerun}
+          onCancel={handleCancel}
         />
       )}
 
@@ -282,6 +397,7 @@ const AgentTeamView: React.FC = () => {
             <AgentWorkstation
               key={step.id}
               step={step}
+              totalSteps={activeSteps.length}
               isAdmin={isAdmin}
               onReview={handleReview}
               onRerun={handleRerun}
