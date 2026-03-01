@@ -1,7 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AgentStep, FinancialSummary } from '../../../types/agentTeam';
+import type { FinancialSummary } from '../../../types/agentTeam';
 import { getZodSchemaForStep, getJsonSchemaForStep } from '../../../types/agentTeamSchemas';
 import { buildPrompt } from './agentPrompts';
+import { shouldHaltPipeline } from '../../../core/agents/alpha/approvalRules';
 import { logInfo, logWarning, logError } from '../../../core/logger';
 import { recordAuditEntryAsync } from './auditTrail';
 
@@ -83,10 +84,10 @@ export async function executeStep(
   const startTime = Date.now();
 
   try {
-    // 2a. Ler run para financial_summary e objective
+    // 2a. Ler run para financial_summary, objective e filter_context
     const { data: run, error: runError } = await sb
       .from('agent_runs')
-      .select('id, objective, financial_summary')
+      .select('id, objective, financial_summary, filter_context')
       .eq('id', step.run_id)
       .single();
 
@@ -124,13 +125,15 @@ export async function executeStep(
         output_data: s.output_data,
       }));
 
-    // 2c. Montar prompts
+    // 2c. Montar prompts (com filter_context para contextualizar agentes)
+    const filterContext = run.filter_context as Record<string, unknown> | null;
     const { system, user } = buildPrompt(
       step.agent_code,
       step.step_type,
       run.objective,
       summary,
       prevOutputs,
+      filterContext,
     );
 
     // 2d. Obter JSON Schema para structured output
@@ -151,9 +154,41 @@ export async function executeStep(
     // 2f. Chamar Claude com retry
     const result = await callClaudeWithRetry(system, user, jsonSchema, step);
 
-    // 2g. Validar com Zod
+    // 2g. Validar com Zod (safeParse para não explodir)
     const zodSchema = getZodSchemaForStep(step.step_type, step.agent_code);
-    const validated = zodSchema.parse(result.parsed);
+    const parseResult = zodSchema.safeParse(result.parsed);
+
+    if (!parseResult.success) {
+      logWarning(CTX, 'Zod validation parcial — usando dados brutos', {
+        stepOrder: step.step_order,
+        agentCode: step.agent_code,
+        zodErrors: parseResult.error.issues.slice(0, 5).map(i => `${i.path.join('.')}: ${i.message}`),
+      });
+    }
+
+    const validated = parseResult.success ? parseResult.data : result.parsed;
+
+    // 2g-bis. Verificar halt conditions (Bruna e Falcão podem bloquear)
+    const haltCheck = shouldHaltPipeline(
+      step.agent_code as 'alex' | 'bruna' | 'carlos' | 'denilson' | 'edmundo' | 'falcao',
+      validated as Record<string, unknown>,
+    );
+    if (haltCheck.halt) {
+      logWarning(CTX, 'Pipeline halt triggered', {
+        agentCode: step.agent_code,
+        stepOrder: step.step_order,
+        reason: haltCheck.reason,
+      });
+
+      recordAuditEntryAsync({
+        run_id: step.run_id,
+        action_type: 'decision',
+        input_snapshot: { agent_code: step.agent_code, step_order: step.step_order },
+        output_snapshot: { halt: true, reason: haltCheck.reason },
+        performed_by: 'system',
+        justification: `Pipeline halt: ${haltCheck.reason}`,
+      });
+    }
 
     // 2h. Salvar resultado
     const durationMs = Date.now() - startTime;
@@ -308,26 +343,43 @@ export async function markRunCompletedIfFinished(
 
 // --------------------------------------------
 // Internal: callClaudeWithRetry
+// Usa prompt engineering para forçar JSON (sem output_config)
 // --------------------------------------------
 
 async function callClaudeWithRetry(
   system: string,
   user: string,
-  jsonSchema: any,
+  _jsonSchema: any,
   step: ClaimedStep,
   maxRetries: number = 1,
 ): Promise<ClaudeUsageResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('ANTHROPIC_API_KEY não configurado');
 
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250929';
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  const isConsolidation = step.step_type === 'consolidate';
+
+  // Forçar JSON via system prompt
+  const jsonSystemSuffix = '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO nos textos — máximo 2 frases por campo string. Priorize dados numéricos sobre narrativa.';
+  const fullSystem = system + jsonSystemSuffix;
 
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 50000);
+      const timeoutMs = isConsolidation ? 120000 : 90000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const maxTokens = isConsolidation ? 8192 : 6144;
+
+      logInfo(CTX, 'Chamando Claude API', {
+        attempt: attempt + 1,
+        agentCode: step.agent_code,
+        stepOrder: step.step_order,
+        model,
+        maxTokens,
+        timeoutMs,
+      });
 
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -338,12 +390,9 @@ async function callClaudeWithRetry(
         },
         body: JSON.stringify({
           model,
-          max_tokens: attempt === 0 ? 4096 : 3072,
-          system,
+          max_tokens: maxTokens,
+          system: fullSystem,
           messages: [{ role: 'user', content: user }],
-          output_config: {
-            format: { type: 'json_schema', schema: jsonSchema },
-          },
         }),
         signal: controller.signal,
       });
@@ -354,45 +403,76 @@ async function callClaudeWithRetry(
         const statusCode = res.status;
         const body = await res.text();
 
+        logError(CTX, 'Claude API HTTP error', {
+          statusCode,
+          body: body.substring(0, 500),
+          attempt: attempt + 1,
+          agentCode: step.agent_code,
+        });
+
         if ((statusCode === 429 || statusCode >= 500) && attempt < maxRetries) {
-          logWarning(CTX, 'Claude API retryable error', {
-            statusCode,
-            attempt: attempt + 1,
-            maxRetries,
-            stepOrder: step.step_order,
-            agentCode: step.agent_code,
-          });
-          lastError = new Error(`Claude API erro ${statusCode}: ${body}`);
-          await sleep(2000);
+          lastError = new Error(`Claude API erro ${statusCode}: ${body.substring(0, 200)}`);
+          await sleep(3000);
           continue;
         }
 
-        throw new Error(`Claude API erro ${statusCode}: ${body}`);
+        throw new Error(`Claude API erro ${statusCode}: ${body.substring(0, 500)}`);
       }
 
       const data = await res.json();
-      const text = data?.content?.[0]?.text;
-      if (!text) throw new Error('Resposta vazia do Claude');
+
+      // Extrair texto da resposta — suporta content[0].text ou content[0].json
+      let rawText = '';
+      const firstBlock = data?.content?.[0];
+      if (firstBlock?.type === 'text') {
+        rawText = firstBlock.text;
+      } else if (firstBlock?.type === 'json') {
+        rawText = JSON.stringify(firstBlock.json);
+      } else if (typeof firstBlock?.text === 'string') {
+        rawText = firstBlock.text;
+      }
+
+      if (!rawText) {
+        logError(CTX, 'Resposta vazia do Claude', {
+          contentTypes: data?.content?.map((c: any) => c.type),
+          agentCode: step.agent_code,
+          stopReason: data?.stop_reason,
+        });
+        throw new Error(`Resposta vazia do Claude (stop_reason: ${data?.stop_reason})`);
+      }
+
+      // Extrair JSON — remover markdown code blocks se existirem
+      const parsed = extractJson(rawText);
+
+      logInfo(CTX, 'Claude respondeu com sucesso', {
+        agentCode: step.agent_code,
+        tokensIn: data.usage?.input_tokens,
+        tokensOut: data.usage?.output_tokens,
+        rawLength: rawText.length,
+      });
 
       return {
-        parsed: JSON.parse(text),
-        rawText: text,
+        parsed,
+        rawText,
         tokensInput: data.usage?.input_tokens || 0,
         tokensOutput: data.usage?.output_tokens || 0,
         model: data.model || model,
       };
 
     } catch (err: any) {
-      if (err.name === 'AbortError' && attempt < maxRetries) {
-        logWarning(CTX, 'Claude API timeout, retrying', {
-          attempt: attempt + 1,
-          maxRetries,
-          stepOrder: step.step_order,
-          agentCode: step.agent_code,
-        });
-        lastError = new Error('Claude API timeout (50s)');
-        await sleep(2000);
-        continue;
+      logWarning(CTX, `Tentativa ${attempt + 1} falhou`, {
+        agentCode: step.agent_code,
+        errorName: err.name,
+        errorMessage: err.message?.substring(0, 200),
+      });
+
+      if (err.name === 'AbortError') {
+        lastError = new Error(`Claude API timeout (${isConsolidation ? '120s' : '90s'}) para ${step.agent_code}`);
+        if (attempt < maxRetries) {
+          await sleep(3000);
+          continue;
+        }
+        throw lastError;
       }
 
       if (attempt >= maxRetries) {
@@ -400,11 +480,78 @@ async function callClaudeWithRetry(
       }
 
       lastError = err;
-      await sleep(2000);
+      await sleep(3000);
     }
   }
 
   throw lastError || new Error('Falha após todas as tentativas');
+}
+
+// Extrai JSON de texto — trata markdown code blocks, texto sujo e JSON truncado
+function extractJson(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+
+  // 1. Parse direto
+  try { return JSON.parse(trimmed); } catch { /* continuar */ }
+
+  // 2. Remover markdown code blocks
+  const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (codeBlockMatch) {
+    try { return JSON.parse(codeBlockMatch[1].trim()); } catch { /* continuar */ }
+  }
+
+  // 3. Extrair { ... }
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(trimmed.substring(firstBrace, lastBrace + 1)); } catch { /* continuar */ }
+  }
+
+  // 4. JSON truncado — tentar reparar
+  const jsonStart = firstBrace !== -1 ? trimmed.substring(firstBrace) : trimmed;
+  const repaired = repairTruncatedJson(jsonStart);
+  if (repaired) {
+    try { return JSON.parse(repaired); } catch { /* continuar */ }
+  }
+
+  throw new Error(`Não foi possível extrair JSON da resposta (${trimmed.substring(0, 100)}...)`);
+}
+
+// Repara JSON truncado (cortado por max_tokens)
+function repairTruncatedJson(text: string): string | null {
+  let result = text;
+
+  // Remover trailing incomplete string: ..."texto incompleto
+  result = result.replace(/,?\s*"[^"]*$/g, '');
+
+  // Contar brackets abertos
+  let openBraces = 0;
+  let openBrackets = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (const ch of result) {
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\') { escaped = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') openBraces++;
+    if (ch === '}') openBraces--;
+    if (ch === '[') openBrackets++;
+    if (ch === ']') openBrackets--;
+  }
+
+  // Se estamos dentro de uma string, fechar
+  if (inString) result += '"';
+
+  // Remover trailing comma
+  result = result.replace(/,\s*$/, '');
+
+  // Fechar brackets/braces abertos
+  while (openBrackets > 0) { result += ']'; openBrackets--; }
+  while (openBraces > 0) { result += '}'; openBraces--; }
+
+  return result;
 }
 
 function sleep(ms: number): Promise<void> {
