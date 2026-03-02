@@ -90,12 +90,25 @@ const ConsolidationPanel: React.FC<ConsolidationPanelProps> = ({ run, consolidat
             <p className="text-xs text-gray-400 italic">Nenhum conflito relevante identificado.</p>
           ) : (
             <ul className="space-y-1">
-              {conflicts.map((item, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs text-gray-700">
-                  <span className="mt-1.5 w-1 h-1 rounded-full bg-amber-400 shrink-0" />
-                  {item}
-                </li>
-              ))}
+              {conflicts.map((item: any, i) => {
+                // item pode ser string ou objeto {conflict_description, resolution, agents_involved, ...}
+                if (typeof item === 'string') {
+                  return (
+                    <li key={i} className="flex items-start gap-2 text-xs text-gray-700">
+                      <span className="mt-1.5 w-1 h-1 rounded-full bg-amber-400 shrink-0" />
+                      {item}
+                    </li>
+                  );
+                }
+                const desc = item.conflict_description || item.description || item.resolution || JSON.stringify(item);
+                const descStr = typeof desc === 'object' ? JSON.stringify(desc) : String(desc);
+                return (
+                  <li key={i} className="flex items-start gap-2 text-xs text-gray-700">
+                    <span className="mt-1.5 w-1 h-1 rounded-full bg-amber-400 shrink-0" />
+                    <span>{descStr}</span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
