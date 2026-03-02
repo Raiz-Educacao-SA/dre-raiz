@@ -570,6 +570,22 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       'transactions';
 
     try {
+      // 🎯 Converter tag0 → tag01 (tag0 não existe na tabela, precisa resolver via tag0_map)
+      let resolvedTag01 = colFilters.tag01?.length > 0 ? [...colFilters.tag01] : [];
+      if (colFilters.tag0?.length > 0 && filterOptions.tag0Map.size > 0) {
+        const tag01sFromTag0: string[] = [];
+        filterOptions.tag0Map.forEach((tag0Value, tag01Key) => {
+          if (colFilters.tag0.includes(tag0Value)) {
+            // Buscar o tag01 original (não normalizado) nos tag01Options
+            const original = filterOptions.tag01Options.find(t => t.toLowerCase().trim() === tag01Key);
+            if (original) tag01sFromTag0.push(original);
+          }
+        });
+        // Merge: tag01 explícitos do usuário + tag01 derivados do tag0
+        resolvedTag01 = [...new Set([...resolvedTag01, ...tag01sFromTag0])];
+        console.log(`🏷️ tag0 [${colFilters.tag0.join(', ')}] → tag01 [${tag01sFromTag0.join(', ')}] (total: ${resolvedTag01.length})`);
+      }
+
       const filters: TransactionFilters = {
         monthFrom: colFilters.monthFrom || undefined,
         monthTo: colFilters.monthTo || undefined,
@@ -577,8 +593,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         scenario: activeTab === 'real' ? 'Real' : undefined,
         marca: colFilters.marca?.length > 0 ? colFilters.marca : undefined,
         nome_filial: colFilters.nome_filial?.length > 0 ? colFilters.nome_filial : undefined,
-        tag0: colFilters.tag0?.length > 0 ? colFilters.tag0 : undefined,
-        tag01: colFilters.tag01?.length > 0 ? colFilters.tag01 : undefined,
+        tag01: resolvedTag01.length > 0 ? resolvedTag01 : undefined,
         tag02: colFilters.tag02?.length > 0 ? colFilters.tag02 : undefined,
         tag03: colFilters.tag03?.length > 0 ? colFilters.tag03 : undefined,
         category: colFilters.category?.length > 0 ? colFilters.category : undefined,
@@ -704,6 +719,20 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       'transactions';
 
     try {
+      // 🎯 Converter tag0 → tag01 (tag0 não existe na tabela, precisa resolver via tag0_map)
+      let resolvedTag01All = colFilters.tag01?.length > 0 ? [...colFilters.tag01] : [];
+      if (colFilters.tag0?.length > 0 && filterOptions.tag0Map.size > 0) {
+        const tag01sFromTag0: string[] = [];
+        filterOptions.tag0Map.forEach((tag0Value, tag01Key) => {
+          if (colFilters.tag0.includes(tag0Value)) {
+            const original = filterOptions.tag01Options.find(t => t.toLowerCase().trim() === tag01Key);
+            if (original) tag01sFromTag0.push(original);
+          }
+        });
+        resolvedTag01All = [...new Set([...resolvedTag01All, ...tag01sFromTag0])];
+        console.log(`🏷️ [SearchAll] tag0 [${colFilters.tag0.join(', ')}] → tag01 [${tag01sFromTag0.join(', ')}] (total: ${resolvedTag01All.length})`);
+      }
+
       // Passar TODOS os filtros para o servidor
       const filters: TransactionFilters = {
         monthFrom: colFilters.monthFrom || undefined,
@@ -711,8 +740,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         scenario: activeTab === 'real' ? 'Real' : undefined,
         marca: colFilters.marca && colFilters.marca.length > 0 ? colFilters.marca : undefined,
         nome_filial: colFilters.nome_filial && colFilters.nome_filial.length > 0 ? colFilters.nome_filial : undefined,
-        tag0: colFilters.tag0 && colFilters.tag0.length > 0 ? colFilters.tag0 : undefined,
-        tag01: colFilters.tag01 && colFilters.tag01.length > 0 ? colFilters.tag01 : undefined,
+        tag01: resolvedTag01All.length > 0 ? resolvedTag01All : undefined,
         tag02: colFilters.tag02 && colFilters.tag02.length > 0 ? colFilters.tag02 : undefined,
         tag03: colFilters.tag03 && colFilters.tag03.length > 0 ? colFilters.tag03 : undefined,
         category: colFilters.category && colFilters.category.length > 0 ? colFilters.category : undefined,
