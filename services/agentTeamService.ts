@@ -652,11 +652,16 @@ async function callClaudeViaProxy(
 ): Promise<ClaudeResult> {
   const defaultModel = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
   // Steps leves (Alex plan, Bruna) usam Haiku 4.5 (~75% mais barato)
-  const isLightStep = ['alex', 'bruna'].includes(agentCode) && !isConsolidation;
+  const isLightStep = ['alex', 'bruna', 'edmundo'].includes(agentCode) && !isConsolidation;
   const model = isLightStep ? 'claude-haiku-4-5-20251001' : defaultModel;
-  const isHeavyOutput = ['carlos', 'denilson', 'edmundo', 'falcao'].includes(agentCode);
+  const isHeavyOutput = ['carlos', 'denilson'].includes(agentCode);
+  const isMediumOutput = ['edmundo', 'falcao'].includes(agentCode);
   const isReview = ['diretor', 'ceo'].includes(agentCode);
-  const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : isReview ? 12288 : 8192;
+  const maxTokens = isConsolidation ? 16384
+    : isHeavyOutput ? 16384
+    : isMediumOutput ? 10240
+    : isReview ? 12288
+    : 8192;
 
   // Forçar JSON via prompt (sem output_config)
   const fullSystem = system + '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO — máximo 2 frases por campo string.';
