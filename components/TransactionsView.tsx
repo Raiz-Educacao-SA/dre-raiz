@@ -426,6 +426,12 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     }
   }, [colFilters.tag01, colFilters.tag02, filterOptions.tag03Options, filterOptions.tagRecords]);
 
+  // 🎯 Conta Contábil: busca da tabela tags (somente cod_conta com 14 dígitos)
+  const [contaContabilOptions, setContaContabilOptions] = useState<string[]>([]);
+  useEffect(() => {
+    getContaContabilOptions().then(opts => setContaContabilOptions(opts.map(o => o.cod_conta)));
+  }, []);
+
   // 🎯 EFEITO CASCATA: Limpar filtros downstream quando tag0 mudar
   useEffect(() => {
     // Limpar tag01 se algum valor não pertence mais aos tag0 selecionados
@@ -1474,7 +1480,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                 <FilterTextInput key={`ticket-${filterResetKey}`} label="Ticket" id="ticket" value={colFilters.ticket} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
                 <FilterTextInput key={`chave_id-${filterResetKey}`} label="Chave ID" id="chave_id" value={colFilters.chave_id} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
                 <FilterTextInput key={`vendor-${filterResetKey}`} label="Fornecedor" id="vendor" value={colFilters.vendor} colFilters={colFilters} setColFilters={setColFilters} className="xl:col-span-2" debouncedSetFilter={debouncedSetFilter} />
-                <FilterTextInput key={`description-${filterResetKey}`} label="Descrição" id="description" value={colFilters.description} colFilters={colFilters} setColFilters={setColFilters} className="xl:col-span-3" debouncedSetFilter={debouncedSetFilter} />
+                <FilterTextInput key={`description-${filterResetKey}`} label="Descrição" id="description" value={colFilters.description} colFilters={colFilters} setColFilters={setColFilters} className="xl:col-span-2" debouncedSetFilter={debouncedSetFilter} />
+                <MultiSelectFilter id="conta_contabil" label="Conta Contábil" options={contaContabilOptions} selected={colFilters.conta_contabil} active={isFilterActive('conta_contabil')} isOpen={openDropdown === 'conta_contabil'} onToggle={() => setOpenDropdown(openDropdown === 'conta_contabil' ? null : 'conta_contabil')} onClear={() => setColFilters(prev => ({...prev, conta_contabil: []}))} onToggleItem={(val) => toggleMultiFilter('conta_contabil', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, conta_contabil: [...new Set([...prev.conta_contabil, ...vals])]}))} />
                 <FilterTextInput key={`amount-${filterResetKey}`} label="Valor" id="amount" value={colFilters.amount} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
                 <MultiSelectFilter id="recurring" label="Recorrência" options={dynamicOptions.recurrings} selected={colFilters.recurring} active={isFilterActive('recurring')} isOpen={openDropdown === 'recurring'} onToggle={() => setOpenDropdown(openDropdown === 'recurring' ? null : 'recurring')} onClear={() => setColFilters(prev => ({...prev, recurring: []}))} onToggleItem={(val) => toggleMultiFilter('recurring', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, recurring: [...new Set([...prev.recurring, ...vals])]}))} />
                 <MultiSelectFilter id="status" label="Status" options={dynamicOptions.statuses} selected={colFilters.status} active={isFilterActive('status')} isOpen={openDropdown === 'status'} onToggle={() => setOpenDropdown(openDropdown === 'status' ? null : 'status')} onClear={() => setColFilters(prev => ({...prev, status: []}))} onToggleItem={(val) => toggleMultiFilter('status', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, status: [...new Set([...prev.status, ...vals])]}))} />
