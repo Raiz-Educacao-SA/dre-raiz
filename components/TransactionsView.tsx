@@ -26,7 +26,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction, TransactionType, TransactionStatus, ManualChange, PaginationParams, ContaContabilOption } from '../types';
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
-import { getFilteredTransactions, TransactionFilters, getFiliais, getTagRecords, FilialOption, TagRecord, getContaContabilOptions, getTag0Map, getTag0Options, getTag01Options, getTag02Options, getTag03Options, resolveTag0 } from '../services/supabaseService';
+import { getFilteredTransactions, TransactionFilters, getFiliais, getTagRecords, FilialOption, TagRecord, getContaContabilOptions, getTag0Map, getTag0Options, getTag01Options, getTag02Options, getTag03Options, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
 import ContaContabilSelector from './ContaContabilSelector';
 import ExcelJS from 'exceljs';
 import debounce from 'lodash.debounce';
@@ -393,44 +393,38 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     return tag1s.sort();
   }, [filterOptions.tag01Options, filterOptions.tag0Map, colFilters.tag0]);
 
-  // 🎯 Cascata: Tag01 → Tag02
-  // Filtrar tag02 baseado nos tag01 selecionados
-  const tag2Options = useMemo(() => {
-    let tag2s = [...filterOptions.tag02Options]; // Usar lista completa do banco
-
-    // Se tem filtro de tag01 ativo, filtrar pelos tag02 que aparecem com esses tag01
+  // 🎯 Cascata: Tag01 → Tag02 (busca dinâmica do banco)
+  const [tag2Options, setTag2Options] = useState<string[]>([]);
+  useEffect(() => {
     if (colFilters.tag01?.length > 0) {
-      const validTag2s = new Set(
+      // Buscar do banco apenas tag02 que existem para os tag01 selecionados
+      getTag02OptionsForTag01s(colFilters.tag01).then(opts => setTag2Options(opts));
+    } else {
+      // Sem filtro de tag01 → mostrar todas as tag02
+      setTag2Options(filterOptions.tag02Options);
+    }
+  }, [colFilters.tag01, filterOptions.tag02Options]);
+
+  // 🎯 Cascata: Tag02 → Tag03 (busca dinâmica do banco)
+  const [tag3Options, setTag3Options] = useState<string[]>([]);
+  useEffect(() => {
+    if (colFilters.tag02?.length > 0) {
+      // Buscar do banco apenas tag03 que existem para os tag02 selecionados
+      getTag03OptionsForTag02s(colFilters.tag02).then(opts => setTag3Options(opts));
+    } else if (colFilters.tag01?.length > 0) {
+      // Tag01 ativo mas tag02 não → buscar tag03 via tag01 (usando tagRecords como fallback)
+      const validTag3s = new Set(
         filterOptions.tagRecords
           .filter(r => colFilters.tag01.includes(r.tag1))
-          .map(r => r.tag2)
+          .map(r => r.tag3)
           .filter(Boolean)
       );
-      tag2s = tag2s.filter(tag2 => validTag2s.has(tag2));
+      setTag3Options([...validTag3s].sort());
+    } else {
+      // Sem filtro → mostrar todas as tag03
+      setTag3Options(filterOptions.tag03Options);
     }
-
-    return tag2s.sort();
-  }, [filterOptions.tag02Options, filterOptions.tagRecords, colFilters.tag01]);
-
-  // 🎯 Cascata: Tag01 + Tag02 → Tag03
-  // Filtrar tag03 baseado nos tag01 e tag02 selecionados
-  const tag3Options = useMemo(() => {
-    let tag3s = [...filterOptions.tag03Options]; // Usar lista completa do banco
-
-    // Filtrar pelos tag03 que aparecem com os tag01/tag02 selecionados
-    let records = filterOptions.tagRecords;
-    if (colFilters.tag01?.length > 0) {
-      records = records.filter(r => colFilters.tag01.includes(r.tag1));
-    }
-    if (colFilters.tag02?.length > 0) {
-      records = records.filter(r => colFilters.tag02.includes(r.tag2));
-    }
-
-    const validTag3s = new Set(records.map(r => r.tag3).filter(Boolean));
-    tag3s = tag3s.filter(tag3 => validTag3s.has(tag3));
-
-    return tag3s.sort();
-  }, [filterOptions.tag03Options, filterOptions.tagRecords, colFilters.tag01, colFilters.tag02]);
+  }, [colFilters.tag01, colFilters.tag02, filterOptions.tag03Options, filterOptions.tagRecords]);
 
   // 🎯 EFEITO CASCATA: Limpar filtros downstream quando tag0 mudar
   useEffect(() => {

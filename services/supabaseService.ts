@@ -351,7 +351,8 @@ export const getTag02OptionsForTag01s = async (tags01: string[]): Promise<string
     .from('transactions')
     .select('tag02')
     .in('tag01', tags01)
-    .not('tag02', 'is', null);
+    .not('tag02', 'is', null)
+    .limit(10000);
   if (error || !data) return [];
   return [...new Set(data.map(r => r.tag02).filter(Boolean) as string[])].sort();
 };
@@ -365,7 +366,8 @@ export const getTag03OptionsForTag02s = async (tags02: string[]): Promise<string
     .from('transactions')
     .select('tag03')
     .in('tag02', tags02)
-    .not('tag03', 'is', null);
+    .not('tag03', 'is', null)
+    .limit(10000);
   if (error || !data) return [];
   return [...new Set(data.map(r => r.tag03).filter(Boolean) as string[])].sort();
 };
