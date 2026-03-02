@@ -16,7 +16,7 @@ DROP TABLE IF EXISTS temp_para_inserir;
 CREATE TEMP TABLE temp_para_inserir AS
 SELECT DISTINCT ON (df.chave_id)
   gen_random_uuid()::TEXT as id,
-  CASE
+  CASEa
     WHEN df.anomes IS NOT NULL AND LENGTH(df.anomes) = 6
     THEN TO_DATE(df.anomes, 'YYYYMM')::TEXT
     ELSE NULL

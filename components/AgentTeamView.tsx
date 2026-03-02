@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns } from 'lucide-react';
+import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getSomaTags, getDREFilterOptions } from '../services/supabaseService';
 import type { DREFilterOptions } from '../services/supabaseService';
@@ -35,6 +35,7 @@ const AgentTeamView: React.FC = () => {
 
   // History
   const [runs, setRuns] = useState<AgentRun[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Filters
   const [filterOptions, setFilterOptions] = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
@@ -249,6 +250,31 @@ const AgentTeamView: React.FC = () => {
     }
   }, [activeSteps]);
 
+  // 9. Deletar run
+  const handleDeleteRun = useCallback(async (runId: string) => {
+    if (!window.confirm('Excluir esta análise? Esta ação não pode ser desfeita.')) return;
+    setDeletingId(runId);
+    try {
+      await agentTeamService.deleteRun(runId);
+      // Se era o run ativo, limpar a view
+      if (activeRunId === runId) {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        pollingRef.current = null;
+        setActiveRunId(null);
+        setActiveRun(null);
+        setActiveSteps([]);
+      }
+      // Refresh lista
+      const { runs: updated } = await agentTeamService.listRuns(10);
+      setRuns(updated);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao excluir';
+      setError(msg);
+    } finally {
+      setDeletingId(null);
+    }
+  }, [activeRunId]);
+
   if (!isAdmin) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
@@ -401,6 +427,7 @@ const AgentTeamView: React.FC = () => {
           onContinue={handleContinue}
           onRerun={handleFullRerun}
           onCancel={handleCancel}
+          onDelete={() => handleDeleteRun(activeRun.id)}
         />
       )}
 
@@ -534,26 +561,42 @@ const AgentTeamView: React.FC = () => {
           </h2>
           <div className="space-y-2">
             {runs.map((run) => (
-              <button
+              <div
                 key={run.id}
-                onClick={() => setActiveRunId(run.id)}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition-all text-left"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition-all"
               >
-                <div>
-                  <span className="font-medium text-gray-900">{run.objective.slice(0, 80)}</span>
-                  <span className="text-gray-400 ml-2">
-                    {new Date(run.started_at).toLocaleDateString('pt-BR')}
+                <button
+                  onClick={() => setActiveRunId(run.id)}
+                  className="flex-1 flex items-center justify-between text-left min-w-0"
+                >
+                  <div className="min-w-0">
+                    <span className="font-medium text-gray-900">{run.objective.slice(0, 80)}</span>
+                    <span className="text-gray-400 ml-2">
+                      {new Date(run.started_at).toLocaleDateString('pt-BR')}
+                    </span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] shrink-0 ${
+                    run.status === 'completed' ? 'bg-green-100 text-green-700' :
+                    run.status === 'failed' ? 'bg-red-100 text-red-700' :
+                    run.status === 'running' ? 'bg-blue-100 text-blue-700' :
+                    'bg-gray-100 text-gray-500'
+                  }`}>
+                    {run.status}
                   </span>
-                </div>
-                <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] ${
-                  run.status === 'completed' ? 'bg-green-100 text-green-700' :
-                  run.status === 'failed' ? 'bg-red-100 text-red-700' :
-                  run.status === 'running' ? 'bg-blue-100 text-blue-700' :
-                  'bg-gray-100 text-gray-500'
-                }`}>
-                  {run.status}
-                </span>
-              </button>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteRun(run.id); }}
+                  disabled={run.status === 'running' || deletingId === run.id}
+                  className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                  title="Excluir análise"
+                >
+                  {deletingId === run.id ? (
+                    <Loader2 size={14} className="animate-spin text-red-400" />
+                  ) : (
+                    <Trash2 size={14} />
+                  )}
+                </button>
+              </div>
             ))}
           </div>
         </div>

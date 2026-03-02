@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Target, Users, Clock, Loader2, CheckCircle2, XCircle, RefreshCw, Play, Activity, StopCircle } from 'lucide-react';
+import { Target, Users, Clock, Loader2, CheckCircle2, XCircle, RefreshCw, Play, Activity, StopCircle, Trash2 } from 'lucide-react';
 import type { AgentRun, AgentStep } from '../../types/agentTeam';
 
 // --------------------------------------------
@@ -14,6 +14,7 @@ interface RunHeaderProps {
   onContinue?: () => void;
   onRerun?: () => void;
   onCancel?: () => void;
+  onDelete?: () => void;
 }
 
 // --------------------------------------------
@@ -80,7 +81,7 @@ function formatDateTime(iso: string): string {
 // Component
 // --------------------------------------------
 
-const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, onContinue, onRerun, onCancel }) => {
+const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, onContinue, onRerun, onCancel, onDelete }) => {
   const statusCfg = STATUS_CONFIG[run.status] || STATUS_CONFIG.pending;
 
   const completedSteps = useMemo(
@@ -240,6 +241,15 @@ const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, on
             >
               <StopCircle size={12} />
               Cancelar Análise
+            </button>
+          )}
+          {!isRunning && onDelete && (
+            <button
+              onClick={onDelete}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+            >
+              <Trash2 size={12} />
+              Excluir Análise
             </button>
           )}
         </div>
