@@ -49,6 +49,11 @@ export const FinancialSummarySchema = z.object({
     receita: z.number(),
     ebitda: z.number(),
   })),
+  top_fornecedores_por_tag01: z.array(z.object({
+    tag01: z.string(),
+    vendor: z.string(),
+    total_real: z.number(),
+  })).default([]),
 });
 
 // ============================================

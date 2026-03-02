@@ -32,7 +32,10 @@ function formatFilterContext(filterContext?: Record<string, unknown> | null): st
   return parts.join('\n');
 }
 
-function formatSummaryBlock(summary: FinancialSummary): string {
+function formatSummaryBlock(summary: FinancialSummary, compact = false): string {
+  if (compact) {
+    return '## Dados Financeiros\n```json\n' + JSON.stringify(summary) + '\n```';
+  }
   return [
     `## Resumo Financeiro (${summary.periodo})`,
     '',
@@ -90,17 +93,77 @@ function formatSummaryBlock(summary: FinancialSummary): string {
     ...summary.tendencia_mensal.map(
       (m) => `- ${m.mes}: Receita R$ ${m.receita.toLocaleString('pt-BR')}, EBITDA R$ ${m.ebitda.toLocaleString('pt-BR')}`
     ),
+    ...formatVendorSection(summary),
   ].join('\n');
 }
 
-function formatPrevOutputs(prevOutputs: PrevStepOutput[]): string {
+function formatVendorSection(summary: FinancialSummary): string[] {
+  const vendors = summary.top_fornecedores_por_tag01;
+  if (!vendors || vendors.length === 0) return [];
+
+  const lines: string[] = ['', '### Top Fornecedores por Centro de Custo (Tag01)'];
+  const byTag: Record<string, Array<{ vendor: string; total_real: number }>> = {};
+  for (const v of vendors) {
+    if (!byTag[v.tag01]) byTag[v.tag01] = [];
+    byTag[v.tag01].push({ vendor: v.vendor, total_real: v.total_real });
+  }
+  for (const [tag01, items] of Object.entries(byTag)) {
+    lines.push(`- **${tag01}**: ${items.map(v => `${v.vendor} (R$ ${v.total_real.toLocaleString('pt-BR')})`).join(', ')}`);
+  }
+  return lines;
+}
+
+// Mapa: quais campos cada agente downstream PRECISA dos outputs anteriores
+const DOWNSTREAM_NEEDS: Record<string, Record<string, string[]>> = {
+  carlos: {
+    denilson: ['*'],
+    edmundo: ['executive_performance_summary', 'margin_ebitda_impact'],
+    falcao: ['executive_performance_summary', 'ranked_variations', 'margin_ebitda_impact'],
+    _default: ['executive_performance_summary', 'ranked_variations'],
+  },
+  denilson: {
+    edmundo: ['brand_plans', 'estimated_impact'],
+    falcao: ['optimization_summary', 'estimated_impact', 'constraints_feasibility'],
+    _default: ['optimization_summary', 'estimated_impact'],
+  },
+  edmundo: {
+    falcao: ['brand_projections', 'tag_opportunity_risk_map', 'confidence_report'],
+    _default: ['brand_projections', 'closing_gap_plan'],
+  },
+};
+
+function pruneOutputForConsumer(
+  output: Record<string, unknown>,
+  producerCode: string,
+  consumerCode: string,
+): Record<string, unknown> {
+  const needs = DOWNSTREAM_NEEDS[producerCode];
+  if (!needs) return output; // sem mapa = passa tudo
+
+  const fields = needs[consumerCode] || needs['_default'];
+  if (!fields || fields.includes('*')) return output;
+
+  const pruned: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (f in output) pruned[f] = output[f];
+  }
+  return pruned;
+}
+
+function formatPrevOutputs(prevOutputs: PrevStepOutput[], consumerCode?: string): string {
   if (prevOutputs.length === 0) return '';
 
   const blocks = prevOutputs.map((p) => {
+    // Filtrar campos desnecessários para o consumidor downstream
+    const outputData = consumerCode
+      ? pruneOutputForConsumer(p.output_data, p.agent_code, consumerCode)
+      : p.output_data;
+
+    // JSON compacto (sem pretty-print) para reduzir tokens em ~40%
     return [
       `### Output de ${p.agent_code} (${p.step_type})`,
       '```json',
-      JSON.stringify(p.output_data, null, 2),
+      JSON.stringify(outputData),
       '```',
     ].join('\n');
   });
@@ -276,8 +339,8 @@ function buildDataQualityPrompt(
     objective,
     '',
     formatFilterContext(filterContext),
-    formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatSummaryBlock(summary, true),
+    formatPrevOutputs(prevOutputs, 'bruna'),
     '',
     'Analise a qualidade dos dados e produza seus 5 entregáveis: executive_data_quality_summary, quality_score + quality_classification, fragility_points, data_integrity_risk_summary e normalization_actions.',
   ].join('\n');
@@ -402,8 +465,8 @@ function buildPerformancePrompt(
     objective,
     '',
     formatFilterContext(filterContext),
-    formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatSummaryBlock(summary, true),
+    formatPrevOutputs(prevOutputs, 'carlos'),
     '',
     'Analise a performance financeira e produza seus 5 entregáveis: executive_performance_summary, dre_line_analysis, ranked_variations, margin_ebitda_impact e recommended_analytical_actions.',
   ].join('\n');
@@ -583,8 +646,8 @@ function buildOptimizationPrompt(
     objective,
     '',
     formatFilterContext(filterContext),
-    formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatSummaryBlock(summary, true),
+    formatPrevOutputs(prevOutputs, 'denilson'),
     '',
     'Analise os dados e produza seus 5 entregáveis: brand_plans (por marca), optimization_summary, constraints_feasibility, estimated_impact e action_prioritization_matrix.',
   ].join('\n');
@@ -762,8 +825,8 @@ function buildForecastPrompt(
     objective,
     '',
     formatFilterContext(filterContext),
-    formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatSummaryBlock(summary, true),
+    formatPrevOutputs(prevOutputs, 'edmundo'),
     '',
     'Analise os dados e produza seus 7 entregáveis: brand_projections (por marca com 3 cenários), adjusted_year_end_curve, tag_opportunity_risk_map, closing_gap_plan, sacrifice_map, confidence_report e curve_confirmation_signals.',
   ].join('\n');
@@ -914,13 +977,16 @@ function buildRiskPrompt(
     '- Sem alarmismo artificial, sem suavizar risco material',
     '- Se o plano do supervisor indicar focus_areas, priorize essas áreas',
     '',
-    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens):',
-    '- executive_risk_summary: MÁXIMO 3 parágrafos curtos',
-    '- brand_risk_assessments: MÁXIMO 5 riscos por marca, descrições de 1-2 frases',
-    '- risk_register: MÁXIMO 10 riscos totais, cada com 1-2 frases de descrição',
-    '- sensitivity_matrix: MÁXIMO 6 cenários',
-    '- non_negotiable_alerts: MÁXIMO 3 itens, 1 frase cada',
-    '- Campos de texto: MÁXIMO 2 frases curtas. Priorize dados numéricos sobre narrativa',
+    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens, RESPEITE RIGOROSAMENTE):',
+    '- risk_exposure_by_brand: MÁXIMO 4 marcas. risk_summary e relation_to_* com 1 frase cada',
+    '- critical_alerts_pack: MÁXIMO 3 alertas por severidade (12 total). rationale e mitigation com 1 frase cada',
+    '- tag_risk_map: MÁXIMO 7 tags. Campos de impacto com 1 frase cada',
+    '- plan_sustainability_review: MÁXIMO 4 itens por array de constraints',
+    '- curve_fragility_note: MÁXIMO 4 itens por array',
+    '- risk_acceptability_matrix: MÁXIMO 6 riscos',
+    '- executive_risk_summary: MÁXIMO 5 itens por array, 1 frase cada',
+    '- Campos de texto: MÁXIMO 1-2 frases curtas. Priorize dados numéricos sobre narrativa',
+    '- ATENÇÃO: Você é o step 6 do pipeline e recebe muitos dados. Seja EXTREMAMENTE conciso para não exceder o limite de tokens.',
   ].join('\n');
 
   const user = [
@@ -928,8 +994,8 @@ function buildRiskPrompt(
     objective,
     '',
     formatFilterContext(filterContext),
-    formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatSummaryBlock(summary, true),
+    formatPrevOutputs(prevOutputs, 'falcao'),
     '',
     'Avalie os riscos de todos os outputs anteriores e produza seus 7 entregáveis: risk_exposure_by_brand, critical_alerts_pack, tag_risk_map, plan_sustainability_review, curve_fragility_note, risk_acceptability_matrix e executive_risk_summary.',
   ].join('\n');
@@ -1026,7 +1092,7 @@ function buildConsolidationPrompt(
     '',
     formatFilterContext(filterContext),
     formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatPrevOutputs(prevOutputs, 'alex'),
     '',
     'Consolide todas as análises em: Executive Consolidation Report, Cross-Agent Conflicts, Final Recommendations e Board Presentation Outline.',
   ].join('\n');
@@ -1162,6 +1228,14 @@ function buildDirectorReviewPrompt(
     '- Toda resposta deve ter owner e deadline quando aplicável',
     '- A avaliação de prontidão deve ser rigorosa e prática',
     '- O pack de reforço deve ser útil para preparação antes do CEO',
+    '',
+    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens):',
+    '- question_pack: MÁXIMO 15 perguntas. Cada rationale com 1 frase',
+    '- answer_pack: MÁXIMO 15 respostas. Cada campo com 1-2 frases',
+    '- execution_ownership_review: MÁXIMO 5 itens por array',
+    '- pre_ceo_reinforcement: MÁXIMO 5 itens por array',
+    '- Campos de texto: MÁXIMO 2 frases curtas',
+    '- ATENÇÃO: Você é o step 8 do pipeline e recebe MUITOS dados anteriores. Seja conciso.',
   ].join('\n');
 
   const user = [
@@ -1170,7 +1244,7 @@ function buildDirectorReviewPrompt(
     '',
     formatFilterContext(filterContext),
     formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatPrevOutputs(prevOutputs, 'diretor'),
     '',
     'Revise o material sob a ótica de diretoria executiva. Gere: Director Question Pack, Expected Director Answer Pack, Execution & Ownership Review, Executive Material Readiness Review e Pre-CEO Reinforcement Pack.',
   ].join('\n');
@@ -1301,6 +1375,14 @@ function buildCEOReviewPrompt(
     '- Toda resposta esperada deve conter obrigatoriamente: (1) resposta direta, (2) número principal, (3) justificativa, (4) ação associada, (5) fragilidade ou ressalva',
     '- A avaliação de prontidão deve ser honesta e rigorosa',
     '- Considere o contexto escolar em toda a análise',
+    '',
+    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens):',
+    '- question_pack: MÁXIMO 18 perguntas. Cada rationale com 1 frase',
+    '- answer_pack: MÁXIMO 18 respostas. Cada campo com 1-2 frases',
+    '- weakness_report: MÁXIMO 5 itens por array',
+    '- executive_rehearsal: MÁXIMO 6 cenários. Respostas com 2-3 frases',
+    '- Campos de texto: MÁXIMO 2 frases curtas',
+    '- ATENÇÃO: Você é o step 9 (último) do pipeline. Recebe dados de TODOS os agentes. Seja EXTREMAMENTE conciso.',
   ].join('\n');
 
   const user = [
@@ -1309,7 +1391,7 @@ function buildCEOReviewPrompt(
     '',
     formatFilterContext(filterContext),
     formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs),
+    formatPrevOutputs(prevOutputs, 'ceo'),
     '',
     'Revise criticamente todo o material. Gere: CEO Question Pack, Expected Answer Pack, Weakness & Exposure Report, Decision Readiness Assessment e Executive Rehearsal Simulation.',
   ].join('\n');

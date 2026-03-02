@@ -1,4 +1,4 @@
-import type { FinancialSummary } from '../../../types/agentTeam';
+import type { FinancialSummary, VendorBreakdown } from '../../../types/agentTeam';
 import { FinancialSummarySchema } from '../../../types/agentTeamSchemas';
 
 // --------------------------------------------
@@ -68,7 +68,7 @@ function mapScenario(scenario: string): Scenario | null {
 // Aggregação principal
 // --------------------------------------------
 
-export function buildFinancialSummary(rows: SomaTagsRow[]): FinancialSummary {
+export function buildFinancialSummary(rows: SomaTagsRow[], vendorData?: VendorBreakdown[]): FinancialSummary {
   // 1. Acumuladores por categoria + scenario
   const acc: Record<Category, Record<Scenario, number>> = {
     receita:           { real: 0, orcado: 0, a1: 0 },
@@ -236,6 +236,7 @@ export function buildFinancialSummary(rows: SomaTagsRow[]): FinancialSummary {
     top5_tags01_receita,
     top5_tags01_custo,
     tendencia_mensal,
+    top_fornecedores_por_tag01: vendorData || [],
   };
 
   // 15. Validar com Zod — lança se inválido

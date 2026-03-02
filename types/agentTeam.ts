@@ -126,6 +126,7 @@ export interface FinancialSummary {
   top5_tags01_receita: TagTotal[];
   top5_tags01_custo: TagTotal[];
   tendencia_mensal: MonthlyTrend[];
+  top_fornecedores_por_tag01?: VendorBreakdown[];
 }
 
 export interface TagVariation {
@@ -144,6 +145,12 @@ export interface MonthlyTrend {
   mes: string;
   receita: number;
   ebitda: number;
+}
+
+export interface VendorBreakdown {
+  tag01: string;
+  vendor: string;
+  total_real: number;
 }
 
 // --------------------------------------------

@@ -9,6 +9,7 @@ import type {
   GetRunResponse,
   ListRunsResponse,
   FinancialSummary,
+  VendorBreakdown,
 } from '../types/agentTeam';
 import {
   getZodSchemaForStep,
@@ -211,6 +212,66 @@ export async function startPipeline(
   // 2. buildFinancialSummary client-side
   const financialSummary = buildFinancialSummary(dreSnapshot as any[]);
 
+  // 2b. Enriquecer com top fornecedores por tag01 (via get_dre_dimension existente)
+  try {
+    const topTag01s = [
+      ...financialSummary.top5_tags01_receita.map(t => t.tag01),
+      ...financialSummary.top5_tags01_custo.map(t => t.tag01),
+    ];
+    const uniqueTag01s = [...new Set(topTag01s)];
+
+    if (uniqueTag01s.length > 0) {
+      const fc = filterContext as Record<string, any> | null;
+      const year = fc?.year || new Date().getFullYear();
+      const monthFrom = fc?.months_range ? `${year}-01` : null;
+      const monthTo = fc?.months_range ? `${year}-12` : null;
+
+      const vendorPromises = uniqueTag01s.map(async (tag01): Promise<VendorBreakdown[]> => {
+        const { data } = await supabase.rpc('get_dre_dimension', {
+          p_month_from: monthFrom,
+          p_month_to: monthTo,
+          p_conta_contabils: null,
+          p_scenario: 'Real',
+          p_dimension: 'vendor',
+          p_marcas: (fc?.marcas as string[]) || null,
+          p_nome_filiais: (fc?.filiais as string[]) || null,
+          p_tags01: [tag01],
+          p_tags02: null,
+          p_tags03: null,
+          p_tag0: null,
+          p_recurring: null,
+        });
+
+        if (!data || data.length === 0) return [];
+
+        // Agregar por vendor (somando todos os meses) e pegar top 3
+        const vendorTotals: Record<string, number> = {};
+        for (const row of data as any[]) {
+          const v = row.dimension_value || '';
+          if (!v || v === 'N/A') continue;
+          vendorTotals[v] = (vendorTotals[v] || 0) + Number(row.total_amount);
+        }
+
+        return Object.entries(vendorTotals)
+          .filter(([v]) => v.trim() !== '')
+          .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+          .slice(0, 3)
+          .map(([vendor, total]) => ({
+            tag01,
+            vendor,
+            total_real: Math.round(total * 100) / 100,
+          }));
+      });
+
+      const vendorResults = await Promise.all(vendorPromises);
+      financialSummary.top_fornecedores_por_tag01 = vendorResults.flat();
+      console.log(`✅ Vendor data: ${financialSummary.top_fornecedores_por_tag01.length} entries para ${uniqueTag01s.length} tag01s`);
+    }
+  } catch (err) {
+    console.warn('⚠️ Falha ao buscar vendor data (pipeline continua sem):', err);
+    financialSummary.top_fornecedores_por_tag01 = [];
+  }
+
   // 3. Criar agent_run
   const { data: run, error: runError } = await supabase
     .from('agent_runs')
@@ -261,7 +322,7 @@ export async function startPipeline(
 // --------------------------------------------
 
 export async function processNextStep(runId: string): Promise<void> {
-  const PIPELINE_STEP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos máximo por step
+  const PIPELINE_STEP_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutos máximo por step
 
   // 1. Claim próximo step pending via RPC
   const { data: stepId, error: claimError } = await supabase
@@ -284,12 +345,12 @@ export async function processNextStep(runId: string): Promise<void> {
   // Safety net: timeout de 5 min para o step inteiro
   const stepTimeoutId = setTimeout(() => {
     const elapsed = Math.round((Date.now() - startTime) / 1000);
-    console.error(`⏰ Step ${step.step_order} (${step.agent_code}) excedeu timeout de 5min (${elapsed}s)`);
+    console.error(`⏰ Step ${step.step_order} (${step.agent_code}) excedeu timeout de 8min (${elapsed}s)`);
     supabase
       .from('agent_steps')
       .update({
         status: 'failed',
-        error_message: `Timeout: step excedeu limite de 5 minutos (${elapsed}s)`,
+        error_message: `Timeout: step excedeu limite de 8 minutos (${elapsed}s)`,
         duration_ms: Date.now() - startTime,
       })
       .eq('id', step.id)
@@ -409,7 +470,7 @@ export async function processNextStep(runId: string): Promise<void> {
     clearTimeout(stepTimeoutId);
     const durationMs = Date.now() - startTime;
     const errorMsg = err.name === 'AbortError'
-      ? `Timeout: step excedeu limite de 5 minutos`
+      ? `Timeout: step excedeu limite de 7 minutos`
       : (err.message || 'Erro desconhecido');
 
     await supabase
@@ -562,6 +623,15 @@ export async function cancelRun(runId: string): Promise<void> {
   if (error) throw new Error(`Erro ao cancelar run: ${error.message}`);
 }
 
+// --------------------------------------------
+// deleteRun — Exclui run e steps (CASCADE)
+// --------------------------------------------
+
+export async function deleteRun(runId: string): Promise<void> {
+  const { error } = await supabase.from('agent_runs').delete().eq('id', runId);
+  if (error) throw new Error(`Erro ao excluir análise: ${error.message}`);
+}
+
 // ============================================
 // Internal helpers
 // ============================================
@@ -580,16 +650,25 @@ async function callClaudeViaProxy(
   isConsolidation: boolean = false,
   agentCode: string = '',
 ): Promise<ClaudeResult> {
-  const model = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  const defaultModel = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
+  // Steps leves (Alex plan, Bruna) usam Haiku 4.5 (~75% mais barato)
+  const isLightStep = ['alex', 'bruna'].includes(agentCode) && !isConsolidation;
+  const model = isLightStep ? 'claude-haiku-4-5-20251001' : defaultModel;
   const isHeavyOutput = ['carlos', 'denilson', 'edmundo', 'falcao'].includes(agentCode);
-  const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : 8192;
+  const isReview = ['diretor', 'ceo'].includes(agentCode);
+  const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : isReview ? 12288 : 8192;
 
   // Forçar JSON via prompt (sem output_config)
   const fullSystem = system + '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO — máximo 2 frases por campo string.';
 
-  // Timeout de 5 minutos para qualquer chamada
+  // Prompt caching: enviar system como array com cache_control para reutilização entre steps
+  const systemPayload = [
+    { type: 'text' as const, text: fullSystem, cache_control: { type: 'ephemeral' as const } },
+  ];
+
+  // Timeout de 7 minutos para qualquer chamada (margem para agentes tardios com contexto grande)
   const controller = new AbortController();
-  const STEP_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
+  const STEP_TIMEOUT_MS = 7 * 60 * 1000; // 7 minutos
   const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT_MS);
 
   const res = await fetch('/api/anthropic', {
@@ -598,7 +677,7 @@ async function callClaudeViaProxy(
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
-      system: fullSystem,
+      system: systemPayload,
       messages: [{ role: 'user', content: user }],
     }),
     signal: controller.signal,
