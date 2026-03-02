@@ -43,7 +43,7 @@ const App: React.FC = () => {
     currentFilters
   } = useTransactions();
 
-  const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewType>('soma_tags');
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 

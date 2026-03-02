@@ -32,14 +32,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
   const { user, signOut, isAdmin } = useAuth();
 
   const menuItems = [
-    { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
     { id: 'soma_tags',     label: 'DRE Gerencial',      icon: TableProperties },
     { id: 'movements',     label: 'Lançamentos',         icon: ReceiptText },
     { id: 'manual_changes',label: 'Aprovações',          icon: History, badge: pendingCount },
-    { id: 'kpis',          label: 'Indicadores e KPIs', icon: BarChart3 },
-    { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
-    { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
     ...(isAdmin ? [
+      { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
+      { id: 'kpis',          label: 'Indicadores e KPIs', icon: BarChart3 },
+      { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
+      { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
       { id: 'executive_dashboard', label: 'CEO Dashboard', icon: TrendingUp },
       { id: 'holding_dashboard', label: 'Holding', icon: Building2 },
       { id: 'agent_team', label: 'Equipe IA', icon: Brain },
