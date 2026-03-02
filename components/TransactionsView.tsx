@@ -335,6 +335,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     return saved ? { ...initialFilters, ...JSON.parse(saved) } : initialFilters;
   });
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [filterResetKey, setFilterResetKey] = useState(0);
 
   // Debounced filter setter for text inputs
   const debouncedSetFilter = useMemo(
@@ -1209,6 +1210,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
   const handleClearAllFilters = () => {
     setColFilters(initialFilters);
+    setFilterResetKey(k => k + 1); // força re-render dos inputs de texto (defaultValue)
     if (clearGlobalFilters) clearGlobalFilters();
     // Limpar também os dados da busca
     setHasSearchedTransactions(false);
@@ -1473,11 +1475,11 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
               {/* Segunda linha de filtros */}
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-1.5">
-                <FilterTextInput label="Ticket" id="ticket" value={colFilters.ticket} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
-                <FilterTextInput label="Chave ID" id="chave_id" value={colFilters.chave_id} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
-                <FilterTextInput label="Fornecedor" id="vendor" value={colFilters.vendor} colFilters={colFilters} setColFilters={setColFilters} className="xl:col-span-2" debouncedSetFilter={debouncedSetFilter} />
-                <FilterTextInput label="Descrição" id="description" value={colFilters.description} colFilters={colFilters} setColFilters={setColFilters} className="xl:col-span-3" debouncedSetFilter={debouncedSetFilter} />
-                <FilterTextInput label="Valor" id="amount" value={colFilters.amount} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
+                <FilterTextInput key={`ticket-${filterResetKey}`} label="Ticket" id="ticket" value={colFilters.ticket} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
+                <FilterTextInput key={`chave_id-${filterResetKey}`} label="Chave ID" id="chave_id" value={colFilters.chave_id} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
+                <FilterTextInput key={`vendor-${filterResetKey}`} label="Fornecedor" id="vendor" value={colFilters.vendor} colFilters={colFilters} setColFilters={setColFilters} className="xl:col-span-2" debouncedSetFilter={debouncedSetFilter} />
+                <FilterTextInput key={`description-${filterResetKey}`} label="Descrição" id="description" value={colFilters.description} colFilters={colFilters} setColFilters={setColFilters} className="xl:col-span-3" debouncedSetFilter={debouncedSetFilter} />
+                <FilterTextInput key={`amount-${filterResetKey}`} label="Valor" id="amount" value={colFilters.amount} colFilters={colFilters} setColFilters={setColFilters} debouncedSetFilter={debouncedSetFilter} />
                 <MultiSelectFilter id="recurring" label="Recorrência" options={dynamicOptions.recurrings} selected={colFilters.recurring} active={isFilterActive('recurring')} isOpen={openDropdown === 'recurring'} onToggle={() => setOpenDropdown(openDropdown === 'recurring' ? null : 'recurring')} onClear={() => setColFilters(prev => ({...prev, recurring: []}))} onToggleItem={(val) => toggleMultiFilter('recurring', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, recurring: [...new Set([...prev.recurring, ...vals])]}))} />
                 <MultiSelectFilter id="status" label="Status" options={dynamicOptions.statuses} selected={colFilters.status} active={isFilterActive('status')} isOpen={openDropdown === 'status'} onToggle={() => setOpenDropdown(openDropdown === 'status' ? null : 'status')} onClear={() => setColFilters(prev => ({...prev, status: []}))} onToggleItem={(val) => toggleMultiFilter('status', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, status: [...new Set([...prev.status, ...vals])]}))} />
               </div>

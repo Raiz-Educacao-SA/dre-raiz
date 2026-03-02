@@ -141,7 +141,7 @@ const computeFilterContext = (
 
 // ── Componente principal ──────────────────────────────────────────────────────
 interface SomaTagsViewProps {
-  onRegisterActions?: (actions: { refresh: () => void; exportExcel: () => void }) => void;
+  onRegisterActions?: (actions: { refresh: () => void; exportExcel: () => void; exportBook: () => void }) => void;
   onLoadingChange?: (loading: boolean) => void;
   onDataChange?: (hasData: boolean) => void;
   onDrillDown?: (data: { categories: string[]; scenario?: string; filters?: Record<string, any> }) => void;
@@ -199,7 +199,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   ]);
 
   // ── Filtro Recorrência ────────────────────────────────────────────────────
-  const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>(null);
+  const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>('Sim');
 
   // ── Drill-down ────────────────────────────────────────────────────────────
   const [dimensionCache,    setDimensionCache]    = useState<Record<string, DREDimensionRow[]>>({});
@@ -244,7 +244,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const filiaisRef        = useRef(selectedFiliais);
   const tags02Ref     = useRef(selectedTags02);
   const tags03Ref     = useRef(selectedTags03);
-  const recurringRef  = useRef<'Sim' | 'Não' | null>(null);
+  const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
   const allowedMarcasRef = useRef<string[] | undefined>(allowedMarcas);
   useEffect(() => { yearRef.current           = year;            }, [year]);
   useEffect(() => { selectedMonthsRef.current = selectedMonths;  }, [selectedMonths]);
@@ -1007,10 +1007,32 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     year, selectedMonths, monthsToShow, sortConfig,
   ]);
 
-  // Registra ações no App.tsx (header) — deve ficar após exportExcel e fetchData
+  // Exportar Book de Resultados (PPTX)
+  const exportBook = useCallback(async () => {
+    try {
+      const { toast } = await import('sonner');
+      toast.info('Gerando Book de Resultados...');
+      const { prepareBookDeResultadosData } = await import('../services/bookDeResultadosDataService');
+      const { generateBookDeResultados } = await import('../services/bookDeResultadosPptService');
+      const month = selectedMonths.length > 0 ? selectedMonths[0] : '01';
+      const data = await prepareBookDeResultadosData({
+        year: yearRef.current,
+        month,
+        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
+        recurring,
+      });
+      await generateBookDeResultados(data);
+      toast.success('Book de Resultados exportado com sucesso!');
+    } catch (err: any) {
+      const { toast } = await import('sonner');
+      toast.error(err?.message || 'Erro ao gerar Book de Resultados');
+    }
+  }, [selectedMonths, selectedMarcas, recurring]);
+
+  // Registra ações no App.tsx (header) — deve ficar após exportExcel, exportBook e fetchData
   useEffect(() => {
-    onRegisterActions?.({ refresh: fetchData, exportExcel });
-  }, [onRegisterActions, fetchData, exportExcel]);
+    onRegisterActions?.({ refresh: fetchData, exportExcel, exportBook });
+  }, [onRegisterActions, fetchData, exportExcel, exportBook]);
 
   // Sincroniza loading com App.tsx
   useEffect(() => { onLoadingChange?.(loading); }, [loading, onLoadingChange]);

@@ -21,7 +21,7 @@ const HoldingDashboardPage = React.lazy(() => import('./components/holding/Holdi
 const AgentTeamView = React.lazy(() => import('./components/AgentTeamView'));
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
-import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown } from 'lucide-react';
+import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown, FileSpreadsheet, Presentation } from 'lucide-react';
 import * as supabaseService from './services/supabaseService';
 import { getSomaTags, SomaTagsRow } from './services/supabaseService';
 import { useAuth } from './contexts/AuthContext';
@@ -95,9 +95,11 @@ const App: React.FC = () => {
   const [somaTagsActions, setSomaTagsActions] = useState<{
     refresh?: () => void;
     exportExcel?: () => void;
+    exportBook?: () => void;
   }>({});
   const [isSomaTagsLoading, setIsSomaTagsLoading] = useState(false);
   const [hasSomaTagsData, setHasSomaTagsData] = useState(false);
+  const [isSomaTagsExportOpen, setIsSomaTagsExportOpen] = useState(false);
   const [somaTagsPresentationMode, setSomaTagsPresentationMode] = useState<'executive' | 'detailed'>('detailed');
 
   // Usar transactions do Context em vez de estado local
@@ -982,15 +984,50 @@ const App: React.FC = () => {
                     <Table2 size={10} /><span>Detalhado</span>
                   </button>
                 </div>
-                <button
-                  onClick={() => somaTagsActions.exportExcel?.()}
-                  disabled={!hasSomaTagsData || isSomaTagsLoading}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-[10px] uppercase tracking-wider shadow-md"
-                  title="Exportar Excel do DRE Gerencial"
-                >
-                  <Download size={14} />
-                  <span className="whitespace-nowrap">Exportar</span>
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setIsSomaTagsExportOpen(!isSomaTagsExportOpen)}
+                    disabled={!hasSomaTagsData || isSomaTagsLoading}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-[10px] uppercase tracking-wider shadow-md"
+                    title="Exportar dados do DRE Gerencial"
+                  >
+                    <Download size={14} />
+                    <span className="whitespace-nowrap">Exportar</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${isSomaTagsExportOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isSomaTagsExportOpen && (
+                    <div className="absolute top-full mt-1 right-0 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 min-w-[220px] overflow-hidden">
+                      <button
+                        onClick={() => {
+                          somaTagsActions.exportExcel?.();
+                          setIsSomaTagsExportOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left text-xs font-semibold text-gray-700"
+                      >
+                        <FileSpreadsheet size={16} className="text-green-600" />
+                        <div>
+                          <div className="font-bold">Exportar Excel</div>
+                          <div className="text-[10px] text-gray-500 font-normal">Tabela DRE em .xlsx</div>
+                        </div>
+                      </button>
+                      <div className="h-px bg-gray-100" />
+                      <button
+                        onClick={() => {
+                          somaTagsActions.exportBook?.();
+                          setIsSomaTagsExportOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left text-xs font-semibold text-gray-700"
+                      >
+                        <Presentation size={16} className="text-orange-600" />
+                        <div>
+                          <div className="font-bold">Book de Resultados</div>
+                          <div className="text-[10px] text-gray-500 font-normal">Apresentação PPTX completa</div>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={() => somaTagsActions.refresh?.()}
                   disabled={isSomaTagsLoading}
