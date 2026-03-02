@@ -6,7 +6,7 @@ import type { DREFilterOptions } from '../services/supabaseService';
 import type { Team, Agent, TeamAgent, AgentRun, AgentStep } from '../types/agentTeam';
 import * as agentTeamService from '../services/agentTeamService';
 import MultiSelectFilter from './MultiSelectFilter';
-import RunHeader from './agentTeam/RunHeader';
+import RunHeader, { FilterBadges } from './agentTeam/RunHeader';
 import AgentWorkstation from './agentTeam/AgentWorkstation';
 import ConsolidationPanel from './agentTeam/ConsolidationPanel';
 import ScheduleManager from './agentTeam/ScheduleManager';
@@ -569,11 +569,14 @@ const AgentTeamView: React.FC = () => {
                   onClick={() => setActiveRunId(run.id)}
                   className="flex-1 flex items-center justify-between text-left min-w-0"
                 >
-                  <div className="min-w-0">
-                    <span className="font-medium text-gray-900">{run.objective.slice(0, 80)}</span>
-                    <span className="text-gray-400 ml-2">
-                      {new Date(run.started_at).toLocaleDateString('pt-BR')}
-                    </span>
+                  <div className="min-w-0 space-y-1">
+                    <div>
+                      <span className="font-medium text-gray-900">{run.objective.slice(0, 80)}</span>
+                      <span className="text-gray-400 ml-2">
+                        {new Date(run.started_at).toLocaleDateString('pt-BR')}
+                      </span>
+                    </div>
+                    <FilterBadges filterContext={run.filter_context} size="compact" />
                   </div>
                   <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] shrink-0 ${
                     run.status === 'completed' ? 'bg-green-100 text-green-700' :

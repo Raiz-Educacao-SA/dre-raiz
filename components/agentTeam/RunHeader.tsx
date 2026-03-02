@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Target, Users, Clock, Loader2, CheckCircle2, XCircle, RefreshCw, Play, Activity, StopCircle, Trash2 } from 'lucide-react';
+import { Target, Users, Clock, Loader2, CheckCircle2, XCircle, RefreshCw, Play, Activity, StopCircle, Trash2, Flag, Building2, Layers, CalendarDays } from 'lucide-react';
 import type { AgentRun, AgentStep } from '../../types/agentTeam';
 
 // --------------------------------------------
@@ -78,6 +78,57 @@ function formatDateTime(iso: string): string {
 }
 
 // --------------------------------------------
+// Filter Badges — exibe filtros aplicados no run
+// --------------------------------------------
+
+export function FilterBadges({ filterContext, size = 'normal' }: { filterContext: Record<string, unknown> | null; size?: 'normal' | 'compact' }) {
+  if (!filterContext) return null;
+
+  const marcas = filterContext.marcas as string[] | undefined;
+  const filiais = filterContext.filiais as string[] | undefined;
+  const tags01 = filterContext.tags01 as string[] | undefined;
+  const months = filterContext.months_range as string | undefined;
+
+  const hasSome = marcas?.length || filiais?.length || tags01?.length || (months && months !== 'Jan-Dez');
+  if (!hasSome) return null;
+
+  const isCompact = size === 'compact';
+  const badgeBase = isCompact
+    ? 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium'
+    : 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium';
+  const iconSize = isCompact ? 9 : 11;
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {marcas?.map(m => (
+        <span key={m} className={`${badgeBase} bg-orange-50 text-orange-700 border border-orange-200`}>
+          <Flag size={iconSize} />
+          {m}
+        </span>
+      ))}
+      {filiais?.map(f => (
+        <span key={f} className={`${badgeBase} bg-blue-50 text-blue-700 border border-blue-200`}>
+          <Building2 size={iconSize} />
+          {f}
+        </span>
+      ))}
+      {tags01?.map(t => (
+        <span key={t} className={`${badgeBase} bg-purple-50 text-purple-700 border border-purple-200`}>
+          <Layers size={iconSize} />
+          {t}
+        </span>
+      ))}
+      {months && months !== 'Jan-Dez' && (
+        <span className={`${badgeBase} bg-sky-50 text-sky-700 border border-sky-200`}>
+          <CalendarDays size={iconSize} />
+          {months}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------
 // Component
 // --------------------------------------------
 
@@ -123,6 +174,9 @@ const RunHeader: React.FC<RunHeaderProps> = ({ run, steps, teamName, isAdmin, on
           </span>
         </div>
       </div>
+
+      {/* Row 1.5: Filter badges */}
+      <FilterBadges filterContext={run.filter_context} />
 
       {/* Row 2: Meta */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-500">
