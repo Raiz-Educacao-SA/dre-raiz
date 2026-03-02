@@ -131,7 +131,10 @@ function safeStr(val: unknown): string | null {
   if (typeof val === 'number') return String(val);
   if (typeof val === 'boolean') return val ? 'Sim' : 'Não';
   if (val && typeof val === 'object') {
-    try { return JSON.stringify(val); } catch { return null; }
+    if (Array.isArray(val)) {
+      try { return JSON.stringify(val); } catch { return null; }
+    }
+    try { return humanizedToString(humanizeObject(val as Record<string, unknown>)); } catch { return null; }
   }
   return null;
 }
@@ -143,7 +146,10 @@ function safeVal(val: unknown): string {
   if (typeof val === 'number') return val.toLocaleString('pt-BR');
   if (typeof val === 'boolean') return val ? 'Sim' : 'Não';
   if (typeof val === 'object') {
-    try { return JSON.stringify(val); } catch { return '—'; }
+    if (Array.isArray(val)) {
+      try { return JSON.stringify(val); } catch { return '—'; }
+    }
+    try { return humanizedToString(humanizeObject(val as Record<string, unknown>)); } catch { return '—'; }
   }
   return String(val);
 }
@@ -153,6 +159,107 @@ function safeNum(val: unknown, fallback = 0): number {
   if (typeof val === 'number') return val;
   if (typeof val === 'string') { const n = parseFloat(val); return isNaN(n) ? fallback : n; }
   return fallback;
+}
+
+// --------------------------------------------
+// Humanizer — extrai texto legível de objetos
+// --------------------------------------------
+
+/** Chaves que contêm o texto principal (ordem de prioridade) */
+const TEXT_KEYS = [
+  'description','text','finding','action','summary','title','name',
+  'explanation','rationale','message','narrative','strategic_angle','observation',
+  'conflict_description','alert_title','action_title','point','issue','comment',
+  'recommendation','suggestion','insight','note','detail',
+];
+
+/** Chaves que viram labels inline ("Resp.: João | Prazo: 30d") */
+const DETAIL_MAP: Record<string, string> = {
+  owner: 'Resp.', recommended_owner: 'Resp.', deadline: 'Prazo', priority: 'Prioridade',
+  severity: 'Severidade', impact: 'Impacto', expected_impact: 'Impacto', area: 'Área',
+  brand: 'Marca', brand_name: 'Marca', urgency: 'Urgência', resolution: 'Resolução',
+  agents_involved: 'Agentes', why_this_resolution: 'Motivo', mitigation: 'Mitigação',
+  feasibility_level: 'Viabilidade', status: 'Status',
+};
+
+/** Chaves técnicas a ignorar */
+const SKIP_KEYS = new Set([
+  'id','question_id','linked_question_id','linked_material_section',
+  'linked_agent_output','ranking_position','step_type','agent_code','question_category',
+  'alert_type','risk_type','action_type','impact_type','variation_nature','type',
+  'scenario_affected','tag_level',
+]);
+
+interface HumanizedResult {
+  main: string;
+  details: Array<{ label: string; value: string }>;
+}
+
+/** Extrai texto legível de um objeto — retorna texto principal + detalhes inline */
+function humanizeObject(obj: Record<string, unknown>): HumanizedResult {
+  const details: Array<{ label: string; value: string }> = [];
+  let main = '';
+  const usedKeys = new Set<string>();
+
+  // 1. Procurar texto principal pela ordem de prioridade
+  for (const key of TEXT_KEYS) {
+    if (key in obj && obj[key] != null) {
+      const v = obj[key];
+      if (typeof v === 'string' && v.trim()) {
+        main = v.trim();
+        usedKeys.add(key);
+        break;
+      }
+    }
+  }
+
+  // 2. Coletar campos de DETAIL_MAP
+  for (const [key, label] of Object.entries(DETAIL_MAP)) {
+    if (key in obj && obj[key] != null && !usedKeys.has(key)) {
+      const v = obj[key];
+      const str = typeof v === 'string' ? v.trim()
+        : typeof v === 'number' ? String(v)
+        : typeof v === 'boolean' ? (v ? 'Sim' : 'Não')
+        : Array.isArray(v) ? v.map(x => typeof x === 'string' ? x : String(x)).join(', ')
+        : null;
+      if (str) {
+        details.push({ label, value: str });
+        usedKeys.add(key);
+      }
+    }
+  }
+
+  // 3. Se não encontrou texto principal, usar primeiro valor string do objeto
+  if (!main) {
+    for (const [key, v] of Object.entries(obj)) {
+      if (usedKeys.has(key) || SKIP_KEYS.has(key)) continue;
+      if (typeof v === 'string' && v.trim()) {
+        main = v.trim();
+        usedKeys.add(key);
+        break;
+      }
+    }
+  }
+
+  // 4. Fallback final: juntar todos os strings restantes
+  if (!main) {
+    const remaining: string[] = [];
+    for (const [key, v] of Object.entries(obj)) {
+      if (usedKeys.has(key) || SKIP_KEYS.has(key)) continue;
+      if (typeof v === 'string' && v.trim()) remaining.push(v.trim());
+      else if (typeof v === 'number') remaining.push(String(v));
+    }
+    main = remaining.join(' — ') || JSON.stringify(obj);
+  }
+
+  return { main, details };
+}
+
+/** Formata resultado humanizado como string plana */
+function humanizedToString(h: HumanizedResult): string {
+  if (h.details.length === 0) return h.main;
+  const detailStr = h.details.map(d => `${d.label}: ${d.value}`).join(' | ');
+  return `${h.main} — ${detailStr}`;
 }
 
 function TextBlock({ text }: { text: unknown }) {
@@ -171,6 +278,29 @@ function BulletList({ items }: { items: unknown[] | undefined | null }) {
   return (
     <ul className="space-y-1">
       {items.map((item, i) => {
+        // Objeto não-array → renderização rica com details inline
+        if (item && typeof item === 'object' && !Array.isArray(item)) {
+          const h = humanizeObject(item as Record<string, unknown>);
+          if (!h.main) return null;
+          return (
+            <li key={i} className="flex items-start gap-2">
+              <span className="mt-1.5 w-1 h-1 rounded-full bg-gray-400 shrink-0" />
+              <div>
+                <span className="text-xs text-gray-700">{h.main}</span>
+                {h.details.length > 0 && (
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                    {h.details.map((d, j) => (
+                      <span key={j} className="text-[9px] text-gray-500 font-medium">
+                        {d.label}: {d.value}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </li>
+          );
+        }
+        // String ou primitivo → comportamento original
         const s = safeStr(item);
         if (!s) return null;
         return (

@@ -651,11 +651,11 @@ async function callClaudeViaProxy(
   agentCode: string = '',
 ): Promise<ClaudeResult> {
   const defaultModel = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
-  // Steps leves (Alex plan, Bruna) usam Haiku 4.5 (~75% mais barato)
-  const isLightStep = ['alex', 'bruna', 'edmundo'].includes(agentCode) && !isConsolidation;
+  // Steps leves (Alex plan, Bruna, Edmundo, Denilson) usam Haiku 4.5 (~75% mais barato)
+  const isLightStep = ['alex', 'bruna', 'edmundo', 'denilson'].includes(agentCode) && !isConsolidation;
   const model = isLightStep ? 'claude-haiku-4-5-20251001' : defaultModel;
-  const isHeavyOutput = ['carlos', 'denilson'].includes(agentCode);
-  const isMediumOutput = ['edmundo', 'falcao'].includes(agentCode);
+  const isHeavyOutput = ['carlos'].includes(agentCode);
+  const isMediumOutput = ['denilson', 'edmundo', 'falcao'].includes(agentCode);
   const isReview = ['diretor', 'ceo'].includes(agentCode);
   const maxTokens = isConsolidation ? 16384
     : isHeavyOutput ? 16384
