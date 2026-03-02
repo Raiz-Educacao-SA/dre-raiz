@@ -729,7 +729,7 @@ function extractJsonFromText(text: string): Record<string, unknown> {
     try { return JSON.parse(codeBlock[1].trim()); } catch { /* continuar */ }
   }
 
-  // Determinar conteúdo JSON a trabalhar (dentro ou fora de code block)
+  // Determinar conteúdo JSON a trabalhar — limpar wrapper markdown
   let jsonCandidate = trimmed;
 
   // 2b. Code block sem fechamento (truncado por max_tokens)
@@ -737,6 +737,13 @@ function extractJsonFromText(text: string): Record<string, unknown> {
   if (openCodeBlock && !codeBlock) {
     jsonCandidate = openCodeBlock[1].trim();
     try { return JSON.parse(jsonCandidate); } catch { /* continuar com reparo */ }
+  }
+
+  // 2c. Limpar qualquer prefixo texto antes do JSON (ex: "Aqui está o JSON:\n{...")
+  const prefixClean = jsonCandidate.replace(/^[^{]*/, '');
+  if (prefixClean.length > 0 && prefixClean !== jsonCandidate) {
+    jsonCandidate = prefixClean;
+    try { return JSON.parse(jsonCandidate); } catch { /* continuar */ }
   }
 
   // 3. Extrair { ... } do candidato
@@ -759,14 +766,36 @@ function extractJsonFromText(text: string): Record<string, unknown> {
 function repairJson(text: string): string {
   let r = text;
 
-  // 1. Remover trailing incompleto: string não fechada, key incompleta, valor parcial
-  r = r.replace(/,?\s*"[^"]*$/g, '');           // string incompleta: ..."texto trunc
+  // 0. Remover trailing ``` de code block truncado
+  r = r.replace(/`{1,3}\s*$/, '');
+
+  // 1. Detectar e fechar string aberta via scan (mais robusto que regex para escaped quotes)
+  let inStr = false, esc = false, lastQuoteIdx = -1;
+  for (let i = 0; i < r.length; i++) {
+    const ch = r[i];
+    if (esc) { esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (ch === '"') { inStr = !inStr; lastQuoteIdx = i; }
+  }
+
+  // Se terminamos dentro de string, cortar a string incompleta e fechar
+  if (inStr && lastQuoteIdx >= 0) {
+    r = r.substring(0, lastQuoteIdx + 1);  // manter até a última " aberta (inclusive)
+    // Remover conteúdo parcial da string: tudo após a última " aberta
+    // Na verdade, precisamos fechar a string — a última " abriu, faltou fechar
+    // Encontrar a posição da " que abriu e adicionar " para fechar
+    r += '"';
+  }
+
+  // 2. Remover trailing incompleto fora de strings
+  r = r.replace(/,?\s*"[^"]*$/g, '');           // key/value string sem par
   r = r.replace(/,?\s*[a-zA-Z_]+$/g, '');       // valor incompleto: ...tru, ...nul, ...fals
   r = r.replace(/,?\s*-?\d+\.?\d*$/gm, '');     // número incompleto no final absoluto
   r = r.replace(/:\s*$/g, '');                   // key sem valor: ..."key":
 
-  // 2. Contar brackets/braces abertos
-  let braces = 0, brackets = 0, inStr = false, esc = false;
+  // 3. Contar brackets/braces abertos
+  let braces = 0, brackets = 0;
+  inStr = false; esc = false;
   for (const ch of r) {
     if (esc) { esc = false; continue; }
     if (ch === '\\') { esc = true; continue; }
@@ -778,13 +807,13 @@ function repairJson(text: string): string {
     if (ch === ']') brackets--;
   }
 
-  // 3. Fechar string aberta
+  // 4. Fechar string aberta (segunda passagem para segurança)
   if (inStr) r += '"';
 
-  // 4. Limpar trailing comma/colon
+  // 5. Limpar trailing comma/colon
   r = r.replace(/[,:\s]+$/, '');
 
-  // 5. Fechar brackets/braces abertos
+  // 6. Fechar brackets/braces abertos
   while (brackets > 0) { r += ']'; brackets--; }
   while (braces > 0) { r += '}'; braces--; }
 
