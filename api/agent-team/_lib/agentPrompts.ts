@@ -386,6 +386,15 @@ function buildPerformancePrompt(
     '- Responda em português brasileiro',
     '- Se o plano do supervisor indicar focus_areas para você, priorize essas áreas',
     '- Se Bruna sinalizou cautela na base, leve em conta na interpretação',
+    '',
+    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens):',
+    '- executive_performance_summary: MÁXIMO 3 parágrafos curtos (2-3 frases cada)',
+    '- dre_line_analysis: MÁXIMO 6 linhas. Campos de texto com MÁXIMO 1 frase',
+    '- ranked_variations: MÁXIMO 8 variações. Cada explicação com MÁXIMO 2 frases',
+    '- Campos como cause_explanation, deviation_explanation, managerial_reading: MÁXIMO 1-2 frases curtas',
+    '- NUNCA repita informação que já está nos campos numéricos',
+    '- Priorize dados numéricos sobre narrativa',
+    '- Se ultrapassar 8 variações, PARE e entregue as mais relevantes',
   ].join('\n');
 
   const user = [
@@ -561,6 +570,12 @@ function buildOptimizationPrompt(
     '- Responda em português brasileiro',
     '- Se o plano do supervisor indicar focus_areas, priorize essas áreas',
     '- Se Bruna sinalizou cautela, considere na confiabilidade das estimativas',
+    '',
+    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens):',
+    '- brand_plans: MÁXIMO 5 ações por marca, descrições de 1-2 frases',
+    '- optimization_summary: MÁXIMO 3 parágrafos curtos',
+    '- action_prioritization_matrix: MÁXIMO 8 itens',
+    '- Campos de texto: MÁXIMO 2 frases curtas. Priorize dados numéricos sobre narrativa',
   ].join('\n');
 
   const user = [
@@ -731,6 +746,15 @@ function buildForecastPrompt(
     '- Responda em português brasileiro',
     '- Se o plano do supervisor indicar focus_areas, priorize essas áreas',
     '- Se Bruna sinalizou cautela, considere na confiabilidade das estimativas',
+    '',
+    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens):',
+    '- brand_projections: MÁXIMO 3 cenários por marca, narrativas de 2-3 frases',
+    '- tag_opportunity_risk_map: MÁXIMO 8 tags. Cada rationale com 1-2 frases',
+    '- closing_gap_plan: gap_breakdown_by_tag MÁXIMO 6 tags por marca',
+    '- sacrifice_map: MÁXIMO 3 itens por categoria (commercial/operational/financial)',
+    '- confidence_report: tag_confidence_breakdown MÁXIMO 6 tags',
+    '- curve_confirmation_signals: MÁXIMO 5 sinais por tipo',
+    '- Campos de texto: MÁXIMO 2 frases curtas. Priorize dados numéricos sobre narrativa',
   ].join('\n');
 
   const user = [
@@ -889,6 +913,14 @@ function buildRiskPrompt(
     '- Responda em português brasileiro',
     '- Sem alarmismo artificial, sem suavizar risco material',
     '- Se o plano do supervisor indicar focus_areas, priorize essas áreas',
+    '',
+    'REGRAS DE CONCISÃO (OBRIGATÓRIO — limite de tokens):',
+    '- executive_risk_summary: MÁXIMO 3 parágrafos curtos',
+    '- brand_risk_assessments: MÁXIMO 5 riscos por marca, descrições de 1-2 frases',
+    '- risk_register: MÁXIMO 10 riscos totais, cada com 1-2 frases de descrição',
+    '- sensitivity_matrix: MÁXIMO 6 cenários',
+    '- non_negotiable_alerts: MÁXIMO 3 itens, 1 frase cada',
+    '- Campos de texto: MÁXIMO 2 frases curtas. Priorize dados numéricos sobre narrativa',
   ].join('\n');
 
   const user = [

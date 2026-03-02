@@ -359,7 +359,7 @@ export async function processNextStep(runId: string): Promise<void> {
 
     // 8. Chamar Claude via proxy /api/anthropic
     const isConsolidation = step.step_type === 'consolidate' || step.step_type === 'review';
-    const claudeResult = await callClaudeViaProxy(system, user, isConsolidation);
+    const claudeResult = await callClaudeViaProxy(system, user, isConsolidation, step.agent_code);
 
     // 9. Validar com Zod (safeParse — não explode)
     const zodSchema = getZodSchemaForStep(step.step_type, step.agent_code);
@@ -578,9 +578,11 @@ async function callClaudeViaProxy(
   system: string,
   user: string,
   isConsolidation: boolean = false,
+  agentCode: string = '',
 ): Promise<ClaudeResult> {
   const model = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
-  const maxTokens = isConsolidation ? 8192 : 6144;
+  const isHeavyOutput = ['carlos', 'denilson', 'edmundo', 'falcao'].includes(agentCode);
+  const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : 8192;
 
   // Forçar JSON via prompt (sem output_config)
   const fullSystem = system + '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO — máximo 2 frases por campo string.';
@@ -637,29 +639,49 @@ function extractJsonFromText(text: string): Record<string, unknown> {
   // 1. Parse direto
   try { return JSON.parse(trimmed); } catch { /* continuar */ }
 
-  // 2. Markdown code blocks
+  // 2. Markdown code blocks (com fechamento completo)
   const codeBlock = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
   if (codeBlock) {
     try { return JSON.parse(codeBlock[1].trim()); } catch { /* continuar */ }
   }
 
-  // 3. Extrair { ... }
-  const first = trimmed.indexOf('{');
-  const last = trimmed.lastIndexOf('}');
-  if (first !== -1 && last > first) {
-    try { return JSON.parse(trimmed.substring(first, last + 1)); } catch { /* continuar */ }
+  // Determinar conteúdo JSON a trabalhar (dentro ou fora de code block)
+  let jsonCandidate = trimmed;
+
+  // 2b. Code block sem fechamento (truncado por max_tokens)
+  const openCodeBlock = trimmed.match(/```(?:json)?\s*\n?([\s\S]+)$/);
+  if (openCodeBlock && !codeBlock) {
+    jsonCandidate = openCodeBlock[1].trim();
+    try { return JSON.parse(jsonCandidate); } catch { /* continuar com reparo */ }
   }
 
-  // 4. Reparar JSON truncado
-  const jsonStart = first !== -1 ? trimmed.substring(first) : trimmed;
-  const repaired = repairJson(jsonStart);
-  try { return JSON.parse(repaired); } catch { /* falhou */ }
+  // 3. Extrair { ... } do candidato
+  const first = jsonCandidate.indexOf('{');
+  const last = jsonCandidate.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    try { return JSON.parse(jsonCandidate.substring(first, last + 1)); } catch { /* continuar */ }
+  }
+
+  // 4. Reparar JSON truncado — a partir do primeiro {
+  if (first !== -1) {
+    const jsonStart = jsonCandidate.substring(first);
+    const repaired = repairJson(jsonStart);
+    try { return JSON.parse(repaired); } catch { /* falhou */ }
+  }
 
   throw new Error(`JSON inválido na resposta (${trimmed.substring(0, 80)}...)`);
 }
 
 function repairJson(text: string): string {
-  let r = text.replace(/,?\s*"[^"]*$/g, ''); // remover string incompleta
+  let r = text;
+
+  // 1. Remover trailing incompleto: string não fechada, key incompleta, valor parcial
+  r = r.replace(/,?\s*"[^"]*$/g, '');           // string incompleta: ..."texto trunc
+  r = r.replace(/,?\s*[a-zA-Z_]+$/g, '');       // valor incompleto: ...tru, ...nul, ...fals
+  r = r.replace(/,?\s*-?\d+\.?\d*$/gm, '');     // número incompleto no final absoluto
+  r = r.replace(/:\s*$/g, '');                   // key sem valor: ..."key":
+
+  // 2. Contar brackets/braces abertos
   let braces = 0, brackets = 0, inStr = false, esc = false;
   for (const ch of r) {
     if (esc) { esc = false; continue; }
@@ -671,10 +693,17 @@ function repairJson(text: string): string {
     if (ch === '[') brackets++;
     if (ch === ']') brackets--;
   }
+
+  // 3. Fechar string aberta
   if (inStr) r += '"';
-  r = r.replace(/,\s*$/, '');
+
+  // 4. Limpar trailing comma/colon
+  r = r.replace(/[,:\s]+$/, '');
+
+  // 5. Fechar brackets/braces abertos
   while (brackets > 0) { r += ']'; brackets--; }
   while (braces > 0) { r += '}'; braces--; }
+
   return r;
 }
 

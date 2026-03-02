@@ -393,7 +393,7 @@ async function callClaudeWithRetry(
       const isHeavyOutput = ['carlos', 'denilson', 'edmundo', 'falcao'].includes(step.agent_code);
       const timeoutMs = isConsolidation ? 120000 : isHeavyOutput ? 120000 : 90000;
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      const maxTokens = isConsolidation ? 8192 : isHeavyOutput ? 8192 : 6144;
+      const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : 8192;
 
       logInfo(CTX, 'Chamando Claude API', {
         attempt: attempt + 1,
@@ -517,10 +517,16 @@ function extractJson(text: string): Record<string, unknown> {
   // 1. Parse direto
   try { return JSON.parse(trimmed); } catch { /* continuar */ }
 
-  // 2. Remover markdown code blocks
+  // 2. Remover markdown code blocks (com fechamento)
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
   if (codeBlockMatch) {
     try { return JSON.parse(codeBlockMatch[1].trim()); } catch { /* continuar */ }
+  }
+  // 2b. Code block sem fechamento (truncado por max_tokens)
+  const openBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]+)$/);
+  if (openBlockMatch && !codeBlockMatch) {
+    const inner = openBlockMatch[1].trim();
+    try { return JSON.parse(inner); } catch { /* tentar reparar abaixo */ }
   }
 
   // 3. Extrair { ... }
@@ -544,10 +550,13 @@ function extractJson(text: string): Record<string, unknown> {
 function repairTruncatedJson(text: string): string | null {
   let result = text;
 
-  // Remover trailing incomplete string: ..."texto incompleto
-  result = result.replace(/,?\s*"[^"]*$/g, '');
+  // 1. Remover trailing incompleto: string, valor parcial, key sem valor
+  result = result.replace(/,?\s*"[^"]*$/g, '');       // string incompleta
+  result = result.replace(/,?\s*[a-zA-Z_]+$/g, '');   // valor parcial: tru, nul, fals
+  result = result.replace(/,?\s*-?\d+\.?\d*$/gm, ''); // número incompleto
+  result = result.replace(/:\s*$/g, '');               // key sem valor
 
-  // Contar brackets abertos
+  // 2. Contar brackets abertos
   let openBraces = 0;
   let openBrackets = 0;
   let inString = false;
@@ -564,13 +573,13 @@ function repairTruncatedJson(text: string): string | null {
     if (ch === ']') openBrackets--;
   }
 
-  // Se estamos dentro de uma string, fechar
+  // 3. Fechar string aberta
   if (inString) result += '"';
 
-  // Remover trailing comma
-  result = result.replace(/,\s*$/, '');
+  // 4. Limpar trailing comma/colon
+  result = result.replace(/[,:\s]+$/, '');
 
-  // Fechar brackets/braces abertos
+  // 5. Fechar brackets/braces abertos
   while (openBrackets > 0) { result += ']'; openBrackets--; }
   while (openBraces > 0) { result += '}'; openBraces--; }
 

@@ -54,6 +54,45 @@ interface OutputRendererProps {
 }
 
 // --------------------------------------------
+// ErrorBoundary — captura crashes de renderização
+// quando IA retorna formato inesperado
+// --------------------------------------------
+
+interface ErrorBoundaryState { hasError: boolean; error?: Error }
+
+class OutputErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallbackData?: unknown },
+  ErrorBoundaryState
+> {
+  constructor(props: { children: React.ReactNode; fallbackData?: unknown }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="border border-amber-200 rounded-lg p-3 space-y-2 bg-amber-50">
+          <div className="flex items-center gap-2 text-amber-700">
+            <AlertTriangle size={14} />
+            <span className="text-xs font-bold">Formato de saída incompatível — exibindo dados brutos</span>
+          </div>
+          <p className="text-[10px] text-amber-600">{this.state.error?.message}</p>
+          {this.props.fallbackData && (
+            <pre className="text-[10px] text-gray-600 bg-white rounded p-2 overflow-x-auto max-h-96 border border-gray-200">
+              {JSON.stringify(this.props.fallbackData, null, 2)}
+            </pre>
+          )}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// --------------------------------------------
 // Severity / Priority badges
 // --------------------------------------------
 
@@ -90,16 +129,41 @@ function SectionTitle({ icon, children }: { icon: React.ReactNode; children: Rea
 function safeStr(val: unknown): string | null {
   if (typeof val === 'string') return val;
   if (typeof val === 'number') return String(val);
+  if (typeof val === 'boolean') return val ? 'Sim' : 'Não';
   if (val && typeof val === 'object') {
     try { return JSON.stringify(val); } catch { return null; }
   }
   return null;
 }
 
+/** Safely render any value — prevents "Objects are not valid as React child" crash */
+function safeVal(val: unknown): string {
+  if (val == null) return '—';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return val.toLocaleString('pt-BR');
+  if (typeof val === 'boolean') return val ? 'Sim' : 'Não';
+  if (typeof val === 'object') {
+    try { return JSON.stringify(val); } catch { return '—'; }
+  }
+  return String(val);
+}
+
+/** Safely extract number from potentially object value */
+function safeNum(val: unknown, fallback = 0): number {
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string') { const n = parseFloat(val); return isNaN(n) ? fallback : n; }
+  return fallback;
+}
+
 function TextBlock({ text }: { text: unknown }) {
   const s = safeStr(text);
   if (!s) return <p className="text-xs text-gray-400 italic">&mdash;</p>;
   return <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line">{s}</p>;
+}
+
+/** Inline safe render — use anywhere a value might be an object: {S(val)} */
+function S(val: unknown): string {
+  return safeVal(val);
 }
 
 function BulletList({ items }: { items: unknown[] | undefined | null }) {
@@ -156,11 +220,11 @@ function SupervisorPlanView({ data }: { data: SupervisorPlanOutput }) {
           <div className="space-y-2">
             {assignments.map((a, i) => (
               <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
-                <span className="text-xs font-bold text-gray-900 capitalize">{a.agent_code}</span>
-                <p className="text-[11px] text-gray-600">{a.objective}</p>
+                <span className="text-xs font-bold text-gray-900 capitalize">{S(a.agent_code)}</span>
+                <p className="text-[11px] text-gray-600">{S(a.objective)}</p>
                 <div className="flex flex-wrap gap-1">
                   {(a.focus_areas || []).map((f, j) => (
-                    <span key={j} className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[9px] font-medium">{f}</span>
+                    <span key={j} className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[9px] font-medium">{S(f)}</span>
                   ))}
                 </div>
               </div>
@@ -209,7 +273,7 @@ function DataQualityView({ data }: { data: DataQualityOutput }) {
           <SectionTitle icon={<Shield size={12} className="text-amber-500" />}>Qualidade de Dados</SectionTitle>
           <div className="flex items-center gap-2">
             <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${classStyle.bg} ${classStyle.text}`}>
-              {classification}
+              {S(classification)}
             </span>
             <span className={`text-sm font-bold ${score >= 80 ? 'text-green-600' : score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
               {Math.round(score)}
@@ -224,7 +288,7 @@ function DataQualityView({ data }: { data: DataQualityOutput }) {
           Nível de Cautela: {cautionStyle.label}
         </div>
         {data.rationale_for_recommendation && (
-          <p className="text-[11px] text-gray-500 italic">{data.rationale_for_recommendation}</p>
+          <p className="text-[11px] text-gray-500 italic">{S(data.rationale_for_recommendation)}</p>
         )}
       </Card>
 
@@ -235,18 +299,18 @@ function DataQualityView({ data }: { data: DataQualityOutput }) {
           <div className="space-y-2">
             {fragilityPoints.map((fp: FragilityPoint, i: number) => (
               <div key={i} className="flex items-start gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                <SeverityBadge level={fp.severity || (fp as any).severity || 'low'} />
+                <SeverityBadge level={S(fp.severity || (fp as any).severity || 'low')} />
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <p className="text-xs font-medium text-gray-900">{fp.affected_area || (fp as any).area || '—'}</p>
+                    <p className="text-xs font-medium text-gray-900">{S(fp.affected_area || (fp as any).area || '—')}</p>
                     {fp.type && (
-                      <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px] font-mono">{fp.type}</span>
+                      <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px] font-mono">{S(fp.type)}</span>
                     )}
                   </div>
-                  <p className="text-[11px] text-gray-600">{fp.description}</p>
-                  {fp.probable_cause && <p className="text-[10px] text-gray-400">Causa: {fp.probable_cause}</p>}
-                  {fp.analysis_impact && <p className="text-[10px] text-blue-500">Impacto: {fp.analysis_impact}</p>}
-                  {fp.suggested_fix && <p className="text-[10px] text-green-600">Correção: {fp.suggested_fix}</p>}
+                  <p className="text-[11px] text-gray-600">{S(fp.description)}</p>
+                  {fp.probable_cause && <p className="text-[10px] text-gray-400">Causa: {S(fp.probable_cause)}</p>}
+                  {fp.analysis_impact && <p className="text-[10px] text-blue-500">Impacto: {S(fp.analysis_impact)}</p>}
+                  {fp.suggested_fix && <p className="text-[10px] text-green-600">Correção: {S(fp.suggested_fix)}</p>}
                 </div>
               </div>
             ))}
@@ -264,22 +328,22 @@ function DataQualityView({ data }: { data: DataQualityOutput }) {
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-500">Risco Geral:</span>
-                <SeverityBadge level={riskSummary.overall_risk_level || 'low'} />
+                <SeverityBadge level={S(riskSummary.overall_risk_level || 'low')} />
               </div>
               {riskSummary.most_sensitive_areas?.length > 0 && (
                 <div>
                   <span className="text-[10px] text-gray-500">Áreas sensíveis:</span>
                   <div className="flex flex-wrap gap-1 mt-0.5">
                     {riskSummary.most_sensitive_areas.map((a: string, i: number) => (
-                      <span key={i} className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 text-[9px] font-medium">{a}</span>
+                      <span key={i} className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 text-[9px] font-medium">{S(a)}</span>
                     ))}
                   </div>
                 </div>
               )}
-              {riskSummary.impact_on_performance && <p className="text-[10px] text-gray-600"><span className="font-medium">Performance:</span> {riskSummary.impact_on_performance}</p>}
-              {riskSummary.impact_on_optimization && <p className="text-[10px] text-gray-600"><span className="font-medium">Otimização:</span> {riskSummary.impact_on_optimization}</p>}
-              {riskSummary.impact_on_forecast && <p className="text-[10px] text-gray-600"><span className="font-medium">Forecast:</span> {riskSummary.impact_on_forecast}</p>}
-              {riskSummary.interpretive_caution && <p className="text-[10px] text-amber-600 font-medium mt-1">{riskSummary.interpretive_caution}</p>}
+              {riskSummary.impact_on_performance && <p className="text-[10px] text-gray-600"><span className="font-medium">Performance:</span> {S(riskSummary.impact_on_performance)}</p>}
+              {riskSummary.impact_on_optimization && <p className="text-[10px] text-gray-600"><span className="font-medium">Otimização:</span> {S(riskSummary.impact_on_optimization)}</p>}
+              {riskSummary.impact_on_forecast && <p className="text-[10px] text-gray-600"><span className="font-medium">Forecast:</span> {S(riskSummary.impact_on_forecast)}</p>}
+              {riskSummary.interpretive_caution && <p className="text-[10px] text-amber-600 font-medium mt-1">{S(riskSummary.interpretive_caution)}</p>}
             </div>
           )}
         </Card>
@@ -302,12 +366,12 @@ function DataQualityView({ data }: { data: DataQualityOutput }) {
               return (
                 <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <SeverityBadge level={action.priority || 'medium'} />
-                    <span className="text-xs font-medium text-gray-900">{action.action_title}</span>
+                    <SeverityBadge level={S(action.priority || 'medium')} />
+                    <span className="text-xs font-medium text-gray-900">{S(action.action_title)}</span>
                   </div>
-                  {action.target_area && <p className="text-[10px] text-gray-500">Área: {action.target_area}</p>}
-                  {action.expected_benefit && <p className="text-[10px] text-green-600">{action.expected_benefit}</p>}
-                  {action.owner_suggestion && <p className="text-[10px] text-gray-400">Responsável sugerido: {action.owner_suggestion}</p>}
+                  {action.target_area && <p className="text-[10px] text-gray-500">Área: {S(action.target_area)}</p>}
+                  {action.expected_benefit && <p className="text-[10px] text-green-600">{S(action.expected_benefit)}</p>}
+                  {action.owner_suggestion && <p className="text-[10px] text-gray-400">Responsável sugerido: {S(action.owner_suggestion)}</p>}
                 </div>
               );
             })}
@@ -375,15 +439,15 @@ function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
                   {/* Header: position + line + nature + relevance */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="w-5 h-5 flex items-center justify-center rounded bg-indigo-100 text-indigo-700 text-[10px] font-bold shrink-0">
-                      {v.ranking_position || i + 1}
+                      {S(v.ranking_position || i + 1)}
                     </span>
-                    <span className="text-xs font-bold text-gray-900">{v.dre_line || (v as any).area || v.tag01}</span>
+                    <span className="text-xs font-bold text-gray-900">{S(v.dre_line || (v as any).area || v.tag01)}</span>
                     {v.tag01 && v.tag01 !== v.dre_line && (
-                      <span className="px-1 py-0.5 rounded bg-blue-50 text-blue-600 text-[9px] font-medium">{v.tag01}</span>
+                      <span className="px-1 py-0.5 rounded bg-blue-50 text-blue-600 text-[9px] font-medium">{S(v.tag01)}</span>
                     )}
-                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${nature.color}`}>{nature.label}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${nature.color}`}>{S(nature.label)}</span>
                     {v.executive_relevance && (
-                      <span className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${relevance}`}>{v.executive_relevance}</span>
+                      <span className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${relevance}`}>{S(v.executive_relevance)}</span>
                     )}
                   </div>
                   {/* Gap values */}
@@ -398,26 +462,26 @@ function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
                     )}
                   </div>
                   {/* Cause + context */}
-                  <p className="text-[11px] text-gray-700">{v.cause_explanation || (v as any).description || ''}</p>
+                  <p className="text-[11px] text-gray-700">{S(v.cause_explanation || (v as any).description || '')}</p>
                   {/* Supplier / Description */}
                   {(v.supplier_main_reference || v.description_main_reference) && (
                     <p className="text-[10px] text-gray-400">
-                      {v.supplier_main_reference && <>Fornecedor: {v.supplier_main_reference}</>}
+                      {v.supplier_main_reference && <>Fornecedor: {S(v.supplier_main_reference)}</>}
                       {v.supplier_main_reference && v.description_main_reference && ' | '}
-                      {v.description_main_reference && <>Desc: {v.description_main_reference}</>}
+                      {v.description_main_reference && <>Desc: {S(v.description_main_reference)}</>}
                     </p>
                   )}
                   {/* Investigation details */}
                   <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[9px] text-gray-400">
-                    {v.budget_cross_check && <span>Orçamento: {v.budget_cross_check}</span>}
-                    {v.timing_assessment && <span>Timing: {v.timing_assessment}</span>}
-                    {v.leakage_assessment && <span>Vazamento: {v.leakage_assessment}</span>}
-                    {v.recurrence_expectation && <span>Recorrência: {v.recurrence_expectation.replace(/_/g, ' ')}</span>}
+                    {v.budget_cross_check && <span>Orçamento: {S(v.budget_cross_check)}</span>}
+                    {v.timing_assessment && <span>Timing: {S(v.timing_assessment)}</span>}
+                    {v.leakage_assessment && <span>Vazamento: {S(v.leakage_assessment)}</span>}
+                    {v.recurrence_expectation && <span>Recorrência: {S(String(v.recurrence_expectation).replace(/_/g, ' '))}</span>}
                   </div>
                   {/* Signal to Bruna */}
                   {v.classification_review_suggestion_to_bruna && (
                     <p className="text-[10px] text-pink-600 font-medium">
-                      Sinalização Bruna: {v.classification_review_suggestion_to_bruna}
+                      Sinalização Bruna: {S(v.classification_review_suggestion_to_bruna)}
                     </p>
                   )}
                 </div>
@@ -449,7 +513,7 @@ function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
                   const isNeg = (l.gap_vs_budget_value ?? 0) < 0;
                   return (
                     <tr key={i} className="border-t border-gray-50">
-                      <td className="py-1 text-gray-700 font-medium">{l.dre_line}</td>
+                      <td className="py-1 text-gray-700 font-medium">{S(l.dre_line)}</td>
                       <td className="py-1 text-right text-gray-900">R$ {(l.real_value ?? 0).toLocaleString('pt-BR')}</td>
                       <td className="py-1 text-right text-gray-600">R$ {(l.budget_value ?? 0).toLocaleString('pt-BR')}</td>
                       <td className={`py-1 text-right font-medium ${isNeg ? 'text-red-600' : 'text-green-600'}`}>
@@ -459,7 +523,7 @@ function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
                         {(l.gap_vs_budget_pct ?? 0).toFixed(1)}%
                       </td>
                       <td className="py-1">
-                        <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${nature.color}`}>{nature.label}</span>
+                        <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${nature.color}`}>{S(nature.label)}</span>
                       </td>
                     </tr>
                   );
@@ -624,10 +688,10 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
               {oldActions.map((a: any, i: number) => (
                 <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
                   <div className="flex items-center gap-2">
-                    <SeverityBadge level={a.implementation_priority || 'medium'} />
-                    <span className="text-xs font-medium text-gray-900">{a.area || a.action_title}</span>
+                    <SeverityBadge level={S(a.implementation_priority || 'medium')} />
+                    <span className="text-xs font-medium text-gray-900">{S(a.area || a.action_title)}</span>
                   </div>
-                  <p className="text-[11px] text-gray-700">{a.suggested_adjustment || a.rationale}</p>
+                  <p className="text-[11px] text-gray-700">{S(a.suggested_adjustment || a.rationale)}</p>
                 </div>
               ))}
             </div>
@@ -664,28 +728,28 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
           <div className="grid grid-cols-3 gap-3 mt-1">
             <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
               <p className="text-[10px] text-gray-500">EBITDA</p>
-              <p className="text-sm font-bold text-green-700">+R$ {(impact.total_ebitda_impact ?? (impact as any).total_ebitda_gain ?? 0).toLocaleString('pt-BR')}</p>
+              <p className="text-sm font-bold text-green-700">+R$ {safeNum(impact.total_ebitda_impact ?? (impact as any).total_ebitda_gain ?? (impact as any).total_ebitda_potential).toLocaleString('pt-BR')}</p>
             </div>
             <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
               <p className="text-[10px] text-gray-500">Margem</p>
-              <p className="text-sm font-bold text-green-700">+{(impact.total_margin_impact ?? (impact as any).total_margin_gain ?? 0).toFixed(1)}pp</p>
+              <p className="text-sm font-bold text-green-700">+{safeNum(impact.total_margin_impact ?? (impact as any).total_margin_gain ?? (impact as any).total_margin_improvement).toFixed(1)}pp</p>
             </div>
             <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
               <p className="text-[10px] text-gray-500">Score</p>
-              <p className="text-sm font-bold text-green-700">+{(impact.total_score_impact ?? (impact as any).total_score_gain ?? 0).toFixed(0)}pts</p>
+              <p className="text-sm font-bold text-green-700">+{safeNum(impact.total_score_impact ?? (impact as any).total_score_gain).toFixed(0)}pts</p>
             </div>
           </div>
           {/* Gain type breakdown */}
-          {(impact.real_gain_total > 0 || impact.analytical_reframing_total > 0) && (
+          {(safeNum(impact.real_gain_total ?? (impact as any).real_gain) > 0 || safeNum(impact.analytical_reframing_total ?? (impact as any).analytical_adjustment) > 0) && (
             <div className="flex items-center gap-3 mt-2 text-[10px]">
-              {impact.real_gain_total > 0 && (
-                <span className="text-green-600 font-medium">Ganho Real: R$ {impact.real_gain_total.toLocaleString('pt-BR')}</span>
+              {safeNum(impact.real_gain_total ?? (impact as any).real_gain) > 0 && (
+                <span className="text-green-600 font-medium">Ganho Real: R$ {safeNum(impact.real_gain_total ?? (impact as any).real_gain).toLocaleString('pt-BR')}</span>
               )}
-              {impact.analytical_reframing_total > 0 && (
-                <span className="text-blue-600 font-medium">Reenquadramento: R$ {impact.analytical_reframing_total.toLocaleString('pt-BR')}</span>
+              {safeNum(impact.analytical_reframing_total ?? (impact as any).analytical_adjustment) > 0 && (
+                <span className="text-blue-600 font-medium">Reenquadramento: R$ {safeNum(impact.analytical_reframing_total ?? (impact as any).analytical_adjustment).toLocaleString('pt-BR')}</span>
               )}
-              {impact.mixed_gain_total > 0 && (
-                <span className="text-yellow-600 font-medium">Misto: R$ {impact.mixed_gain_total.toLocaleString('pt-BR')}</span>
+              {safeNum(impact.mixed_gain_total) > 0 && (
+                <span className="text-yellow-600 font-medium">Misto: R$ {safeNum(impact.mixed_gain_total).toLocaleString('pt-BR')}</span>
               )}
             </div>
           )}
@@ -698,9 +762,9 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
           <div className="bg-emerald-50 px-4 py-2 border-b border-emerald-200">
             <div className="flex items-center gap-2">
               <Zap size={14} className="text-emerald-600" />
-              <h3 className="text-xs font-bold text-emerald-900">{bp.brand_name}</h3>
+              <h3 className="text-xs font-bold text-emerald-900">{S(bp.brand_name)}</h3>
             </div>
-            <p className="text-[10px] text-emerald-700 mt-0.5">{bp.objective_of_plan}</p>
+            <p className="text-[10px] text-emerald-700 mt-0.5">{S(bp.objective_of_plan)}</p>
           </div>
           <div className="px-4 py-3 space-y-2">
             {/* Issues */}
@@ -719,16 +783,16 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
                   return (
                     <div key={ai} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <SeverityBadge level={a.implementation_priority || 'medium'} />
-                        <span className="text-xs font-medium text-gray-900">{a.action_title}</span>
-                        <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${impType.color}`}>{impType.label}</span>
+                        <SeverityBadge level={S(a.implementation_priority || 'medium')} />
+                        <span className="text-xs font-medium text-gray-900">{S(a.action_title)}</span>
+                        <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${impType.color}`}>{S(impType.label)}</span>
                         {a.action_type && (
                           <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px]">
-                            {ACTION_TYPE_LABELS[a.action_type] || a.action_type}
+                            {S(ACTION_TYPE_LABELS[a.action_type] || a.action_type)}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-gray-700">{a.rationale}</p>
+                      <p className="text-[11px] text-gray-700">{S(a.rationale)}</p>
                       <div className="flex items-center gap-3 text-[10px]">
                         <span className="text-green-600 font-medium">
                           EBITDA: +R$ {(a.expected_impact_ebitda ?? 0).toLocaleString('pt-BR')}
@@ -737,10 +801,10 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
                           Margem: +{(a.expected_impact_margin ?? 0).toFixed(1)}pp
                         </span>
                         {a.feasibility_level && (
-                          <span className="text-gray-400">Viabilidade: {a.feasibility_level}</span>
+                          <span className="text-gray-400">Viabilidade: {S(a.feasibility_level)}</span>
                         )}
                       </div>
-                      {a.observation && <p className="text-[10px] text-gray-400 italic">{a.observation}</p>}
+                      {a.observation && <p className="text-[10px] text-gray-400 italic">{S(a.observation)}</p>}
                     </div>
                   );
                 })}
@@ -748,11 +812,11 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
             )}
             {/* Gain summary */}
             {bp.expected_gain_summary && (
-              <p className="text-[10px] text-emerald-700 font-medium mt-1">{bp.expected_gain_summary}</p>
+              <p className="text-[10px] text-emerald-700 font-medium mt-1">{safeVal(bp.expected_gain_summary)}</p>
             )}
             {/* Notes */}
             {bp.notes_for_risk_review && (
-              <p className="text-[10px] text-red-500">Falcão: {bp.notes_for_risk_review}</p>
+              <p className="text-[10px] text-red-500">Falcão: {safeVal(bp.notes_for_risk_review)}</p>
             )}
           </div>
         </div>
@@ -797,11 +861,11 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
                   const gt = IMPACT_TYPE_STYLES[m.gain_type] || IMPACT_TYPE_STYLES.real_financial_gain;
                   return (
                     <tr key={i} className="border-t border-gray-50">
-                      <td className="py-1 text-gray-700 font-medium">{m.action_title}</td>
-                      <td className="py-1 text-gray-600">{m.brand}</td>
-                      <td className="py-1"><SeverityBadge level={m.priority || 'medium'} /></td>
-                      <td className="py-1"><span className={`px-1 py-0.5 rounded text-[8px] font-bold ${gt.color}`}>{gt.label}</span></td>
-                      <td className="py-1 text-gray-600">{m.expected_impact}</td>
+                      <td className="py-1 text-gray-700 font-medium">{S(m.action_title)}</td>
+                      <td className="py-1 text-gray-600">{S(m.brand)}</td>
+                      <td className="py-1"><SeverityBadge level={S(m.priority || 'medium')} /></td>
+                      <td className="py-1"><span className={`px-1 py-0.5 rounded text-[8px] font-bold ${gt.color}`}>{S(gt.label)}</span></td>
+                      <td className="py-1 text-gray-600">{safeVal(m.expected_impact)}</td>
                     </tr>
                   );
                 })}
@@ -845,7 +909,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
     return (
       <div className="space-y-3">
         <Card>
-          <SectionTitle icon={<TrendingUp size={12} className="text-indigo-500" />}>Forecast — {(data as any).forecast_horizon}</SectionTitle>
+          <SectionTitle icon={<TrendingUp size={12} className="text-indigo-500" />}>Forecast — {S((data as any).forecast_horizon)}</SectionTitle>
           <TextBlock text={(data as any).trend_interpretation} />
         </Card>
         {oldBase.length > 0 && (
@@ -856,7 +920,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
                 <thead><tr className="text-gray-500 text-left"><th className="pb-1 font-medium">Período</th><th className="pb-1 font-medium text-right">Receita</th><th className="pb-1 font-medium text-right">EBITDA</th></tr></thead>
                 <tbody>{oldBase.map((b: any, i: number) => (
                   <tr key={i} className="border-t border-gray-50">
-                    <td className="py-1 text-gray-700 font-medium">{b.period}</td>
+                    <td className="py-1 text-gray-700 font-medium">{S(b.period)}</td>
                     <td className="py-1 text-right text-gray-900">R$ {(b.receita ?? 0).toLocaleString('pt-BR')}</td>
                     <td className="py-1 text-right text-green-600">R$ {(b.ebitda ?? 0).toLocaleString('pt-BR')}</td>
                   </tr>
@@ -883,7 +947,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
           <div className="flex items-center justify-between">
             <SectionTitle icon={<Shield size={12} className="text-indigo-500" />}>Confiança da Projeção</SectionTitle>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${CONFIDENCE_COLORS[confidence.brand_confidence_level] || CONFIDENCE_COLORS.medium}`}>
-              {confidence.brand_confidence_level?.toUpperCase()}
+              {S(confidence.brand_confidence_level?.toUpperCase())}
             </span>
           </div>
           <TextBlock text={confidence.confidence_rationale} />
@@ -907,7 +971,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
               <div className="flex flex-wrap gap-1 mt-0.5">
                 {confidence.tag_confidence_breakdown.map((tc: TagConfidence, i: number) => (
                   <span key={i} className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${CONFIDENCE_COLORS[tc.confidence_level] || CONFIDENCE_COLORS.medium}`}>
-                    {tc.tag_name}: {tc.confidence_level}
+                    {S(tc.tag_name)}: {S(tc.confidence_level)}
                   </span>
                 ))}
               </div>
@@ -922,9 +986,9 @@ function ForecastView({ data }: { data: ForecastOutput }) {
           <div className="bg-indigo-50 px-4 py-2 border-b border-indigo-200">
             <div className="flex items-center gap-2">
               <TrendingUp size={14} className="text-indigo-600" />
-              <h3 className="text-xs font-bold text-indigo-900">{bp.brand_name}</h3>
+              <h3 className="text-xs font-bold text-indigo-900">{S(bp.brand_name)}</h3>
             </div>
-            <p className="text-[10px] text-indigo-700 mt-0.5">{bp.current_position_summary}</p>
+            <p className="text-[10px] text-indigo-700 mt-0.5">{S(bp.current_position_summary)}</p>
           </div>
           <div className="px-4 py-3 space-y-2">
             <TextBlock text={bp.projection_narrative} />
@@ -935,8 +999,8 @@ function ForecastView({ data }: { data: ForecastOutput }) {
                 const colors = si === 0 ? 'bg-gray-50 border-gray-200' : si === 1 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
                 return (
                   <div key={si} className={`rounded-lg px-2 py-2 border ${colors}`}>
-                    <p className="text-[10px] font-bold text-gray-700">{sc.label || ['Base', 'Target', 'Stress'][si]}</p>
-                    <p className="text-[10px] text-gray-600 mt-0.5">{sc.description}</p>
+                    <p className="text-[10px] font-bold text-gray-700">{S(sc.label || ['Base', 'Target', 'Stress'][si])}</p>
+                    <p className="text-[10px] text-gray-600 mt-0.5">{S(sc.description)}</p>
                     <div className="mt-1 space-y-0.5 text-[10px]">
                       <p><span className="text-gray-400">EBITDA:</span> <span className="font-medium">R$ {(sc.projected_ebitda ?? 0).toLocaleString('pt-BR')}</span></p>
                       <p><span className="text-gray-400">Margem:</span> <span className="font-medium">{(sc.projected_margin ?? 0).toFixed(1)}%</span></p>
@@ -947,7 +1011,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
               })}
             </div>
             {bp.year_end_projection && (
-              <p className="text-[10px] text-indigo-700 font-medium mt-1">{bp.year_end_projection}</p>
+              <p className="text-[10px] text-indigo-700 font-medium mt-1">{S(bp.year_end_projection)}</p>
             )}
           </div>
         </div>
@@ -964,8 +1028,8 @@ function ForecastView({ data }: { data: ForecastOutput }) {
               <div className="space-y-1 mt-0.5">
                 {curve.identified_outliers.map((o, i) => (
                   <div key={i} className="bg-amber-50 rounded px-2 py-1 text-[10px]">
-                    <span className="font-medium text-amber-800">{o.month}:</span>{' '}
-                    <span className="text-gray-700">{o.event_description}</span>
+                    <span className="font-medium text-amber-800">{S(o.month)}:</span>{' '}
+                    <span className="text-gray-700">{S(o.event_description)}</span>
                     {o.impact_value !== 0 && (
                       <span className="text-amber-600 ml-1">(R$ {Math.abs(o.impact_value).toLocaleString('pt-BR')})</span>
                     )}
@@ -973,12 +1037,12 @@ function ForecastView({ data }: { data: ForecastOutput }) {
                 ))}
               </div>
               {curve.outlier_adjustment_rationale && (
-                <p className="text-[10px] text-gray-500 mt-1 italic">{curve.outlier_adjustment_rationale}</p>
+                <p className="text-[10px] text-gray-500 mt-1 italic">{S(curve.outlier_adjustment_rationale)}</p>
               )}
             </div>
           )}
           {curve.difference_between_original_and_adjusted_curve && (
-            <p className="text-[10px] text-blue-600 mt-1">{curve.difference_between_original_and_adjusted_curve}</p>
+            <p className="text-[10px] text-blue-600 mt-1">{S(curve.difference_between_original_and_adjusted_curve)}</p>
           )}
         </Card>
       )}
@@ -994,16 +1058,16 @@ function ForecastView({ data }: { data: ForecastOutput }) {
               return (
                 <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${cls.color}`}>{cls.label}</span>
-                    <span className="text-xs font-medium text-gray-900">{t.tag_name}</span>
-                    <span className="text-[8px] text-gray-400">{t.tag_level}</span>
-                    <span className={`px-1 py-0.5 rounded text-[8px] ${conf}`}>{t.confidence_level_for_tag}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${cls.color}`}>{S(cls.label)}</span>
+                    <span className="text-xs font-medium text-gray-900">{S(t.tag_name)}</span>
+                    <span className="text-[8px] text-gray-400">{S(t.tag_level)}</span>
+                    <span className={`px-1 py-0.5 rounded text-[8px] ${conf}`}>{S(t.confidence_level_for_tag)}</span>
                   </div>
-                  <p className="text-[10px] text-gray-700">{t.rationale}</p>
-                  <p className="text-[10px] text-indigo-600">{t.executable_action_plan}</p>
+                  <p className="text-[10px] text-gray-700">{S(t.rationale)}</p>
+                  <p className="text-[10px] text-indigo-600">{S(t.executable_action_plan)}</p>
                   <div className="flex gap-3 text-[9px] text-gray-400">
-                    {t.projected_effect_on_year_end && <span>Efeito: {t.projected_effect_on_year_end}</span>}
-                    {t.urgency && <span>Urgência: {t.urgency}</span>}
+                    {t.projected_effect_on_year_end && <span>Efeito: {S(t.projected_effect_on_year_end)}</span>}
+                    {t.urgency && <span>Urgência: {S(t.urgency)}</span>}
                   </div>
                 </div>
               );
@@ -1019,7 +1083,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
           {gapPlan.brand_gaps.map((bg: BrandGap, i: number) => (
             <div key={i} className="mt-1 bg-gray-50 rounded-lg px-3 py-2 space-y-1">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-900">{bg.brand_name}</span>
+                <span className="text-xs font-bold text-gray-900">{S(bg.brand_name)}</span>
                 <span className={`text-xs font-bold ${bg.gap_to_target >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   Gap: R$ {(bg.gap_to_target ?? 0).toLocaleString('pt-BR')}
                 </span>
@@ -1033,7 +1097,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
                   <p className="text-[9px] text-gray-400 font-medium">Composição do gap:</p>
                   {bg.gap_breakdown_by_tag.map((tg: TagGapBreakdown, j: number) => (
                     <div key={j} className="flex items-center gap-2 text-[10px]">
-                      <span className="text-gray-600">{tg.tag}:</span>
+                      <span className="text-gray-600">{S(tg.tag)}:</span>
                       <span className="font-medium text-red-600">R$ {(tg.contribution_to_gap ?? 0).toLocaleString('pt-BR')}</span>
                       <span className={`text-[8px] ${tg.whether_gap_is_recoverable ? 'text-green-500' : 'text-red-500'}`}>
                         {tg.whether_gap_is_recoverable ? 'recuperável' : 'difícil'}
@@ -1043,7 +1107,7 @@ function ForecastView({ data }: { data: ForecastOutput }) {
                 </div>
               )}
               {bg.comments_on_feasibility && (
-                <p className="text-[10px] text-gray-400 italic">{bg.comments_on_feasibility}</p>
+                <p className="text-[10px] text-gray-400 italic">{S(bg.comments_on_feasibility)}</p>
               )}
             </div>
           ))}
@@ -1064,8 +1128,8 @@ function ForecastView({ data }: { data: ForecastOutput }) {
                 <p className={`text-[10px] font-medium ${group.color}`}>{group.label}:</p>
                 {group.items.map((s: SacrificeEntry, si: number) => (
                   <div key={si} className="bg-gray-50 rounded px-2 py-1 mt-0.5 text-[10px]">
-                    <p className="font-medium text-gray-800">{s.description}</p>
-                    {s.rationale && <p className="text-gray-500">{s.rationale}</p>}
+                    <p className="font-medium text-gray-800">{S(s.description)}</p>
+                    {s.rationale && <p className="text-gray-500">{S(s.rationale)}</p>}
                   </div>
                 ))}
               </div>
@@ -1144,7 +1208,7 @@ function RiskView({ data }: { data: RiskOutput }) {
       <div className="space-y-3">
         <Card>
           <SectionTitle icon={<Shield size={12} className="text-red-500" />}>Risco Geral</SectionTitle>
-          <SeverityBadge level={oldData.overall_risk_level || 'low'} />
+          <SeverityBadge level={S(oldData.overall_risk_level || 'low')} />
           <TextBlock text={oldData.strategic_risk_summary} />
         </Card>
         {allAlerts.length > 0 && (
@@ -1154,10 +1218,10 @@ function RiskView({ data }: { data: RiskOutput }) {
               {allAlerts.map((a: any, i: number) => (
                 <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <SeverityBadge level={a.severity || 'medium'} />
-                    <span className="text-xs font-medium text-gray-900">{a.title}</span>
+                    <SeverityBadge level={S(a.severity || 'medium')} />
+                    <span className="text-xs font-medium text-gray-900">{S(a.title)}</span>
                   </div>
-                  <p className="text-[11px] text-gray-600">{a.description}</p>
+                  <p className="text-[11px] text-gray-600">{S(a.description)}</p>
                 </div>
               ))}
             </div>
@@ -1222,24 +1286,24 @@ function RiskView({ data }: { data: RiskOutput }) {
               return (
                 <div key={i} className={`rounded-lg px-3 py-2 border ${style.bg} ${style.border}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-900">{b.brand}</span>
+                    <span className="text-xs font-bold text-gray-900">{S(b.brand)}</span>
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${style.bg} ${style.text}`}>
-                      {b.overall_risk_level}
+                      {S(b.overall_risk_level)}
                     </span>
                   </div>
-                  <p className="text-[11px] text-gray-700 mt-0.5">{b.risk_narrative}</p>
+                  <p className="text-[11px] text-gray-700 mt-0.5">{S(b.risk_narrative)}</p>
                   {b.key_risk_drivers?.length > 0 && (
                     <div className="mt-1">
                       <p className="text-[10px] text-gray-500">Drivers:</p>
                       <div className="flex flex-wrap gap-1 mt-0.5">
                         {b.key_risk_drivers.map((d: string, j: number) => (
-                          <span key={j} className="px-1.5 py-0.5 bg-white/60 rounded text-[9px] text-gray-600">{d}</span>
+                          <span key={j} className="px-1.5 py-0.5 bg-white/60 rounded text-[9px] text-gray-600">{S(d)}</span>
                         ))}
                       </div>
                     </div>
                   )}
                   {b.school_operation_impact && (
-                    <p className="text-[10px] text-purple-600 mt-1">Operação escolar: {b.school_operation_impact}</p>
+                    <p className="text-[10px] text-purple-600 mt-1">Operação escolar: {S(b.school_operation_impact)}</p>
                   )}
                 </div>
               );
@@ -1261,21 +1325,21 @@ function RiskView({ data }: { data: RiskOutput }) {
             {alerts.map((a: RiskAlert, i: number) => (
               <div key={i} className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 space-y-0.5">
                 <div className="flex items-center gap-2">
-                  <SeverityBadge level={a.severity} />
-                  <span className="text-[9px] text-gray-400 uppercase">{a.alert_type}</span>
-                  <span className="text-xs font-medium text-gray-900">{a.alert_title}</span>
+                  <SeverityBadge level={S(a.severity)} />
+                  <span className="text-[9px] text-gray-400 uppercase">{S(a.alert_type)}</span>
+                  <span className="text-xs font-medium text-gray-900">{S(a.alert_title)}</span>
                 </div>
-                {a.brand && <span className="text-[9px] text-orange-600">Marca: {a.brand}</span>}
-                <p className="text-[11px] text-gray-600">{a.description}</p>
+                {a.brand && <span className="text-[9px] text-orange-600">Marca: {S(a.brand)}</span>}
+                <p className="text-[11px] text-gray-600">{S(a.description)}</p>
                 {a.quantified_impact && (
-                  <p className="text-[10px] font-medium text-red-600">Impacto: {a.quantified_impact}</p>
+                  <p className="text-[10px] font-medium text-red-600">Impacto: {S(a.quantified_impact)}</p>
                 )}
-                <p className="text-[10px] text-blue-600">Resposta: {a.recommended_response}</p>
+                <p className="text-[10px] text-blue-600">Resposta: {S(a.recommended_response)}</p>
                 {a.school_sensitivity && (
                   <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-medium mt-0.5 ${
                     a.school_sensitivity === 'high' ? 'bg-red-100 text-red-700' :
                     a.school_sensitivity === 'moderate' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'
-                  }`}>Sensibilidade escolar: {a.school_sensitivity}</span>
+                  }`}>Sensibilidade escolar: {S(a.school_sensitivity)}</span>
                 )}
               </div>
             ))}
@@ -1294,26 +1358,26 @@ function RiskView({ data }: { data: RiskOutput }) {
                 <div key={i} className={`rounded-lg px-3 py-2 border ${style.bg} ${style.border}`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs font-medium text-gray-900">{t.tag}</span>
-                      {t.brand && <span className="text-[9px] text-gray-500 ml-1">({t.brand})</span>}
+                      <span className="text-xs font-medium text-gray-900">{S(t.tag)}</span>
+                      {t.brand && <span className="text-[9px] text-gray-500 ml-1">({S(t.brand)})</span>}
                     </div>
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${style.bg} ${style.text}`}>
-                      {t.risk_level}
+                      {S(t.risk_level)}
                     </span>
                   </div>
-                  <p className="text-[11px] text-gray-600 mt-0.5">{t.risk_explanation}</p>
+                  <p className="text-[11px] text-gray-600 mt-0.5">{S(t.risk_explanation)}</p>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[10px] text-gray-500">
-                    {t.risk_type && <span>Tipo: {t.risk_type}</span>}
-                    {t.ebitda_impact_estimate && <span>Impacto EBITDA: {t.ebitda_impact_estimate}</span>}
+                    {t.risk_type && <span>Tipo: {S(t.risk_type)}</span>}
+                    {t.ebitda_impact_estimate && <span>Impacto EBITDA: {S(t.ebitda_impact_estimate)}</span>}
                   </div>
                   {(t.family_impact || t.student_safety_impact) && (
                     <div className="flex gap-3 mt-1 text-[9px]">
-                      {t.family_impact && <span className="text-purple-600">Famílias: {t.family_impact}</span>}
-                      {t.student_safety_impact && <span className="text-red-600">Segurança: {t.student_safety_impact}</span>}
+                      {t.family_impact && <span className="text-purple-600">Famílias: {S(t.family_impact)}</span>}
+                      {t.student_safety_impact && <span className="text-red-600">Segurança: {S(t.student_safety_impact)}</span>}
                     </div>
                   )}
                   {t.mitigation_suggestion && (
-                    <p className="text-[10px] text-blue-600 mt-0.5">Mitigação: {t.mitigation_suggestion}</p>
+                    <p className="text-[10px] text-blue-600 mt-0.5">Mitigação: {S(t.mitigation_suggestion)}</p>
                   )}
                 </div>
               );
@@ -1332,7 +1396,7 @@ function RiskView({ data }: { data: RiskOutput }) {
               const ss = SUSTAINABILITY_STYLES[sustainability.sustainability_level] || SUSTAINABILITY_STYLES.fragile;
               return (
                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${ss.bg} ${ss.text}`}>
-                  {sustainability.sustainability_level}
+                  {S(sustainability.sustainability_level)}
                 </span>
               );
             })()}
@@ -1414,20 +1478,20 @@ function RiskView({ data }: { data: RiskOutput }) {
               return (
                 <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-gray-900">{r.risk_item}</span>
+                    <span className="text-xs font-medium text-gray-900">{S(r.risk_item)}</span>
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${aStyle.bg} ${aStyle.text}`}>
-                      {aStyle.label}
+                      {S(aStyle.label)}
                     </span>
                   </div>
-                  {r.brand && <span className="text-[9px] text-orange-600">Marca: {r.brand}</span>}
-                  <p className="text-[11px] text-gray-600">{r.justification}</p>
+                  {r.brand && <span className="text-[9px] text-orange-600">Marca: {S(r.brand)}</span>}
+                  <p className="text-[11px] text-gray-600">{S(r.justification)}</p>
                   {r.mitigation_plan && (
-                    <p className="text-[10px] text-blue-600">Mitigação: {r.mitigation_plan}</p>
+                    <p className="text-[10px] text-blue-600">Mitigação: {S(r.mitigation_plan)}</p>
                   )}
                   <div className="flex flex-wrap gap-3 text-[9px] text-gray-500 mt-0.5">
-                    {r.review_trigger && <span>Revisão: {r.review_trigger}</span>}
-                    {r.escalation_trigger && <span className="text-amber-600">Escalação: {r.escalation_trigger}</span>}
-                    {r.stop_trigger && <span className="text-red-600">Parada: {r.stop_trigger}</span>}
+                    {r.review_trigger && <span>Revisão: {S(r.review_trigger)}</span>}
+                    {r.escalation_trigger && <span className="text-amber-600">Escalação: {S(r.escalation_trigger)}</span>}
+                    {r.stop_trigger && <span className="text-red-600">Parada: {S(r.stop_trigger)}</span>}
                   </div>
                 </div>
               );
@@ -1465,7 +1529,33 @@ function ConsolidationView({ data }: { data: ConsolidationOutput }) {
       {conflicts.length > 0 && (
         <Card>
           <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Conflitos entre Agentes ({conflicts.length})</SectionTitle>
-          <BulletList items={conflicts} />
+          <div className="space-y-2">
+            {conflicts.map((c: any, i: number) => {
+              // Suporta tanto string quanto objeto com keys conflict_description, agents_involved, etc.
+              if (typeof c === 'string') {
+                return (
+                  <div key={i} className="flex items-start gap-2 text-xs text-gray-700">
+                    <span className="mt-1.5 w-1 h-1 rounded-full bg-amber-400 shrink-0" />
+                    {c}
+                  </div>
+                );
+              }
+              return (
+                <div key={i} className="bg-amber-50 rounded-lg px-3 py-2 space-y-1">
+                  <p className="text-xs font-medium text-amber-900">{safeVal(c.conflict_description || c.description)}</p>
+                  {c.agents_involved && (
+                    <p className="text-[10px] text-amber-700">Agentes: {safeVal(c.agents_involved)}</p>
+                  )}
+                  {c.alex_arbitration && (
+                    <p className="text-[10px] text-blue-600">Arbitragem: {safeVal(c.alex_arbitration)}</p>
+                  )}
+                  {c.arbitration_rationale && (
+                    <p className="text-[10px] text-gray-500 italic">{safeVal(c.arbitration_rationale)}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
       {recommendations.length > 0 && (
@@ -1475,11 +1565,11 @@ function ConsolidationView({ data }: { data: ConsolidationOutput }) {
             {recommendations.map((r: Recommendation, i: number) => (
               <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
                 <div className="flex items-center gap-2">
-                  <SeverityBadge level={r.priority} />
-                  <span className="text-xs font-medium text-gray-900">{r.area}</span>
+                  <SeverityBadge level={safeVal(r.priority)} />
+                  <span className="text-xs font-medium text-gray-900">{safeVal(r.area)}</span>
                 </div>
-                <p className="text-[11px] text-gray-700">{r.action}</p>
-                <p className="text-[10px] text-gray-500">Impacto esperado: {r.expected_impact}</p>
+                <p className="text-[11px] text-gray-700">{safeVal(r.action)}</p>
+                <p className="text-[10px] text-gray-500">Impacto esperado: {safeVal(r.expected_impact)}</p>
               </div>
             ))}
           </div>
@@ -1493,9 +1583,9 @@ function ConsolidationView({ data }: { data: ConsolidationOutput }) {
               <Presentation size={16} className="text-indigo-600" />
               <h3 className="text-sm font-bold text-indigo-900">Board Presentation</h3>
             </div>
-            <p className="text-xs text-indigo-700 mt-1">{presentation.presentation_title}</p>
+            <p className="text-xs text-indigo-700 mt-1">{safeVal(presentation.presentation_title)}</p>
             {presentation.executive_context && (
-              <p className="text-[11px] text-indigo-600 mt-1">{presentation.executive_context}</p>
+              <p className="text-[11px] text-indigo-600 mt-1">{safeVal(presentation.executive_context)}</p>
             )}
           </div>
           <div className="divide-y divide-gray-100">
@@ -1505,22 +1595,22 @@ function ConsolidationView({ data }: { data: ConsolidationOutput }) {
                   <span className="w-5 h-5 flex items-center justify-center rounded bg-indigo-100 text-indigo-700 text-[10px] font-bold">
                     {i + 1}
                   </span>
-                  <span className="text-xs font-bold text-gray-900">{slide.title}</span>
+                  <span className="text-xs font-bold text-gray-900">{safeVal(slide.title)}</span>
                 </div>
-                <p className="text-[10px] text-gray-500 italic">{slide.purpose}</p>
+                <p className="text-[10px] text-gray-500 italic">{safeVal(slide.purpose)}</p>
                 <ul className="space-y-1 ml-7">
                   {(slide.bullets || []).map((b, j) => (
                     <li key={j} className="flex items-start gap-2 text-xs text-gray-800">
                       <span className="mt-1 w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                      {b}
+                      {safeVal(b)}
                     </li>
                   ))}
                 </ul>
                 <div className="ml-7 bg-indigo-50 rounded px-3 py-1.5">
-                  <p className="text-[11px] font-semibold text-indigo-800">{slide.key_message}</p>
+                  <p className="text-[11px] font-semibold text-indigo-800">{safeVal(slide.key_message)}</p>
                 </div>
                 {slide.optional_supporting_note && (
-                  <p className="ml-7 text-[10px] text-gray-400 italic">{slide.optional_supporting_note}</p>
+                  <p className="ml-7 text-[10px] text-gray-400 italic">{safeVal(slide.optional_supporting_note)}</p>
                 )}
               </div>
             ))}
@@ -1621,14 +1711,14 @@ function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
                 <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
                   <div className="flex items-start gap-2">
                     <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${ps.bg} ${ps.text}`}>
-                      {q.priority}
+                      {S(q.priority)}
                     </span>
-                    <span className="text-[9px] text-gray-400 shrink-0">{q.question_category}</span>
+                    <span className="text-[9px] text-gray-400 shrink-0">{S(q.question_category)}</span>
                   </div>
-                  <p className="text-xs font-medium text-gray-900 italic">"{q.question_text}"</p>
-                  <p className="text-[10px] text-gray-500">{q.why_director_would_ask}</p>
+                  <p className="text-xs font-medium text-gray-900 italic">"{S(q.question_text)}"</p>
+                  <p className="text-[10px] text-gray-500">{S(q.why_director_would_ask)}</p>
                   {q.linked_material_section && (
-                    <p className="text-[9px] text-blue-500">Seção: {q.linked_material_section}</p>
+                    <p className="text-[9px] text-blue-500">Seção: {S(q.linked_material_section)}</p>
                   )}
                   {answer && (
                     <div className="mt-1.5 pl-3 border-l-2 border-slate-300 space-y-0.5">
@@ -1640,22 +1730,22 @@ function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-gray-800 font-medium">{answer.direct_answer}</p>
+                      <p className="text-[11px] text-gray-800 font-medium">{S(answer.direct_answer)}</p>
                       {answer.main_number && (
-                        <p className="text-[10px] text-blue-700 font-medium">Dado: {answer.main_number}</p>
+                        <p className="text-[10px] text-blue-700 font-medium">Dado: {S(answer.main_number)}</p>
                       )}
                       {answer.justification && (
-                        <p className="text-[10px] text-gray-600">{answer.justification}</p>
+                        <p className="text-[10px] text-gray-600">{S(answer.justification)}</p>
                       )}
                       <div className="flex flex-wrap gap-3 text-[10px] mt-0.5">
-                        {answer.owner && <span className="text-purple-700">Dono: {answer.owner}</span>}
-                        {answer.deadline && <span className="text-orange-700">Prazo: {answer.deadline}</span>}
+                        {answer.owner && <span className="text-purple-700">Dono: {S(answer.owner)}</span>}
+                        {answer.deadline && <span className="text-orange-700">Prazo: {S(answer.deadline)}</span>}
                       </div>
                       {answer.associated_decision && (
-                        <p className="text-[10px] text-green-700">Decisão: {answer.associated_decision}</p>
+                        <p className="text-[10px] text-green-700">Decisão: {S(answer.associated_decision)}</p>
                       )}
                       {answer.answer_gap_note && (
-                        <p className="text-[10px] text-amber-600">Lacuna: {answer.answer_gap_note}</p>
+                        <p className="text-[10px] text-amber-600">Lacuna: {S(answer.answer_gap_note)}</p>
                       )}
                     </div>
                   )}
@@ -1828,14 +1918,14 @@ function CEOReviewView({ data }: { data: CEOReviewOutput }) {
                   {/* Question */}
                   <div className="flex items-start gap-2">
                     <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${ps.bg} ${ps.text}`}>
-                      {q.priority}
+                      {S(q.priority)}
                     </span>
-                    <span className="text-[9px] text-gray-400 shrink-0">{q.question_category}</span>
+                    <span className="text-[9px] text-gray-400 shrink-0">{S(q.question_category)}</span>
                   </div>
-                  <p className="text-xs font-medium text-gray-900 italic">"{q.question_text}"</p>
-                  <p className="text-[10px] text-gray-500">{q.why_ceo_would_ask}</p>
+                  <p className="text-xs font-medium text-gray-900 italic">"{S(q.question_text)}"</p>
+                  <p className="text-[10px] text-gray-500">{S(q.why_ceo_would_ask)}</p>
                   {q.linked_agent_output && (
-                    <p className="text-[9px] text-blue-500">Fonte: {q.linked_agent_output}</p>
+                    <p className="text-[9px] text-blue-500">Fonte: {S(q.linked_agent_output)}</p>
                   )}
                   {/* Answer */}
                   {answer && (
@@ -1848,18 +1938,18 @@ function CEOReviewView({ data }: { data: CEOReviewOutput }) {
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-gray-800 font-medium">{answer.direct_answer}</p>
+                      <p className="text-[11px] text-gray-800 font-medium">{S(answer.direct_answer)}</p>
                       {answer.main_number && (
-                        <p className="text-[10px] text-blue-700 font-medium">Dado: {answer.main_number}</p>
+                        <p className="text-[10px] text-blue-700 font-medium">Dado: {S(answer.main_number)}</p>
                       )}
                       {answer.justification && (
-                        <p className="text-[10px] text-gray-600">{answer.justification}</p>
+                        <p className="text-[10px] text-gray-600">{S(answer.justification)}</p>
                       )}
                       {answer.associated_action && (
-                        <p className="text-[10px] text-green-700">Ação: {answer.associated_action}</p>
+                        <p className="text-[10px] text-green-700">Acao: {S(answer.associated_action)}</p>
                       )}
                       {answer.answer_fragility_note && (
-                        <p className="text-[10px] text-amber-600">Ressalva: {answer.answer_fragility_note}</p>
+                        <p className="text-[10px] text-amber-600">Ressalva: {S(answer.answer_fragility_note)}</p>
                       )}
                     </div>
                   )}
@@ -1922,19 +2012,19 @@ function CEOReviewView({ data }: { data: CEOReviewOutput }) {
           <div className="space-y-3">
             {rehearsal.map((r: ExecutiveRehearsalEntry, i: number) => (
               <div key={i} className="bg-slate-50 rounded-lg px-3 py-2 space-y-1">
-                <p className="text-xs font-medium text-gray-900 italic">"{r.simulated_question}"</p>
+                <p className="text-xs font-medium text-gray-900 italic">"{S(r.simulated_question)}"</p>
                 <div className="pl-3 border-l-2 border-green-300 space-y-0.5">
                   <p className="text-[10px] font-medium text-green-700">Resposta ideal:</p>
-                  <p className="text-[11px] text-gray-700">{r.ideal_answer}</p>
+                  <p className="text-[11px] text-gray-700">{S(r.ideal_answer)}</p>
                 </div>
                 {r.risk_if_answered_badly && (
-                  <p className="text-[10px] text-red-600">Risco se mal respondida: {r.risk_if_answered_badly}</p>
+                  <p className="text-[10px] text-red-600">Risco se mal respondida: {S(r.risk_if_answered_badly)}</p>
                 )}
                 {r.follow_up_question && (
-                  <p className="text-[10px] text-amber-700 italic">Follow-up: "{r.follow_up_question}"</p>
+                  <p className="text-[10px] text-amber-700 italic">Follow-up: "{S(r.follow_up_question)}"</p>
                 )}
                 {r.best_reinforcement_point && (
-                  <p className="text-[10px] text-blue-600">Reforço: {r.best_reinforcement_point}</p>
+                  <p className="text-[10px] text-blue-600">Reforco: {S(r.best_reinforcement_point)}</p>
                 )}
               </div>
             ))}
@@ -1954,42 +2044,42 @@ const OutputRenderer: React.FC<OutputRendererProps> = ({ step }) => {
 
   const { agent_code, step_type, output_data } = step;
 
+  let content: React.ReactNode = null;
+
   if (agent_code === 'alex' && step_type === 'plan') {
-    return <SupervisorPlanView data={output_data as SupervisorPlanOutput} />;
-  }
-  if (agent_code === 'bruna' && step_type === 'execute') {
-    return <DataQualityView data={output_data as DataQualityOutput} />;
-  }
-  if (agent_code === 'carlos' && step_type === 'execute') {
-    return <PerformanceView data={output_data as PerformanceAnalysisOutput} />;
-  }
-  if (agent_code === 'denilson' && step_type === 'execute') {
-    return <OptimizationView data={output_data as OptimizationOutput} />;
-  }
-  if (agent_code === 'edmundo' && step_type === 'execute') {
-    return <ForecastView data={output_data as ForecastOutput} />;
-  }
-  if (agent_code === 'falcao' && step_type === 'execute') {
-    return <RiskView data={output_data as RiskOutput} />;
-  }
-  if (agent_code === 'alex' && step_type === 'consolidate') {
-    return <ConsolidationView data={output_data as ConsolidationOutput} />;
-  }
-  if (agent_code === 'diretor' && step_type === 'review') {
-    return <DirectorReviewView data={output_data as DirectorReviewOutput} />;
-  }
-  if (agent_code === 'ceo' && step_type === 'review') {
-    return <CEOReviewView data={output_data as CEOReviewOutput} />;
+    content = <SupervisorPlanView data={output_data as SupervisorPlanOutput} />;
+  } else if (agent_code === 'bruna' && step_type === 'execute') {
+    content = <DataQualityView data={output_data as DataQualityOutput} />;
+  } else if (agent_code === 'carlos' && step_type === 'execute') {
+    content = <PerformanceView data={output_data as PerformanceAnalysisOutput} />;
+  } else if (agent_code === 'denilson' && step_type === 'execute') {
+    content = <OptimizationView data={output_data as OptimizationOutput} />;
+  } else if (agent_code === 'edmundo' && step_type === 'execute') {
+    content = <ForecastView data={output_data as ForecastOutput} />;
+  } else if (agent_code === 'falcao' && step_type === 'execute') {
+    content = <RiskView data={output_data as RiskOutput} />;
+  } else if (agent_code === 'alex' && step_type === 'consolidate') {
+    content = <ConsolidationView data={output_data as ConsolidationOutput} />;
+  } else if (agent_code === 'diretor' && step_type === 'review') {
+    content = <DirectorReviewView data={output_data as DirectorReviewOutput} />;
+  } else if (agent_code === 'ceo' && step_type === 'review') {
+    content = <CEOReviewView data={output_data as CEOReviewOutput} />;
+  } else {
+    // Fallback — render raw JSON
+    content = (
+      <Card>
+        <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Output ({agent_code})</SectionTitle>
+        <pre className="text-[10px] text-gray-600 bg-gray-50 rounded p-2 overflow-x-auto max-h-48">
+          {JSON.stringify(output_data, null, 2)}
+        </pre>
+      </Card>
+    );
   }
 
-  // Fallback — render raw JSON
   return (
-    <Card>
-      <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Output ({agent_code})</SectionTitle>
-      <pre className="text-[10px] text-gray-600 bg-gray-50 rounded p-2 overflow-x-auto max-h-48">
-        {JSON.stringify(output_data, null, 2)}
-      </pre>
-    </Card>
+    <OutputErrorBoundary fallbackData={output_data}>
+      {content}
+    </OutputErrorBoundary>
   );
 };
 
