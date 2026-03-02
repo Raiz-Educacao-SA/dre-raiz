@@ -1362,6 +1362,31 @@ export const bulkAddTransactions = async (transactions: Omit<Transaction, 'id'>[
   return data.map(dbToTransaction);
 };
 
+// Atualização em massa da coluna recurring por chave_id
+export const bulkUpdateRecurring = async (
+  items: { chave_id: string; recurring: string }[]
+): Promise<{ updated: number; notFound: string[] }> => {
+  let updated = 0;
+  const notFound: string[] = [];
+
+  for (const item of items) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .update({ recurring: item.recurring })
+      .eq('chave_id', item.chave_id)
+      .select('id');
+
+    if (error) throw new Error(error.message);
+    if (data && data.length > 0) {
+      updated += data.length;
+    } else {
+      notFound.push(item.chave_id);
+    }
+  }
+
+  return { updated, notFound };
+};
+
 // ========== MANUAL CHANGES ==========
 
 /** Query leve: apenas COUNT de pendentes — para badge do Sidebar no boot (<100ms) */

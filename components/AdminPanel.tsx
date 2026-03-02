@@ -51,7 +51,7 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia'>('import');
 
   // Estado para busca de usuários
   const [userSearch, setUserSearch] = useState('');
@@ -68,6 +68,14 @@ const AdminPanel: React.FC = () => {
   const [bancoTag03Options, setBancoTag03Options] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [bancoMessage, setBancoMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+
+  // Estados para aba Recorrência
+  const [recFile, setRecFile] = useState<File | null>(null);
+  const [recPreview, setRecPreview] = useState<{chave_id: string, recurring: string}[]>([]);
+  const [recUpdating, setRecUpdating] = useState(false);
+  const [recProgress, setRecProgress] = useState(0);
+  const [recMessage, setRecMessage] = useState<{type: 'success'|'error'|'info', text: string} | null>(null);
+  const [recLog, setRecLog] = useState<{time: string, type: 'info'|'success'|'error'|'warn', text: string}[]>([]);
 
   // Filtrar usuários por busca
   const filteredUsers = users.filter(user => {
@@ -357,6 +365,157 @@ const AdminPanel: React.FC = () => {
     setTimeout(() => setImportMessage(null), 5000);
   };
 
+  // Helpers para aba Recorrência
+  const showRecMessage = (type: 'success' | 'error' | 'info', text: string) => {
+    setRecMessage({ type, text });
+    setTimeout(() => setRecMessage(null), 8000);
+  };
+
+  const handleRecFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setRecFile(file);
+    setRecPreview([]);
+    setRecMessage(null);
+    const reader = new FileReader();
+
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data: any[] = XLSX.utils.sheet_to_json(ws);
+
+        if (data.length === 0) {
+          showRecMessage('error', 'Arquivo vazio!');
+          return;
+        }
+
+        // Mapear colunas flexíveis
+        const mapped: {chave_id: string, recurring: string}[] = [];
+        let skipped = 0;
+
+        for (const row of data) {
+          const chaveId = String(row['chave_id'] || row['Chave ID'] || row['CHAVE_ID'] || row['Chave_ID'] || '').trim();
+          if (!chaveId) { skipped++; continue; }
+
+          const rawRec = String(row['Recorrente'] || row['Recurring'] || row['recurring'] || row['recorrente'] || '').trim();
+
+          // Normalizar: aceita Sim/Não/sim/não/S/N/s/n
+          let recurring = '';
+          const lower = rawRec.toLowerCase();
+          if (['sim', 's', 'yes', 'y', '1'].includes(lower)) {
+            recurring = 'Sim';
+          } else if (['não', 'nao', 'n', 'no', '0'].includes(lower)) {
+            recurring = 'Não';
+          } else {
+            recurring = rawRec || 'Não'; // fallback
+          }
+
+          mapped.push({ chave_id: chaveId, recurring });
+        }
+
+        if (mapped.length === 0) {
+          showRecMessage('error', 'Nenhuma linha válida encontrada. Verifique se a coluna "chave_id" existe.');
+          return;
+        }
+
+        setRecPreview(mapped);
+        showRecMessage('info', `${mapped.length} registros carregados${skipped > 0 ? ` (${skipped} linhas sem chave_id ignoradas)` : ''}. Revise e clique em "Atualizar Recorrência".`);
+      } catch (error) {
+        console.error('Erro ao ler arquivo de recorrência:', error);
+        showRecMessage('error', 'Erro ao ler arquivo. Verifique o formato.');
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
+  const addRecLog = (type: 'info'|'success'|'error'|'warn', text: string) => {
+    const time = new Date().toLocaleTimeString('pt-BR');
+    setRecLog(prev => [...prev, { time, type, text }]);
+  };
+
+  const handleRecUpdate = async () => {
+    if (recPreview.length === 0) {
+      showRecMessage('error', 'Nenhum dado para atualizar!');
+      return;
+    }
+
+    if (!confirm(`Você tem certeza que deseja atualizar a recorrência de ${recPreview.length} registros?`)) {
+      return;
+    }
+
+    setRecUpdating(true);
+    setRecProgress(0);
+    setRecLog([]); // limpar log anterior
+
+    const simCount = recPreview.filter(r => r.recurring === 'Sim').length;
+    const naoCount = recPreview.filter(r => r.recurring === 'Não').length;
+    addRecLog('info', `Iniciando atualização: ${recPreview.length} registros (${simCount} Sim, ${naoCount} Não)`);
+
+    try {
+      const batchSize = 50;
+      const totalBatches = Math.ceil(recPreview.length / batchSize);
+      let totalUpdated = 0;
+      const allNotFound: string[] = [];
+
+      for (let i = 0; i < totalBatches; i++) {
+        const start = i * batchSize;
+        const end = start + batchSize;
+        const batch = recPreview.slice(start, end);
+
+        addRecLog('info', `Batch ${i + 1}/${totalBatches} — processando ${batch.length} registros (${start + 1} a ${Math.min(end, recPreview.length)})...`);
+
+        try {
+          const result = await supabaseService.bulkUpdateRecurring(batch);
+          totalUpdated += result.updated;
+          allNotFound.push(...result.notFound);
+
+          if (result.notFound.length > 0) {
+            addRecLog('warn', `Batch ${i + 1}: ${result.updated} atualizados, ${result.notFound.length} não encontrados: ${result.notFound.slice(0, 5).join(', ')}${result.notFound.length > 5 ? '...' : ''}`);
+          } else {
+            addRecLog('success', `Batch ${i + 1}: ${result.updated} atualizados`);
+          }
+        } catch (batchErr: any) {
+          addRecLog('error', `Batch ${i + 1}: ERRO — ${batchErr.message}`);
+          throw batchErr;
+        }
+
+        setRecProgress(((i + 1) / totalBatches) * 100);
+      }
+
+      // Resumo final
+      addRecLog('success', `Concluído: ${totalUpdated} registros atualizados com sucesso`);
+      if (allNotFound.length > 0) {
+        addRecLog('warn', `${allNotFound.length} chave_id não encontrados no banco:`);
+        // Listar todos em grupos de 10
+        for (let j = 0; j < allNotFound.length; j += 10) {
+          addRecLog('warn', `  ${allNotFound.slice(j, j + 10).join(', ')}`);
+        }
+      }
+
+      const parts: string[] = [`${totalUpdated} registros atualizados com sucesso!`];
+      if (allNotFound.length > 0) {
+        parts.push(`${allNotFound.length} chave_id não encontrados.`);
+      }
+
+      showRecMessage(allNotFound.length > 0 ? 'info' : 'success', parts.join(' '));
+
+      setRecFile(null);
+      setRecPreview([]);
+      setRecProgress(0);
+    } catch (error: any) {
+      console.error('Erro ao atualizar recorrência:', error);
+      addRecLog('error', `ERRO FATAL: ${error.message}`);
+      showRecMessage('error', `Erro ao atualizar: ${error.message}`);
+    } finally {
+      setRecUpdating(false);
+    }
+  };
+
   // Baixar template Excel
   const handleDownloadTemplate = () => {
     const template = [
@@ -594,6 +753,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'banco' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('recorrencia')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'recorrencia'
+              ? 'text-orange-700 bg-orange-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Upload size={14} />
+            Recorrência
+          </div>
+          {activeTab === 'recorrencia' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -1492,6 +1667,204 @@ const AdminPanel: React.FC = () => {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Aba: Recorrência */}
+      {activeTab === 'recorrencia' && (
+        <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-300 rounded-xl p-4 shadow">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-orange-100 p-2 rounded-lg">
+              <Upload className="text-orange-600" size={20} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-black text-orange-900">Atualização de Recorrência em Massa</h2>
+              <p className="text-xs text-orange-700">Carregue um Excel com <strong>chave_id</strong> e <strong>Recorrente</strong> (Sim/Não)</p>
+            </div>
+          </div>
+
+          {/* Mensagem */}
+          {recMessage && (
+            <div className={`p-3 rounded-lg mb-4 text-xs font-bold flex items-center gap-2 ${
+              recMessage.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' :
+              recMessage.type === 'error' ? 'bg-red-100 text-red-800 border border-red-300' :
+              'bg-blue-100 text-blue-800 border border-blue-300'
+            }`}>
+              {recMessage.type === 'success' ? <CheckCircle2 size={14} /> :
+               recMessage.type === 'error' ? <AlertTriangle size={14} /> :
+               <Eye size={14} />}
+              {recMessage.text}
+            </div>
+          )}
+
+          {/* Upload */}
+          <div className="mb-4">
+            <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-orange-300 border-dashed rounded-xl cursor-pointer bg-white hover:bg-orange-50 transition-all">
+              <div className="flex flex-col items-center justify-center py-4">
+                <Upload className="w-8 h-8 mb-2 text-orange-400" />
+                <p className="text-xs text-orange-600 font-bold">
+                  {recFile ? recFile.name : 'Clique para selecionar arquivo (.xlsx, .xls, .csv)'}
+                </p>
+                {recFile && (
+                  <p className="text-[10px] text-orange-500 mt-1">Clique novamente para trocar o arquivo</p>
+                )}
+              </div>
+              <input
+                type="file"
+                className="hidden"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleRecFileUpload}
+              />
+            </label>
+          </div>
+
+          {/* Preview */}
+          {recPreview.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-black text-orange-800">
+                  Preview — {recPreview.length} registros
+                </h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-orange-600">
+                    Sim: {recPreview.filter(r => r.recurring === 'Sim').length} |
+                    Não: {recPreview.filter(r => r.recurring === 'Não').length}
+                  </span>
+                  <button
+                    onClick={() => { setRecPreview([]); setRecFile(null); setRecMessage(null); }}
+                    className="text-[10px] text-red-600 hover:text-red-800 font-bold"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-64 overflow-y-auto border border-orange-200 rounded-lg">
+                <table className="w-full text-xs">
+                  <thead className="bg-orange-100 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-1.5 text-orange-800 font-black">#</th>
+                      <th className="text-left px-3 py-1.5 text-orange-800 font-black">chave_id</th>
+                      <th className="text-left px-3 py-1.5 text-orange-800 font-black">Recorrente</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recPreview.slice(0, 200).map((item, idx) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-orange-50/50'}>
+                        <td className="px-3 py-1 text-gray-400">{idx + 1}</td>
+                        <td className="px-3 py-1 font-mono text-[10px]">{item.chave_id}</td>
+                        <td className="px-3 py-1">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            item.recurring === 'Sim'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {item.recurring}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {recPreview.length > 200 && (
+                      <tr className="bg-orange-50">
+                        <td colSpan={3} className="px-3 py-2 text-center text-orange-600 text-[10px] font-bold">
+                          ... e mais {recPreview.length - 200} registros
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Barra de progresso */}
+          {recUpdating && (
+            <div className="mb-4">
+              <div className="flex justify-between text-[10px] text-orange-700 mb-1 font-bold">
+                <span>Atualizando...</span>
+                <span>{Math.round(recProgress)}%</span>
+              </div>
+              <div className="w-full bg-orange-200 rounded-full h-2">
+                <div
+                  className="bg-orange-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${recProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Log de carga */}
+          {recLog.length > 0 && (
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-[10px] font-black text-orange-800 uppercase">Log de Carga</h3>
+                {!recUpdating && (
+                  <button
+                    onClick={() => setRecLog([])}
+                    className="text-[9px] text-gray-500 hover:text-red-600 font-bold"
+                  >
+                    Limpar log
+                  </button>
+                )}
+              </div>
+              <div className="max-h-48 overflow-y-auto bg-gray-900 rounded-lg p-2 font-mono text-[10px] leading-relaxed">
+                {recLog.map((entry, idx) => (
+                  <div key={idx} className={`flex gap-2 ${
+                    entry.type === 'success' ? 'text-green-400' :
+                    entry.type === 'error' ? 'text-red-400' :
+                    entry.type === 'warn' ? 'text-yellow-400' :
+                    'text-gray-300'
+                  }`}>
+                    <span className="text-gray-500 shrink-0">[{entry.time}]</span>
+                    <span className="shrink-0">
+                      {entry.type === 'success' ? 'OK' :
+                       entry.type === 'error' ? 'ERR' :
+                       entry.type === 'warn' ? 'WARN' : 'INFO'}
+                    </span>
+                    <span>{entry.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Botão Atualizar */}
+          {recPreview.length > 0 && !recUpdating && (
+            <button
+              onClick={handleRecUpdate}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold text-xs uppercase transition-all shadow hover:shadow-md"
+            >
+              <CheckCircle size={14} />
+              Atualizar Recorrência ({recPreview.length} registros)
+            </button>
+          )}
+
+          {/* Instruções */}
+          {recPreview.length === 0 && !recFile && (
+            <div className="bg-white border border-orange-200 rounded-lg p-3 mt-2">
+              <p className="text-[10px] text-orange-800 font-bold mb-2">Formato esperado do Excel:</p>
+              <table className="w-full text-[10px] border border-orange-100 rounded">
+                <thead className="bg-orange-50">
+                  <tr>
+                    <th className="px-2 py-1 text-left text-orange-700">chave_id</th>
+                    <th className="px-2 py-1 text-left text-orange-700">Recorrente</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-t border-orange-100">
+                    <td className="px-2 py-1 font-mono text-gray-600">ABC-123-XYZ</td>
+                    <td className="px-2 py-1 text-gray-600">Sim</td>
+                  </tr>
+                  <tr className="border-t border-orange-100">
+                    <td className="px-2 py-1 font-mono text-gray-600">DEF-456-UVW</td>
+                    <td className="px-2 py-1 text-gray-600">Não</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="text-[9px] text-orange-600 mt-2">
+                Aceita: Sim/Não, sim/não, S/N, Yes/No. Apenas registros com chave_id no Excel serão alterados.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
