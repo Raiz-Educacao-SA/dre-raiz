@@ -26,7 +26,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction, TransactionType, TransactionStatus, ManualChange, PaginationParams, ContaContabilOption } from '../types';
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
-import { getFilteredTransactions, TransactionFilters, getFiliais, getTagRecords, FilialOption, TagRecord, getContaContabilOptions, getTag0Map, getTag0Options, getTag01Options, getTag02Options, getTag03Options, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
+import { getFilteredTransactions, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
 import ContaContabilSelector from './ContaContabilSelector';
 import ExcelJS from 'exceljs';
 import debounce from 'lodash.debounce';
@@ -183,27 +183,28 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [filterOptions, setFilterOptions] = useState<{
     filiais: FilialOption[];
     marcas: string[];
-    tagRecords: TagRecord[];
     tag0Map: Map<string, string>; // Mapeamento tag01 → tag0
     tag0Options: string[]; // Lista completa de Tag0
     tag01Options: string[]; // Lista completa de Tag01
     tag02Options: string[]; // Lista completa de Tag02
     tag03Options: string[]; // Lista completa de Tag03
-  }>({ filiais: [], marcas: [], tagRecords: [], tag0Map: new Map(), tag0Options: [], tag01Options: [], tag02Options: [], tag03Options: [] });
+  }>({ filiais: [], marcas: [], tag0Map: new Map(), tag0Options: [], tag01Options: [], tag02Options: [], tag03Options: [] });
 
   // Carregar opções de lookup ao montar
   useEffect(() => {
     Promise.all([
       getFiliais(),
-      getTagRecords(),
       getTag0Map(),
       getTag0Options(),
-      getTag01Options(),
-      getTag02Options(),
-      getTag03Options()
-    ]).then(([filiais, tagRecords, tag0Map, tag0Options, tag01Options, tag02Options, tag03Options]) => {
+      getTransactionFilterOptions(),  // 1 RPC = tag01 + tag02 + tag03 (server-side DISTINCT)
+    ]).then(([filiais, tag0Map, tag0Options, tagFilters]) => {
       const marcas = [...new Set(filiais.map(f => f.cia))].sort();
-      setFilterOptions({ filiais, marcas, tagRecords, tag0Map, tag0Options, tag01Options, tag02Options, tag03Options });
+      setFilterOptions({
+        filiais, marcas, tag0Map, tag0Options,
+        tag01Options: tagFilters.tag01Options,
+        tag02Options: tagFilters.tag02Options,
+        tag03Options: tagFilters.tag03Options,
+      });
     });
   }, []);
 
@@ -412,19 +413,13 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       // Buscar do banco apenas tag03 que existem para os tag02 selecionados
       getTag03OptionsForTag02s(colFilters.tag02).then(opts => setTag3Options(opts));
     } else if (colFilters.tag01?.length > 0) {
-      // Tag01 ativo mas tag02 não → buscar tag03 via tag01 (usando tagRecords como fallback)
-      const validTag3s = new Set(
-        filterOptions.tagRecords
-          .filter(r => colFilters.tag01.includes(r.tag1))
-          .map(r => r.tag3)
-          .filter(Boolean)
-      );
-      setTag3Options([...validTag3s].sort());
+      // Tag01 ativo mas tag02 não → buscar tag03 via tag01 (RPC server-side)
+      getTag03OptionsForTag01s(colFilters.tag01).then(opts => setTag3Options(opts));
     } else {
       // Sem filtro → mostrar todas as tag03
       setTag3Options(filterOptions.tag03Options);
     }
-  }, [colFilters.tag01, colFilters.tag02, filterOptions.tag03Options, filterOptions.tagRecords]);
+  }, [colFilters.tag01, colFilters.tag02, filterOptions.tag03Options]);
 
   // 🎯 Conta Contábil: busca da tabela tags (somente cod_conta com 14 dígitos)
   const [contaContabilOptions, setContaContabilOptions] = useState<string[]>([]);
