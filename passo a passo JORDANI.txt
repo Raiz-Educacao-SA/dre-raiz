@@ -1,0 +1,101 @@
+passo a passo JORDANI
+
+
+
+● 📋 PASSO A PASSO PARA O TI - CONFIGURAR TIMER AUTOMÁTICO
+
+  ---
+  PASSO 1: CRIAR STORAGE ACCOUNT
+
+  1. Acessar: https://portal.azure.com
+  2. Na barra de busca do topo, digitar: "Storage accounts"
+  3. Clicar em "+ Create" (botão azul)
+  4. Preencher:
+    - Subscription: [Deixar a que já está selecionada]
+    - Resource Group: rg-fabric-sync
+    - Storage account name: stfabricsync01 (ou qualquer nome único com apenas letras minúsculas e números)
+    - Region: Brazil South
+    - Performance: Standard
+    - Redundancy: Locally-redundant storage (LRS)
+  5. Clicar em "Review + create" (parte inferior)
+  6. Clicar em "Create"
+  7. Aguardar 1-2 minutos até aparecer "Your deployment is complete"
+  8. Clicar em "Go to resource"
+
+  ---
+  PASSO 2: COPIAR CONNECTION STRING
+
+  9. No menu lateral esquerdo, clicar em "Access keys" (Chaves de acesso)
+  10. Localizar "Connection string" da key1
+  11. Clicar no botão "Show" (Mostrar) ao lado da connection string
+  12. Clicar no ícone de copiar (dois quadradinhos) para copiar a connection string completa
+
+  12. ⚠️ IMPORTANTE: A connection string deve começar com DefaultEndpointsProtocol=https;AccountName=...
+
+  ---
+  PASSO 3: CONFIGURAR NA FUNCTION APP
+
+  13. Na barra de busca do Azure Portal, digitar: "fabric-sync-dre"
+  14. Clicar na Function App fabric-sync-dre
+  15. No menu lateral esquerdo, clicar em "Configuration" (Configuração)
+  16. Clicar em "+ New application setting" (Nova configuração de aplicativo)
+  17. Preencher:
+    - Name: AzureWebJobsStorage
+    - Value: [Colar a connection string copiada no passo 12]
+  18. Clicar em "OK"
+  19. ⚠️ IMPORTANTE: Clicar em "Save" no topo da página
+  20. Confirmar clicando em "Continue" quando aparecer o aviso
+  21. Aguardar a mensagem de sucesso (aparece no topo)
+
+  ---
+  PASSO 4: REINICIAR A FUNCTION APP (OPCIONAL MAS RECOMENDADO)
+
+  22. No menu lateral da Function App, clicar em "Overview" (Visão geral)
+  23. No topo, clicar no botão "Restart" (Reiniciar)
+  24. Confirmar: "Yes"
+  25. Aguardar ~30 segundos até o status voltar para "Running"
+
+  ---
+  ✅ VALIDAR SE DEU CERTO
+
+  26. Voltar para "Configuration" (Configuração)
+  27. Na lista de Application settings, verificar se aparece:
+    - AzureWebJobsStorage com valor começando em DefaultEndpointsProtocol=https...
+  28. Se aparecer: PRONTO! ✅
+
+  ---
+  🎯 RESULTADO ESPERADO
+
+  Após configurar:
+  - O timer vai funcionar automaticamente
+  - A função vai executar todos os dias às 08:00 AM (Horário de Brasília)
+  - A primeira execução automática será amanhã às 08:00
+
+  ---
+  ⏱️ TEMPO ESTIMADO
+
+  - Total: ~5-10 minutos
+  - Complexidade: Baixa
+
+  ---
+  📞 EM CASO DE DÚVIDA
+
+  Se algo não funcionar ou aparecer erro:
+
+  Contatar:
+  - Edmilson Serafim
+  - edmilson.serafim@raizeducacao.info
+
+  Screenshots úteis:
+  - Tirar print da tela onde travou/deu erro
+  - Copiar a mensagem de erro exata
+
+  ---
+  💰 CUSTO
+
+  - Storage Account (Standard LRS): ~R$ 1-2/mês
+  - Uso: Mínimo (apenas para estado dos timers)
+  - Praticamente gratuito
+
+  ---
+  Esse é todo o trabalho necessário! Depois disso, a sincronização automática vai funcionar perfeitamente! 🚀

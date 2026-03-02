@@ -1,0 +1,3 @@
+inicia servidor
+
+npm run dev
