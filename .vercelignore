@@ -24,3 +24,14 @@ Modelo PPT
 agentes-versao-definitiva.md
 guia-slides-graficos-raiz.md
 *.txt
+
+# Serverless Functions — limite 12 no Hobby plan
+# Ignorar endpoints secundários para caber no limite
+api/agent-team/analytics.ts
+api/agent-team/brand-health-score.ts
+api/agent-team/cron-run.ts
+api/agent-team/forecast.ts
+api/agent-team/generate-cut-plan.ts
+api/agent-team/health-score.ts
+api/agent-team/send-completion-email.ts
+api/agent-team/simulate-impact.ts
