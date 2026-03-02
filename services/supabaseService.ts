@@ -279,53 +279,61 @@ let cachedTag02Options: string[] | null = null;
 let cachedTag03Options: string[] | null = null;
 
 /**
+ * 🚀 RPC UNIFICADA — Busca DISTINCT tag01/tag02/tag03 em 1 chamada server-side
+ * Substitui 3 full-table-scans (50K+ rows cada) por 1 RPC leve (~300-500 valores)
+ */
+export const getTransactionFilterOptions = async (): Promise<{
+  tag01Options: string[];
+  tag02Options: string[];
+  tag03Options: string[];
+}> => {
+  // Se todos já estão cacheados, retornar direto
+  if (cachedTag01Options && cachedTag02Options && cachedTag03Options) {
+    return {
+      tag01Options: cachedTag01Options,
+      tag02Options: cachedTag02Options,
+      tag03Options: cachedTag03Options,
+    };
+  }
+
+  debug('🚀 RPC: Carregando filtros tag01/tag02/tag03 via get_transaction_filter_options...');
+  const { data, error } = await supabase.rpc('get_transaction_filter_options');
+
+  if (error) {
+    console.error('❌ Erro na RPC get_transaction_filter_options:', error);
+    return { tag01Options: [], tag02Options: [], tag03Options: [] };
+  }
+
+  cachedTag01Options = (data?.tag01 as string[]) || [];
+  cachedTag02Options = (data?.tag02 as string[]) || [];
+  cachedTag03Options = (data?.tag03 as string[]) || [];
+
+  debug(`✅ RPC filtros: ${cachedTag01Options.length} tag01, ${cachedTag02Options.length} tag02, ${cachedTag03Options.length} tag03`);
+  return {
+    tag01Options: cachedTag01Options,
+    tag02Options: cachedTag02Options,
+    tag03Options: cachedTag03Options,
+  };
+};
+
+/**
  * Busca todas as opções de Tag01 disponíveis no banco
- * Retorna lista única e ordenada de TODOS os tag01 distintos
+ * Delega à RPC unificada (retrocompatível com SomaTagsView e AdminPanel)
  */
 export const getTag01Options = async (): Promise<string[]> => {
   if (cachedTag01Options) return cachedTag01Options;
-
-  debug('🏷️ Carregando opções de Tag01...');
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('tag01')
-    .not('tag01', 'is', null);
-
-  if (error) {
-    console.error('❌ Erro ao carregar tag01 options:', error);
-    return [];
-  }
-
-  const uniqueTag01s = [...new Set(data?.map(row => row.tag01).filter(Boolean))].sort();
-  cachedTag01Options = uniqueTag01s;
-
-  debug(`✅ ${cachedTag01Options.length} opções de Tag01 carregadas`);
-  return cachedTag01Options;
+  const result = await getTransactionFilterOptions();
+  return result.tag01Options;
 };
 
 /**
  * Busca todas as opções de Tag02 disponíveis no banco
- * Retorna lista única e ordenada de TODOS os tag02 distintos
+ * Delega à RPC unificada (retrocompatível com SomaTagsView e AdminPanel)
  */
 export const getTag02Options = async (): Promise<string[]> => {
   if (cachedTag02Options) return cachedTag02Options;
-
-  debug('🏷️ Carregando opções de Tag02...');
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('tag02')
-    .not('tag02', 'is', null);
-
-  if (error) {
-    console.error('❌ Erro ao carregar tag02 options:', error);
-    return [];
-  }
-
-  const uniqueTag02s = [...new Set(data?.map(row => row.tag02).filter(Boolean))].sort();
-  cachedTag02Options = uniqueTag02s;
-
-  debug(`✅ ${cachedTag02Options.length} opções de Tag02 carregadas`);
-  return cachedTag02Options;
+  const result = await getTransactionFilterOptions();
+  return result.tag02Options;
 };
 
 /**
@@ -374,27 +382,25 @@ export const getTag03OptionsForTag02s = async (tags02: string[]): Promise<string
 
 /**
  * Busca todas as opções de Tag03 disponíveis no banco
- * Retorna lista única e ordenada de TODOS os tag03 distintos
+ * Delega à RPC unificada (retrocompatível com SomaTagsView e AdminPanel)
  */
 export const getTag03Options = async (): Promise<string[]> => {
   if (cachedTag03Options) return cachedTag03Options;
+  const result = await getTransactionFilterOptions();
+  return result.tag03Options;
+};
 
-  debug('🏷️ Carregando opções de Tag03...');
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('tag03')
-    .not('tag03', 'is', null);
-
+/**
+ * Retorna tag03 distintos para um array de tag01 (cascata tag01→tag03 via RPC)
+ */
+export const getTag03OptionsForTag01s = async (tags01: string[]): Promise<string[]> => {
+  if (tags01.length === 0) return [];
+  const { data, error } = await supabase.rpc('get_tag03_for_tag01s', { p_tag01s: tags01 });
   if (error) {
-    console.error('❌ Erro ao carregar tag03 options:', error);
+    console.error('❌ Erro na RPC get_tag03_for_tag01s:', error);
     return [];
   }
-
-  const uniqueTag03s = [...new Set(data?.map(row => row.tag03).filter(Boolean))].sort();
-  cachedTag03Options = uniqueTag03s;
-
-  debug(`✅ ${cachedTag03Options.length} opções de Tag03 carregadas`);
-  return cachedTag03Options;
+  return (data as string[]) || [];
 };
 
 export const getFiliais = async (): Promise<FilialOption[]> => {
@@ -2024,20 +2030,38 @@ export const getContaContabilOptions = async (): Promise<ContaContabilOption[]> 
   if (contaContabilCache && contaContabilCache.length > 0) return contaContabilCache;
 
   try {
-    // Busca da tabela tags — apenas contas com cod_conta de 14 caracteres (nível folha)
-    debug('📋 Carregando contas da tabela tags (cod_conta com 14 chars)...');
-    const { data, error } = await supabase
+    // Tenta RPC server-side (filtro LENGTH=14 no servidor)
+    debug('📋 RPC: Carregando contas via get_conta_contabil_options...');
+    const { data, error } = await supabase.rpc('get_conta_contabil_options');
+
+    if (!error && data && data.length > 0) {
+      contaContabilCache = (data as any[]).map(row => ({
+        cod_conta: row.cod_conta,
+        nome_nat_orc: row.nome_nat_orc || null,
+        tag0:  row.tag0  || null,
+        tag01: row.tag01 || null,
+        tag02: row.tag02 || null,
+        tag03: row.tag03 || null,
+      }));
+      debug(`✅ RPC: ${contaContabilCache.length} contas carregadas (14 chars)`);
+      return contaContabilCache;
+    }
+
+    // Fallback: busca direta da tabela tags (caso RPC não exista ainda)
+    if (error) {
+      debug('⚠️ RPC indisponível, usando fallback direto...');
+    }
+    const { data: fallbackData, error: fallbackError } = await supabase
       .from('tags')
       .select('cod_conta, tag0, tag1, tag2, tag3, tag4, nome_nat_orc, nat_orc')
       .order('cod_conta', { ascending: true });
 
-    if (error) {
-      console.error('❌ Erro ao buscar tabela tags:', error.message);
+    if (fallbackError) {
+      console.error('❌ Erro ao buscar tabela tags:', fallbackError.message);
       return [];
     }
 
-    // Filtra apenas os registros com cod_conta de exatamente 14 caracteres
-    const filtered = (data || []).filter(row => row.cod_conta && row.cod_conta.length === 14);
+    const filtered = (fallbackData || []).filter(row => row.cod_conta && row.cod_conta.length === 14);
 
     contaContabilCache = filtered.map(row => ({
       cod_conta: row.cod_conta,
@@ -2048,7 +2072,7 @@ export const getContaContabilOptions = async (): Promise<ContaContabilOption[]> 
       tag03: row.tag3  || null,
     }));
 
-    debug(`✅ ${contaContabilCache.length} contas carregadas da tabela tags (14 chars)`);
+    debug(`✅ Fallback: ${contaContabilCache.length} contas carregadas da tabela tags (14 chars)`);
     return contaContabilCache;
   } catch (e) {
     console.error('❌ EXCEPTION:', e);
@@ -2145,4 +2169,167 @@ export const getHoldingCompanies = async (holdingId: string): Promise<CompanyFin
     console.error('❌ Erro ao buscar holding companies:', e);
     return [];
   }
+};
+
+// ============================================
+// Share PDD
+// ============================================
+
+export interface SharePdd {
+  id: number;
+  marca: string;
+  valor: number;
+  updated_at: string;
+}
+
+export const getSharePdd = async (): Promise<SharePdd[]> => {
+  const { data, error } = await supabase
+    .from('share_pdd')
+    .select('id, marca, valor, updated_at')
+    .order('marca');
+  if (error) {
+    console.error('Erro ao buscar share_pdd:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const updateSharePdd = async (id: number, valor: number): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error, count } = await supabase
+    .from('share_pdd')
+    .update({ valor })
+    .eq('id', id)
+    .select();
+  if (error) {
+    console.error('Erro ao atualizar share_pdd:', error);
+    return { ok: false, error: error.message };
+  }
+  if (!data || data.length === 0) {
+    console.error('share_pdd update: nenhuma row afetada — RLS bloqueando?');
+    return { ok: false, error: 'Nenhuma linha atualizada. Verifique permissões (RLS).' };
+  }
+  return { ok: true };
+};
+
+export const insertSharePdd = async (marca: string, valor: number): Promise<SharePdd | null> => {
+  const { data, error } = await supabase
+    .from('share_pdd')
+    .insert({ marca: marca.toUpperCase().trim(), valor })
+    .select('id, marca, valor, updated_at')
+    .single();
+  if (error) {
+    console.error('Erro ao inserir share_pdd:', error);
+    return null;
+  }
+  return data;
+};
+
+export const deleteSharePdd = async (id: number): Promise<boolean> => {
+  const { error } = await supabase
+    .from('share_pdd')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao excluir share_pdd:', error);
+    return false;
+  }
+  return true;
+};
+
+export const subscribeSharePdd = (onChange: () => void) => {
+  const channel = supabase
+    .channel('share_pdd_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'share_pdd' }, () => {
+      onChange();
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
+
+// ============================================
+// PDD Contas (contas base para cálculo)
+// ============================================
+
+export interface PddConta {
+  id: number;
+  tag0: string;
+  tag01: string;
+}
+
+export const getPddContas = async (): Promise<PddConta[]> => {
+  const { data, error } = await supabase
+    .from('pdd_contas')
+    .select('id, tag0, tag01')
+    .order('tag0')
+    .order('tag01');
+  if (error) {
+    console.error('Erro ao buscar pdd_contas:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const addPddConta = async (tag0: string, tag01: string): Promise<PddConta | null> => {
+  const { data, error } = await supabase
+    .from('pdd_contas')
+    .insert({ tag0, tag01 })
+    .select('id, tag0, tag01')
+    .single();
+  if (error) {
+    console.error('Erro ao inserir pdd_contas:', error);
+    return null;
+  }
+  return data;
+};
+
+export const removePddConta = async (id: number): Promise<boolean> => {
+  const { error } = await supabase
+    .from('pdd_contas')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao excluir pdd_contas:', error);
+    return false;
+  }
+  return true;
+};
+
+export const subscribePddContas = (onChange: () => void) => {
+  const channel = supabase
+    .channel('pdd_contas_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'pdd_contas' }, () => {
+      onChange();
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
+
+// ============================================
+// Rateio Raiz Log
+// ============================================
+
+export interface RateioLog {
+  year_month: string;
+  calculated_at: string;
+  filial: string;
+  nome_filial: string | null;
+  marca: string | null;
+  rz_ebitda: number;
+  receita_bruta: number;
+  receita_total: number;
+  share_pct: number;
+  valor_rateado: number;
+}
+
+export const getRateioLog = async (): Promise<RateioLog[]> => {
+  const { data, error } = await supabase
+    .from('rateio_raiz_log')
+    .select('*')
+    .order('year_month', { ascending: false })
+    .order('valor_rateado', { ascending: true });
+  if (error) {
+    console.error('Erro ao buscar rateio_raiz_log:', error);
+    return [];
+  }
+  return data || [];
 };

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Transaction } from '../types';
 
 interface User {
@@ -51,7 +52,31 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'rateio'>('import');
+
+  // Estados para aba PDD
+  const [pddData, setPddData] = useState<supabaseService.SharePdd[]>([]);
+  const [pddLoading, setPddLoading] = useState(false);
+  const [pddEditingId, setPddEditingId] = useState<number | null>(null);
+  const [pddEditValue, setPddEditValue] = useState('');
+  const [pddSaving, setPddSaving] = useState(false);
+  const [pddNewMarca, setPddNewMarca] = useState('');
+  const [pddNewValor, setPddNewValor] = useState('');
+  const [pddAdding, setPddAdding] = useState(false);
+  const [pddMessage, setPddMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  // Estados para aba Rateio
+  const [rateioLog, setRateioLog] = useState<supabaseService.RateioLog[]>([]);
+  const [rateioLoading, setRateioLoading] = useState(false);
+  const [rateioMesFilter, setRateioMesFilter] = useState('');
+  const [rateioGroupBy, setRateioGroupBy] = useState<'filial' | 'marca'>('filial');
+  const [rateioSort, setRateioSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'year_month', dir: 'asc' });
+
+  // Contas PDD
+  const [pddContas, setPddContas] = useState<supabaseService.PddConta[]>([]);
+  const [pddAllTags, setPddAllTags] = useState<Array<{ tag0: string; tag01: string }>>([]);
+  const [pddTag0Filter, setPddTag0Filter] = useState('');
+  const [pddTag01Search, setPddTag01Search] = useState('');
+  const [pddContasLoading, setPddContasLoading] = useState(false);
 
   // Estado para busca de usuários
   const [userSearch, setUserSearch] = useState('');
@@ -93,6 +118,25 @@ const AdminPanel: React.FC = () => {
     loadBancoTagOptions();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'pdd') {
+      if (pddData.length === 0) loadPddData();
+      if (pddAllTags.length === 0) loadPddContas();
+    }
+    if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
+  }, [activeTab]);
+
+  // Realtime: sincroniza share_pdd e pdd_contas com banco
+  useEffect(() => {
+    const unsub1 = supabaseService.subscribeSharePdd(() => {
+      supabaseService.getSharePdd().then(setPddData);
+    });
+    const unsub2 = supabaseService.subscribePddContas(() => {
+      supabaseService.getPddContas().then(setPddContas);
+    });
+    return () => { unsub1(); unsub2(); };
+  }, []);
+
   const loadAvailableValues = async () => {
     try {
       const transactions = await supabaseService.getAllTransactions();
@@ -112,6 +156,131 @@ const AdminPanel: React.FC = () => {
       console.error('Erro ao carregar valores disponíveis:', error);
     }
   };
+
+  const loadPddData = async () => {
+    setPddLoading(true);
+    try {
+      const data = await supabaseService.getSharePdd();
+      setPddData(data);
+    } catch (error) {
+      console.error('Erro ao carregar share_pdd:', error);
+    } finally {
+      setPddLoading(false);
+    }
+  };
+
+  const handlePddEdit = (item: supabaseService.SharePdd) => {
+    setPddEditingId(item.id);
+    setPddEditValue(String(item.valor).replace('.', ','));
+  };
+
+  const handlePddSave = async (id: number) => {
+    const parsed = parseFloat(pddEditValue.replace(',', '.'));
+    if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+      showPddMessage('error', 'Valor inválido. Use entre 0 e 100 (ex: 5,00)');
+      return;
+    }
+    setPddSaving(true);
+    const result = await supabaseService.updateSharePdd(id, parsed);
+    if (result.ok) {
+      setPddData(prev => prev.map(p => p.id === id ? { ...p, valor: parsed, updated_at: new Date().toISOString() } : p));
+      showPddMessage('success', 'Percentual atualizado');
+    } else {
+      showPddMessage('error', result.error || 'Erro ao salvar');
+    }
+    setPddEditingId(null);
+    setPddSaving(false);
+  };
+
+  const handlePddCancel = () => {
+    setPddEditingId(null);
+    setPddEditValue('');
+  };
+
+  const showPddMessage = (type: 'success' | 'error', text: string) => {
+    setPddMessage({ type, text });
+    setTimeout(() => setPddMessage(null), 4000);
+  };
+
+  const handlePddAdd = async () => {
+    const marca = pddNewMarca.toUpperCase().trim();
+    if (!marca) { showPddMessage('error', 'Informe a sigla da marca'); return; }
+    if (pddData.some(p => p.marca === marca)) { showPddMessage('error', `Marca "${marca}" já existe`); return; }
+    const parsed = parseFloat(pddNewValor.replace(',', '.'));
+    if (isNaN(parsed) || parsed < 0 || parsed > 100) { showPddMessage('error', 'Valor deve ser entre 0 e 100'); return; }
+    setPddAdding(true);
+    const result = await supabaseService.insertSharePdd(marca, parsed);
+    if (result) {
+      setPddData(prev => [...prev, result].sort((a, b) => a.marca.localeCompare(b.marca)));
+      setPddNewMarca('');
+      setPddNewValor('');
+      showPddMessage('success', `Marca "${marca}" adicionada com ${parsed}%`);
+    } else {
+      showPddMessage('error', 'Erro ao inserir. Verifique se a marca já existe.');
+    }
+    setPddAdding(false);
+  };
+
+  const handlePddDelete = async (item: supabaseService.SharePdd) => {
+    if (!confirm(`Excluir marca "${item.marca}" da tabela PDD?`)) return;
+    const ok = await supabaseService.deleteSharePdd(item.id);
+    if (ok) {
+      setPddData(prev => prev.filter(p => p.id !== item.id));
+      showPddMessage('success', `Marca "${item.marca}" removida`);
+    } else {
+      showPddMessage('error', 'Erro ao excluir');
+    }
+  };
+
+  const loadRateioLog = async () => {
+    setRateioLoading(true);
+    try {
+      const data = await supabaseService.getRateioLog();
+      setRateioLog(data);
+    } catch (e) {
+      console.error('Erro ao carregar rateio log:', e);
+    } finally {
+      setRateioLoading(false);
+    }
+  };
+
+  const loadPddContas = async () => {
+    setPddContasLoading(true);
+    try {
+      const [contas, tags] = await Promise.all([
+        supabaseService.getPddContas(),
+        supabaseService.getAllTag01WithTag0(),
+      ]);
+      setPddContas(contas);
+      setPddAllTags(tags);
+    } catch (e) {
+      console.error('Erro ao carregar contas PDD:', e);
+    } finally {
+      setPddContasLoading(false);
+    }
+  };
+
+  const handleToggleConta = async (tag0: string, tag01: string) => {
+    const existing = pddContas.find(c => c.tag0 === tag0 && c.tag01 === tag01);
+    if (existing) {
+      const ok = await supabaseService.removePddConta(existing.id);
+      if (ok) {
+        setPddContas(prev => prev.filter(c => c.id !== existing.id));
+      } else {
+        showPddMessage('error', `Erro ao remover "${tag01}"`);
+      }
+    } else {
+      const result = await supabaseService.addPddConta(tag0, tag01);
+      if (result) {
+        setPddContas(prev => [...prev, result].sort((a, b) => a.tag0.localeCompare(b.tag0) || a.tag01.localeCompare(b.tag01)));
+      } else {
+        showPddMessage('error', `Erro ao adicionar "${tag01}" — verifique se a tabela pdd_contas existe no Supabase`);
+      }
+    }
+  };
+
+  const isContaSelected = (tag0: string, tag01: string) =>
+    pddContas.some(c => c.tag0 === tag0 && c.tag01 === tag01);
 
   const loadBancoTagOptions = async () => {
     try {
@@ -769,6 +938,38 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'recorrencia' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-orange-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('pdd')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'pdd'
+              ? 'text-rose-700 bg-rose-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Calculator size={14} />
+            Cálculo PDD
+          </div>
+          {activeTab === 'pdd' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('rateio')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'rateio'
+              ? 'text-teal-700 bg-teal-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Calculator size={14} />
+            Rateio Raiz
+          </div>
+          {activeTab === 'rateio' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -1865,6 +2066,786 @@ const AdminPanel: React.FC = () => {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Aba: Cálculo PDD */}
+      {activeTab === 'pdd' && (
+        <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-4 shadow-sm">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-rose-100 p-2 rounded-xl">
+              <Calculator className="text-rose-600" size={18} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-sm font-black text-rose-900">Provisão para Devedores Duvidosos</h2>
+              <p className="text-[10px] text-rose-600/80">Percentuais por marca e contas base para cálculo automático</p>
+            </div>
+          </div>
+
+          {/* Mensagem de feedback */}
+          {pddMessage && (
+            <div className={`mb-3 px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-[10px] font-bold ${
+              pddMessage.type === 'success'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}>
+              {pddMessage.type === 'success' ? <CheckCircle size={12} /> : <AlertTriangle size={12} />}
+              {pddMessage.text}
+            </div>
+          )}
+
+          {/* Layout 2 colunas */}
+          <div className="flex gap-4">
+
+            {/* ===== COLUNA ESQUERDA — Share PDD ===== */}
+            <div className="w-[320px] shrink-0 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black text-rose-500 uppercase tracking-wider">% PDD por Marca</p>
+                <button onClick={loadPddData} disabled={pddLoading} className="text-[9px] text-rose-400 hover:text-rose-600 font-bold">
+                  {pddLoading ? '...' : 'Recarregar'}
+                </button>
+              </div>
+
+              {/* Tabela ultra-compacta */}
+              <div className="bg-white/80 backdrop-blur-sm rounded-lg border border-rose-100 overflow-hidden">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-rose-50/80">
+                      <th className="text-left px-2 py-1 text-[9px] font-black text-rose-400 uppercase">Marca</th>
+                      <th className="text-right px-2 py-1 text-[9px] font-black text-rose-400 uppercase">%</th>
+                      <th className="text-center px-1 py-1 text-[9px] font-black text-rose-400 uppercase w-14"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pddLoading ? (
+                      <tr>
+                        <td colSpan={3} className="text-center py-4 text-rose-400 text-[10px]">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <div className="w-3 h-3 border-2 border-rose-300 border-t-rose-600 rounded-full animate-spin" />
+                            Carregando...
+                          </div>
+                        </td>
+                      </tr>
+                    ) : pddData.map((item, idx) => (
+                      <tr
+                        key={item.id}
+                        className={`border-t border-rose-50/80 transition-colors ${
+                          idx % 2 === 0 ? 'bg-white' : 'bg-rose-50/20'
+                        } ${pddEditingId === item.id ? '!bg-rose-50/60' : 'hover:bg-rose-50/40'}`}
+                      >
+                        <td className="px-2 py-0.5">
+                          <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1 h-5 rounded bg-rose-100 text-rose-700 font-black text-[9px]">
+                            {item.marca}
+                          </span>
+                        </td>
+                        <td className="px-2 py-0.5 text-right">
+                          {pddEditingId === item.id ? (
+                            <input
+                              type="text"
+                              value={pddEditValue}
+                              onChange={e => setPddEditValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handlePddSave(item.id);
+                                if (e.key === 'Escape') handlePddCancel();
+                              }}
+                              autoFocus
+                              className="w-16 px-1.5 py-0.5 text-right text-[10px] font-bold border border-rose-300 rounded focus:outline-none focus:ring-1 focus:ring-rose-400 bg-white"
+                            />
+                          ) : (
+                            <span className="font-bold text-[11px] text-gray-800 tabular-nums">
+                              {item.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-1 py-0.5 text-center">
+                          {pddEditingId === item.id ? (
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button onClick={() => handlePddSave(item.id)} disabled={pddSaving} className="p-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-700 transition-colors disabled:opacity-50" title="Salvar">
+                                <Check size={11} />
+                              </button>
+                              <button onClick={handlePddCancel} className="p-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors" title="Cancelar">
+                                <X size={11} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-0.5">
+                              <button onClick={() => handlePddEdit(item)} className="p-1 rounded hover:bg-rose-100 text-rose-300 hover:text-rose-600 transition-colors" title="Editar">
+                                <Pencil size={11} />
+                              </button>
+                              <button onClick={() => handlePddDelete(item)} className="p-1 rounded hover:bg-red-100 text-gray-300 hover:text-red-500 transition-colors" title="Excluir">
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Inserir nova marca — inline compacto */}
+              <div className="flex items-center gap-1.5 bg-white/50 rounded-lg border border-dashed border-rose-200 px-2 py-1.5">
+                <input
+                  type="text"
+                  placeholder="Sigla"
+                  value={pddNewMarca}
+                  onChange={e => setPddNewMarca(e.target.value.toUpperCase())}
+                  maxLength={10}
+                  className="w-16 px-1.5 py-1 text-[10px] font-bold border border-rose-200 rounded focus:outline-none focus:ring-1 focus:ring-rose-400 bg-white placeholder:text-rose-300 uppercase"
+                />
+                <input
+                  type="text"
+                  placeholder="%"
+                  value={pddNewValor}
+                  onChange={e => setPddNewValor(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handlePddAdd(); }}
+                  className="w-14 px-1.5 py-1 text-[10px] font-bold border border-rose-200 rounded focus:outline-none focus:ring-1 focus:ring-rose-400 bg-white placeholder:text-rose-300 text-right"
+                />
+                <button
+                  onClick={handlePddAdd}
+                  disabled={pddAdding || !pddNewMarca.trim()}
+                  className="flex items-center gap-1 px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-[10px] transition-all disabled:opacity-40"
+                >
+                  <Plus size={11} />
+                  {pddAdding ? '...' : 'Add'}
+                </button>
+              </div>
+
+              <p className="text-[9px] text-rose-400/70 leading-tight">
+                Sincronizado em tempo real. Alterações aqui ou no Supabase refletem automaticamente.
+              </p>
+            </div>
+
+            {/* ===== COLUNA DIREITA — Contas Base PDD ===== */}
+            <div className="flex-1 flex flex-col gap-2 min-w-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Tag size={12} className="text-rose-500" />
+                  <p className="text-[10px] font-black text-rose-500 uppercase tracking-wider">Contas Base do Cálculo</p>
+                </div>
+                <span className="text-[9px] font-bold text-rose-400 bg-rose-100 px-1.5 py-0.5 rounded">
+                  {pddContas.length} selecionadas
+                </span>
+              </div>
+
+              {/* Filtros */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-rose-300" />
+                  <input
+                    type="text"
+                    placeholder="Buscar tag01..."
+                    value={pddTag01Search}
+                    onChange={e => setPddTag01Search(e.target.value)}
+                    className="w-full pl-6 pr-2 py-1.5 text-[10px] border border-rose-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-400 bg-white placeholder:text-rose-300"
+                  />
+                </div>
+                <select
+                  value={pddTag0Filter}
+                  onChange={e => setPddTag0Filter(e.target.value)}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-rose-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-400 bg-white text-gray-700"
+                >
+                  <option value="">Todos Tag0</option>
+                  {[...new Set(pddAllTags.map(t => t.tag0))].sort().map(t0 => (
+                    <option key={t0} value={t0}>{t0}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={loadPddContas}
+                  disabled={pddContasLoading}
+                  className="text-[9px] text-rose-400 hover:text-rose-600 font-bold shrink-0"
+                >
+                  {pddContasLoading ? '...' : 'Recarregar'}
+                </button>
+              </div>
+
+              {/* Lista de contas — checkbox */}
+              <div className="bg-white/80 backdrop-blur-sm rounded-lg border border-rose-100 overflow-hidden flex-1">
+                <div className="max-h-[280px] overflow-y-auto">
+                  {pddContasLoading ? (
+                    <div className="flex items-center justify-center py-6 text-rose-400 text-[10px] gap-1.5">
+                      <div className="w-3 h-3 border-2 border-rose-300 border-t-rose-600 rounded-full animate-spin" />
+                      Carregando contas...
+                    </div>
+                  ) : (() => {
+                    const filtered = pddAllTags.filter(t =>
+                      (!pddTag0Filter || t.tag0 === pddTag0Filter) &&
+                      (!pddTag01Search || t.tag01.toLowerCase().includes(pddTag01Search.toLowerCase()))
+                    );
+                    const grouped = filtered.reduce<Record<string, string[]>>((acc, t) => {
+                      (acc[t.tag0] = acc[t.tag0] || []).push(t.tag01);
+                      return acc;
+                    }, {});
+                    const tag0Keys = Object.keys(grouped).sort();
+                    if (tag0Keys.length === 0) return (
+                      <p className="text-center py-6 text-gray-400 text-[10px]">Nenhuma conta encontrada</p>
+                    );
+                    return tag0Keys.map(tag0 => (
+                      <div key={tag0}>
+                        <div className="px-2 py-1 bg-rose-50/60 border-b border-rose-100 sticky top-0">
+                          <span className="text-[9px] font-black text-rose-500 uppercase">{tag0}</span>
+                          <span className="text-[8px] text-rose-400 ml-1.5">
+                            ({grouped[tag0].filter(t01 => isContaSelected(tag0, t01)).length}/{grouped[tag0].length})
+                          </span>
+                        </div>
+                        {grouped[tag0].sort().map(tag01 => {
+                          const selected = isContaSelected(tag0, tag01);
+                          return (
+                            <label
+                              key={`${tag0}_${tag01}`}
+                              className={`flex items-center gap-1.5 px-2 py-[3px] cursor-pointer transition-colors border-b border-rose-50/50 ${
+                                selected ? 'bg-rose-50/50' : 'hover:bg-rose-50/30'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => handleToggleConta(tag0, tag01)}
+                                className="accent-rose-500 w-3 h-3 shrink-0"
+                              />
+                              <span className={`text-[10px] truncate ${selected ? 'font-bold text-rose-800' : 'text-gray-600'}`}>
+                                {tag01}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Resumo contas selecionadas */}
+              {pddContas.length > 0 && (
+                <div className="bg-white/50 rounded-lg border border-rose-100 px-2 py-1.5">
+                  <p className="text-[9px] font-bold text-rose-500 mb-1">Selecionadas:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {pddContas.map(c => (
+                      <span
+                        key={c.id}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded text-[8px] font-bold"
+                      >
+                        {c.tag01}
+                        <button
+                          onClick={() => handleToggleConta(c.tag0, c.tag01)}
+                          className="hover:text-red-600 transition-colors ml-0.5"
+                        >
+                          <X size={9} />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Aba: Rateio Raiz */}
+      {activeTab === 'rateio' && (
+        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-xl p-4 shadow-sm">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-teal-100 p-2 rounded-xl">
+              <Calculator className="text-teal-600" size={18} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-sm font-black text-teal-900">Rateio Raiz — Despesas Intercompany</h2>
+              <p className="text-[10px] text-teal-600/80">Distribuição automática dos custos corporativos RZ para cada filial</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  if (rateioLog.length === 0) return;
+                  const filtered = rateioMesFilter
+                    ? rateioLog.filter(r => r.year_month === rateioMesFilter)
+                    : rateioLog;
+
+                  const wb = new ExcelJS.Workbook();
+                  const ws = wb.addWorksheet('Rateio Raiz');
+
+                  // Cores
+                  const TEAL_DARK = 'FF0D9488';
+                  const TEAL_LIGHT = 'FFE6FFFA';
+                  const WHITE = 'FFFFFFFF';
+                  const GRAY_BG = 'FFF9FAFB';
+                  const RED_FNT = 'FFDC2626';
+                  const FNT_DARK = 'FF1F2937';
+                  const FNT_WHITE = 'FFFFFFFF';
+
+                  const headerStyle = (cell: ExcelJS.Cell) => {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL_DARK } };
+                    cell.font = { bold: true, color: { argb: FNT_WHITE }, size: 9 };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    cell.border = { bottom: { style: 'thin', color: { argb: TEAL_DARK } } };
+                  };
+
+                  // === ABA 1: Log detalhado ===
+                  const headers = ['Mês', 'Filial', 'Nome Filial', 'Marca', 'EBITDA RZ', 'Receita Bruta', 'Receita Total', 'Share %', 'Valor Rateado'];
+                  const hRow = ws.addRow(headers);
+                  hRow.height = 20;
+                  hRow.eachCell(c => headerStyle(c));
+
+                  ws.columns = [
+                    { width: 10 }, { width: 12 }, { width: 28 }, { width: 8 },
+                    { width: 16 }, { width: 16 }, { width: 16 }, { width: 10 }, { width: 16 },
+                  ];
+
+                  filtered.forEach((r, idx) => {
+                    const row = ws.addRow([
+                      r.year_month,
+                      r.filial,
+                      r.nome_filial || '',
+                      r.marca || '',
+                      Math.round(Number(r.rz_ebitda)),
+                      Math.round(Number(r.receita_bruta)),
+                      Math.round(Number(r.receita_total)),
+                      Number((Number(r.share_pct) * 100).toFixed(2)),
+                      Math.round(Number(r.valor_rateado)),
+                    ]);
+                    const bg = idx % 2 === 0 ? WHITE : GRAY_BG;
+                    row.eachCell((cell, colNum) => {
+                      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+                      cell.font = { size: 9, color: { argb: FNT_DARK } };
+                      if (colNum >= 5) {
+                        cell.numFmt = '#,##0';
+                        cell.alignment = { horizontal: 'right' };
+                      }
+                      if (colNum === 8) cell.numFmt = '0.00"%"';
+                    });
+                  });
+
+                  // Linha TOTAL
+                  const totReceita = filtered.reduce((s, r) => s + Number(r.receita_bruta), 0);
+                  const totShare = filtered.reduce((s, r) => s + Number(r.share_pct), 0);
+                  const totRateado = filtered.reduce((s, r) => s + Number(r.valor_rateado), 0);
+                  const totRow = ws.addRow(['TOTAL', '', '', '', '', Math.round(totReceita), '', Number((totShare * 100).toFixed(2)), Math.round(totRateado)]);
+                  totRow.eachCell((cell, colNum) => {
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL_LIGHT } };
+                    cell.font = { bold: true, size: 9, color: { argb: TEAL_DARK } };
+                    if (colNum >= 5) { cell.numFmt = '#,##0'; cell.alignment = { horizontal: 'right' }; }
+                    if (colNum === 8) cell.numFmt = '0.00"%"';
+                    cell.border = { top: { style: 'medium', color: { argb: TEAL_DARK } } };
+                  });
+
+                  // === ABA 2: Resumo mensal ===
+                  const ws2 = wb.addWorksheet('Resumo Mensal');
+                  const year = filtered.length > 0 ? filtered[0].year_month.slice(0, 4) : new Date().getFullYear().toString();
+                  const mLabels = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                  const byMonth: Record<string, { rateado: number; receita: number; ebitda: number }> = {};
+                  rateioLog.forEach(r => {
+                    const ym = r.year_month;
+                    if (!byMonth[ym]) byMonth[ym] = { rateado: 0, receita: 0, ebitda: 0 };
+                    byMonth[ym].rateado += Number(r.valor_rateado);
+                    byMonth[ym].receita += Number(r.receita_bruta);
+                    byMonth[ym].ebitda = Number(r.rz_ebitda);
+                  });
+                  const keys = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+                  const get = (ym: string) => byMonth[ym] || { rateado: 0, receita: 0, ebitda: 0 };
+
+                  ws2.columns = [{ width: 14 }, ...Array(12).fill({ width: 12 })];
+
+                  // Header meses
+                  const mRow = ws2.addRow(mLabels);
+                  mRow.height = 20;
+                  mRow.eachCell((c, i) => { if (i > 1) headerStyle(c); else { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL_DARK } }; c.font = { bold: true, color: { argb: FNT_WHITE }, size: 9 }; } });
+
+                  // Receita (k)
+                  const rRow = ws2.addRow(['Receita (k)', ...keys.map(ym => Math.round(get(ym).receita / 1000))]);
+                  rRow.eachCell((c, i) => {
+                    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: WHITE } };
+                    c.font = { size: 9, bold: i === 1, color: { argb: FNT_DARK } };
+                    if (i > 1) { c.numFmt = '#,##0'; c.alignment = { horizontal: 'right' }; }
+                  });
+
+                  // Custos RZ (k)
+                  const cRow = ws2.addRow(['Custos RZ (k)', ...keys.map(ym => Math.round(get(ym).ebitda / 1000))]);
+                  cRow.eachCell((c, i) => {
+                    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY_BG } };
+                    c.font = { size: 9, bold: i === 1, color: { argb: i > 1 ? RED_FNT : FNT_DARK } };
+                    if (i > 1) { c.numFmt = '#,##0'; c.alignment = { horizontal: 'right' }; }
+                  });
+
+                  // % Rateio
+                  const pRow = ws2.addRow(['% Rateio', ...keys.map(ym => {
+                    const d = get(ym);
+                    return d.receita !== 0 ? Number(Math.abs(d.rateado / d.receita * 100).toFixed(1)) : 0;
+                  })]);
+                  pRow.eachCell((c, i) => {
+                    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL_LIGHT } };
+                    c.font = { size: 9, bold: true, color: { argb: TEAL_DARK } };
+                    if (i > 1) { c.numFmt = '0.0"%"'; c.alignment = { horizontal: 'right' }; }
+                    c.border = { top: { style: 'thin', color: { argb: TEAL_DARK } } };
+                  });
+
+                  // Download
+                  const buf = await wb.xlsx.writeBuffer();
+                  const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `rateio_raiz_${rateioMesFilter || 'todos'}_${filtered.length}reg.xlsx`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                disabled={rateioLog.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[10px] transition-all shadow-sm hover:shadow disabled:opacity-50"
+              >
+                <FileSpreadsheet size={12} />
+                Exportar Excel
+              </button>
+              <button
+                onClick={loadRateioLog}
+                disabled={rateioLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold text-[10px] transition-all shadow-sm hover:shadow disabled:opacity-50"
+              >
+                <Download size={12} />
+                {rateioLoading ? '...' : 'Atualizar'}
+              </button>
+            </div>
+          </div>
+
+          {/* Faixa de resumo — Cards horizontais */}
+          <div className="flex flex-wrap gap-3 mb-3">
+
+            {/* Card: Como funciona */}
+            <div className="bg-white/70 backdrop-blur-sm rounded-lg border border-teal-100 p-2.5 flex-1 min-w-[200px]">
+              <p className="text-[9px] font-black text-teal-600 uppercase tracking-wider mb-1.5">Como funciona</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {[
+                  { step: '1', text: 'Soma custos RZ (02.%+03.%+04.%)' },
+                  { step: '2', text: 'Receita bruta por filial (01.%)' },
+                  { step: '3', text: 'Share % = receita filial ÷ total' },
+                  { step: '4', text: 'Rateado = custos × share%' },
+                  { step: '5', text: 'UPSERT idempotente em transactions' },
+                ].map(s => (
+                  <div key={s.step} className="flex items-center gap-1">
+                    <span className="shrink-0 inline-flex items-center justify-center w-4 h-4 rounded-full bg-teal-100 text-teal-700 font-black text-[8px]">{s.step}</span>
+                    <span className="text-[9px] text-gray-600">{s.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Card: Parâmetros */}
+            <div className="bg-white/70 backdrop-blur-sm rounded-lg border border-teal-100 p-2.5 min-w-[220px]">
+              <p className="text-[9px] font-black text-teal-600 uppercase tracking-wider mb-1.5">Parâmetros</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                {[
+                  ['Holding', 'RZ'],
+                  ['Custos', '02.%+03.%+04.%'],
+                  ['Receita', '01.%'],
+                  ['Recurring', 'Sim'],
+                  ['Tag0 destino', '05. RATEIO RAIZ'],
+                  ['Tag01', 'RATEIO ADM'],
+                  ['Conta', '4.2.1.17.01.01'],
+                  ['Vendor', 'RZ Educação — CSC'],
+                  ['Scenario', 'Real / Original'],
+                  ['Automação', 'pg_cron 15min'],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between gap-1">
+                    <span className="text-[8px] text-gray-400">{label}</span>
+                    <span className="text-[8px] font-bold text-teal-800 bg-teal-50 px-1 py-0.5 rounded truncate">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Card: Último cálculo */}
+            {rateioLog.length > 0 && (() => {
+              const lastCalc = rateioLog[0]?.calculated_at;
+              const meses = [...new Set(rateioLog.map(r => r.year_month))].length;
+              const filiais = [...new Set(rateioLog.map(r => r.filial))].length;
+              const totalRateado = rateioLog.reduce((s, r) => s + Number(r.valor_rateado), 0);
+              return (
+                <div className="bg-teal-600 rounded-lg p-2.5 text-white min-w-[180px]">
+                  <p className="text-[8px] font-bold uppercase tracking-wider opacity-70 mb-1">Último cálculo</p>
+                  <p className="text-[9px] font-bold opacity-80">
+                    {lastCalc ? new Date(lastCalc).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                  </p>
+                  <div className="flex gap-3 mt-1.5">
+                    <div>
+                      <p className="text-[14px] font-black">{meses}</p>
+                      <p className="text-[7px] opacity-70">meses</p>
+                    </div>
+                    <div>
+                      <p className="text-[14px] font-black">{filiais}</p>
+                      <p className="text-[7px] opacity-70">filiais</p>
+                    </div>
+                    <div>
+                      <p className="text-[12px] font-black tabular-nums">{totalRateado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })}</p>
+                      <p className="text-[7px] opacity-70">total rateado</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Log de Cálculos — full width */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10px] font-black text-teal-500 uppercase tracking-wider shrink-0">Log de Cálculos</p>
+              <div className="flex items-center gap-2">
+                {/* Toggle Marca / Filial */}
+                <div className="flex bg-teal-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setRateioGroupBy('filial')}
+                    className={`px-2.5 py-1 text-[9px] font-bold rounded-md transition-all ${
+                      rateioGroupBy === 'filial'
+                        ? 'bg-white text-teal-700 shadow-sm'
+                        : 'text-teal-500 hover:text-teal-700'
+                    }`}
+                  >
+                    Por Filial
+                  </button>
+                  <button
+                    onClick={() => setRateioGroupBy('marca')}
+                    className={`px-2.5 py-1 text-[9px] font-bold rounded-md transition-all ${
+                      rateioGroupBy === 'marca'
+                        ? 'bg-white text-teal-700 shadow-sm'
+                        : 'text-teal-500 hover:text-teal-700'
+                    }`}
+                  >
+                    Por Marca
+                  </button>
+                </div>
+                {/* Filtro mês */}
+                {rateioLog.length > 0 && (
+                  <select
+                    value={rateioMesFilter}
+                    onChange={e => setRateioMesFilter(e.target.value)}
+                    className="px-2 py-1 text-[10px] font-bold border border-teal-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-400 bg-white text-gray-700"
+                  >
+                    <option value="">Todos os meses</option>
+                    {[...new Set(rateioLog.map(r => r.year_month))].sort().reverse().map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-white/80 backdrop-blur-sm rounded-lg border border-teal-100 overflow-hidden">
+              <div className="max-h-[340px] overflow-y-auto">
+                  {rateioLoading ? (
+                    <div className="flex items-center justify-center py-8 text-teal-400 text-[10px] gap-1.5">
+                      <div className="w-3 h-3 border-2 border-teal-300 border-t-teal-600 rounded-full animate-spin" />
+                      Carregando...
+                    </div>
+                  ) : rateioLog.length === 0 ? (
+                    <p className="text-center py-8 text-gray-400 text-[10px]">Nenhum cálculo encontrado</p>
+                  ) : rateioGroupBy === 'filial' ? (
+                    /* ---- VISÃO POR FILIAL ---- */
+                    (() => {
+                      const filtered = rateioMesFilter
+                        ? rateioLog.filter(r => r.year_month === rateioMesFilter)
+                        : [...rateioLog];
+                      const sortDir = rateioSort.dir === 'asc' ? 1 : -1;
+                      const sortedFilial = filtered.sort((a, b) => {
+                        switch (rateioSort.col) {
+                          case 'year_month': return sortDir * a.year_month.localeCompare(b.year_month);
+                          case 'filial': return sortDir * (a.nome_filial || a.filial).localeCompare(b.nome_filial || b.filial);
+                          case 'marca': return sortDir * (a.marca || '').localeCompare(b.marca || '');
+                          case 'rz_ebitda': return sortDir * (Number(a.rz_ebitda) - Number(b.rz_ebitda));
+                          case 'receita_bruta': return sortDir * (Number(a.receita_bruta) - Number(b.receita_bruta));
+                          case 'share_pct': return sortDir * (Number(a.share_pct) - Number(b.share_pct));
+                          case 'valor_rateado': return sortDir * (Number(a.valor_rateado) - Number(b.valor_rateado));
+                          default: return 0;
+                        }
+                      });
+                      const totReceita = sortedFilial.reduce((s, r) => s + Number(r.receita_bruta), 0);
+                      const totShare = sortedFilial.reduce((s, r) => s + Number(r.share_pct), 0);
+                      const totRateado = sortedFilial.reduce((s, r) => s + Number(r.valor_rateado), 0);
+                      const toggleSort = (col: string) => setRateioSort(prev => ({ col, dir: prev.col === col && prev.dir === 'asc' ? 'desc' : 'asc' }));
+                      const arrow = (col: string) => rateioSort.col === col ? (rateioSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+                      const thCls = (align: string) => `${align} px-2 py-1.5 text-[9px] font-black text-teal-400 uppercase cursor-pointer select-none hover:text-teal-600 transition-colors`;
+                      return (
+                        <table className="w-full">
+                          <thead className="sticky top-0 z-10">
+                            <tr className="bg-teal-50/90 backdrop-blur-sm">
+                              <th className={thCls('text-left')} onClick={() => toggleSort('year_month')}>Mês{arrow('year_month')}</th>
+                              <th className={thCls('text-left')} onClick={() => toggleSort('filial')}>Filial{arrow('filial')}</th>
+                              <th className={thCls('text-left')} onClick={() => toggleSort('marca')}>Marca{arrow('marca')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('rz_ebitda')}>EBITDA RZ{arrow('rz_ebitda')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('receita_bruta')}>Receita{arrow('receita_bruta')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('share_pct')}>Share{arrow('share_pct')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('valor_rateado')}>Rateado{arrow('valor_rateado')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedFilial.map((r, idx) => (
+                              <tr
+                                key={`${r.year_month}_${r.filial}`}
+                                className={`border-t border-teal-50/80 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-teal-50/20'} hover:bg-teal-50/40`}
+                              >
+                                <td className="px-2 py-[3px]"><span className="text-[10px] font-bold text-teal-700">{r.year_month}</span></td>
+                                <td className="px-2 py-[3px]">
+                                  <span className="text-[10px] text-gray-700 truncate block max-w-[120px]" title={r.nome_filial || r.filial}>{r.nome_filial || r.filial}</span>
+                                </td>
+                                <td className="px-2 py-[3px]">
+                                  <span className="inline-flex items-center justify-center min-w-[1.5rem] px-1 h-4 rounded bg-teal-100 text-teal-700 font-black text-[8px]">{r.marca || '—'}</span>
+                                </td>
+                                <td className="px-2 py-[3px] text-right"><span className="text-[10px] text-gray-500 tabular-nums">{Number(r.rz_ebitda).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                                <td className="px-2 py-[3px] text-right"><span className="text-[10px] text-gray-600 tabular-nums">{Number(r.receita_bruta).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                                <td className="px-2 py-[3px] text-right"><span className="text-[10px] font-bold text-teal-600 tabular-nums">{(Number(r.share_pct) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span></td>
+                                <td className="px-2 py-[3px] text-right"><span className="text-[10px] font-bold text-gray-800 tabular-nums">{Number(r.valor_rateado).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-teal-300 bg-teal-50/60">
+                              <td className="px-2 py-1.5" colSpan={2}><span className="text-[10px] font-black text-teal-800">TOTAL</span></td>
+                              <td className="px-2 py-1.5" />
+                              <td className="px-2 py-1.5" />
+                              <td className="px-2 py-1.5 text-right"><span className="text-[10px] font-black text-teal-800 tabular-nums">{totReceita.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                              <td className="px-2 py-1.5 text-right"><span className="text-[10px] font-black text-teal-800 tabular-nums">{(totShare * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span></td>
+                              <td className="px-2 py-1.5 text-right"><span className="text-[10px] font-black text-teal-800 tabular-nums">{totRateado.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      );
+                    })()
+                  ) : (
+                    /* ---- VISÃO POR MARCA (agrupado) ---- */
+                    (() => {
+                      const filtered = rateioMesFilter
+                        ? rateioLog.filter(r => r.year_month === rateioMesFilter)
+                        : rateioLog;
+                      const grouped: Record<string, { ym: string; marca: string; filiais: number; receita: number; share: number; rateado: number }> = {};
+                      filtered.forEach(r => {
+                        const key = `${r.year_month}_${r.marca || 'SEM'}`;
+                        if (!grouped[key]) grouped[key] = { ym: r.year_month, marca: r.marca || '—', filiais: 0, receita: 0, share: 0, rateado: 0 };
+                        grouped[key].filiais += 1;
+                        grouped[key].receita += Number(r.receita_bruta);
+                        grouped[key].share += Number(r.share_pct);
+                        grouped[key].rateado += Number(r.valor_rateado);
+                      });
+                      const sortDir = rateioSort.dir === 'asc' ? 1 : -1;
+                      const rows = Object.values(grouped).sort((a, b) => {
+                        switch (rateioSort.col) {
+                          case 'year_month': return sortDir * a.ym.localeCompare(b.ym);
+                          case 'marca': return sortDir * a.marca.localeCompare(b.marca);
+                          case 'filiais': return sortDir * (a.filiais - b.filiais);
+                          case 'receita_bruta': return sortDir * (a.receita - b.receita);
+                          case 'share_pct': return sortDir * (a.share - b.share);
+                          case 'valor_rateado': return sortDir * (a.rateado - b.rateado);
+                          default: return a.ym.localeCompare(b.ym) || a.marca.localeCompare(b.marca);
+                        }
+                      });
+                      const totFiliais = rows.reduce((s, g) => s + g.filiais, 0);
+                      const totReceita = rows.reduce((s, g) => s + g.receita, 0);
+                      const totShare = rows.reduce((s, g) => s + g.share, 0);
+                      const totRateado = rows.reduce((s, g) => s + g.rateado, 0);
+                      const toggleSort = (col: string) => setRateioSort(prev => ({ col, dir: prev.col === col && prev.dir === 'asc' ? 'desc' : 'asc' }));
+                      const arrow = (col: string) => rateioSort.col === col ? (rateioSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+                      const thCls = (align: string) => `${align} px-2 py-1.5 text-[9px] font-black text-teal-400 uppercase cursor-pointer select-none hover:text-teal-600 transition-colors`;
+                      return (
+                        <table className="w-full">
+                          <thead className="sticky top-0 z-10">
+                            <tr className="bg-teal-50/90 backdrop-blur-sm">
+                              <th className={thCls('text-left')} onClick={() => toggleSort('year_month')}>Mês{arrow('year_month')}</th>
+                              <th className={thCls('text-left')} onClick={() => toggleSort('marca')}>Marca{arrow('marca')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('filiais')}>Filiais{arrow('filiais')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('receita_bruta')}>Receita Total{arrow('receita_bruta')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('share_pct')}>Share Total{arrow('share_pct')}</th>
+                              <th className={thCls('text-right')} onClick={() => toggleSort('valor_rateado')}>Total Rateado{arrow('valor_rateado')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map((g, idx) => (
+                              <tr
+                                key={`${g.ym}_${g.marca}`}
+                                className={`border-t border-teal-50/80 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-teal-50/20'} hover:bg-teal-50/40`}
+                              >
+                                <td className="px-2 py-1"><span className="text-[10px] font-bold text-teal-700">{g.ym}</span></td>
+                                <td className="px-2 py-1">
+                                  <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1.5 h-5 rounded bg-teal-100 text-teal-700 font-black text-[9px]">{g.marca}</span>
+                                </td>
+                                <td className="px-2 py-1 text-right"><span className="text-[10px] text-gray-600 tabular-nums">{g.filiais}</span></td>
+                                <td className="px-2 py-1 text-right"><span className="text-[10px] text-gray-600 tabular-nums">{g.receita.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                                <td className="px-2 py-1 text-right"><span className="text-[10px] font-bold text-teal-600 tabular-nums">{(g.share * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span></td>
+                                <td className="px-2 py-1 text-right"><span className="text-[11px] font-black text-gray-800 tabular-nums">{g.rateado.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 border-teal-300 bg-teal-50/60">
+                              <td className="px-2 py-1.5" colSpan={2}><span className="text-[10px] font-black text-teal-800">TOTAL</span></td>
+                              <td className="px-2 py-1.5 text-right"><span className="text-[10px] font-black text-teal-800 tabular-nums">{totFiliais}</span></td>
+                              <td className="px-2 py-1.5 text-right"><span className="text-[10px] font-black text-teal-800 tabular-nums">{totReceita.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                              <td className="px-2 py-1.5 text-right"><span className="text-[10px] font-black text-teal-800 tabular-nums">{(totShare * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span></td>
+                              <td className="px-2 py-1.5 text-right"><span className="text-[10px] font-black text-teal-800 tabular-nums">{totRateado.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}</span></td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      );
+                    })()
+                  )}
+                </div>
+              </div>
+
+            {/* Tabela Receita × Custos × % Rateio (jan-dez, sempre 12 colunas) */}
+            {(() => {
+              const monthLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+              const year = rateioLog.length > 0 ? rateioLog[0].year_month.slice(0, 4) : new Date().getFullYear().toString();
+              const byMonth: Record<string, { rateado: number; receita: number; ebitda: number }> = {};
+              rateioLog.forEach(r => {
+                const ym = r.year_month;
+                if (!byMonth[ym]) byMonth[ym] = { rateado: 0, receita: 0, ebitda: 0 };
+                byMonth[ym].rateado += Number(r.valor_rateado);
+                byMonth[ym].receita += Number(r.receita_bruta);
+                byMonth[ym].ebitda = Number(r.rz_ebitda);
+              });
+              const keys = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+              const get = (ym: string) => byMonth[ym] || { rateado: 0, receita: 0, ebitda: 0 };
+              const fmt = (v: number) => v === 0 ? '—' : (v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+              return (
+                <div className="bg-white/70 backdrop-blur-sm rounded-lg border border-teal-100 p-2 mt-2">
+                  <p className="text-[9px] font-black text-teal-600 uppercase tracking-wider mb-1.5">Receita × Custos RZ × % Rateio ({year})</p>
+                  <table className="w-full text-[9px] table-fixed">
+                    <thead>
+                      <tr>
+                        <th className="text-left px-1 py-0.5 text-teal-400 font-black w-20"></th>
+                        {monthLabels.map(m => (
+                          <th key={m} className="text-right px-0.5 py-0.5 text-teal-400 font-black">{m}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-t border-teal-50">
+                        <td className="px-1 py-0.5 font-bold text-gray-600 whitespace-nowrap">Receita (k)</td>
+                        {keys.map(ym => (
+                          <td key={ym} className="px-0.5 py-0.5 text-right text-gray-700 tabular-nums">{fmt(get(ym).receita)}</td>
+                        ))}
+                      </tr>
+                      <tr className="border-t border-teal-50">
+                        <td className="px-1 py-0.5 font-bold text-gray-600 whitespace-nowrap">Custos RZ (k)</td>
+                        {keys.map(ym => {
+                          const v = get(ym).ebitda;
+                          return <td key={ym} className="px-0.5 py-0.5 text-right text-red-600 tabular-nums">{v === 0 ? '—' : fmt(v)}</td>;
+                        })}
+                      </tr>
+                      <tr className="border-t border-teal-100 bg-teal-50/40">
+                        <td className="px-1 py-0.5 font-black text-teal-700 whitespace-nowrap">% Rateio</td>
+                        {keys.map(ym => {
+                          const d = get(ym);
+                          const pct = d.receita !== 0 ? Math.abs(d.rateado / d.receita * 100) : 0;
+                          return (
+                            <td key={ym} className="px-0.5 py-0.5 text-right font-black text-teal-700 tabular-nums">{pct === 0 ? '—' : `${pct.toFixed(1)}%`}</td>
+                          );
+                        })}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
         </div>
       )}
 
