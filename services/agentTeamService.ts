@@ -683,7 +683,10 @@ async function callClaudeViaProxy(
       model,
       max_tokens: maxTokens,
       system: systemPayload,
-      messages: [{ role: 'user', content: user }],
+      messages: [
+        { role: 'user', content: user },
+        { role: 'assistant', content: '{' },
+      ],
     }),
     signal: controller.signal,
   }).finally(() => clearTimeout(timeout));
@@ -704,8 +707,11 @@ async function callClaudeViaProxy(
 
   if (!rawText) throw new Error(`Resposta vazia do Claude (stop_reason: ${data?.stop_reason})`);
 
+  // Prepend '{' do prefill (assistant message começou com '{', modelo continuou dali)
+  const fullRaw = rawText.trimStart().startsWith('{') ? rawText : '{' + rawText;
+
   // Extrair JSON com reparo de truncamento
-  const parsed = extractJsonFromText(rawText);
+  const parsed = extractJsonFromText(fullRaw);
 
   return {
     parsed,
