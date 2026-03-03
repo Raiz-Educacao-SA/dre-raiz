@@ -2810,8 +2810,12 @@ export const generateVarianceItems = async (
       return { created: 0, updated: 0, version: 0, error: 'Nenhum dado retornado por get_soma_tags para o período. Verifique se existem lançamentos.' };
     }
 
+    // Corte até EBITDA TOTAL: apenas prefixos 01.–06.
+    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.', '06.']);
+    const isDrePrefix = (tag0: string) => DRE_PREFIXES.has((tag0 || '').slice(0, 3));
+
     // Converter soma → formato unificado (tag02=null, tag03=null)
-    let allAggData: any[] = somaData.map((row: any) => ({
+    let allAggData: any[] = somaData.filter((row: any) => isDrePrefix(row.tag0)).map((row: any) => ({
       tag0: row.tag0,
       tag01: row.tag01,
       tag02: null,
@@ -2850,8 +2854,9 @@ export const generateVarianceItems = async (
       if (!page || page.length === 0) {
         hasMore = false;
       } else {
-        allAggData = allAggData.concat(page);
-        detailCount += page.length;
+        const filtered = page.filter((r: any) => isDrePrefix(r.tag0));
+        allAggData = allAggData.concat(filtered);
+        detailCount += filtered.length;
         hasMore = page.length === PAGE_SIZE;
         offset += PAGE_SIZE;
       }
