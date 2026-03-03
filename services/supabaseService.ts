@@ -703,7 +703,7 @@ export const getSomaTags = async (
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s para evitar abort prematuro
   try {
     const { data, error } = await supabase
       .rpc('get_soma_tags', {
@@ -720,15 +720,22 @@ export const getSomaTags = async (
     clearTimeout(timeoutId);
     if (error) {
       console.error('❌ Erro ao buscar soma tags:', error);
-      return [];
+      throw new Error(error.message || 'Erro ao buscar dados da DRE');
     }
     const result = (data || []) as SomaTagsRow[];
-    _somaTagsCache[cacheKey] = { data: result, ts: Date.now() };
+    // Só cachear resultados com dados (evita cachear resposta vazia por erro)
+    if (result.length > 0) {
+      _somaTagsCache[cacheKey] = { data: result, ts: Date.now() };
+    }
     return result;
   } catch (err: any) {
     clearTimeout(timeoutId);
+    if (err?.name === 'AbortError') {
+      console.error('❌ getSomaTags timeout (45s)');
+      throw new Error('A consulta demorou demais. Tente novamente.');
+    }
     console.error('❌ getSomaTags error:', err);
-    return [];
+    throw err;
   }
 };
 
