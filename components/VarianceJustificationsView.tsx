@@ -1003,12 +1003,12 @@ const VarianceJustificationsView: React.FC = () => {
       : row.depth === 2 ? 'font-semibold text-[11px]'
       : 'text-[11px]';
 
-    const hoverClass = isCalcRow ? 'hover:bg-orange-600' : isDark ? 'hover:bg-[#1e3d6e]' : 'hover:bg-yellow-100';
+    const hoverClass = isEbitdaTotal ? 'hover:bg-slate-600' : isCalcRow ? 'hover:bg-orange-600' : isDark ? 'hover:bg-[#1e3d6e]' : 'hover:bg-yellow-100';
 
     return (
       <tr key={`${row.groupKey}-${idx}`} className={`group ${bgClass} ${hoverClass} transition-colors`}>
         {/* Checkbox */}
-        <td className={`px-1 py-0.5 text-center w-7 ${isCalcRow ? 'bg-[#F44C00]' : isDark ? 'bg-[#152e55] group-hover:bg-[#1e3d6e]' : ''}`}>
+        <td className={`px-1 py-0.5 text-center w-7 ${isEbitdaTotal ? 'bg-slate-800' : isCalcRow ? 'bg-[#F44C00]' : isDark ? 'bg-[#152e55] group-hover:bg-[#1e3d6e]' : ''}`}>
           {row.depth === 3 && !isCalcRow && (row.orcDbItem || row.a1DbItem) && (
             <input
               type="checkbox"
