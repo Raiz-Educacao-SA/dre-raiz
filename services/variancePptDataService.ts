@@ -34,7 +34,7 @@ const SECTION_CONFIG: Record<string, { color: string; invertDelta: boolean }> = 
   '02.': { color: BOOK_COLORS.custos, invertDelta: true },
   '03.': { color: BOOK_COLORS.custos, invertDelta: true },
   '04.': { color: BOOK_COLORS.sga, invertDelta: true },
-  '06.': { color: BOOK_COLORS.custos, invertDelta: true },
+  '05.': { color: BOOK_COLORS.custos, invertDelta: true },
 };
 
 function getSectionConfig(tag0: string) {
@@ -262,7 +262,7 @@ function computeCalcRows(
   const s02 = findSection('02.');
   const s03 = findSection('03.');
   const s04 = findSection('04.');
-  const s06 = findSection('06.');
+  const s05 = findSection('05.');
 
   const realMargem = (s01?.node.real || 0) + (s02?.node.real || 0) + (s03?.node.real || 0);
   const orcMargem = (s01?.node.orcCompare || 0) + (s02?.node.orcCompare || 0) + (s03?.node.orcCompare || 0);
@@ -272,9 +272,9 @@ function computeCalcRows(
   const orcEbitdaSr = orcMargem + (s04?.node.orcCompare || 0);
   const a1EbitdaSr = a1Margem + (s04?.node.a1Compare || 0);
 
-  const realEbitdaTotal = realEbitdaSr + (s06?.node.real || 0);
-  const orcEbitdaTotal = orcEbitdaSr + (s06?.node.orcCompare || 0);
-  const a1EbitdaTotal = a1EbitdaSr + (s06?.node.a1Compare || 0);
+  const realEbitdaTotal = realEbitdaSr + (s05?.node.real || 0);
+  const orcEbitdaTotal = orcEbitdaSr + (s05?.node.orcCompare || 0);
+  const a1EbitdaTotal = a1EbitdaSr + (s05?.node.a1Compare || 0);
 
   return [
     {

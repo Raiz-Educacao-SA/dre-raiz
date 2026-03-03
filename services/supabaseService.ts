@@ -2810,8 +2810,8 @@ export const generateVarianceItems = async (
       return { created: 0, updated: 0, version: 0, error: 'Nenhum dado retornado por get_soma_tags para o período. Verifique se existem lançamentos.' };
     }
 
-    // Corte até EBITDA TOTAL: apenas prefixos 01.–06.
-    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.', '06.']);
+    // Corte até EBITDA TOTAL: apenas prefixos 01.–05.
+    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
     const isDrePrefix = (tag0: string) => DRE_PREFIXES.has((tag0 || '').slice(0, 3));
 
     // Converter soma → formato unificado (tag02=null, tag03=null)
@@ -3028,10 +3028,10 @@ export const generateVarianceItems = async (
       const ebitdaOrc = margemOrc + get('04.', 'Orçado');
       const ebitdaA1 = margemA1 + get('04.', 'A-1');
 
-      // EBITDA TOTAL = EBITDA + 06.
-      const ebitdaTotalReal = ebitdaReal + get('06.', 'Real');
-      const ebitdaTotalOrc = ebitdaOrc + get('06.', 'Orçado');
-      const ebitdaTotalA1 = ebitdaA1 + get('06.', 'A-1');
+      // EBITDA TOTAL = EBITDA + 05. RATEIO RAIZ
+      const ebitdaTotalReal = ebitdaReal + get('05.', 'Real');
+      const ebitdaTotalOrc = ebitdaOrc + get('05.', 'Orçado');
+      const ebitdaTotalA1 = ebitdaA1 + get('05.', 'A-1');
 
       const addCalcRow = (label: string, realV: number, orcV: number, a1V: number) => {
         const addComp = (compareVal: number, compType: 'orcado' | 'a1') => {

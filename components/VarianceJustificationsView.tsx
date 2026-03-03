@@ -493,8 +493,8 @@ const VarianceJustificationsView: React.FC = () => {
     // Collect unique tag0 values, sort with calc rows in correct position
     const CALC_ROW_ORDER: Record<string, number> = {
       'MARGEM DE CONTRIBUIÇÃO': 3.5,           // after 03., before 04.
-      'EBITDA (S/ RATEIO RAIZ CSC)': 4.5,      // after 04., before 06.
-      'EBITDA TOTAL': 6.5,                      // after 06.
+      'EBITDA (S/ RATEIO RAIZ CSC)': 4.5,      // after 04., before 05.
+      'EBITDA TOTAL': 5.5,                      // after 05.
     };
     const tag0Set = new Set(items.map(i => i.tag0));
     const rows: FlatRow[] = [];
