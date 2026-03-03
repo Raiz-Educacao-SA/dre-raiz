@@ -3002,15 +3002,16 @@ export const generateVarianceItems = async (
 
     // 6.5 Linhas calculadas: MARGEM DE CONTRIBUIÇÃO e EBITDA
     // Agregar por prefixo tag0 + cenário + marca
+    // Calc rows: usar APENAS somaData (get_soma_tags) para evitar contagem dupla com dre_agg detail
     const prefixTotals = new Map<string, number>();
-    for (const row of allAggData) {
-      const rowMarca = row.marca || '';
+    for (const row of somaData as any[]) {
+      if (!isDrePrefix(row.tag0)) continue;
       const prefix = (row.tag0 || '').slice(0, 3); // '01.', '02.', etc.
-      const key = `${rowMarca}|${prefix}|${row.scenario}`;
-      prefixTotals.set(key, (prefixTotals.get(key) || 0) + Number(row.total_amount || 0));
+      const key = `${marca || ''}|${prefix}|${row.scenario}`;
+      prefixTotals.set(key, (prefixTotals.get(key) || 0) + Number(row.total || 0));
     }
 
-    const calcMarcas = [...new Set(allAggData.map(r => r.marca || ''))];
+    const calcMarcas = [marca || ''];
     for (const m of calcMarcas) {
       const get = (prefix: string, scenario: string) => prefixTotals.get(`${m}|${prefix}|${scenario}`) || 0;
 
