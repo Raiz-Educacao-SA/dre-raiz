@@ -26,7 +26,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction, TransactionType, TransactionStatus, ManualChange, PaginationParams, ContaContabilOption } from '../types';
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
-import { getFilteredTransactions, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
+import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
 import ContaContabilSelector from './ContaContabilSelector';
 // ExcelJS carregado sob demanda via dynamic import
 import type ExcelJS from 'exceljs';
@@ -556,6 +556,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     // Garantir que pageNumber é sempre um número
     const page = typeof pageNumber === 'number' ? pageNumber : 1;
 
+    // Busca nova (página 1) invalida cache de páginas anteriores
+    if (page === 1) invalidateTxPageCache();
+
     setIsSearching(true);
     console.log('🔍 Iniciando busca com filtros:', colFilters);
 
@@ -660,7 +663,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       const pagination: PaginationParams = { pageNumber: page, pageSize: PAGE_SIZE };
 
-      const response = await getFilteredTransactions(filters, pagination, tableName);
+      // Páginas 2+: reutiliza totalCount já conhecido (evita recontagem no banco)
+      const knownCount = page > 1 && totalCount > 0 ? totalCount : undefined;
+      const response = await getFilteredTransactions(filters, pagination, tableName, knownCount);
 
       setSearchedTransactions(response.data);
       setSelectedIds(new Set());

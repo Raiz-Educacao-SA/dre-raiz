@@ -1135,10 +1135,33 @@ const applyTransactionFilters = (query: any, filters: TransactionFilters) => {
   return query;
 };
 
+// ═══════════════════════════════════════════════════════════
+// Cache de páginas — evita re-fetch ao navegar entre páginas já visitadas
+// ═══════════════════════════════════════════════════════════
+const _txPageCache: Record<string, { data: Transaction[]; totalCount: number; ts: number }> = {};
+const TX_PAGE_TTL = 60_000; // 60s
+
+const _buildTxPageCacheKey = (filters: TransactionFilters, page: number, pageSize: number, tableName: string): string => {
+  const sortedFilters = Object.keys(filters).sort().reduce((acc, key) => {
+    const val = (filters as any)[key];
+    if (val !== undefined && val !== null) acc[key] = val;
+    return acc;
+  }, {} as Record<string, any>);
+  return `${tableName}::p${page}::s${pageSize}::${JSON.stringify(sortedFilters)}`;
+};
+
+export const invalidateTxPageCache = () => {
+  for (const key in _txPageCache) delete _txPageCache[key];
+};
+
+// Colunas selecionadas (evita SELECT * — transfere só o necessário)
+const TX_SELECT_COLUMNS = 'id,date,description,conta_contabil,category,amount,type,scenario,status,filial,marca,tag0,tag01,tag02,tag03,recurring,ticket,vendor,nat_orc,chave_id,nome_filial,updated_at';
+
 export const getFilteredTransactions = async (
   filters: TransactionFilters,
   pagination?: PaginationParams,
-  tableName: string = 'transactions'
+  tableName: string = 'transactions',
+  knownTotalCount?: number
 ): Promise<PaginatedResponse<Transaction>> => {
   // Validar filtros antes de enviar ao banco
   const parsed = transactionFiltersSchema.safeParse(filters);
@@ -1149,145 +1172,178 @@ export const getFilteredTransactions = async (
 
   debug('🔍 Buscando transações com filtros:', filters);
 
-  if (pagination) {
-    debug(`📄 Paginação: Página ${pagination.pageNumber}, ${pagination.pageSize} registros/página`);
+  // Timeout para evitar requests pendurados
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-    // Iniciar query com contagem
-    let query = supabase
+  try {
+    if (pagination) {
+      const { pageNumber, pageSize } = pagination;
+      debug(`📄 Paginação: Página ${pageNumber}, ${pageSize} registros/página`);
+
+      if (pageNumber < 1) {
+        console.error('❌ Erro: pageNumber deve ser >= 1');
+        return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
+      }
+      if (pageSize < 1 || pageSize > 50000) {
+        console.error('❌ Erro: pageSize deve estar entre 1 e 50000');
+        return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
+      }
+
+      // Verificar cache de página
+      const cacheKey = _buildTxPageCacheKey(filters, pageNumber, pageSize, tableName);
+      const cached = _txPageCache[cacheKey];
+      if (cached && (Date.now() - cached.ts) < TX_PAGE_TTL) {
+        debug(`⚡ Cache hit página ${pageNumber} (${cached.data.length} registros)`);
+        const totalPages = Math.ceil(cached.totalCount / pageSize);
+        return {
+          data: cached.data,
+          totalCount: cached.totalCount,
+          currentPage: pageNumber,
+          totalPages,
+          hasMore: pageNumber < totalPages
+        };
+      }
+
+      // Se já conhecemos o total (páginas 2+), não recontar
+      const needsCount = knownTotalCount === undefined;
+      let query = supabase
+        .from(tableName)
+        .select(TX_SELECT_COLUMNS, needsCount ? { count: 'exact' } : { count: undefined as any });
+
+      query = applyTransactionFilters(query, filters);
+      query = query.order('date', { ascending: false }).order('id', { ascending: true });
+
+      const offset = (pageNumber - 1) * pageSize;
+      const rangeEnd = offset + pageSize - 1;
+      query = query.range(offset, rangeEnd);
+
+      debug(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} (range: ${offset}-${rangeEnd})${needsCount ? ' +count' : ' (count skip)'}...`);
+
+      const { data, count, error } = await query;
+
+      if (error) {
+        console.error('❌ Erro ao buscar transações:', error);
+        throw new Error(error.message || 'Erro ao buscar transações');
+      }
+
+      const totalCount = needsCount ? (count || 0) : knownTotalCount!;
+      debug(`📊 Total de registros filtrados: ${totalCount}`);
+
+      if (!data || data.length === 0) {
+        return { data: [], totalCount, currentPage: pageNumber, totalPages: Math.ceil(totalCount / pageSize), hasMore: false };
+      }
+
+      const tag0Map = await getTag0Map();
+      const enriched = data.map(db => {
+        const t = dbToTransaction(db);
+        if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
+        return t;
+      });
+
+      // Cachear página
+      _txPageCache[cacheKey] = { data: enriched, totalCount, ts: Date.now() };
+
+      const totalPages = Math.ceil(totalCount / pageSize);
+      return {
+        data: enriched,
+        totalCount,
+        currentPage: pageNumber,
+        totalPages,
+        hasMore: pageNumber < totalPages
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SEM PAGINAÇÃO: Busca em lotes PARALELOS para contornar limite do Supabase
+    // O Supabase tem limite de ~1000 linhas por request (server-side).
+    // Buscamos em lotes de 1000 usando .range(), 3 lotes em paralelo.
+    // ═══════════════════════════════════════════════════════════
+    const BATCH_SIZE = 1000;
+    const PARALLEL_BATCHES = 3;
+
+    // Primeiro: obter contagem total
+    let countQuery = supabase
       .from(tableName)
-      .select('*', { count: 'exact' });
+      .select(TX_SELECT_COLUMNS, { count: 'exact', head: true });
+    countQuery = applyTransactionFilters(countQuery, filters);
+    const { count: totalCountRaw, error: countError } = await countQuery;
 
-    query = applyTransactionFilters(query, filters);
-    query = query.order('date', { ascending: false }).order('id', { ascending: true });
-
-    const { pageNumber, pageSize } = pagination;
-
-    if (pageNumber < 1) {
-      console.error('❌ Erro: pageNumber deve ser >= 1');
-      return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
-    }
-    if (pageSize < 1 || pageSize > 50000) {
-      console.error('❌ Erro: pageSize deve estar entre 1 e 50000');
-      return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
+    if (countError) {
+      console.error('❌ Erro ao contar transações:', countError);
+      throw new Error(countError.message || 'Erro ao contar transações');
     }
 
-    const offset = (pageNumber - 1) * pageSize;
-    const rangeEnd = offset + pageSize - 1;
-    query = query.range(offset, rangeEnd);
-
-    debug(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} (range: ${offset}-${rangeEnd})...`);
-
-    const { data, count, error } = await query;
-
-    if (error) {
-      console.error('❌ Erro ao buscar transações:', error);
-      return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
-    }
-
-    const totalCount = count || 0;
+    const totalCount = totalCountRaw || 0;
     debug(`📊 Total de registros filtrados: ${totalCount}`);
 
-    if (!data || data.length === 0) {
+    if (totalCount === 0) {
       return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
     }
 
+    // Criar todas as promises de lotes
+    const totalBatches = Math.ceil(totalCount / BATCH_SIZE);
+    debug(`📦 Buscando ${totalCount} registros em ${totalBatches} lotes de ${BATCH_SIZE} (${PARALLEL_BATCHES} em paralelo)...`);
+
+    const fetchBatch = async (batchIdx: number) => {
+      const from = batchIdx * BATCH_SIZE;
+      const to = from + BATCH_SIZE - 1;
+
+      let batchQuery = supabase.from(tableName).select(TX_SELECT_COLUMNS);
+      batchQuery = applyTransactionFilters(batchQuery, filters);
+      batchQuery = batchQuery.order('date', { ascending: false }).order('id', { ascending: true });
+      batchQuery = batchQuery.range(from, to);
+
+      const { data, error } = await batchQuery;
+      if (error) {
+        console.error(`❌ Erro no lote ${batchIdx + 1}/${totalBatches}:`, error);
+        return [];
+      }
+      return data || [];
+    };
+
+    // Executar lotes em paralelo (grupos de PARALLEL_BATCHES)
+    const allData: any[] = [];
+    for (let i = 0; i < totalBatches; i += PARALLEL_BATCHES) {
+      const batchIndices = Array.from(
+        { length: Math.min(PARALLEL_BATCHES, totalBatches - i) },
+        (_, j) => i + j
+      );
+
+      const results = await Promise.all(batchIndices.map(fetchBatch));
+      for (const result of results) {
+        allData.push(...result);
+      }
+      debug(`  ✅ Lotes ${i + 1}-${i + batchIndices.length}/${totalBatches}: acumulado ${allData.length} registros`);
+    }
+
+    debug(`✅ ${allData.length} transações carregadas de ${totalCount} total`);
+
+    // Enriquecer com tag0
     const tag0Map = await getTag0Map();
-    const enriched = data.map(db => {
+    const enriched = allData.map(db => {
       const t = dbToTransaction(db);
       if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
       return t;
     });
 
-    const totalPages = Math.ceil(totalCount / pageSize);
     return {
       data: enriched,
       totalCount,
-      currentPage: pageNumber,
-      totalPages,
-      hasMore: pageNumber < totalPages
+      currentPage: 1,
+      totalPages: 1,
+      hasMore: false
     };
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // SEM PAGINAÇÃO: Busca em lotes PARALELOS para contornar limite do Supabase
-  // O Supabase tem limite de ~1000 linhas por request (server-side).
-  // Buscamos em lotes de 10000 usando .range(), 6 lotes em paralelo.
-  // ═══════════════════════════════════════════════════════════
-  const BATCH_SIZE = 1000;   // Limite real do Supabase server (max-rows)
-  const PARALLEL_BATCHES = 3; // REDUZIDO: 3 requests simultâneos para evitar sobrecarga
-
-  // Primeiro: obter contagem total
-  let countQuery = supabase
-    .from(tableName)
-    .select('*', { count: 'exact', head: true });
-  countQuery = applyTransactionFilters(countQuery, filters);
-  const { count: totalCountRaw, error: countError } = await countQuery;
-
-  if (countError) {
-    console.error('❌ Erro ao contar transações:', countError);
-    return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
-  }
-
-  const totalCount = totalCountRaw || 0;
-  debug(`📊 Total de registros filtrados: ${totalCount}`);
-
-  if (totalCount === 0) {
-    return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
-  }
-
-  // Criar todas as promises de lotes
-  const totalBatches = Math.ceil(totalCount / BATCH_SIZE);
-  debug(`📦 Buscando ${totalCount} registros em ${totalBatches} lotes de ${BATCH_SIZE} (${PARALLEL_BATCHES} em paralelo)...`);
-
-  const fetchBatch = async (batchIdx: number) => {
-    const from = batchIdx * BATCH_SIZE;
-    const to = from + BATCH_SIZE - 1;
-
-    let batchQuery = supabase.from(tableName).select('*');
-    batchQuery = applyTransactionFilters(batchQuery, filters);
-    batchQuery = batchQuery.order('date', { ascending: false }).order('id', { ascending: true });
-    batchQuery = batchQuery.range(from, to);
-
-    const { data, error } = await batchQuery;
-    if (error) {
-      console.error(`❌ Erro no lote ${batchIdx + 1}/${totalBatches}:`, error);
-      return [];
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err?.name === 'AbortError') {
+      console.error('❌ getFilteredTransactions timeout (45s)');
+      throw new Error('A consulta demorou demais. Tente novamente com filtros mais específicos.');
     }
-    return data || [];
-  };
-
-  // Executar lotes em paralelo (grupos de PARALLEL_BATCHES)
-  const allData: any[] = [];
-  for (let i = 0; i < totalBatches; i += PARALLEL_BATCHES) {
-    const batchIndices = Array.from(
-      { length: Math.min(PARALLEL_BATCHES, totalBatches - i) },
-      (_, j) => i + j
-    );
-
-    const results = await Promise.all(batchIndices.map(fetchBatch));
-    for (const result of results) {
-      allData.push(...result);
-    }
-    debug(`  ✅ Lotes ${i + 1}-${i + batchIndices.length}/${totalBatches}: acumulado ${allData.length} registros`);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  debug(`✅ ${allData.length} transações carregadas de ${totalCount} total`);
-
-  // Enriquecer com tag0
-  const tag0Map = await getTag0Map();
-  const enriched = allData.map(db => {
-    const t = dbToTransaction(db);
-    if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
-    return t;
-  });
-
-  return {
-    data: enriched,
-    totalCount,
-    currentPage: 1,
-    totalPages: 1,
-    hasMore: false
-  };
 };
 
 export const addTransaction = async (transaction: Omit<Transaction, 'id'>): Promise<Transaction> => {
