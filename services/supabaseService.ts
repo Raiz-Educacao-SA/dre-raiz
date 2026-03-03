@@ -2305,6 +2305,110 @@ export const subscribePddContas = (onChange: () => void) => {
 };
 
 // ============================================
+// De-Para Fornecedores
+// ============================================
+
+export interface DeparaFornec {
+  fornecedor_de: string;
+  fornecedor_para: string;
+  updated_at: string;
+}
+
+export const getDeparaFornec = async (): Promise<DeparaFornec[]> => {
+  const { data, error } = await supabase
+    .from('depara_fornec')
+    .select('fornecedor_de, fornecedor_para, updated_at')
+    .order('fornecedor_de');
+  if (error) {
+    console.error('Erro ao buscar depara_fornec:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const insertDeparaFornec = async (fornecedor_de: string, fornecedor_para: string): Promise<DeparaFornec | null> => {
+  const { data, error } = await supabase
+    .from('depara_fornec')
+    .insert({ fornecedor_de: fornecedor_de.trim(), fornecedor_para: fornecedor_para.trim() })
+    .select('fornecedor_de, fornecedor_para, updated_at')
+    .single();
+  if (error) {
+    console.error('Erro ao inserir depara_fornec:', error);
+    return null;
+  }
+  return data;
+};
+
+export const updateDeparaFornec = async (fornecedor_de_old: string, fornecedor_de: string, fornecedor_para: string): Promise<{ ok: boolean; error?: string }> => {
+  if (fornecedor_de_old !== fornecedor_de.trim()) {
+    // PK mudou: deletar antigo + inserir novo
+    const { error: delErr } = await supabase.from('depara_fornec').delete().eq('fornecedor_de', fornecedor_de_old);
+    if (delErr) return { ok: false, error: delErr.message };
+    const { error: insErr } = await supabase.from('depara_fornec')
+      .insert({ fornecedor_de: fornecedor_de.trim(), fornecedor_para: fornecedor_para.trim() });
+    if (insErr) return { ok: false, error: insErr.message };
+    return { ok: true };
+  }
+  const { error } = await supabase
+    .from('depara_fornec')
+    .update({ fornecedor_para: fornecedor_para.trim() })
+    .eq('fornecedor_de', fornecedor_de_old);
+  if (error) {
+    console.error('Erro ao atualizar depara_fornec:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+};
+
+export const deleteDeparaFornec = async (fornecedor_de: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('depara_fornec')
+    .delete()
+    .eq('fornecedor_de', fornecedor_de);
+  if (error) {
+    console.error('Erro ao deletar depara_fornec:', error);
+    return false;
+  }
+  return true;
+};
+
+export const subscribeDeparaFornec = (onChange: () => void) => {
+  const channel = supabase
+    .channel('depara_fornec_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'depara_fornec' }, () => {
+      onChange();
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
+
+export const upsertDeparaFornecBatch = async (
+  rows: { fornecedor_de: string; fornecedor_para: string }[]
+): Promise<{ inserted: number; error?: string }> => {
+  const { data, error } = await supabase
+    .from('depara_fornec')
+    .upsert(
+      rows.map(r => ({ fornecedor_de: r.fornecedor_de.trim(), fornecedor_para: r.fornecedor_para.trim() })),
+      { onConflict: 'fornecedor_de' }
+    )
+    .select('fornecedor_de');
+  if (error) {
+    console.error('Erro ao upsert depara_fornec:', error);
+    return { inserted: 0, error: error.message };
+  }
+  return { inserted: data?.length || 0 };
+};
+
+export const runNormalizarFornecedores = async (): Promise<{ ok: boolean; data?: any; error?: string }> => {
+  const { data, error } = await supabase.rpc('normalizar_fornecedores');
+  if (error) {
+    console.error('Erro ao normalizar fornecedores:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data };
+};
+
+// ============================================
 // Rateio Raiz Log
 // ============================================
 

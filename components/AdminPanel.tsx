@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
@@ -52,7 +52,7 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'rateio'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'rateio' | 'depara'>('import');
 
   // Estados para aba PDD
   const [pddData, setPddData] = useState<supabaseService.SharePdd[]>([]);
@@ -102,6 +102,25 @@ const AdminPanel: React.FC = () => {
   const [recMessage, setRecMessage] = useState<{type: 'success'|'error'|'info', text: string} | null>(null);
   const [recLog, setRecLog] = useState<{time: string, type: 'info'|'success'|'error'|'warn', text: string}[]>([]);
 
+  // Estados para aba De-Para Fornecedores
+  const [deparaData, setDeparaData] = useState<supabaseService.DeparaFornec[]>([]);
+  const [deparaLoading, setDeparaLoading] = useState(false);
+  const [deparaSearch, setDeparaSearch] = useState('');
+  const [deparaEditingId, setDeparaEditingId] = useState<string | null>(null);
+  const [deparaEditDe, setDeparaEditDe] = useState('');
+  const [deparaEditPara, setDeparaEditPara] = useState('');
+  const [deparaSaving, setDeparaSaving] = useState(false);
+  const [deparaNewDe, setDeparaNewDe] = useState('');
+  const [deparaNewPara, setDeparaNewPara] = useState('');
+  const [deparaAdding, setDeparaAdding] = useState(false);
+  const [deparaMessage, setDeparaMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [deparaNormalizing, setDeparaNormalizing] = useState(false);
+  const [deparaFile, setDeparaFile] = useState<File | null>(null);
+  const [deparaImportPreview, setDeparaImportPreview] = useState<{fornecedor_de: string; fornecedor_para: string}[]>([]);
+  const [deparaImporting, setDeparaImporting] = useState(false);
+  const [deparaImportProgress, setDeparaImportProgress] = useState(0);
+  const [deparaImportLog, setDeparaImportLog] = useState<{time: string; type: 'info'|'success'|'error'|'warn'; text: string}[]>([]);
+
   // Filtrar usuários por busca
   const filteredUsers = users.filter(user => {
     if (!userSearch) return true;
@@ -124,6 +143,7 @@ const AdminPanel: React.FC = () => {
       if (pddAllTags.length === 0) loadPddContas();
     }
     if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
+    if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
   }, [activeTab]);
 
   // Realtime: sincroniza share_pdd e pdd_contas com banco
@@ -134,8 +154,212 @@ const AdminPanel: React.FC = () => {
     const unsub2 = supabaseService.subscribePddContas(() => {
       supabaseService.getPddContas().then(setPddContas);
     });
-    return () => { unsub1(); unsub2(); };
+    const unsub3 = supabaseService.subscribeDeparaFornec(() => {
+      supabaseService.getDeparaFornec().then(setDeparaData);
+    });
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
+
+  // ---- De-Para Fornecedores handlers ----
+  const loadDeparaData = async () => {
+    setDeparaLoading(true);
+    try {
+      const data = await supabaseService.getDeparaFornec();
+      setDeparaData(data);
+    } catch (error) {
+      console.error('Erro ao carregar depara_fornec:', error);
+    } finally {
+      setDeparaLoading(false);
+    }
+  };
+
+  const handleDeparaEdit = (item: supabaseService.DeparaFornec) => {
+    setDeparaEditingId(item.fornecedor_de);
+    setDeparaEditDe(item.fornecedor_de);
+    setDeparaEditPara(item.fornecedor_para);
+  };
+
+  const handleDeparaCancelEdit = () => {
+    setDeparaEditingId(null);
+    setDeparaEditDe('');
+    setDeparaEditPara('');
+  };
+
+  const handleDeparaSave = async (fornecedor_de_old: string) => {
+    if (!deparaEditDe.trim() || !deparaEditPara.trim()) {
+      setDeparaMessage({ type: 'error', text: 'Preencha ambos os campos.' });
+      return;
+    }
+    setDeparaSaving(true);
+    const result = await supabaseService.updateDeparaFornec(fornecedor_de_old, deparaEditDe, deparaEditPara);
+    if (result.ok) {
+      setDeparaMessage({ type: 'success', text: 'Registro atualizado!' });
+      handleDeparaCancelEdit();
+      loadDeparaData();
+    } else {
+      setDeparaMessage({ type: 'error', text: result.error || 'Erro ao atualizar.' });
+    }
+    setDeparaSaving(false);
+    setTimeout(() => setDeparaMessage(null), 3000);
+  };
+
+  const handleDeparaAdd = async () => {
+    if (!deparaNewDe.trim() || !deparaNewPara.trim()) {
+      setDeparaMessage({ type: 'error', text: 'Preencha ambos os campos.' });
+      return;
+    }
+    setDeparaAdding(true);
+    const result = await supabaseService.insertDeparaFornec(deparaNewDe, deparaNewPara);
+    if (result) {
+      setDeparaMessage({ type: 'success', text: 'Registro adicionado!' });
+      setDeparaNewDe('');
+      setDeparaNewPara('');
+      loadDeparaData();
+    } else {
+      setDeparaMessage({ type: 'error', text: 'Erro ao adicionar. Fornecedor "De" já existe?' });
+    }
+    setDeparaAdding(false);
+    setTimeout(() => setDeparaMessage(null), 3000);
+  };
+
+  const handleDeparaDelete = async (fornecedor_de: string) => {
+    if (!confirm('Tem certeza que deseja excluir este registro?')) return;
+    const ok = await supabaseService.deleteDeparaFornec(fornecedor_de);
+    if (ok) {
+      setDeparaMessage({ type: 'success', text: 'Registro excluído.' });
+      loadDeparaData();
+    } else {
+      setDeparaMessage({ type: 'error', text: 'Erro ao excluir.' });
+    }
+    setTimeout(() => setDeparaMessage(null), 3000);
+  };
+
+  const handleNormalizarFornecedores = async () => {
+    if (!confirm('Executar normalização de fornecedores agora? Isso atualizará nomes em transactions conforme o de-para.')) return;
+    setDeparaNormalizing(true);
+    const result = await supabaseService.runNormalizarFornecedores();
+    if (result.ok) {
+      const d = result.data;
+      const real = d?.real ?? 0;
+      const orcado = d?.orcado ?? 0;
+      const ant = d?.ano_anterior ?? 0;
+      const total = d?.total ?? 0;
+      setDeparaMessage({ type: 'success', text: `Normalização concluída! ${total} registros — Real: ${real} | Orçado: ${orcado} | Ano Anterior: ${ant}` });
+    } else {
+      setDeparaMessage({ type: 'error', text: result.error || 'Erro ao normalizar.' });
+    }
+    setDeparaNormalizing(false);
+    setTimeout(() => setDeparaMessage(null), 5000);
+  };
+
+  const filteredDepara = deparaData.filter(item => {
+    if (!deparaSearch) return true;
+    const s = deparaSearch.toLowerCase();
+    return item.fornecedor_de.toLowerCase().includes(s) || item.fornecedor_para.toLowerCase().includes(s);
+  });
+
+  const addDeparaLog = (type: 'info'|'success'|'error'|'warn', text: string) => {
+    const time = new Date().toLocaleTimeString('pt-BR');
+    setDeparaImportLog(prev => [...prev, { time, type, text }]);
+  };
+
+  const handleDeparaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDeparaFile(file);
+    setDeparaImportPreview([]);
+    setDeparaImportLog([]);
+    setDeparaImportProgress(0);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        const wb = XLSX.read(data, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+
+        // Detectar colunas: tentar variações comuns
+        const mapped: {fornecedor_de: string; fornecedor_para: string}[] = [];
+        let skipped = 0;
+
+        for (const row of rows) {
+          const de = String(row['Fornecedor De'] || row['fornecedor_de'] || row['DE'] || row['de'] || row['FORNECEDOR_DE'] || '').trim();
+          const para = String(row['Fornecedor Para'] || row['fornecedor_para'] || row['PARA'] || row['para'] || row['FORNECEDOR_PARA'] || '').trim();
+          if (de && para) {
+            mapped.push({ fornecedor_de: de, fornecedor_para: para });
+          } else {
+            skipped++;
+          }
+        }
+
+        if (mapped.length === 0) {
+          setDeparaMessage({ type: 'error', text: 'Nenhuma linha válida. Verifique se as colunas "Fornecedor De" e "Fornecedor Para" existem.' });
+          return;
+        }
+
+        setDeparaImportPreview(mapped);
+        setDeparaMessage({ type: 'success', text: `${mapped.length} registros carregados${skipped > 0 ? ` (${skipped} linhas ignoradas)` : ''}. Revise e clique em "Importar".` });
+      } catch (error) {
+        console.error('Erro ao ler arquivo de-para:', error);
+        setDeparaMessage({ type: 'error', text: 'Erro ao ler arquivo. Verifique o formato.' });
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleDeparaImport = async () => {
+    if (deparaImportPreview.length === 0) return;
+    if (!confirm(`Importar ${deparaImportPreview.length} registros de de-para? Registros existentes serão atualizados.`)) return;
+
+    setDeparaImporting(true);
+    setDeparaImportProgress(0);
+    setDeparaImportLog([]);
+    addDeparaLog('info', `Iniciando importação de ${deparaImportPreview.length} registros...`);
+
+    const batchSize = 100;
+    const totalBatches = Math.ceil(deparaImportPreview.length / batchSize);
+    let totalInserted = 0;
+    let totalErrors = 0;
+
+    for (let i = 0; i < totalBatches; i++) {
+      const start = i * batchSize;
+      const end = start + batchSize;
+      const batch = deparaImportPreview.slice(start, end);
+
+      addDeparaLog('info', `Batch ${i + 1}/${totalBatches} — ${batch.length} registros...`);
+
+      try {
+        const result = await supabaseService.upsertDeparaFornecBatch(batch);
+        if (result.error) {
+          addDeparaLog('error', `Batch ${i + 1}: ${result.error}`);
+          totalErrors += batch.length;
+        } else {
+          totalInserted += result.inserted;
+          addDeparaLog('success', `Batch ${i + 1}: ${result.inserted} registros`);
+        }
+      } catch (err: any) {
+        addDeparaLog('error', `Batch ${i + 1}: ERRO — ${err.message}`);
+        totalErrors += batch.length;
+      }
+
+      setDeparaImportProgress(((i + 1) / totalBatches) * 100);
+    }
+
+    addDeparaLog('success', `Concluído: ${totalInserted} registros importados${totalErrors > 0 ? `, ${totalErrors} erros` : ''}`);
+    setDeparaImporting(false);
+    setDeparaImportPreview([]);
+    setDeparaFile(null);
+    loadDeparaData();
+    setTimeout(() => setDeparaMessage(null), 5000);
+  };
+
+  const handleDeparaClearImport = () => {
+    setDeparaFile(null);
+    setDeparaImportPreview([]);
+    setDeparaImportLog([]);
+    setDeparaImportProgress(0);
+  };
 
   const loadAvailableValues = async () => {
     try {
@@ -970,6 +1194,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'rateio' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('depara')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'depara'
+              ? 'text-indigo-700 bg-indigo-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <ArrowRightLeft size={14} />
+            De-Para Fornec
+          </div>
+          {activeTab === 'depara' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -2845,6 +3085,257 @@ const AdminPanel: React.FC = () => {
                 </div>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Aba: De-Para Fornecedores */}
+      {activeTab === 'depara' && (
+        <div className="bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-300 rounded-xl p-4 shadow">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="bg-indigo-100 p-2 rounded-lg">
+              <ArrowRightLeft className="text-indigo-600" size={20} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-black text-indigo-900">De-Para Fornecedores</h2>
+              <p className="text-xs text-indigo-700">Normalização de nomes de fornecedores — {deparaData.length} registros</p>
+            </div>
+            <label className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-indigo-300 text-indigo-700 text-xs font-bold rounded-lg hover:bg-indigo-50 cursor-pointer transition-colors">
+              <FileSpreadsheet size={12} />
+              {deparaFile ? deparaFile.name : 'Importar Excel'}
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={handleDeparaFileChange}
+                disabled={deparaImporting}
+              />
+            </label>
+            {deparaFile && (
+              <button onClick={handleDeparaClearImport} className="p-1 text-gray-400 hover:text-red-500 transition-colors" title="Limpar arquivo">
+                <X size={14} />
+              </button>
+            )}
+            <button
+              onClick={handleNormalizarFornecedores}
+              disabled={deparaNormalizing || deparaData.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Play size={12} />
+              {deparaNormalizing ? 'Normalizando...' : 'Executar Agora'}
+            </button>
+          </div>
+
+          {/* Mensagem */}
+          {deparaMessage && (
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg mb-2 text-xs font-bold ${
+              deparaMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+            }`}>
+              {deparaMessage.type === 'success' ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
+              {deparaMessage.text}
+            </div>
+          )}
+
+          {/* Preview + Progresso + Log da importação */}
+          {deparaImportPreview.length > 0 && (
+            <div className="mb-2 p-2 bg-white/60 rounded-lg border border-indigo-200">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-bold text-indigo-600">Preview — {deparaImportPreview.length} registros</span>
+                {!deparaImporting && (
+                  <button
+                    onClick={handleDeparaImport}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded hover:bg-indigo-700 transition-colors"
+                  >
+                    <Upload size={10} />
+                    Importar {deparaImportPreview.length} registros
+                  </button>
+                )}
+              </div>
+              <div className="max-h-[120px] overflow-auto rounded border border-indigo-100">
+                <table className="w-full text-[10px]">
+                  <thead className="sticky top-0 bg-indigo-100">
+                    <tr>
+                      <th className="text-left px-1 py-0.5 font-bold text-indigo-600 w-8">#</th>
+                      <th className="text-left px-1 py-0.5 font-bold text-indigo-600">Fornecedor De</th>
+                      <th className="text-left px-1 py-0.5 font-bold text-indigo-600">Fornecedor Para</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deparaImportPreview.slice(0, 100).map((item, idx) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-indigo-50/30'}>
+                        <td className="px-1 py-0 text-gray-400">{idx + 1}</td>
+                        <td className="px-1 py-0 text-gray-700">{item.fornecedor_de}</td>
+                        <td className="px-1 py-0 text-indigo-700 font-semibold">{item.fornecedor_para}</td>
+                      </tr>
+                    ))}
+                    {deparaImportPreview.length > 100 && (
+                      <tr><td colSpan={3} className="px-1 py-0.5 text-center text-indigo-400 text-[10px]">... e mais {deparaImportPreview.length - 100} registros</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {deparaImporting && (
+            <div className="mb-2">
+              <div className="w-full bg-indigo-100 rounded-full h-1.5">
+                <div className="bg-indigo-600 h-1.5 rounded-full transition-all" style={{ width: `${deparaImportProgress}%` }}></div>
+              </div>
+              <p className="text-[10px] text-indigo-500 mt-0.5">{Math.round(deparaImportProgress)}% concluído</p>
+            </div>
+          )}
+
+          {deparaImportLog.length > 0 && (
+            <div className="mb-2 max-h-[100px] overflow-auto bg-gray-900 rounded-lg p-2 font-mono text-[10px]">
+              {deparaImportLog.map((log, idx) => (
+                <div key={idx} className={`leading-tight ${
+                  log.type === 'success' ? 'text-green-400' :
+                  log.type === 'error' ? 'text-red-400' :
+                  log.type === 'warn' ? 'text-yellow-400' :
+                  'text-gray-300'
+                }`}>
+                  <span className="text-gray-500">[{log.time}]</span> {log.text}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Busca + Formulário de adição */}
+          <div className="flex gap-2 mb-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-indigo-400" size={14} />
+              <input
+                type="text"
+                placeholder="Buscar fornecedor..."
+                value={deparaSearch}
+                onChange={(e) => setDeparaSearch(e.target.value)}
+                className="w-full pl-7 pr-3 py-1.5 text-xs border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Formulário para adicionar novo */}
+          <div className="flex gap-2 mb-3 p-2 bg-white/60 rounded-lg border border-indigo-200">
+            <input
+              type="text"
+              placeholder="Fornecedor De (nome original)"
+              value={deparaNewDe}
+              onChange={(e) => setDeparaNewDe(e.target.value)}
+              className="flex-1 px-2 py-1.5 text-xs border border-indigo-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <input
+              type="text"
+              placeholder="Fornecedor Para (nome normalizado)"
+              value={deparaNewPara}
+              onChange={(e) => setDeparaNewPara(e.target.value)}
+              className="flex-1 px-2 py-1.5 text-xs border border-indigo-200 rounded focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            <button
+              onClick={handleDeparaAdd}
+              disabled={deparaAdding || !deparaNewDe.trim() || !deparaNewPara.trim()}
+              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Plus size={12} />
+              {deparaAdding ? 'Adicionando...' : 'Adicionar'}
+            </button>
+          </div>
+
+          {/* Tabela */}
+          {deparaLoading ? (
+            <div className="text-center py-8 text-indigo-500 text-xs font-bold">Carregando...</div>
+          ) : filteredDepara.length === 0 ? (
+            <div className="text-center py-8 text-indigo-400 text-xs">
+              {deparaSearch ? 'Nenhum resultado encontrado.' : 'Nenhum registro de-para cadastrado.'}
+            </div>
+          ) : (
+            <div className="max-h-[500px] overflow-auto rounded-lg border border-indigo-200">
+              <table className="w-full text-[10px]">
+                <thead className="sticky top-0 bg-indigo-100 z-10">
+                  <tr>
+                    <th className="text-left px-1.5 py-0.5 font-black text-indigo-700 w-[46%]">Fornecedor De</th>
+                    <th className="text-left px-1.5 py-0.5 font-black text-indigo-700 w-[46%]">Fornecedor Para</th>
+                    <th className="text-center px-1 py-0.5 font-black text-indigo-700 w-[8%]">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredDepara.map((item, idx) => (
+                    <tr key={item.fornecedor_de} className={`border-t border-indigo-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-indigo-50/20'} hover:bg-indigo-100/40`}>
+                      {deparaEditingId === item.fornecedor_de ? (
+                        <>
+                          <td className="px-1 py-0">
+                            <input
+                              type="text"
+                              value={deparaEditDe}
+                              onChange={(e) => setDeparaEditDe(e.target.value)}
+                              className="w-full px-1 py-0 text-[10px] border border-indigo-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-1 py-0">
+                            <input
+                              type="text"
+                              value={deparaEditPara}
+                              onChange={(e) => setDeparaEditPara(e.target.value)}
+                              className="w-full px-1 py-0 text-[10px] border border-indigo-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                            />
+                          </td>
+                          <td className="px-0 py-0 text-center">
+                            <div className="flex items-center justify-center gap-0">
+                              <button
+                                onClick={() => handleDeparaSave(item.fornecedor_de)}
+                                disabled={deparaSaving}
+                                className="p-0.5 text-green-600 hover:bg-green-100 rounded"
+                                title="Salvar"
+                              >
+                                <Check size={11} />
+                              </button>
+                              <button
+                                onClick={handleDeparaCancelEdit}
+                                className="p-0.5 text-gray-500 hover:bg-gray-100 rounded"
+                                title="Cancelar"
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-1.5 py-0 text-gray-800 truncate">{item.fornecedor_de}</td>
+                          <td className="px-1.5 py-0 text-indigo-700 font-semibold truncate">{item.fornecedor_para}</td>
+                          <td className="px-0 py-0 text-center">
+                            <div className="flex items-center justify-center gap-0">
+                              <button
+                                onClick={() => handleDeparaEdit(item)}
+                                className="p-0.5 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 rounded"
+                                title="Editar"
+                              >
+                                <Pencil size={10} />
+                              </button>
+                              <button
+                                onClick={() => handleDeparaDelete(item.fornecedor_de)}
+                                className="p-0.5 text-red-400 hover:text-red-600 hover:bg-red-100 rounded"
+                                title="Excluir"
+                              >
+                                <Trash2 size={10} />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Info automação */}
+          <div className="mt-3 p-2 bg-indigo-100/50 rounded-lg border border-indigo-200">
+            <p className="text-[10px] text-indigo-600">
+              <strong>Automação:</strong> A normalização roda automaticamente todo dia à meia-noite (pg_cron).
+              Use o botão "Executar Agora" para rodar manualmente. A tabela é sincronizada em tempo real com o Supabase.
+            </p>
           </div>
         </div>
       )}
