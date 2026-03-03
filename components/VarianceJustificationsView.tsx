@@ -980,9 +980,12 @@ const VarianceJustificationsView: React.FC = () => {
     const indent = row.depth * 20;
     const isExpanded = expandedNodes.has(row.groupKey);
     const isCalcRow = CALC_ROW_TAGS.has(row.tag0);
+    const isEbitdaTotal = row.tag0 === 'EBITDA TOTAL';
     const isDark = row.depth === 0 || isCalcRow;
 
-    const bgClass = isCalcRow
+    const bgClass = isEbitdaTotal
+      ? 'bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white border-t-2 border-yellow-400 shadow-[0_-2px_6px_rgba(0,0,0,0.3)]'
+      : isCalcRow
       ? 'bg-[#F44C00] text-white border-b border-orange-600 shadow-sm'
       : row.depth === 0
       ? 'bg-[#152e55] text-white border-b border-[#1e3d6e]'

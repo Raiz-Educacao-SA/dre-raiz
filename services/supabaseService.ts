@@ -2797,7 +2797,7 @@ export const generateVarianceItems = async (
         p_nome_filiais: null,
         p_tags02: null,
         p_tags01: null,
-        p_recurring: null,
+        p_recurring: 'Sim',    // Mesmo padrão do DRE Gerencial (recurring = 'Sim')
         p_tags03: null,
       });
 
