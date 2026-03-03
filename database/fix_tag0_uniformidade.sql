@@ -169,13 +169,14 @@ $$;
 -- + tag0 no ON CONFLICT UPDATE
 -- ══════════════════════════════════════════════════════════════
 
+DROP FUNCTION IF EXISTS calcular_rateio_raiz_real();
+
 CREATE OR REPLACE FUNCTION calcular_rateio_raiz_real()
 RETURNS TABLE (
-  o_year_month   TEXT,
-  o_rz_ebitda    NUMERIC,
-  o_filial       TEXT,
-  o_share        NUMERIC,
-  o_valor        NUMERIC
+  o_year_month    TEXT,
+  o_rz_ebitda     NUMERIC,
+  o_filiais_ok    BIGINT,
+  o_total_rateado NUMERIC
 )
 LANGUAGE plpgsql SECURITY DEFINER
 SET statement_timeout = '120s'
@@ -284,16 +285,16 @@ BEGIN
     marca       = EXCLUDED.marca,
     updated_at  = NOW();
 
-  -- Retorno
+  -- Retorno (agrupado por mês, mesma assinatura original)
   RETURN QUERY
   SELECT
     l.year_month,
-    l.rz_ebitda,
-    l.filial,
-    l.share_percent,
-    l.valor_rateado
+    MAX(l.rz_ebitda),
+    COUNT(*)::BIGINT,
+    SUM(l.valor_rateado)
   FROM rateio_raiz_log l
   WHERE l.calculated_at = v_ts
-  ORDER BY l.year_month, l.filial;
+  GROUP BY l.year_month
+  ORDER BY l.year_month;
 END;
 $$;
