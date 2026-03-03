@@ -49,9 +49,9 @@ export async function handler(req: any, res: any) {
       synced_at: new Date().toISOString(),
     };
 
-    // Upsert no Supabase
+    // Upsert no Supabase (tabela: tags)
     const { data, error } = await supabase
-      .from('conta_contabil')
+      .from('tags')
       .upsert(contaData, {
         onConflict: 'cod_conta',
         ignoreDuplicates: false

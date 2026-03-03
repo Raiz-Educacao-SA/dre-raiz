@@ -1,325 +1,340 @@
-// =====================================================
-// Google Apps Script - Sincronização Automática
-// =====================================================
-// Como instalar:
-// 1. Abra o Google Sheets
-// 2. Extensões → Apps Script
-// 3. Cole este código
-// 4. Configure SUPABASE_URL e SUPABASE_KEY
-// 5. Salve e execute setupTriggers() uma vez
-// =====================================================
+/**
+ * Google Apps Script — Google Sheets -> Supabase (REST / PostgREST)
+ * - Sincroniza 3 tabelas: tags, filial, Fornecedor_Tags
+ * - TAGS (A:K): IGNORA linhas onde coluna B = "N/A"
+ * - Usa UPSERT (não DELETE+INSERT) para segurança
+ * - Batches de 50 registros para não estourar limite
+ *
+ * Cole este arquivo inteiro no editor do Apps Script (Código.gs)
+ */
 
-// =====================================================
-// CONFIGURAÇÃO - ALTERE AQUI!
-// =====================================================
+// =========================
+// CONFIG
+// =========================
+const SUPABASE_URL = 'https://vafmufhlompwsdrlhkfz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA';
 
-const CONFIG = {
-  // URL do seu Supabase
-  SUPABASE_URL: 'https://seu-projeto.supabase.co',
+const BATCH_SIZE = 50;
 
-  // Service Role Key (não a anon key!)
-  SUPABASE_KEY: 'eyJ...',
+// =========================
+// MAPEAMENTOS
+// =========================
 
-  // Nome da aba/guia
-  SHEET_NAME: 'Conta Cont',
-
-  // Endpoint da API backend (se usar)
-  BACKEND_API: 'http://localhost:3002/api/sync/conta-contabil',
-
-  // Sincronização: 'supabase' ou 'backend'
-  SYNC_MODE: 'supabase'
+// Mapeamento para tabela TAGS (colunas A:K)
+const TAGS_MAPPING = {
+  'CODCONTA': 'cod_conta',
+  'Tag1': 'tag1',
+  'Tag2': 'tag2',
+  'Tag3': 'tag3',
+  'TAG4': 'tag4',
+  'TagOrc': 'tag_orc',
+  'GER': 'ger',
+  'BP/DRE': 'BP/DRE',
+  'Nat. Orc': 'nat_orc',
+  'Nome Nat.Orc': 'nome_nat_orc',
+  'Responsável': 'responsavel'
 };
 
-// =====================================================
-// FUNÇÃO: Sincronizar Tudo (Manual)
-// =====================================================
+// Mapeamento para tabela FILIAL (colunas M:S)
+const FILIAL_MAPPING = {
+  'Cia': 'codcoligada',
+  'Filial': 'codfilial',
+  'Cia+Filial': 'chave_coligadafilial',
+  'Nome_Cia': 'cia',
+  'Nome_Marca': 'nomemarca',
+  'Nome_Filial': 'nomefilial',
+  'Red_Filial': 'filial'
+};
 
-function syncAllData() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
+// Mapeamento para tabela FORNECEDOR_TAGS (colunas A:J na guia "de para fornecedor")
+const FORNECEDOR_MAPPING = {
+  'Cód. Forn': 'cod_forn',
+  'Fornecedor Original': 'fornecedor_original',
+  'Cód. Forn Novo': 'cod_forn_novo',
+  'Fornecedor Novo': 'fornecedor_novo',
+  'Conta': 'conta',
+  'Tag1': 'tag1',
+  'Tag2': 'tag2',
+  'Tag3': 'tag3',
+  'Tag4': 'tag4',
+  'Tag_Orc': 'tag_orc'
+};
 
-  if (!sheet) {
-    throw new Error(`Aba "${CONFIG.SHEET_NAME}" não encontrada`);
-  }
+// =========================
+// HELPERS
+// =========================
+function _norm(val) {
+  if (val === null || val === undefined) return '';
+  return String(val).trim();
+}
 
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0]; // Primeira linha
-  const rows = data.slice(1); // Restante das linhas
+// =========================
+// SINCRONIZAÇÕES
+// =========================
 
-  console.log(`📊 Sincronizando ${rows.length} linhas...`);
+// Sincronizar TAGS (A:K) com filtro: ignora linhas onde coluna B = "N/A"
+function sincronizarTags() {
+  try {
+    Logger.log('=== Iniciando sincronização de TAGS ===');
 
-  let successCount = 0;
-  let errorCount = 0;
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const lastRow = sheet.getLastRow();
 
-  rows.forEach((row, index) => {
-    try {
-      const rowData = rowToObject(headers, row);
-
-      // Pular linhas vazias
-      if (!rowData.CODCONTA || rowData.CODCONTA.toString().trim() === '') {
-        return;
-      }
-
-      if (CONFIG.SYNC_MODE === 'supabase') {
-        syncToSupabase(rowData);
-      } else {
-        syncToBackend(rowData);
-      }
-
-      successCount++;
-    } catch (error) {
-      console.error(`❌ Erro na linha ${index + 2}:`, error);
-      errorCount++;
+    if (lastRow < 2) {
+      Logger.log('Tags: Planilha vazia');
+      return;
     }
-  });
 
-  console.log(`✅ Sincronização completa: ${successCount} sucesso, ${errorCount} erros`);
+    const range = sheet.getRange('A1:K' + lastRow);
+    const data = range.getValues();
+    const headers = data[0].map(h => _norm(h));
+    const rows = data.slice(1);
 
-  SpreadsheetApp.getUi().alert(
-    `Sincronização concluída!\n\n` +
-    `✅ Sucesso: ${successCount}\n` +
-    `❌ Erros: ${errorCount}`
-  );
-}
+    const records = [];
 
-// =====================================================
-// FUNÇÃO: Converter linha em objeto
-// =====================================================
+    for (let i = 0; i < rows.length; i++) {
+      // FILTRO: Coluna B (index 1) = "N/A" → pular
+      const colB = _norm(rows[i][1]);
+      if (colB.toUpperCase() === 'N/A') continue;
 
-function rowToObject(headers, row) {
-  const obj = {};
-  headers.forEach((header, index) => {
-    obj[header] = row[index];
-  });
-  return obj;
-}
+      const record = {};
+      let hasData = false;
+      let hasCodConta = false;
 
-// =====================================================
-// FUNÇÃO: Sincronizar com Supabase diretamente
-// =====================================================
+      for (let j = 0; j < headers.length; j++) {
+        const sheetCol = headers[j];
+        const dbCol = TAGS_MAPPING[sheetCol];
+        const value = rows[i][j];
 
-function syncToSupabase(rowData) {
-  const payload = {
-    cod_conta: rowData.CODCONTA?.toString() || '',
-    tag1: rowData.Tag1?.toString() || null,
-    tag2: rowData.Tag2?.toString() || null,
-    tag3: rowData.Tag3?.toString() || null,
-    tag4: rowData.TAG4?.toString() || null,
-    tag_orc: rowData.TagOrc?.toString() || null,
-    ger: rowData.GER?.toString() || null,
-    bp_dre: rowData['BP/DRE']?.toString() || null,
-    nat_orc: rowData['Nat. Orc']?.toString() || null,
-    nome_nat_orc: rowData['Nome Nat.Orc']?.toString() || null,
-    responsavel: rowData['Responsável']?.toString() || null,
-  };
+        if (!dbCol) continue;
 
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
-    headers: {
-      'apikey': CONFIG.SUPABASE_KEY,
-      'Authorization': `Bearer ${CONFIG.SUPABASE_KEY}`,
-      'Prefer': 'resolution=merge-duplicates'
-    },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
+        if (value !== null && value !== undefined && value !== '') {
+          record[dbCol] = String(value);
+          hasData = true;
+          if (dbCol === 'cod_conta') hasCodConta = true;
+        } else {
+          record[dbCol] = null;
+        }
+      }
 
-  const url = `${CONFIG.SUPABASE_URL}/rest/v1/conta_contabil`;
-  const response = UrlFetchApp.fetch(url, options);
+      if (hasData && hasCodConta) {
+        record['synced_at'] = new Date().toISOString();
+        records.push(record);
+      }
+    }
 
-  if (response.getResponseCode() !== 201 && response.getResponseCode() !== 200) {
-    throw new Error(`Supabase erro: ${response.getContentText()}`);
+    if (records.length > 0) {
+      upsertDados('tags', records, 'cod_conta');
+    }
+
+    Logger.log('Tags sincronizadas: ' + records.length + ' registros');
+    Logger.log('=== Fim sincronização de TAGS ===');
+  } catch (error) {
+    Logger.log('ERRO ao sincronizar tags: ' + error);
+    throw error;
   }
-
-  return response.getContentText();
 }
 
-// =====================================================
-// FUNÇÃO: Sincronizar via Backend API
-// =====================================================
+// Sincronizar FILIAL (M:S)
+function sincronizarFilial() {
+  try {
+    Logger.log('=== Iniciando sincronização de FILIAL ===');
 
-function syncToBackend(rowData) {
-  const payload = {
-    cod_conta: rowData.CODCONTA?.toString() || '',
-    tag1: rowData.Tag1?.toString() || null,
-    tag2: rowData.Tag2?.toString() || null,
-    tag3: rowData.Tag3?.toString() || null,
-    tag4: rowData.TAG4?.toString() || null,
-    tag_orc: rowData.TagOrc?.toString() || null,
-    ger: rowData.GER?.toString() || null,
-    bp_dre: rowData['BP/DRE']?.toString() || null,
-    nat_orc: rowData['Nat. Orc']?.toString() || null,
-    nome_nat_orc: rowData['Nome Nat.Orc']?.toString() || null,
-    responsavel: rowData['Responsável']?.toString() || null,
-  };
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    const lastRow = sheet.getLastRow();
 
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
+    if (lastRow < 2) {
+      Logger.log('Filial: Planilha vazia');
+      return;
+    }
 
-  const response = UrlFetchApp.fetch(CONFIG.BACKEND_API, options);
+    const range = sheet.getRange('M1:S' + lastRow);
+    const data = range.getValues();
+    const headers = data[0].map(h => _norm(h));
+    const rows = data.slice(1);
 
-  if (response.getResponseCode() !== 200) {
-    throw new Error(`Backend erro: ${response.getContentText()}`);
+    const records = [];
+    for (let i = 0; i < rows.length; i++) {
+      const record = {};
+      let hasData = false;
+      let hasChave = false;
+
+      for (let j = 0; j < headers.length; j++) {
+        const sheetCol = headers[j];
+        const dbCol = FILIAL_MAPPING[sheetCol];
+        const value = rows[i][j];
+
+        if (!dbCol) continue;
+
+        if (value !== null && value !== undefined && value !== '') {
+          record[dbCol] = String(value);
+          hasData = true;
+          if (dbCol === 'chave_coligadafilial') hasChave = true;
+        } else {
+          record[dbCol] = null;
+        }
+      }
+
+      if (hasData && hasChave) records.push(record);
+    }
+
+    if (records.length > 0) {
+      upsertDados('filial', records, 'chave_coligadafilial');
+    }
+
+    Logger.log('Filial sincronizada: ' + records.length + ' registros');
+    Logger.log('=== Fim sincronização de FILIAL ===');
+  } catch (error) {
+    Logger.log('ERRO ao sincronizar filial: ' + error);
+    throw error;
   }
-
-  return response.getContentText();
 }
 
-// =====================================================
-// FUNÇÃO: Detectar mudanças (onEdit)
-// =====================================================
+// Sincronizar FORNECEDOR_TAGS (A:J na guia "de para fornecedor")
+function sincronizarFornecedor() {
+  try {
+    Logger.log('=== Iniciando sincronização de FORNECEDOR ===');
 
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = spreadsheet.getSheetByName('de para fornecedor');
+
+    if (!sheet) {
+      Logger.log('Fornecedor: Guia "de para fornecedor" não encontrada');
+      return;
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      Logger.log('Fornecedor: Planilha vazia');
+      return;
+    }
+
+    const range = sheet.getRange('A1:J' + lastRow);
+    const data = range.getValues();
+    const headers = data[0].map(h => _norm(h));
+    const rows = data.slice(1);
+
+    const records = [];
+    for (let i = 0; i < rows.length; i++) {
+      const record = {};
+      let hasData = false;
+      let hasCodForn = false;
+
+      for (let j = 0; j < headers.length; j++) {
+        const sheetCol = headers[j];
+        const dbCol = FORNECEDOR_MAPPING[sheetCol];
+        const value = rows[i][j];
+
+        if (!dbCol) continue;
+
+        if (value !== null && value !== undefined && value !== '') {
+          record[dbCol] = String(value);
+          hasData = true;
+          if (dbCol === 'cod_forn') hasCodForn = true;
+        } else {
+          record[dbCol] = null;
+        }
+      }
+
+      if (hasData && hasCodForn) records.push(record);
+    }
+
+    if (records.length > 0) {
+      upsertDados('Fornecedor_Tags', records, 'cod_forn');
+    }
+
+    Logger.log('Fornecedor sincronizado: ' + records.length + ' registros');
+    Logger.log('=== Fim sincronização de FORNECEDOR ===');
+  } catch (error) {
+    Logger.log('ERRO ao sincronizar fornecedor: ' + error);
+    throw error;
+  }
+}
+
+// Sincronizar TODAS as tabelas
+function sincronizarComSupabase() {
+  const erros = [];
+  const sucessos = [];
+
+  Logger.log('========== INICIANDO SINCRONIZAÇÃO COMPLETA ==========');
+
+  try { sincronizarTags(); sucessos.push('tags'); }
+  catch (error) { erros.push('tags: ' + (error.message || error)); }
+
+  try { sincronizarFilial(); sucessos.push('filial'); }
+  catch (error) { erros.push('filial: ' + (error.message || error)); }
+
+  try { sincronizarFornecedor(); sucessos.push('fornecedor'); }
+  catch (error) { erros.push('fornecedor: ' + (error.message || error)); }
+
+  Logger.log('========== FIM SINCRONIZAÇÃO COMPLETA ==========');
+  Logger.log('Sucessos: ' + sucessos.join(', '));
+  if (erros.length > 0) Logger.log('Erros: ' + erros.join(' | '));
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (erros.length > 0) {
+    ss.toast('Sincronizado: ' + sucessos.join(', ') + '. Erros: ' + erros.length, 'Supabase', 6);
+  } else {
+    ss.toast('Todas as tabelas sincronizadas!', 'Supabase', 4);
+  }
+}
+
+// =========================
+// SUPABASE REST — UPSERT em batches
+// =========================
+
+function upsertDados(tableName, records, conflictColumn) {
+  const totalBatches = Math.ceil(records.length / BATCH_SIZE);
+
+  for (let i = 0; i < totalBatches; i++) {
+    const batch = records.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+
+    const url = SUPABASE_URL + '/rest/v1/' + tableName;
+
+    const options = {
+      method: 'post',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      payload: JSON.stringify(batch),
+      muteHttpExceptions: true
+    };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const status = response.getResponseCode();
+
+    if (status !== 201 && status !== 200) {
+      const body = response.getContentText();
+      Logger.log('Erro batch ' + (i + 1) + '/' + totalBatches + ' em ' + tableName + ': ' + body);
+      throw new Error('Erro ao upsert em ' + tableName + ': ' + body);
+    }
+
+    Logger.log('Batch ' + (i + 1) + '/' + totalBatches + ' em ' + tableName + ': OK (' + batch.length + ' registros)');
+  }
+}
+
+// =========================
+// TRIGGERS
+// =========================
 function onEdit(e) {
-  // Verificar se é a aba correta
-  if (e.source.getActiveSheet().getName() !== CONFIG.SHEET_NAME) {
-    return;
-  }
-
-  // Pegar linha editada
-  const row = e.range.getRow();
-
-  // Pular linha de cabeçalho
-  if (row === 1) {
-    return;
-  }
-
-  // Sincronizar linha específica
-  syncRow(row);
+  sincronizarComSupabase();
 }
 
-// =====================================================
-// FUNÇÃO: Sincronizar linha específica
-// =====================================================
-
-function syncRow(rowNumber) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SHEET_NAME);
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const rowData = sheet.getRange(rowNumber, 1, 1, sheet.getLastColumn()).getValues()[0];
-
-  const dataObject = rowToObject(headers, rowData);
-
-  // Pular se CODCONTA vazio
-  if (!dataObject.CODCONTA || dataObject.CODCONTA.toString().trim() === '') {
-    console.log(`Linha ${rowNumber} ignorada (CODCONTA vazio)`);
-    return;
-  }
-
-  try {
-    if (CONFIG.SYNC_MODE === 'supabase') {
-      syncToSupabase(dataObject);
-    } else {
-      syncToBackend(dataObject);
-    }
-    console.log(`✅ Linha ${rowNumber} sincronizada com sucesso`);
-  } catch (error) {
-    console.error(`❌ Erro ao sincronizar linha ${rowNumber}:`, error);
-  }
+function onChange(e) {
+  sincronizarComSupabase();
 }
 
-// =====================================================
-// FUNÇÃO: Configurar gatilhos automáticos
-// =====================================================
-
-function setupTriggers() {
-  // Remover triggers existentes
-  const triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
-
-  // Criar trigger de edição
-  ScriptApp.newTrigger('onEdit')
-    .forSpreadsheet(SpreadsheetApp.getActive())
-    .onEdit()
-    .create();
-
-  // Criar trigger de sincronização periódica (a cada 1 hora)
-  ScriptApp.newTrigger('syncAllData')
-    .timeBased()
-    .everyHours(1)
-    .create();
-
-  console.log('✅ Triggers configurados com sucesso!');
-  SpreadsheetApp.getUi().alert('✅ Sincronização automática configurada!\n\nAgora qualquer edição será sincronizada automaticamente.');
-}
-
-// =====================================================
-// FUNÇÃO: Remover gatilhos
-// =====================================================
-
-function removeTriggers() {
-  const triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(trigger => ScriptApp.deleteTrigger(trigger));
-
-  console.log('🗑️ Triggers removidos');
-  SpreadsheetApp.getUi().alert('🗑️ Sincronização automática desativada.');
-}
-
-// =====================================================
-// MENU CUSTOMIZADO
-// =====================================================
-
+// =========================
+// MENU
+// =========================
 function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  ui.createMenu('🔄 Sincronização')
-    .addItem('✅ Sincronizar Tudo Agora', 'syncAllData')
-    .addItem('⚙️ Configurar Sincronização Automática', 'setupTriggers')
-    .addItem('🗑️ Desativar Sincronização', 'removeTriggers')
-    .addSeparator()
-    .addItem('ℹ️ Sobre', 'showAbout')
+  SpreadsheetApp.getUi().createMenu('Sincronização Supabase')
+    .addItem('Sincronizar Tudo Agora', 'sincronizarComSupabase')
+    .addItem('Apenas Tags', 'sincronizarTags')
+    .addItem('Apenas Filial', 'sincronizarFilial')
+    .addItem('Apenas Fornecedor', 'sincronizarFornecedor')
     .addToUi();
-}
-
-function showAbout() {
-  const ui = SpreadsheetApp.getUi();
-  ui.alert(
-    'Sincronização Google Sheets → Supabase',
-    '📊 Sistema de sincronização automática\n\n' +
-    'Funcionalidades:\n' +
-    '• Sincronização em tempo real ao editar\n' +
-    '• Sincronização periódica a cada 1 hora\n' +
-    '• Sincronização manual quando necessário\n\n' +
-    '🔧 Configure em: Extensões → Apps Script\n' +
-    '📚 Documentação completa no projeto',
-    ui.ButtonSet.OK
-  );
-}
-
-// =====================================================
-// FUNÇÃO DE TESTE
-// =====================================================
-
-function testSync() {
-  console.log('🧪 Testando sincronização...');
-
-  const testData = {
-    CODCONTA: '1.01.001',
-    Tag1: 'Teste',
-    Tag2: 'Automático',
-    Tag3: null,
-    TAG4: null,
-    TagOrc: 'Operacional',
-    GER: 'Sim',
-    'BP/DRE': 'DRE',
-    'Nat. Orc': 'Receita',
-    'Nome Nat.Orc': 'Receita de Teste',
-    'Responsável': 'Sistema'
-  };
-
-  try {
-    if (CONFIG.SYNC_MODE === 'supabase') {
-      const result = syncToSupabase(testData);
-      console.log('✅ Teste com Supabase OK:', result);
-    } else {
-      const result = syncToBackend(testData);
-      console.log('✅ Teste com Backend OK:', result);
-    }
-
-    SpreadsheetApp.getUi().alert('✅ Teste de sincronização bem-sucedido!');
-  } catch (error) {
-    console.error('❌ Erro no teste:', error);
-    SpreadsheetApp.getUi().alert(`❌ Erro no teste:\n\n${error.message}`);
-  }
 }
