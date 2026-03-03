@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { getSomaTags, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
+import { getSomaTags, invalidateSomaTagsCache, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
 import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator } from 'lucide-react';
-import ExcelJS from 'exceljs';
+// ExcelJS carregado sob demanda em exportExcel() via dynamic import
+import type ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
-import DreAnalysisSection from './DreAnalysisSection';
+const DreAnalysisSection = React.lazy(() => import('./DreAnalysisSection'));
 import { useAuth } from '../contexts/AuthContext';
 import { DreAnalysis } from '../types';
 
@@ -763,6 +764,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
   // ── Exportar Excel ────────────────────────────────────────────────────────
   const exportExcel = useCallback(async () => {
+    const ExcelJS = (await import('exceljs')).default;
     // ExcelJS usa ARGB (8 chars): FF + RRGGBB
     const BG = {
       white:    'FFFFFFFF', hdr:      'FFE5E7EB',
@@ -1029,10 +1031,16 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     }
   }, [selectedMonths, selectedMarcas, recurring]);
 
+  // Refresh forçado: invalida cache antes de buscar
+  const forceRefresh = useCallback(() => {
+    invalidateSomaTagsCache();
+    fetchData();
+  }, [fetchData]);
+
   // Registra ações no App.tsx (header) — deve ficar após exportExcel, exportBook e fetchData
   useEffect(() => {
-    onRegisterActions?.({ refresh: fetchData, exportExcel, exportBook });
-  }, [onRegisterActions, fetchData, exportExcel, exportBook]);
+    onRegisterActions?.({ refresh: forceRefresh, exportExcel, exportBook });
+  }, [onRegisterActions, forceRefresh, exportExcel, exportBook]);
 
   // Sincroniza loading com App.tsx
   useEffect(() => { onLoadingChange?.(loading); }, [loading, onLoadingChange]);
@@ -2414,14 +2422,16 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
       {/* ══ ANÁLISES DO RESULTADO ══ */}
       {authUser && !isTableFullscreen && (
-        <DreAnalysisSection
-          filterHash={filterHash}
-          filterContext={filterContextString}
-          filterContextObj={filterContextObj}
-          somaRows={rows}
-          currentUser={authUser}
-          onRestoreFilters={handleRestoreFilters}
-        />
+        <React.Suspense fallback={<div className="flex items-center justify-center py-8 text-gray-400"><Loader2 className="w-5 h-5 animate-spin mr-2" />Carregando análise...</div>}>
+          <DreAnalysisSection
+            filterHash={filterHash}
+            filterContext={filterContextString}
+            filterContextObj={filterContextObj}
+            somaRows={rows}
+            currentUser={authUser}
+            onRestoreFilters={handleRestoreFilters}
+          />
+        </React.Suspense>
       )}
     </div>
   );

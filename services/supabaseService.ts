@@ -674,7 +674,11 @@ export interface SomaTagsRow {
 /**
  * Busca soma por tag0+tag01+scenario (RPC leve para diagnóstico)
  * Muito mais rápido que get_dre_summary pois agrupa menos colunas
+ * Cache com TTL de 60s para evitar re-fetches repetidos
  */
+const _somaTagsCache: Record<string, { data: SomaTagsRow[]; ts: number }> = {};
+const SOMA_TAGS_TTL = 60_000; // 60 segundos
+
 export const getSomaTags = async (
   monthFrom?: string,
   monthTo?: string,
@@ -691,6 +695,13 @@ export const getSomaTags = async (
     console.error('❌ getSomaTags: parâmetros inválidos', parsed.error.issues);
     return [];
   }
+  // Cache: gerar chave determinística a partir dos params
+  const cacheKey = JSON.stringify([monthFrom, monthTo, marcas?.sort(), nomeFiliais?.sort(), tags02?.sort(), tags01?.sort(), recurring, tags03?.sort()]);
+  const cached = _somaTagsCache[cacheKey];
+  if (cached && Date.now() - cached.ts < SOMA_TAGS_TTL) {
+    return cached.data;
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
@@ -711,12 +722,19 @@ export const getSomaTags = async (
       console.error('❌ Erro ao buscar soma tags:', error);
       return [];
     }
-    return (data || []) as SomaTagsRow[];
+    const result = (data || []) as SomaTagsRow[];
+    _somaTagsCache[cacheKey] = { data: result, ts: Date.now() };
+    return result;
   } catch (err: any) {
     clearTimeout(timeoutId);
     console.error('❌ getSomaTags error:', err);
     return [];
   }
+};
+
+/** Invalida o cache do getSomaTags (usar após edição de dados) */
+export const invalidateSomaTagsCache = () => {
+  for (const key in _somaTagsCache) delete _somaTagsCache[key];
 };
 
 // ── DRE ANALYSES ─────────────────────────────────────────────────────────────

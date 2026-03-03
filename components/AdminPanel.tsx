@@ -3,7 +3,8 @@ import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
-import ExcelJS from 'exceljs';
+// ExcelJS carregado sob demanda via dynamic import
+import type ExcelJS from 'exceljs';
 import { Transaction } from '../types';
 
 interface User {
@@ -2605,6 +2606,7 @@ const AdminPanel: React.FC = () => {
                     ? rateioLog.filter(r => r.year_month === rateioMesFilter)
                     : rateioLog;
 
+                  const ExcelJS = (await import('exceljs')).default;
                   const wb = new ExcelJS.Workbook();
                   const ws = wb.addWorksheet('Rateio Raiz');
 

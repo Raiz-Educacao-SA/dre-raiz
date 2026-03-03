@@ -28,7 +28,8 @@ import { Transaction, TransactionType, TransactionStatus, ManualChange, Paginati
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
 import { getFilteredTransactions, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
 import ContaContabilSelector from './ContaContabilSelector';
-import ExcelJS from 'exceljs';
+// ExcelJS carregado sob demanda via dynamic import
+import type ExcelJS from 'exceljs';
 import debounce from 'lodash.debounce';
 import {
   Edit3, GitFork, X, Save,
@@ -1032,6 +1033,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       { header: 'Justificativa', key: 'justification', width: 42, align: 'left' as const },
     ];
 
+    const ExcelJS = (await import('exceljs')).default;
     const wb = new ExcelJS.Workbook();
     wb.creator = 'DRE Raiz';
     const ws = wb.addWorksheet('Lançamentos');
