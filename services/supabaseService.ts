@@ -2774,10 +2774,10 @@ export const getVarianceYtdItems = async (
 };
 
 /**
- * Gera itens de desvio para um mês/marca a partir de get_soma_tags (tag0+tag01)
- * e query direta em dre_agg (tag02+tag03).
+ * Gera itens de desvio para um mês/marca.
+ * FONTE PRINCIPAL: get_soma_tags RPC (mesma do DRE Gerencial) → tag0+tag01
+ * DETALHE: dre_agg materialized view → tag02+tag03 (suplementar)
  * Cruza Real vs Orçado E Real vs A-1. Identifica owner via user_permissions.
- * UPSERT por chave única.
  */
 export const generateVarianceItems = async (
   yearMonth: string,
@@ -2787,11 +2787,48 @@ export const generateVarianceItems = async (
     const snapshotAt = new Date().toISOString();
     debug(`📊 Gerando desvios para ${yearMonth}, marca=${marca || 'todas'} — snapshot_at=${snapshotAt}`);
 
-    // 1. Buscar dados do dre_agg com paginação
+    // 1. FONTE PRINCIPAL — get_soma_tags RPC (mesma fonte do DRE Gerencial)
+    // Retorna {tag0, tag01, scenario, month, total} — EXATAMENTE o que o DRE mostra
+    const { data: somaData, error: somaError } = await supabase
+      .rpc('get_soma_tags', {
+        p_month_from: yearMonth,
+        p_month_to: yearMonth,
+        p_marcas: marca ? [marca] : null,
+        p_nome_filiais: null,
+        p_tags02: null,
+        p_tags01: null,
+        p_recurring: null,
+        p_tags03: null,
+      });
+
+    if (somaError) {
+      console.error('Erro ao buscar get_soma_tags:', somaError);
+      return { created: 0, updated: 0, version: 0, error: `Erro get_soma_tags: ${somaError.message}` };
+    }
+
+    if (!somaData || somaData.length === 0) {
+      return { created: 0, updated: 0, version: 0, error: 'Nenhum dado retornado por get_soma_tags para o período. Verifique se existem lançamentos.' };
+    }
+
+    // Converter soma → formato unificado (tag02=null, tag03=null)
+    let allAggData: any[] = somaData.map((row: any) => ({
+      tag0: row.tag0,
+      tag01: row.tag01,
+      tag02: null,
+      tag03: null,
+      scenario: row.scenario,
+      year_month: row.month,
+      total_amount: row.total,
+      marca: marca || '',
+    }));
+
+    debug(`📊 get_soma_tags: ${somaData.length} linhas para ${yearMonth} (marca=${marca || 'consolidado'})`);
+
+    // 1.5 DETALHE SUPLEMENTAR — dre_agg (tag02+tag03 granular)
     const PAGE_SIZE = 5000;
-    let allAggData: any[] = [];
     let offset = 0;
     let hasMore = true;
+    let detailCount = 0;
 
     while (hasMore) {
       let aggQuery = supabase
@@ -2799,20 +2836,22 @@ export const generateVarianceItems = async (
         .select('tag0, tag01, tag02, tag03, scenario, year_month, total_amount, marca')
         .eq('year_month', yearMonth)
         .in('scenario', ['Real', 'Orçado', 'A-1'])
+        .not('tag02', 'is', null)
         .range(offset, offset + PAGE_SIZE - 1);
 
       if (marca) aggQuery = aggQuery.eq('marca', marca);
 
       const { data: page, error: aggError } = await aggQuery;
       if (aggError) {
-        console.error('Erro ao buscar dre_agg:', aggError);
-        return { created: 0, updated: 0, version: 0, error: aggError.message };
+        debug(`⚠️ dre_agg detalhe falhou (continuando sem tag02/tag03): ${aggError.message}`);
+        break;
       }
 
       if (!page || page.length === 0) {
         hasMore = false;
       } else {
         allAggData = allAggData.concat(page);
+        detailCount += page.length;
         hasMore = page.length === PAGE_SIZE;
         offset += PAGE_SIZE;
       }
@@ -2823,11 +2862,7 @@ export const generateVarianceItems = async (
     for (const row of allAggData) {
       scenarioCounts[row.scenario] = (scenarioCounts[row.scenario] || 0) + 1;
     }
-    debug(`📊 dre_agg retornou ${allAggData.length} linhas — ${Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`);
-
-    if (allAggData.length === 0) {
-      return { created: 0, updated: 0, version: 0, error: 'Nenhum dado encontrado em dre_agg para o período. Verifique se a materialized view foi atualizada (REFRESH MATERIALIZED VIEW dre_agg).' };
-    }
+    debug(`📊 Total: ${allAggData.length} linhas (${somaData.length} soma + ${detailCount} detalhe) — ${Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`);
 
     // 2. Buscar versão atual e próxima
     let versionQuery = supabase
@@ -2979,10 +3014,15 @@ export const generateVarianceItems = async (
       const margemOrc = get('01.', 'Orçado') + get('02.', 'Orçado') + get('03.', 'Orçado');
       const margemA1 = get('01.', 'A-1') + get('02.', 'A-1') + get('03.', 'A-1');
 
-      // EBITDA = MARGEM + 04.
+      // EBITDA (S/ RATEIO RAIZ CSC) = MARGEM + 04.
       const ebitdaReal = margemReal + get('04.', 'Real');
       const ebitdaOrc = margemOrc + get('04.', 'Orçado');
       const ebitdaA1 = margemA1 + get('04.', 'A-1');
+
+      // EBITDA TOTAL = EBITDA + 06.
+      const ebitdaTotalReal = ebitdaReal + get('06.', 'Real');
+      const ebitdaTotalOrc = ebitdaOrc + get('06.', 'Orçado');
+      const ebitdaTotalA1 = ebitdaA1 + get('06.', 'A-1');
 
       const addCalcRow = (label: string, realV: number, orcV: number, a1V: number) => {
         const addComp = (compareVal: number, compType: 'orcado' | 'a1') => {
@@ -3012,13 +3052,14 @@ export const generateVarianceItems = async (
       };
 
       addCalcRow('MARGEM DE CONTRIBUIÇÃO', margemReal, margemOrc, margemA1);
-      addCalcRow('EBITDA', ebitdaReal, ebitdaOrc, ebitdaA1);
+      addCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', ebitdaReal, ebitdaOrc, ebitdaA1);
+      addCalcRow('EBITDA TOTAL', ebitdaTotalReal, ebitdaTotalOrc, ebitdaTotalA1);
     }
 
-    debug(`📊 Calc rows adicionados: MARGEM + EBITDA para ${calcMarcas.length} marca(s)`);
+    debug(`📊 Calc rows adicionados: MARGEM + EBITDA S/RATEIO + EBITDA TOTAL para ${calcMarcas.length} marca(s)`);
 
     if (newRows.length === 0 && updateItems.length === 0) {
-      return { created: 0, updated: 0, version: nextVersion, error: `Nenhum desvio gerado. dre_agg: ${allAggData.length} linhas (${Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`).join(', ')})` };
+      return { created: 0, updated: 0, version: nextVersion, error: `Nenhum desvio gerado. get_soma_tags: ${somaData.length} linhas (${Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`).join(', ')})` };
     }
 
     debug(`📊 ${newRows.length} novos + ${updateItems.length} atualizações`);
@@ -3041,7 +3082,7 @@ export const generateVarianceItems = async (
       .from('variance_justifications')
       .delete()
       .eq('year_month', yearMonth)
-      .in('tag0', ['MARGEM DE CONTRIBUIÇÃO', 'EBITDA']);
+      .in('tag0', ['MARGEM DE CONTRIBUIÇÃO', 'EBITDA', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
     if (marca) delCalcQuery = delCalcQuery.eq('marca', marca);
 
     const { error: delCalcError } = await delCalcQuery;
@@ -3094,7 +3135,7 @@ export const generateVarianceItems = async (
     }
 
     const diagParts = Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`);
-    const diagnostics = `dre_agg: ${allAggData.length} linhas (${diagParts.join(', ')})`;
+    const diagnostics = `get_soma_tags: ${somaData.length} + dre_agg detalhe: ${detailCount} = ${allAggData.length} linhas (${diagParts.join(', ')})`;
     debug(`✅ v${nextVersion}: ${totalCreated} criados + ${totalUpdated} atualizados — snapshot_at=${snapshotAt} — ${diagnostics}`);
     return { created: totalCreated, updated: totalUpdated, version: nextVersion, snapshot_at: snapshotAt, diagnostics };
   } catch (e) {

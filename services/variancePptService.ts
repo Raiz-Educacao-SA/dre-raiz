@@ -245,7 +245,8 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
   const rows: any[][] = [headerRow];
 
   const margemCalc = data.calcRows.find(c => c.label === 'MARGEM DE CONTRIBUIÇÃO');
-  const ebitdaCalc = data.calcRows.find(c => c.label === 'EBITDA');
+  const ebitdaSrCalc = data.calcRows.find(c => c.label === 'EBITDA (S/ RATEIO RAIZ CSC)');
+  const ebitdaTotalCalc = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
 
   for (const section of data.sections) {
     const { node, invertDelta } = section;
@@ -265,11 +266,15 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
     if (section.tag0.startsWith('03.') && margemCalc) {
       addCalcRowToTable(rows, margemCalc, C.accent);
     }
+    // Insert EBITDA (S/ RATEIO) after 04.
+    if (section.tag0.startsWith('04.') && ebitdaSrCalc) {
+      addCalcRowToTable(rows, ebitdaSrCalc, C.headerBg);
+    }
   }
 
-  // EBITDA at end
-  if (ebitdaCalc) {
-    addCalcRowToTable(rows, ebitdaCalc, C.headerBg);
+  // EBITDA TOTAL at end
+  if (ebitdaTotalCalc) {
+    addCalcRowToTable(rows, ebitdaTotalCalc, C.headerBg);
   }
 
   const rowH = Math.min(0.3, 5.5 / rows.length);
@@ -281,15 +286,15 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
     rowH,
   });
 
-  // Right: KPI cards (45%)
-  const ebitda = data.calcRows.find(c => c.label === 'EBITDA');
+  // Right: KPI cards (45%) — usa EBITDA TOTAL
+  const ebitda = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
   const ebitdaReal = ebitda ? `R$ ${fmtK(ebitda.real)} mil` : 'N/D';
   const ebitdaVsOrc = ebitda ? fmtPct(ebitda.deltaOrcPct) : 'N/D';
   const ebitdaVsA1 = ebitda ? fmtPct(ebitda.deltaA1Pct) : 'N/D';
   const ebitdaOrcColor = ebitda?.deltaOrcPct != null ? deltaColor(ebitda.deltaOrcPct, false) : C.mutedText;
   const ebitdaA1Color = ebitda?.deltaA1Pct != null ? deltaColor(ebitda.deltaA1Pct, false) : C.mutedText;
 
-  addKpiCard(slide, 'EBITDA', ebitdaReal, C.consolidado, 7.8, 1.0, 2.3, 0.85);
+  addKpiCard(slide, 'EBITDA TOTAL', ebitdaReal, C.consolidado, 7.8, 1.0, 2.3, 0.85);
   addKpiCard(slide, 'VS ORÇADO', ebitdaVsOrc, ebitdaOrcColor, 10.4, 1.0, 2.3, 0.85);
   addKpiCard(slide, `VS ${a1Label}`, ebitdaVsA1, ebitdaA1Color, 7.8, 2.1, 2.3, 0.85);
   addKpiCard(slide, 'COBERTURA JUSTIF.', `${data.stats.coveragePct}%`, data.stats.coveragePct >= 80 ? C.approved : C.pending, 10.4, 2.1, 2.3, 0.85);

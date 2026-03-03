@@ -132,7 +132,7 @@ export function prepareVariancePptData(
   }
 
   // Collect unique tag0 values and build sections (excluding calc rows)
-  const CALC_TAG0S = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA']);
+  const CALC_TAG0S = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
   const tag0Set = [...new Set(items.map(i => i.tag0))].filter(t => !CALC_TAG0S.has(t)).sort();
   const sections: VariancePptSection[] = [];
 
@@ -219,10 +219,12 @@ function computeCalcRows(
   // Try to read from DB-stored calc rows first
   const margemOrc = orcMap.get('MARGEM DE CONTRIBUIÇÃO|||');
   const margemA1 = a1Map.get('MARGEM DE CONTRIBUIÇÃO|||');
-  const ebitdaOrc = orcMap.get('EBITDA|||');
-  const ebitdaA1 = a1Map.get('EBITDA|||');
+  const ebitdaSrOrc = orcMap.get('EBITDA (S/ RATEIO RAIZ CSC)|||');
+  const ebitdaSrA1 = a1Map.get('EBITDA (S/ RATEIO RAIZ CSC)|||');
+  const ebitdaTotalOrc = orcMap.get('EBITDA TOTAL|||');
+  const ebitdaTotalA1 = a1Map.get('EBITDA TOTAL|||');
 
-  if (margemOrc || ebitdaOrc) {
+  if (margemOrc || ebitdaSrOrc || ebitdaTotalOrc) {
     // Use DB values
     const rows: VariancePptCalcRow[] = [];
     if (margemOrc || margemA1) {
@@ -236,15 +238,26 @@ function computeCalcRows(
         deltaA1Pct: margemA1?.variance_pct ?? null,
       });
     }
-    if (ebitdaOrc || ebitdaA1) {
-      const real = ebitdaOrc ? Number(ebitdaOrc.real_value) : ebitdaA1 ? Number(ebitdaA1.real_value) : 0;
+    if (ebitdaSrOrc || ebitdaSrA1) {
+      const real = ebitdaSrOrc ? Number(ebitdaSrOrc.real_value) : ebitdaSrA1 ? Number(ebitdaSrA1.real_value) : 0;
       rows.push({
-        label: 'EBITDA',
+        label: 'EBITDA (S/ RATEIO RAIZ CSC)',
         real,
-        orcado: ebitdaOrc ? Number(ebitdaOrc.compare_value) : 0,
-        a1: ebitdaA1 ? Number(ebitdaA1.compare_value) : 0,
-        deltaOrcPct: ebitdaOrc?.variance_pct ?? null,
-        deltaA1Pct: ebitdaA1?.variance_pct ?? null,
+        orcado: ebitdaSrOrc ? Number(ebitdaSrOrc.compare_value) : 0,
+        a1: ebitdaSrA1 ? Number(ebitdaSrA1.compare_value) : 0,
+        deltaOrcPct: ebitdaSrOrc?.variance_pct ?? null,
+        deltaA1Pct: ebitdaSrA1?.variance_pct ?? null,
+      });
+    }
+    if (ebitdaTotalOrc || ebitdaTotalA1) {
+      const real = ebitdaTotalOrc ? Number(ebitdaTotalOrc.real_value) : ebitdaTotalA1 ? Number(ebitdaTotalA1.real_value) : 0;
+      rows.push({
+        label: 'EBITDA TOTAL',
+        real,
+        orcado: ebitdaTotalOrc ? Number(ebitdaTotalOrc.compare_value) : 0,
+        a1: ebitdaTotalA1 ? Number(ebitdaTotalA1.compare_value) : 0,
+        deltaOrcPct: ebitdaTotalOrc?.variance_pct ?? null,
+        deltaA1Pct: ebitdaTotalA1?.variance_pct ?? null,
       });
     }
     return rows;
@@ -256,14 +269,19 @@ function computeCalcRows(
   const s02 = findSection('02.');
   const s03 = findSection('03.');
   const s04 = findSection('04.');
+  const s06 = findSection('06.');
 
   const realMargem = (s01?.node.real || 0) + (s02?.node.real || 0) + (s03?.node.real || 0);
   const orcMargem = (s01?.node.orcCompare || 0) + (s02?.node.orcCompare || 0) + (s03?.node.orcCompare || 0);
   const a1Margem = (s01?.node.a1Compare || 0) + (s02?.node.a1Compare || 0) + (s03?.node.a1Compare || 0);
 
-  const realEbitda = realMargem + (s04?.node.real || 0);
-  const orcEbitda = orcMargem + (s04?.node.orcCompare || 0);
-  const a1Ebitda = a1Margem + (s04?.node.a1Compare || 0);
+  const realEbitdaSr = realMargem + (s04?.node.real || 0);
+  const orcEbitdaSr = orcMargem + (s04?.node.orcCompare || 0);
+  const a1EbitdaSr = a1Margem + (s04?.node.a1Compare || 0);
+
+  const realEbitdaTotal = realEbitdaSr + (s06?.node.real || 0);
+  const orcEbitdaTotal = orcEbitdaSr + (s06?.node.orcCompare || 0);
+  const a1EbitdaTotal = a1EbitdaSr + (s06?.node.a1Compare || 0);
 
   return [
     {
@@ -275,12 +293,20 @@ function computeCalcRows(
       deltaA1Pct: computeVarPct(realMargem, a1Margem),
     },
     {
-      label: 'EBITDA',
-      real: realEbitda,
-      orcado: orcEbitda,
-      a1: a1Ebitda,
-      deltaOrcPct: computeVarPct(realEbitda, orcEbitda),
-      deltaA1Pct: computeVarPct(realEbitda, a1Ebitda),
+      label: 'EBITDA (S/ RATEIO RAIZ CSC)',
+      real: realEbitdaSr,
+      orcado: orcEbitdaSr,
+      a1: a1EbitdaSr,
+      deltaOrcPct: computeVarPct(realEbitdaSr, orcEbitdaSr),
+      deltaA1Pct: computeVarPct(realEbitdaSr, a1EbitdaSr),
+    },
+    {
+      label: 'EBITDA TOTAL',
+      real: realEbitdaTotal,
+      orcado: orcEbitdaTotal,
+      a1: a1EbitdaTotal,
+      deltaOrcPct: computeVarPct(realEbitdaTotal, orcEbitdaTotal),
+      deltaA1Pct: computeVarPct(realEbitdaTotal, a1EbitdaTotal),
     },
   ];
 }
