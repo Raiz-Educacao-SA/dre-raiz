@@ -2399,7 +2399,34 @@ export const getDeparaFornec = async (): Promise<DeparaFornec[]> => {
   const { data, error } = await supabase
     .from('depara_fornec')
     .select('fornecedor_de, fornecedor_para, updated_at')
-    .order('fornecedor_de');
+    .order('fornecedor_de')
+    .range(0, 999);
+  if (error) {
+    console.error('Erro ao buscar depara_fornec:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const getDeparaFornecCount = async (): Promise<number> => {
+  const { count, error } = await supabase
+    .from('depara_fornec')
+    .select('fornecedor_de', { count: 'exact', head: true });
+  if (error) {
+    console.error('Erro ao contar depara_fornec:', error);
+    return 0;
+  }
+  return count || 0;
+};
+
+export const searchDeparaFornec = async (term: string): Promise<DeparaFornec[]> => {
+  const pattern = `%${term.trim()}%`;
+  const { data, error } = await supabase
+    .from('depara_fornec')
+    .select('fornecedor_de, fornecedor_para, updated_at')
+    .or(`fornecedor_de.ilike.${pattern},fornecedor_para.ilike.${pattern}`)
+    .order('fornecedor_de')
+    .limit(500);
   if (error) {
     console.error('Erro ao buscar depara_fornec:', error);
     return [];
@@ -2517,4 +2544,123 @@ export const getRateioLog = async (): Promise<RateioLog[]> => {
     return [];
   }
   return data || [];
+};
+
+// ============================================
+// Tributos Config
+// ============================================
+
+export interface TributoConfig {
+  id: number;
+  marca: string;
+  filial: string;
+  tipo_receita: string;
+  pis_cofins: number;
+  iss: number;
+  paa: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export const TIPOS_RECEITA = [
+  'Receitas Não Operacionais',
+  'Material Didático',
+  'Receitas Extras',
+  'Integral',
+  'Receita De Mensalidade',
+] as const;
+
+export const getTributosConfig = async (marca: string, filial: string): Promise<TributoConfig[]> => {
+  const { data, error } = await supabase
+    .from('tributos_config')
+    .select('*')
+    .eq('marca', marca)
+    .eq('filial', filial)
+    .order('tipo_receita');
+  if (error) {
+    console.error('Erro ao buscar tributos_config:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const getAllTributosConfig = async (): Promise<TributoConfig[]> => {
+  const { data, error } = await supabase
+    .from('tributos_config')
+    .select('*')
+    .order('marca')
+    .order('filial')
+    .order('tipo_receita');
+  if (error) {
+    console.error('Erro ao buscar tributos_config (all):', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const upsertTributosConfig = async (
+  rows: { marca: string; filial: string; tipo_receita: string; pis_cofins: number; iss: number; paa: number }[]
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('tributos_config')
+    .upsert(rows, { onConflict: 'marca,filial,tipo_receita' });
+  if (error) {
+    console.error('Erro ao upsert tributos_config:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+};
+
+export const updateTributoConfig = async (
+  id: number,
+  updates: Partial<Pick<TributoConfig, 'pis_cofins' | 'iss' | 'paa'>>
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase
+    .from('tributos_config')
+    .update(updates)
+    .eq('id', id)
+    .select();
+  if (error) {
+    console.error('Erro ao atualizar tributos_config:', error);
+    return { ok: false, error: error.message };
+  }
+  if (!data || data.length === 0) {
+    return { ok: false, error: 'Nenhuma linha atualizada. Verifique permissões (RLS).' };
+  }
+  return { ok: true };
+};
+
+export const deleteTributosConfigByFilial = async (marca: string, filial: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('tributos_config')
+    .delete()
+    .eq('marca', marca)
+    .eq('filial', filial);
+  if (error) {
+    console.error('Erro ao excluir tributos_config:', error);
+    return false;
+  }
+  return true;
+};
+
+export const deleteTributoConfig = async (id: number): Promise<boolean> => {
+  const { error } = await supabase
+    .from('tributos_config')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao excluir tributos_config row:', error);
+    return false;
+  }
+  return true;
+};
+
+export const subscribeTributosConfig = (onChange: () => void) => {
+  const channel = supabase
+    .channel('tributos_config_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tributos_config' }, () => {
+      onChange();
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
 };

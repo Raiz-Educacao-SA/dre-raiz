@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
@@ -53,7 +53,7 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'rateio' | 'depara'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara'>('import');
 
   // Estados para aba PDD
   const [pddData, setPddData] = useState<supabaseService.SharePdd[]>([]);
@@ -78,6 +78,20 @@ const AdminPanel: React.FC = () => {
   const [pddTag0Filter, setPddTag0Filter] = useState('');
   const [pddTag01Search, setPddTag01Search] = useState('');
   const [pddContasLoading, setPddContasLoading] = useState(false);
+
+  // Estados para aba Tributos
+  const [tribData, setTribData] = useState<supabaseService.TributoConfig[]>([]);
+  const [tribLoading, setTribLoading] = useState(false);
+  const [tribSaving, setTribSaving] = useState(false);
+  const [tribEditingCell, setTribEditingCell] = useState<{ id: number; col: 'pis_cofins' | 'iss' | 'paa' } | null>(null);
+  const [tribEditValue, setTribEditValue] = useState('');
+  const [tribMessage, setTribMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+  const [tribFilterMarca, setTribFilterMarca] = useState('');
+  const [tribFilterFilial, setTribFilterFilial] = useState('');
+  // Import Excel
+  const [tribFile, setTribFile] = useState<File | null>(null);
+  const [tribImportPreview, setTribImportPreview] = useState<{ marca: string; filial: string; tipo_receita: string; pis_cofins: number; iss: number; paa: number }[]>([]);
+  const [tribImporting, setTribImporting] = useState(false);
 
   // Estado para busca de usuários
   const [userSearch, setUserSearch] = useState('');
@@ -107,6 +121,9 @@ const AdminPanel: React.FC = () => {
   const [deparaData, setDeparaData] = useState<supabaseService.DeparaFornec[]>([]);
   const [deparaLoading, setDeparaLoading] = useState(false);
   const [deparaSearch, setDeparaSearch] = useState('');
+  const [deparaTotalCount, setDeparaTotalCount] = useState(0);
+  const [deparaSearching, setDeparaSearching] = useState(false);
+  const [deparaIsSearchResult, setDeparaIsSearchResult] = useState(false);
   const [deparaEditingId, setDeparaEditingId] = useState<string | null>(null);
   const [deparaEditDe, setDeparaEditDe] = useState('');
   const [deparaEditPara, setDeparaEditPara] = useState('');
@@ -143,6 +160,7 @@ const AdminPanel: React.FC = () => {
       if (pddData.length === 0) loadPddData();
       if (pddAllTags.length === 0) loadPddContas();
     }
+    if (activeTab === 'tributos' && tribData.length === 0) loadAllTributos();
     if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
     if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
   }, [activeTab]);
@@ -156,21 +174,48 @@ const AdminPanel: React.FC = () => {
       supabaseService.getPddContas().then(setPddContas);
     });
     const unsub3 = supabaseService.subscribeDeparaFornec(() => {
-      supabaseService.getDeparaFornec().then(setDeparaData);
+      supabaseService.getDeparaFornecCount().then(setDeparaTotalCount);
     });
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const unsub4 = supabaseService.subscribeTributosConfig(() => {
+      supabaseService.getAllTributosConfig().then(setTribData);
+    });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, []);
 
   // ---- De-Para Fornecedores handlers ----
   const loadDeparaData = async () => {
     setDeparaLoading(true);
     try {
-      const data = await supabaseService.getDeparaFornec();
+      const [data, count] = await Promise.all([
+        supabaseService.getDeparaFornec(),
+        supabaseService.getDeparaFornecCount()
+      ]);
       setDeparaData(data);
+      setDeparaTotalCount(count);
+      setDeparaIsSearchResult(false);
     } catch (error) {
       console.error('Erro ao carregar depara_fornec:', error);
     } finally {
       setDeparaLoading(false);
+    }
+  };
+
+  const handleDeparaServerSearch = async () => {
+    const term = deparaSearch.trim();
+    if (!term) {
+      // Limpar busca — recarregar dados iniciais
+      loadDeparaData();
+      return;
+    }
+    setDeparaSearching(true);
+    try {
+      const results = await supabaseService.searchDeparaFornec(term);
+      setDeparaData(results);
+      setDeparaIsSearchResult(true);
+    } catch (error) {
+      console.error('Erro ao buscar depara_fornec:', error);
+    } finally {
+      setDeparaSearching(false);
     }
   };
 
@@ -253,11 +298,7 @@ const AdminPanel: React.FC = () => {
     setTimeout(() => setDeparaMessage(null), 5000);
   };
 
-  const filteredDepara = deparaData.filter(item => {
-    if (!deparaSearch) return true;
-    const s = deparaSearch.toLowerCase();
-    return item.fornecedor_de.toLowerCase().includes(s) || item.fornecedor_para.toLowerCase().includes(s);
-  });
+  // deparaData já vem filtrado do servidor (via searchDeparaFornec) ou os primeiros 1000
 
   const addDeparaLog = (type: 'info'|'success'|'error'|'warn', text: string) => {
     const time = new Date().toLocaleTimeString('pt-BR');
@@ -506,6 +547,197 @@ const AdminPanel: React.FC = () => {
 
   const isContaSelected = (tag0: string, tag01: string) =>
     pddContas.some(c => c.tag0 === tag0 && c.tag01 === tag01);
+
+  // ---- Tributos handlers ----
+  const loadAllTributos = async () => {
+    setTribLoading(true);
+    try {
+      const data = await supabaseService.getAllTributosConfig();
+      setTribData(data);
+    } catch (error) {
+      console.error('Erro ao carregar tributos_config:', error);
+    } finally {
+      setTribLoading(false);
+    }
+  };
+
+  const showTribMessage = (type: 'success' | 'error' | 'info', text: string) => {
+    setTribMessage({ type, text });
+    setTimeout(() => setTribMessage(null), 5000);
+  };
+
+  const handleTribCellClick = (id: number, col: 'pis_cofins' | 'iss' | 'paa') => {
+    const row = tribData.find(r => r.id === id);
+    if (!row) return;
+    setTribEditingCell({ id, col });
+    setTribEditValue(String(row[col]).replace('.', ','));
+  };
+
+  const handleTribCellSave = async () => {
+    if (!tribEditingCell) return;
+    const { id, col } = tribEditingCell;
+    const parsed = parseFloat(tribEditValue.replace(',', '.'));
+    if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+      showTribMessage('error', 'Valor inválido. Use entre 0 e 100.');
+      return;
+    }
+    setTribSaving(true);
+    const result = await supabaseService.updateTributoConfig(id, { [col]: parsed });
+    if (result.ok) {
+      setTribData(prev => prev.map(r => r.id === id ? { ...r, [col]: parsed, updated_at: new Date().toISOString() } : r));
+      showTribMessage('success', 'Alíquota atualizada');
+    } else {
+      showTribMessage('error', result.error || 'Erro ao salvar');
+    }
+    setTribEditingCell(null);
+    setTribEditValue('');
+    setTribSaving(false);
+  };
+
+  const handleTribCellCancel = () => {
+    setTribEditingCell(null);
+    setTribEditValue('');
+  };
+
+  const handleTribDelete = async (item: supabaseService.TributoConfig) => {
+    if (!confirm(`Excluir alíquota "${item.tipo_receita}" da filial "${item.filial}"?`)) return;
+    const ok = await supabaseService.deleteTributoConfig(item.id);
+    if (ok) {
+      setTribData(prev => prev.filter(r => r.id !== item.id));
+      showTribMessage('success', 'Registro removido');
+    } else {
+      showTribMessage('error', 'Erro ao excluir');
+    }
+  };
+
+  const handleTribFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setTribFile(file);
+    setTribImportPreview([]);
+    setTribMessage(null);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const raw: any[] = XLSX.utils.sheet_to_json(ws);
+        if (raw.length === 0) { showTribMessage('error', 'Arquivo vazio!'); return; }
+
+        const mapped: typeof tribImportPreview = [];
+        let skipped = 0;
+        for (const row of raw) {
+          const marca = String(row['marca'] || row['Marca'] || row['MARCA'] || '').trim();
+          const filial = String(row['filial'] || row['Filial'] || row['FILIAL'] || '').trim();
+          const tipo = String(row['tipo_receita'] || row['Tipo Receita'] || row['TIPO_RECEITA'] || row['tipo receita'] || '').trim();
+          if (!marca || !filial || !tipo) { skipped++; continue; }
+          const pis = parseFloat(String(row['pis_cofins'] || row['PIS/COFINS'] || row['pis cofins'] || 0).replace(',', '.')) || 0;
+          const iss = parseFloat(String(row['iss'] || row['ISS'] || 0).replace(',', '.')) || 0;
+          const paa = parseFloat(String(row['paa'] || row['PAA'] || 0).replace(',', '.')) || 0;
+          mapped.push({ marca, filial, tipo_receita: tipo, pis_cofins: pis, iss, paa });
+        }
+        if (mapped.length === 0) {
+          showTribMessage('error', 'Nenhuma linha válida. Verifique as colunas: marca, filial, tipo_receita, pis_cofins, iss, paa');
+          return;
+        }
+        setTribImportPreview(mapped);
+        showTribMessage('info', `${mapped.length} registros carregados${skipped > 0 ? ` (${skipped} ignorados)` : ''}. Revise e clique em "Importar".`);
+      } catch (error) {
+        console.error('Erro ao ler arquivo tributos:', error);
+        showTribMessage('error', 'Erro ao ler arquivo. Verifique o formato.');
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleTribImport = async () => {
+    if (tribImportPreview.length === 0) return;
+    if (!confirm(`Importar/atualizar ${tribImportPreview.length} registros de tributos?`)) return;
+    setTribImporting(true);
+    const batchSize = 50;
+    let ok = true;
+    for (let i = 0; i < tribImportPreview.length; i += batchSize) {
+      const batch = tribImportPreview.slice(i, i + batchSize);
+      const result = await supabaseService.upsertTributosConfig(batch);
+      if (!result.ok) { showTribMessage('error', result.error || 'Erro no batch'); ok = false; break; }
+    }
+    if (ok) {
+      showTribMessage('success', `${tribImportPreview.length} registros importados/atualizados com sucesso!`);
+      setTribImportPreview([]);
+      setTribFile(null);
+      loadAllTributos();
+    }
+    setTribImporting(false);
+  };
+
+  const handleTribDownloadTemplate = () => {
+    const header = ['marca', 'filial', 'tipo_receita', 'pis_cofins', 'iss', 'paa'];
+    const examples = [
+      ['SEB', 'SEB - Escola Conceito', 'Receita De Mensalidade', '9,25', '5,00', '2,50'],
+      ['SEB', 'SEB - Escola Conceito', 'Material Didático', '9,25', '0,00', '0,00'],
+      ['SEB', 'SEB - Escola Conceito', 'Integral', '9,25', '5,00', '2,50'],
+      ['SEB', 'SEB - Escola Conceito', 'Receitas Extras', '9,25', '5,00', '0,00'],
+      ['SEB', 'SEB - Escola Conceito', 'Receitas Não Operacionais', '3,65', '0,00', '0,00'],
+    ];
+    const wsData = [header, ...examples];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{ wch: 10 }, { wch: 28 }, { wch: 30 }, { wch: 12 }, { wch: 8 }, { wch: 8 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Tributos');
+    XLSX.writeFile(wb, 'template_tributos.xlsx');
+  };
+
+  const tribMarcas = [...new Set(tribData.map(r => r.marca))].sort();
+  const tribFiliaisDisponiveis = tribFilterMarca
+    ? [...new Set(tribData.filter(r => r.marca === tribFilterMarca).map(r => r.filial))].sort()
+    : [...new Set(tribData.map(r => r.filial))].sort();
+
+  const tribFiltered = tribData.filter(r => {
+    if (tribFilterMarca && r.marca !== tribFilterMarca) return false;
+    if (tribFilterFilial && r.filial !== tribFilterFilial) return false;
+    return true;
+  });
+
+  const handleTribExport = async () => {
+    if (tribFiltered.length === 0) { showTribMessage('error', 'Nenhum dado para exportar'); return; }
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Tributos');
+
+    // Header
+    const headerRow = ws.addRow(['Marca', 'Filial', 'Tipo de Receita', 'PIS/COFINS %', 'ISS %', 'PAA %']);
+    headerRow.eachCell(cell => {
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD97706' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFB45309' } } };
+    });
+
+    // Data
+    for (const r of tribFiltered) {
+      const row = ws.addRow([r.marca, r.filial, r.tipo_receita, r.pis_cofins, r.iss, r.paa]);
+      [4, 5, 6].forEach(i => {
+        const cell = row.getCell(i);
+        cell.numFmt = '0.00"%"';
+        cell.alignment = { horizontal: 'center' };
+      });
+    }
+
+    // Column widths
+    ws.columns = [{ width: 12 }, { width: 32 }, { width: 30 }, { width: 14 }, { width: 10 }, { width: 10 }];
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const suffix = tribFilterMarca ? `_${tribFilterMarca}` : '';
+    a.download = `tributos_config${suffix}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showTribMessage('success', `${tribFiltered.length} registros exportados`);
+  };
 
   const loadBancoTagOptions = async () => {
     try {
@@ -1179,6 +1411,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'pdd' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('tributos')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'tributos'
+              ? 'text-amber-700 bg-amber-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Percent size={14} />
+            Tributos
+          </div>
+          {activeTab === 'tributos' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-t"></div>
           )}
         </button>
         <button
@@ -2586,6 +2834,327 @@ const AdminPanel: React.FC = () => {
         </div>
       )}
 
+      {/* Aba: Cálculo Tributos */}
+      {activeTab === 'tributos' && (
+        <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-amber-100 p-2 rounded-xl">
+              <Percent className="text-amber-600" size={18} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-sm font-black text-amber-900">Configuração de Tributos</h2>
+              <p className="text-[10px] text-amber-600/80">Alíquotas de PIS/COFINS, ISS e PAA por marca, filial e tipo de receita</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={loadAllTributos}
+                disabled={tribLoading}
+                className="text-[9px] text-amber-500 hover:text-amber-700 font-bold"
+              >
+                {tribLoading ? '...' : 'Recarregar'}
+              </button>
+              <span className="text-[9px] font-bold text-amber-400 bg-amber-100 px-1.5 py-0.5 rounded">
+                {tribData.length} registros
+              </span>
+            </div>
+          </div>
+
+          {/* Mensagem de feedback */}
+          {tribMessage && (
+            <div className={`mb-3 px-2.5 py-1.5 rounded-lg flex items-center gap-2 text-[10px] font-bold ${
+              tribMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+              tribMessage.type === 'error' ? 'bg-red-50 text-red-800 border border-red-200' :
+              'bg-blue-50 text-blue-800 border border-blue-200'
+            }`}>
+              {tribMessage.type === 'success' ? <CheckCircle size={12} /> : tribMessage.type === 'error' ? <AlertTriangle size={12} /> : <Eye size={12} />}
+              {tribMessage.text}
+            </div>
+          )}
+
+          {/* Layout 2 colunas */}
+          <div className="flex gap-4">
+            {/* === COLUNA ESQUERDA — Tabela completa === */}
+            <div className="flex-1 flex flex-col gap-2 min-w-0">
+              {/* Filtros: Marca + Filial + Exportar */}
+              <div className="flex items-center gap-2">
+                <select
+                  value={tribFilterMarca}
+                  onChange={e => { setTribFilterMarca(e.target.value); setTribFilterFilial(''); }}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white text-gray-700 min-w-[120px]"
+                >
+                  <option value="">Todas Marcas</option>
+                  {tribMarcas.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <select
+                  value={tribFilterFilial}
+                  onChange={e => setTribFilterFilial(e.target.value)}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white text-gray-700 min-w-[200px] flex-1"
+                >
+                  <option value="">Todas Filiais</option>
+                  {tribFiliaisDisponiveis.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+                {(tribFilterMarca || tribFilterFilial) && (
+                  <button
+                    onClick={() => { setTribFilterMarca(''); setTribFilterFilial(''); }}
+                    className="text-[9px] text-red-500 hover:text-red-700 font-bold shrink-0"
+                  >
+                    Limpar
+                  </button>
+                )}
+                <button
+                  onClick={handleTribExport}
+                  disabled={tribFiltered.length === 0}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[9px] transition-all disabled:opacity-40 shrink-0 ml-auto"
+                >
+                  <Download size={11} />
+                  Exportar
+                </button>
+              </div>
+
+              {/* Tabela */}
+              {tribLoading ? (
+                <div className="flex items-center justify-center py-12 text-amber-400 text-[10px] gap-1.5">
+                  <div className="w-4 h-4 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin" />
+                  Carregando alíquotas...
+                </div>
+              ) : tribFiltered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-amber-400">
+                  <Percent size={28} className="mb-2 opacity-40" />
+                  <p className="text-[10px] font-bold">{tribData.length === 0 ? 'Nenhum registro cadastrado' : 'Nenhum resultado para o filtro'}</p>
+                  <p className="text-[9px] mt-1 text-amber-400/70">Use o importador Excel à direita para carregar dados</p>
+                </div>
+              ) : (
+                <div className="bg-white/80 backdrop-blur-sm rounded-lg border border-amber-100 overflow-hidden">
+                  <div className="max-h-[420px] overflow-y-auto">
+                    <table className="w-full">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-amber-50/95 backdrop-blur-sm">
+                          <th className="text-left px-2 py-1.5 text-[9px] font-black text-amber-500 uppercase">Marca</th>
+                          <th className="text-left px-2 py-1.5 text-[9px] font-black text-amber-500 uppercase">Filial</th>
+                          <th className="text-left px-2 py-1.5 text-[9px] font-black text-amber-500 uppercase">Tipo de Receita</th>
+                          <th className="text-center px-2 py-1.5 text-[9px] font-black text-amber-500 uppercase">PIS/COFINS %</th>
+                          <th className="text-center px-2 py-1.5 text-[9px] font-black text-amber-500 uppercase">ISS %</th>
+                          <th className="text-center px-2 py-1.5 text-[9px] font-black text-amber-500 uppercase">PAA %</th>
+                          <th className="text-center px-1 py-1.5 text-[9px] font-black text-amber-500 uppercase w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tribFiltered.map((row, idx) => (
+                          <tr
+                            key={row.id}
+                            className={`border-t border-amber-50/80 transition-colors ${
+                              idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/20'
+                            } hover:bg-amber-50/40`}
+                          >
+                            <td className="px-2 py-0.5">
+                              <span className="inline-flex items-center justify-center min-w-[1.75rem] px-1 h-5 rounded bg-amber-100 text-amber-700 font-black text-[9px]">
+                                {row.marca}
+                              </span>
+                            </td>
+                            <td className="px-2 py-0.5">
+                              <span className="text-[10px] text-gray-700 truncate block max-w-[180px]" title={row.filial}>{row.filial}</span>
+                            </td>
+                            <td className="px-2 py-0.5">
+                              <span className="text-[10px] font-bold text-gray-800">{row.tipo_receita}</span>
+                            </td>
+                            {(['pis_cofins', 'iss', 'paa'] as const).map(col => {
+                              const isEditing = tribEditingCell?.id === row.id && tribEditingCell?.col === col;
+                              return (
+                                <td key={col} className="px-2 py-0.5 text-center">
+                                  {isEditing ? (
+                                    <input
+                                      type="text"
+                                      value={tribEditValue}
+                                      onChange={e => setTribEditValue(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === 'Enter') handleTribCellSave();
+                                        if (e.key === 'Escape') handleTribCellCancel();
+                                      }}
+                                      autoFocus
+                                      className="w-16 px-1 py-0.5 text-center text-[10px] font-bold border border-amber-400 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 bg-white"
+                                    />
+                                  ) : (
+                                    <button
+                                      onClick={() => handleTribCellClick(row.id, col)}
+                                      className="w-16 px-1 py-0.5 text-center text-[11px] font-bold text-gray-800 tabular-nums rounded hover:bg-amber-100 transition-colors cursor-pointer"
+                                      title="Clique para editar"
+                                    >
+                                      {row[col].toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}%
+                                    </button>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="px-1 py-0.5 text-center">
+                              <button
+                                onClick={() => handleTribDelete(row)}
+                                className="p-1 rounded hover:bg-red-100 text-gray-300 hover:text-red-500 transition-colors"
+                                title="Excluir"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[9px] text-amber-400/70 leading-tight">
+                Clique em qualquer valor % para editar inline. Enter salva, Escape cancela. Sincronizado em tempo real.
+              </p>
+            </div>
+
+            {/* === COLUNA DIREITA — Importação Excel === */}
+            <div className="w-[340px] shrink-0 flex flex-col gap-2">
+              <div className="flex items-center gap-1.5">
+                <Upload size={12} className="text-amber-500" />
+                <p className="text-[10px] font-black text-amber-500 uppercase tracking-wider">Importar / Atualizar via Excel</p>
+              </div>
+
+              {/* Máscara / Template */}
+              <div className="bg-white/80 backdrop-blur-sm rounded-lg border border-amber-100 p-2.5">
+                <p className="text-[9px] font-bold text-amber-700 mb-1.5">Estrutura esperada do Excel:</p>
+                <div className="overflow-x-auto">
+                  <table className="text-[8px] border-collapse w-full">
+                    <thead>
+                      <tr className="bg-amber-100/60">
+                        <th className="border border-amber-200 px-1.5 py-0.5 font-black text-amber-600">marca</th>
+                        <th className="border border-amber-200 px-1.5 py-0.5 font-black text-amber-600">filial</th>
+                        <th className="border border-amber-200 px-1.5 py-0.5 font-black text-amber-600">tipo_receita</th>
+                        <th className="border border-amber-200 px-1.5 py-0.5 font-black text-amber-600">pis_cofins</th>
+                        <th className="border border-amber-200 px-1.5 py-0.5 font-black text-amber-600">iss</th>
+                        <th className="border border-amber-200 px-1.5 py-0.5 font-black text-amber-600">paa</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="bg-white">
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500">SEB</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500">SEB - Escola</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500">Receita De Mensalidade</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500 text-center">9,25</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500 text-center">5,00</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500 text-center">2,50</td>
+                      </tr>
+                      <tr className="bg-amber-50/30">
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500">SEB</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500">SEB - Escola</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500">Material Didático</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500 text-center">9,25</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500 text-center">0,00</td>
+                        <td className="border border-amber-100 px-1.5 py-0.5 text-gray-500 text-center">0,00</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <button
+                    onClick={handleTribDownloadTemplate}
+                    className="flex items-center gap-1 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold text-[9px] transition-all"
+                  >
+                    <Download size={10} />
+                    Baixar Template .xlsx
+                  </button>
+                  <span className="text-[8px] text-amber-400">com 5 exemplos preenchidos</span>
+                </div>
+                <p className="text-[8px] text-amber-500/70 mt-1.5 leading-tight">
+                  <strong>Tipos válidos:</strong> Receita De Mensalidade, Material Didático, Integral, Receitas Extras, Receitas Não Operacionais
+                </p>
+                <p className="text-[8px] text-amber-500/70 leading-tight">
+                  <strong>Regra:</strong> combinação (marca + filial + tipo_receita) é a chave. Se já existir, atualiza os valores.
+                </p>
+              </div>
+
+              {/* Upload área */}
+              <label className="flex flex-col items-center justify-center w-full h-20 border-2 border-amber-300 border-dashed rounded-lg cursor-pointer bg-white hover:bg-amber-50 transition-all">
+                <div className="flex flex-col items-center justify-center py-2">
+                  <Upload className="w-5 h-5 mb-1 text-amber-400" />
+                  <p className="text-[10px] text-amber-600 font-bold">
+                    {tribFile ? tribFile.name : 'Clique para selecionar (.xlsx, .xls, .csv)'}
+                  </p>
+                  {tribFile && (
+                    <p className="text-[8px] text-amber-500 mt-0.5">Clique novamente para trocar</p>
+                  )}
+                </div>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleTribFileUpload}
+                />
+              </label>
+
+              {/* Preview da importação */}
+              {tribImportPreview.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-[10px] font-black text-amber-700">
+                      Preview — {tribImportPreview.length} registros
+                    </h3>
+                    <button
+                      onClick={() => { setTribImportPreview([]); setTribFile(null); setTribMessage(null); }}
+                      className="text-[9px] text-red-500 hover:text-red-700 font-bold"
+                    >
+                      Limpar
+                    </button>
+                  </div>
+                  <div className="max-h-[180px] overflow-y-auto border border-amber-200 rounded-lg">
+                    <table className="w-full text-[9px]">
+                      <thead className="bg-amber-100 sticky top-0">
+                        <tr>
+                          <th className="text-left px-1.5 py-1 text-amber-700 font-black">Marca</th>
+                          <th className="text-left px-1.5 py-1 text-amber-700 font-black">Filial</th>
+                          <th className="text-left px-1.5 py-1 text-amber-700 font-black">Tipo</th>
+                          <th className="text-center px-1 py-1 text-amber-700 font-black">PIS</th>
+                          <th className="text-center px-1 py-1 text-amber-700 font-black">ISS</th>
+                          <th className="text-center px-1 py-1 text-amber-700 font-black">PAA</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tribImportPreview.slice(0, 100).map((item, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-amber-50/50'}>
+                            <td className="px-1.5 py-0.5 text-gray-700">{item.marca}</td>
+                            <td className="px-1.5 py-0.5 text-gray-700 truncate max-w-[80px]" title={item.filial}>{item.filial}</td>
+                            <td className="px-1.5 py-0.5 text-gray-700 truncate max-w-[100px]" title={item.tipo_receita}>{item.tipo_receita}</td>
+                            <td className="px-1 py-0.5 text-center text-gray-700">{item.pis_cofins}</td>
+                            <td className="px-1 py-0.5 text-center text-gray-700">{item.iss}</td>
+                            <td className="px-1 py-0.5 text-center text-gray-700">{item.paa}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    onClick={handleTribImport}
+                    disabled={tribImporting}
+                    className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[10px] transition-all disabled:opacity-40"
+                  >
+                    {tribImporting ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                        Importando...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={12} />
+                        Importar {tribImportPreview.length} registros
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              <p className="text-[9px] text-amber-400/70 leading-tight mt-1">
+                Sincronizado em tempo real. Alterações via Excel ou edição inline refletem automaticamente.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Aba: Rateio Raiz */}
       {activeTab === 'rateio' && (
         <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-xl p-4 shadow-sm">
@@ -3100,7 +3669,12 @@ const AdminPanel: React.FC = () => {
             </div>
             <div className="flex-1">
               <h2 className="text-base font-black text-indigo-900">De-Para Fornecedores</h2>
-              <p className="text-xs text-indigo-700">Normalização de nomes de fornecedores — {deparaData.length} registros</p>
+              <p className="text-xs text-indigo-700">
+                Normalização de nomes de fornecedores — {deparaIsSearchResult
+                  ? `${deparaData.length} resultado${deparaData.length !== 1 ? 's' : ''} encontrado${deparaData.length !== 1 ? 's' : ''}`
+                  : `${deparaData.length} de ${deparaTotalCount} registros`
+                }
+              </p>
             </div>
             <label className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-indigo-300 text-indigo-700 text-xs font-bold rounded-lg hover:bg-indigo-50 cursor-pointer transition-colors">
               <FileSpreadsheet size={12} />
@@ -3203,18 +3777,36 @@ const AdminPanel: React.FC = () => {
             </div>
           )}
 
-          {/* Busca + Formulário de adição */}
+          {/* Busca server-side */}
           <div className="flex gap-2 mb-3">
             <div className="relative flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-indigo-400" size={14} />
               <input
                 type="text"
-                placeholder="Buscar fornecedor..."
+                placeholder="Digite parte ou todo o nome do fornecedor e clique Buscar..."
                 value={deparaSearch}
                 onChange={(e) => setDeparaSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleDeparaServerSearch(); }}
                 className="w-full pl-7 pr-3 py-1.5 text-xs border border-indigo-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
               />
             </div>
+            <button
+              onClick={handleDeparaServerSearch}
+              disabled={deparaSearching}
+              className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <Search size={12} />
+              {deparaSearching ? 'Buscando...' : 'Buscar'}
+            </button>
+            {deparaIsSearchResult && (
+              <button
+                onClick={() => { setDeparaSearch(''); loadDeparaData(); }}
+                className="flex items-center gap-1 px-3 py-1.5 bg-white border border-indigo-300 text-indigo-700 text-xs font-bold rounded-lg hover:bg-indigo-50 transition-colors"
+              >
+                <X size={12} />
+                Limpar
+              </button>
+            )}
           </div>
 
           {/* Formulário para adicionar novo */}
@@ -3246,9 +3838,9 @@ const AdminPanel: React.FC = () => {
           {/* Tabela */}
           {deparaLoading ? (
             <div className="text-center py-8 text-indigo-500 text-xs font-bold">Carregando...</div>
-          ) : filteredDepara.length === 0 ? (
+          ) : deparaData.length === 0 ? (
             <div className="text-center py-8 text-indigo-400 text-xs">
-              {deparaSearch ? 'Nenhum resultado encontrado.' : 'Nenhum registro de-para cadastrado.'}
+              {deparaIsSearchResult ? `Nenhum fornecedor encontrado para "${deparaSearch}".` : 'Nenhum registro de-para cadastrado.'}
             </div>
           ) : (
             <div className="max-h-[500px] overflow-auto rounded-lg border border-indigo-200">
@@ -3261,7 +3853,7 @@ const AdminPanel: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredDepara.map((item, idx) => (
+                  {deparaData.map((item, idx) => (
                     <tr key={item.fornecedor_de} className={`border-t border-indigo-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-indigo-50/20'} hover:bg-indigo-100/40`}>
                       {deparaEditingId === item.fornecedor_de ? (
                         <>
