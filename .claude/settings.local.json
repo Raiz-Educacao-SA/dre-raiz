@@ -101,7 +101,8 @@
       "Bash(npm ls:*)",
       "Bash(mkdir:*)",
       "Bash(do echo:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(pip show:*)"
     ]
   }
 }
