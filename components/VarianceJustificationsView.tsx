@@ -1285,8 +1285,8 @@ const VarianceJustificationsView: React.FC = () => {
             <thead className="sticky top-0 z-10 shadow-lg whitespace-nowrap">
               {/* Group header */}
               <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white h-7">
-                <th rowSpan={2} className="px-1 py-1 w-7 bg-gradient-to-r from-slate-800 to-slate-700"></th>
-                <th rowSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-slate-800 to-slate-700">Conta / Centro de Custo</th>
+                <th rowSpan={2} className="px-1 py-1 w-7 bg-slate-800"></th>
+                <th rowSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider bg-slate-800">Conta / Centro de Custo</th>
                 <th rowSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-right">Real</th>
                 {showOrc && (
                   <th colSpan={3} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-center border-l border-white/20 bg-gradient-to-r from-emerald-600 to-emerald-500 shadow-sm">
