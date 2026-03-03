@@ -19,9 +19,10 @@ const SomaTagsView = React.lazy(() => import('./components/SomaTagsView'));
 const ExecutiveDashboard = React.lazy(() => import('./components/agentTeam/ExecutiveDashboard'));
 const HoldingDashboardPage = React.lazy(() => import('./components/holding/HoldingDashboardPage'));
 const AgentTeamView = React.lazy(() => import('./components/AgentTeamView'));
+const VarianceJustificationsView = React.lazy(() => import('./components/VarianceJustificationsView'));
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
-import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown, FileSpreadsheet, Presentation } from 'lucide-react';
+import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown, FileSpreadsheet } from 'lucide-react';
 import * as supabaseService from './services/supabaseService';
 import { getSomaTags, SomaTagsRow } from './services/supabaseService';
 import { useAuth } from './contexts/AuthContext';
@@ -95,7 +96,6 @@ const App: React.FC = () => {
   const [somaTagsActions, setSomaTagsActions] = useState<{
     refresh?: () => void;
     exportExcel?: () => void;
-    exportBook?: () => void;
   }>({});
   const [isSomaTagsLoading, setIsSomaTagsLoading] = useState(false);
   const [hasSomaTagsData, setHasSomaTagsData] = useState(false);
@@ -1011,20 +1011,6 @@ const App: React.FC = () => {
                           <div className="text-[10px] text-gray-500 font-normal">Tabela DRE em .xlsx</div>
                         </div>
                       </button>
-                      <div className="h-px bg-gray-100" />
-                      <button
-                        onClick={() => {
-                          somaTagsActions.exportBook?.();
-                          setIsSomaTagsExportOpen(false);
-                        }}
-                        className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-gray-50 transition-colors text-left text-xs font-semibold text-gray-700"
-                      >
-                        <Presentation size={16} className="text-orange-600" />
-                        <div>
-                          <div className="font-bold">Book de Resultados</div>
-                          <div className="text-[10px] text-gray-500 font-normal">Apresentação PPTX completa</div>
-                        </div>
-                      </button>
                     </div>
                   )}
                 </div>
@@ -1208,6 +1194,13 @@ const App: React.FC = () => {
             <ErrorBoundary fallbackMessage="Erro ao carregar Holding Dashboard">
               <Suspense fallback={<LoadingSpinner message="Carregando inteligência multi-empresa..." />}>
                 <HoldingDashboardPage />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {currentView === 'justificativas' && (
+            <ErrorBoundary fallbackMessage="Erro ao carregar Justificativas de Desvios">
+              <Suspense fallback={<LoadingSpinner message="Carregando justificativas..." />}>
+                <VarianceJustificationsView />
               </Suspense>
             </ErrorBoundary>
           )}

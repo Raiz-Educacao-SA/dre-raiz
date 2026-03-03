@@ -142,7 +142,7 @@ const computeFilterContext = (
 
 // ── Componente principal ──────────────────────────────────────────────────────
 interface SomaTagsViewProps {
-  onRegisterActions?: (actions: { refresh: () => void; exportExcel: () => void; exportBook: () => void }) => void;
+  onRegisterActions?: (actions: { refresh: () => void; exportExcel: () => void }) => void;
   onLoadingChange?: (loading: boolean) => void;
   onDataChange?: (hasData: boolean) => void;
   onDrillDown?: (data: { categories: string[]; scenario?: string; filters?: Record<string, any> }) => void;
@@ -1009,38 +1009,16 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     year, selectedMonths, monthsToShow, sortConfig,
   ]);
 
-  // Exportar Book de Resultados (PPTX)
-  const exportBook = useCallback(async () => {
-    try {
-      const { toast } = await import('sonner');
-      toast.info('Gerando Book de Resultados...');
-      const { prepareBookDeResultadosData } = await import('../services/bookDeResultadosDataService');
-      const { generateBookDeResultados } = await import('../services/bookDeResultadosPptService');
-      const month = selectedMonths.length > 0 ? selectedMonths[0] : '01';
-      const data = await prepareBookDeResultadosData({
-        year: yearRef.current,
-        month,
-        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
-        recurring,
-      });
-      await generateBookDeResultados(data);
-      toast.success('Book de Resultados exportado com sucesso!');
-    } catch (err: any) {
-      const { toast } = await import('sonner');
-      toast.error(err?.message || 'Erro ao gerar Book de Resultados');
-    }
-  }, [selectedMonths, selectedMarcas, recurring]);
-
   // Refresh forçado: invalida cache antes de buscar
   const forceRefresh = useCallback(() => {
     invalidateSomaTagsCache();
     fetchData();
   }, [fetchData]);
 
-  // Registra ações no App.tsx (header) — deve ficar após exportExcel, exportBook e fetchData
+  // Registra ações no App.tsx (header) — deve ficar após exportExcel e fetchData
   useEffect(() => {
-    onRegisterActions?.({ refresh: forceRefresh, exportExcel, exportBook });
-  }, [onRegisterActions, forceRefresh, exportExcel, exportBook]);
+    onRegisterActions?.({ refresh: forceRefresh, exportExcel });
+  }, [onRegisterActions, forceRefresh, exportExcel]);
 
   // Sincroniza loading com App.tsx
   useEffect(() => { onLoadingChange?.(loading); }, [loading, onLoadingChange]);
