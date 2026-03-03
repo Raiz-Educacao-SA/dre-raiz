@@ -230,14 +230,16 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
   const slide = pptx.addSlide();
   addHeaderBar(slide, 'DRE — VISÃO GERAL (SNAPSHOT)', data.monthShort);
 
+  const a1Label = String(data.a1Year);
+
   // Left: DRE condensed table (55%)
   const headerRow = [
     { text: 'DESCRIÇÃO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'left' as const } },
-    { text: 'REAL', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: `REAL ${data.year}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
     { text: 'ORÇADO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
     { text: 'Δ% Orç', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
-    { text: 'A-1', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
-    { text: 'Δ% A-1', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: a1Label, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: `Δ% ${a1Label}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
   ];
 
   const rows: any[][] = [headerRow];
@@ -289,7 +291,7 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
 
   addKpiCard(slide, 'EBITDA', ebitdaReal, C.consolidado, 7.8, 1.0, 2.3, 0.85);
   addKpiCard(slide, 'VS ORÇADO', ebitdaVsOrc, ebitdaOrcColor, 10.4, 1.0, 2.3, 0.85);
-  addKpiCard(slide, 'VS ANO ANTERIOR', ebitdaVsA1, ebitdaA1Color, 7.8, 2.1, 2.3, 0.85);
+  addKpiCard(slide, `VS ${a1Label}`, ebitdaVsA1, ebitdaA1Color, 7.8, 2.1, 2.3, 0.85);
   addKpiCard(slide, 'COBERTURA JUSTIF.', `${data.stats.coveragePct}%`, data.stats.coveragePct >= 80 ? C.approved : C.pending, 10.4, 2.1, 2.3, 0.85);
 
   // Coverage progress bar (textual)
@@ -357,13 +359,14 @@ function addSectionSlide(pptx: PptxGenJS, section: VariancePptSection, data: Var
   addHeaderBar(slide, section.tag0.toUpperCase(), data.monthShort, section.sectionColor);
 
   // Top: tag01 financial table
+  const a1Label = String(data.a1Year);
   const headerRow = [
     { text: 'DESCRIÇÃO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'left' as const } },
-    { text: 'REAL', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: `REAL ${data.year}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
     { text: 'ORÇADO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
     { text: 'Δ% Orç', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
-    { text: 'A-1', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
-    { text: 'Δ% A-1', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: a1Label, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: `Δ% ${a1Label}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
   ];
 
   const rows: any[][] = [headerRow];

@@ -109,6 +109,10 @@ const VarianceJustificationsView: React.FC = () => {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
 
+  // Year labels
+  const currentYear = yearMonth ? Number(yearMonth.slice(0, 4)) : new Date().getFullYear();
+  const a1Year = currentYear - 1;
+
   // Data
   const [items, setItems] = useState<VarianceJustification[]>([]);
   const [loading, setLoading] = useState(false);
@@ -486,11 +490,20 @@ const VarianceJustificationsView: React.FC = () => {
       };
     };
 
-    // Collect unique tag0 values
+    // Collect unique tag0 values, sort with calc rows in correct position
+    const CALC_ROW_ORDER: Record<string, number> = {
+      'MARGEM DE CONTRIBUIÇÃO': 3.5,  // after 03., before 04.
+      'EBITDA': 4.5,                   // after 04., before 06.
+    };
     const tag0Set = new Set(items.map(i => i.tag0));
     const rows: FlatRow[] = [];
+    const tag0Sorted = [...tag0Set].sort((a, b) => {
+      const aOrd = CALC_ROW_ORDER[a] ?? (parseFloat(a) || 999);
+      const bOrd = CALC_ROW_ORDER[b] ?? (parseFloat(b) || 999);
+      return aOrd - bOrd;
+    });
 
-    for (const tag0 of [...tag0Set].sort()) {
+    for (const tag0 of tag0Sorted) {
       const tag0All = items.filter(i => i.tag0 === tag0);
       const tag0Key = tag0;
       const tag0Orc = orcMap.get(`${tag0}|||`) || null;
@@ -575,6 +588,9 @@ const VarianceJustificationsView: React.FC = () => {
         if (result.created > 0) parts.push(`${result.created} novos`);
         if (result.updated > 0) parts.push(`${result.updated} atualizados`);
         toast.success(`Versão ${result.version}: ${parts.join(' + ') || '0 itens'}`);
+        if (result.diagnostics) {
+          toast.info(result.diagnostics, { duration: 5000 });
+        }
         fetchData();
       }
     } catch (e) {
@@ -957,12 +973,17 @@ const VarianceJustificationsView: React.FC = () => {
 
   // ── Render flat row ──
 
+  const CALC_ROW_TAGS = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA']);
+
   const renderFlatRow = (row: FlatRow, idx: number) => {
     const indent = row.depth * 20;
     const isExpanded = expandedNodes.has(row.groupKey);
-    const isDark = row.depth === 0;
+    const isCalcRow = CALC_ROW_TAGS.has(row.tag0);
+    const isDark = row.depth === 0 || isCalcRow;
 
-    const bgClass = row.depth === 0
+    const bgClass = isCalcRow
+      ? 'bg-[#F44C00] text-white border-b border-orange-600 shadow-sm'
+      : row.depth === 0
       ? 'bg-[#152e55] text-white border-b border-[#1e3d6e]'
       : row.depth === 1
       ? 'bg-blue-50 border-b border-blue-100'
@@ -970,19 +991,21 @@ const VarianceJustificationsView: React.FC = () => {
       ? 'bg-gray-50 border-b border-gray-100'
       : 'bg-white border-b border-gray-50';
 
-    const fontClass = row.depth === 0
+    const fontClass = isCalcRow
+      ? 'font-black text-[12px] uppercase tracking-tight'
+      : row.depth === 0
       ? 'font-black text-[11px] uppercase tracking-tight'
       : row.depth === 1 ? 'font-bold text-[11px]'
       : row.depth === 2 ? 'font-semibold text-[11px]'
       : 'text-[11px]';
 
-    const hoverClass = isDark ? 'hover:bg-[#1e3d6e]' : 'hover:bg-yellow-100';
+    const hoverClass = isCalcRow ? 'hover:bg-orange-600' : isDark ? 'hover:bg-[#1e3d6e]' : 'hover:bg-yellow-100';
 
     return (
       <tr key={`${row.groupKey}-${idx}`} className={`group ${bgClass} ${hoverClass} transition-colors`}>
         {/* Checkbox */}
-        <td className={`px-1 py-0.5 text-center w-7 ${isDark ? 'bg-[#152e55] group-hover:bg-[#1e3d6e]' : ''}`}>
-          {row.depth === 3 && (row.orcDbItem || row.a1DbItem) && (
+        <td className={`px-1 py-0.5 text-center w-7 ${isCalcRow ? 'bg-[#F44C00]' : isDark ? 'bg-[#152e55] group-hover:bg-[#1e3d6e]' : ''}`}>
+          {row.depth === 3 && !isCalcRow && (row.orcDbItem || row.a1DbItem) && (
             <input
               type="checkbox"
               checked={
@@ -1005,18 +1028,20 @@ const VarianceJustificationsView: React.FC = () => {
         </td>
 
         {/* Label */}
-        <td className={`py-0.5 ${fontClass}`} style={{ paddingLeft: `${indent + 8}px`, paddingRight: 4 }}>
+        <td className={`py-0.5 ${fontClass}`} style={{ paddingLeft: `${isCalcRow ? 8 : indent + 8}px`, paddingRight: 4 }}>
           <div className="flex items-center gap-1">
-            {row.hasChildren ? (
+            {isCalcRow ? (
+              <span className="text-white/80 text-[10px] mr-0.5">▶</span>
+            ) : row.hasChildren ? (
               <button onClick={() => toggleNode(row.groupKey)} className={`${isDark ? 'text-white/60 hover:text-white' : 'text-gray-400 hover:text-gray-700'} flex-shrink-0`}>
                 {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
               </button>
             ) : (
               <span className="w-[11px] inline-block flex-shrink-0" />
             )}
-            {row.depth === 0 && <span className="text-amber-400 text-[9px] mr-0.5">◆</span>}
-            {row.depth === 1 && <span className="text-blue-400 text-[9px] mr-0.5">◇</span>}
-            {row.depth > 1 && <span className="text-[9px] text-gray-300 flex-shrink-0">{row.tag0.slice(0, 3)}</span>}
+            {!isCalcRow && row.depth === 0 && <span className="text-amber-400 text-[9px] mr-0.5">◆</span>}
+            {!isCalcRow && row.depth === 1 && <span className="text-blue-400 text-[9px] mr-0.5">◇</span>}
+            {!isCalcRow && row.depth > 1 && <span className="text-[9px] text-gray-300 flex-shrink-0">{row.tag0.slice(0, 3)}</span>}
             <span className="truncate" title={row.label}>{row.label}</span>
           </div>
         </td>
@@ -1266,7 +1291,7 @@ const VarianceJustificationsView: React.FC = () => {
                 )}
                 {showA1 && (
                   <th colSpan={3} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-center border-l border-white/20 bg-gradient-to-r from-purple-600 to-purple-500 shadow-sm">
-                    vs Ano Anterior
+                    vs {a1Year}
                   </th>
                 )}
                 <th rowSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider">Responsável</th>
@@ -1282,7 +1307,7 @@ const VarianceJustificationsView: React.FC = () => {
                 )}
                 {showA1 && (
                   <>
-                    <th className="px-2 py-1 text-[8px] font-bold uppercase text-right border-l border-white/10 bg-gradient-to-br from-purple-500 to-purple-600">A-1</th>
+                    <th className="px-2 py-1 text-[8px] font-bold uppercase text-right border-l border-white/10 bg-gradient-to-br from-purple-500 to-purple-600">{a1Year}</th>
                     <th className="px-2 py-1 text-[8px] font-bold uppercase text-right bg-gradient-to-br from-purple-500 to-purple-600">Δ %</th>
                     <th className="px-1 py-1 text-[8px] font-bold uppercase text-center bg-gradient-to-br from-purple-500 to-purple-600">Status / Ação</th>
                   </>
@@ -1384,7 +1409,7 @@ const VarianceJustificationsView: React.FC = () => {
                             ? 'text-white/40'
                             : tag0Data.ytdVarPct > 0 ? 'text-lime-300' : 'text-red-200';
 
-                          const compLabel = ct === 'orcado' ? 'Orçado' : 'A-1';
+                          const compLabel = ct === 'orcado' ? 'Orçado' : String(a1Year);
 
                           renderedRows.push(
                             <tr key={`ytd-t0-${tag0}-${ct}`} className="bg-[#152e55] text-white border-b border-[#1e3d6e]">
@@ -1487,7 +1512,7 @@ const VarianceJustificationsView: React.FC = () => {
                                       <Sparkles size={12} className="text-indigo-400 mt-0.5 flex-shrink-0" />
                                       <div>
                                         <span className="text-[9px] font-black uppercase text-indigo-500 block mb-0.5">
-                                          Síntese YTD — {row.tag0} &gt; {row.tag01} ({row.compType === 'orcado' ? 'vs Orçado' : 'vs A-1'})
+                                          Síntese YTD — {row.tag0} &gt; {row.tag01} ({row.compType === 'orcado' ? 'vs Orçado' : `vs ${a1Year}`})
                                         </span>
                                         <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{hasSummary}</p>
                                       </div>
@@ -1558,7 +1583,7 @@ const VarianceJustificationsView: React.FC = () => {
                     <span className="font-bold font-mono">{fmt(justifyItem.real_value)}</span>
                   </div>
                   <div>
-                    <span className="text-gray-400">{justifyItem.comparison_type === 'orcado' ? 'Orçado' : 'A-1'}:</span>{' '}
+                    <span className="text-gray-400">{justifyItem.comparison_type === 'orcado' ? 'Orçado' : String(a1Year)}:</span>{' '}
                     <span className="font-bold font-mono">{fmt(justifyItem.compare_value)}</span>
                   </div>
                   <div>

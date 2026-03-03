@@ -65,6 +65,8 @@ export interface VariancePptCalcRow {
 export interface VariancePptData {
   monthLabel: string;          // 'Março 2026'
   monthShort: string;          // 'MAR/26'
+  year: number;                // 2026
+  a1Year: number;              // 2025
   marca: string | null;
   version: number;
   snapshotAt: string | null;

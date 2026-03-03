@@ -57,6 +57,7 @@ export function prepareVariancePptData(
   filterMarca: string | null,
 ): VariancePptData {
   const { year, month } = parseYearMonth(yearMonth);
+  const a1Year = year - 1;
   const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
   const monthShort = `${MONTH_SHORT[month - 1]}/${String(year).slice(2)}`;
 
@@ -130,8 +131,9 @@ export function prepareVariancePptData(
     };
   }
 
-  // Collect unique tag0 values and build sections
-  const tag0Set = [...new Set(items.map(i => i.tag0))].sort();
+  // Collect unique tag0 values and build sections (excluding calc rows)
+  const CALC_TAG0S = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA']);
+  const tag0Set = [...new Set(items.map(i => i.tag0))].filter(t => !CALC_TAG0S.has(t)).sort();
   const sections: VariancePptSection[] = [];
 
   for (const tag0 of tag0Set) {
@@ -178,11 +180,11 @@ export function prepareVariancePptData(
     });
   }
 
-  // Calc rows
-  const calcRows = computeCalcRows(sections);
+  // Calc rows: prefer DB-stored MARGEM/EBITDA items, fallback to computed
+  const calcRows = computeCalcRows(sections, items, orcMap, a1Map);
 
-  // Stats: count leaves (tag03) from the original items
-  const leaves = items.filter(i => i.tag03 !== null);
+  // Stats: count leaves (tag03) from the original items (excluding calc rows)
+  const leaves = items.filter(i => i.tag03 !== null && !CALC_TAG0S.has(i.tag0));
   const stats = computeStats(leaves);
 
   // Version + snapshotAt
@@ -195,6 +197,8 @@ export function prepareVariancePptData(
   return {
     monthLabel,
     monthShort,
+    year,
+    a1Year,
     marca: filterMarca,
     version,
     snapshotAt,
@@ -206,7 +210,47 @@ export function prepareVariancePptData(
 
 // ── Calc rows ────────────────────────────────────────────────────
 
-function computeCalcRows(sections: VariancePptSection[]): VariancePptCalcRow[] {
+function computeCalcRows(
+  sections: VariancePptSection[],
+  items: VarianceJustification[],
+  orcMap: Map<string, VarianceJustification>,
+  a1Map: Map<string, VarianceJustification>,
+): VariancePptCalcRow[] {
+  // Try to read from DB-stored calc rows first
+  const margemOrc = orcMap.get('MARGEM DE CONTRIBUIÇÃO|||');
+  const margemA1 = a1Map.get('MARGEM DE CONTRIBUIÇÃO|||');
+  const ebitdaOrc = orcMap.get('EBITDA|||');
+  const ebitdaA1 = a1Map.get('EBITDA|||');
+
+  if (margemOrc || ebitdaOrc) {
+    // Use DB values
+    const rows: VariancePptCalcRow[] = [];
+    if (margemOrc || margemA1) {
+      const real = margemOrc ? Number(margemOrc.real_value) : margemA1 ? Number(margemA1.real_value) : 0;
+      rows.push({
+        label: 'MARGEM DE CONTRIBUIÇÃO',
+        real,
+        orcado: margemOrc ? Number(margemOrc.compare_value) : 0,
+        a1: margemA1 ? Number(margemA1.compare_value) : 0,
+        deltaOrcPct: margemOrc?.variance_pct ?? null,
+        deltaA1Pct: margemA1?.variance_pct ?? null,
+      });
+    }
+    if (ebitdaOrc || ebitdaA1) {
+      const real = ebitdaOrc ? Number(ebitdaOrc.real_value) : ebitdaA1 ? Number(ebitdaA1.real_value) : 0;
+      rows.push({
+        label: 'EBITDA',
+        real,
+        orcado: ebitdaOrc ? Number(ebitdaOrc.compare_value) : 0,
+        a1: ebitdaA1 ? Number(ebitdaA1.compare_value) : 0,
+        deltaOrcPct: ebitdaOrc?.variance_pct ?? null,
+        deltaA1Pct: ebitdaA1?.variance_pct ?? null,
+      });
+    }
+    return rows;
+  }
+
+  // Fallback: compute from sections
   const findSection = (prefix: string) => sections.find(s => s.tag0.startsWith(prefix));
   const s01 = findSection('01.');
   const s02 = findSection('02.');

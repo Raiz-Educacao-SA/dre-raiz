@@ -2664,3 +2664,607 @@ export const subscribeTributosConfig = (onChange: () => void) => {
     .subscribe();
   return () => { supabase.removeChannel(channel); };
 };
+
+// ============================================
+// Variance Justifications — Cobrança de Desvios
+// ============================================
+
+export interface VarianceJustification {
+  id: number;
+  year_month: string;
+  marca: string;
+  tag0: string;
+  tag01: string;
+  tag02: string | null;
+  tag03: string | null;
+  comparison_type: 'orcado' | 'a1';
+  real_value: number;
+  compare_value: number;
+  variance_abs: number;
+  variance_pct: number | null;
+  status: 'pending' | 'notified' | 'justified' | 'approved' | 'rejected';
+  owner_email: string | null;
+  owner_name: string | null;
+  justification: string | null;
+  action_plan: string | null;
+  ai_summary: string | null;
+  ai_summary_at: string | null;
+  justified_at: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  notified_at: string | null;
+  version: number;
+  snapshot_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VarianceThreshold {
+  id: number;
+  marca: string | null;
+  tag0: string | null;
+  min_abs_value: number;
+  min_pct_value: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface VarianceFilters {
+  year_month?: string;
+  marca?: string;
+  status?: string;
+  owner_email?: string;
+  comparison_type?: string;
+}
+
+/**
+ * Busca justificativas de desvios com filtros opcionais.
+ */
+export const getVarianceJustifications = async (
+  filters?: VarianceFilters
+): Promise<VarianceJustification[]> => {
+  let query = supabase
+    .from('variance_justifications')
+    .select('*')
+    .order('tag0')
+    .order('tag01')
+    .order('tag02')
+    .order('tag03');
+
+  if (filters?.year_month) query = query.eq('year_month', filters.year_month);
+  if (filters?.marca) query = query.eq('marca', filters.marca);
+  if (filters?.status) query = query.eq('status', filters.status);
+  if (filters?.owner_email) query = query.eq('owner_email', filters.owner_email);
+  if (filters?.comparison_type) query = query.eq('comparison_type', filters.comparison_type);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('Erro ao buscar variance_justifications:', error);
+    return [];
+  }
+  return (data || []) as VarianceJustification[];
+};
+
+/**
+ * Busca justificativas de desvios para YTD (Jan até o mês selecionado).
+ */
+export const getVarianceYtdItems = async (
+  yearStart: string,
+  throughMonth: string,
+  marca?: string
+): Promise<VarianceJustification[]> => {
+  let query = supabase
+    .from('variance_justifications')
+    .select('*')
+    .gte('year_month', yearStart)
+    .lte('year_month', throughMonth)
+    .order('year_month')
+    .order('tag0')
+    .order('tag01');
+
+  if (marca) query = query.eq('marca', marca);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('Erro ao buscar YTD:', error);
+    return [];
+  }
+  return (data || []) as VarianceJustification[];
+};
+
+/**
+ * Gera itens de desvio para um mês/marca a partir de get_soma_tags (tag0+tag01)
+ * e query direta em dre_agg (tag02+tag03).
+ * Cruza Real vs Orçado E Real vs A-1. Identifica owner via user_permissions.
+ * UPSERT por chave única.
+ */
+export const generateVarianceItems = async (
+  yearMonth: string,
+  marca?: string
+): Promise<{ created: number; updated: number; version: number; snapshot_at?: string; error?: string; diagnostics?: string }> => {
+  try {
+    const snapshotAt = new Date().toISOString();
+    debug(`📊 Gerando desvios para ${yearMonth}, marca=${marca || 'todas'} — snapshot_at=${snapshotAt}`);
+
+    // 1. Buscar dados do dre_agg com paginação
+    const PAGE_SIZE = 5000;
+    let allAggData: any[] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      let aggQuery = supabase
+        .from('dre_agg')
+        .select('tag0, tag01, tag02, tag03, scenario, year_month, total_amount, marca')
+        .eq('year_month', yearMonth)
+        .in('scenario', ['Real', 'Orçado', 'A-1'])
+        .range(offset, offset + PAGE_SIZE - 1);
+
+      if (marca) aggQuery = aggQuery.eq('marca', marca);
+
+      const { data: page, error: aggError } = await aggQuery;
+      if (aggError) {
+        console.error('Erro ao buscar dre_agg:', aggError);
+        return { created: 0, updated: 0, version: 0, error: aggError.message };
+      }
+
+      if (!page || page.length === 0) {
+        hasMore = false;
+      } else {
+        allAggData = allAggData.concat(page);
+        hasMore = page.length === PAGE_SIZE;
+        offset += PAGE_SIZE;
+      }
+    }
+
+    // Diagnóstico por cenário
+    const scenarioCounts: Record<string, number> = {};
+    for (const row of allAggData) {
+      scenarioCounts[row.scenario] = (scenarioCounts[row.scenario] || 0) + 1;
+    }
+    debug(`📊 dre_agg retornou ${allAggData.length} linhas — ${Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`);
+
+    if (allAggData.length === 0) {
+      return { created: 0, updated: 0, version: 0, error: 'Nenhum dado encontrado em dre_agg para o período. Verifique se a materialized view foi atualizada (REFRESH MATERIALIZED VIEW dre_agg).' };
+    }
+
+    // 2. Buscar versão atual e próxima
+    let versionQuery = supabase
+      .from('variance_justifications')
+      .select('version')
+      .eq('year_month', yearMonth)
+      .order('version', { ascending: false })
+      .limit(1);
+    if (marca) versionQuery = versionQuery.eq('marca', marca);
+    const { data: versionData } = await versionQuery;
+    const nextVersion = (versionData?.[0]?.version || 0) + 1;
+    debug(`📊 Versão atual: ${nextVersion - 1}, próxima: ${nextVersion}`);
+
+    // 3. Buscar itens existentes que já têm justificativa (para preservar)
+    let existingQuery = supabase
+      .from('variance_justifications')
+      .select('*')
+      .eq('year_month', yearMonth)
+      .in('status', ['justified', 'approved', 'rejected']);
+    if (marca) existingQuery = existingQuery.eq('marca', marca);
+    const { data: existingItems } = await existingQuery;
+
+    // Indexar existentes por chave path+compType
+    const existingMap = new Map<string, VarianceJustification>();
+    if (existingItems) {
+      for (const item of existingItems) {
+        const pk = `${item.marca}||${item.tag0}|${item.tag01 || ''}|${item.tag02 || ''}|${item.tag03 || ''}|${item.comparison_type}`;
+        existingMap.set(pk, item);
+      }
+    }
+    debug(`📊 ${existingMap.size} itens existentes com justificativa preservados`);
+
+    // 4. Buscar owners via user_permissions
+    const { data: permissions } = await supabase
+      .from('user_permissions')
+      .select('user_id, permission_type, permission_value')
+      .in('permission_type', ['centro_custo', 'cia']);
+
+    const { data: allUsers } = await supabase
+      .from('users')
+      .select('id, email, name');
+
+    const userMap = new Map<string, { email: string; name: string }>();
+    if (allUsers) allUsers.forEach(u => userMap.set(u.id, { email: u.email, name: u.name }));
+
+    const tag01OwnerMap = new Map<string, { email: string; name: string }>();
+    if (permissions) {
+      for (const p of permissions) {
+        if (p.permission_type === 'centro_custo' && p.permission_value) {
+          const u = userMap.get(p.user_id);
+          if (u) tag01OwnerMap.set(p.permission_value, u);
+        }
+      }
+    }
+
+    // 5. Agregar dados por chave
+    const aggMap = new Map<string, number>();
+    for (const row of allAggData) {
+      const rowMarca = row.marca || '';
+      const key = `${rowMarca}||${row.tag0}|${row.tag01 || ''}|${row.tag02 || ''}|${row.tag03 || ''}|${row.scenario}`;
+      aggMap.set(key, (aggMap.get(key) || 0) + Number(row.total_amount || 0));
+    }
+
+    const combos = new Set<string>();
+    for (const row of allAggData) {
+      const rowMarca = row.marca || '';
+      combos.add(`${rowMarca}||${row.tag0}|${row.tag01 || ''}|${row.tag02 || ''}|${row.tag03 || ''}`);
+    }
+
+    debug(`📊 ${combos.size} combos únicos encontrados`);
+
+    // 6. Gerar rows e separar: INSERT (novos) vs UPDATE (existentes com justificativa)
+    const newRows: any[] = [];
+    const updateItems: { id: number; real_value: number; compare_value: number; variance_abs: number; variance_pct: number | null; version: number; owner_email: string | null; owner_name: string | null }[] = [];
+
+    for (const combo of combos) {
+      const parts = combo.split('||');
+      const comboMarca = parts[0];
+      const tagParts = parts[1].split('|');
+      const [tag0, tag01, tag02, tag03] = tagParts;
+      const realVal = aggMap.get(`${combo}|Real`) || 0;
+      const orcVal  = aggMap.get(`${combo}|Orçado`) || 0;
+      const a1Val   = aggMap.get(`${combo}|A-1`) || 0;
+
+      const owner = tag01 ? tag01OwnerMap.get(tag01) : undefined;
+
+      const processComparison = (compareVal: number, compType: 'orcado' | 'a1') => {
+        if (realVal === 0 && compareVal === 0) return;
+        const varAbs = realVal - compareVal;
+        const varPct = compareVal !== 0 ? Math.round(((realVal - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
+        const existKey = `${comboMarca || marca || ''}||${tag0}|${tag01 || ''}|${tag02 || ''}|${tag03 || ''}|${compType}`;
+        const existing = existingMap.get(existKey);
+
+        if (existing) {
+          // UPDATE: preserva justificativa, atualiza valores financeiros + versão
+          updateItems.push({
+            id: existing.id,
+            real_value: realVal,
+            compare_value: compareVal,
+            variance_abs: varAbs,
+            variance_pct: varPct,
+            version: nextVersion,
+            owner_email: owner?.email || existing.owner_email,
+            owner_name: owner?.name || existing.owner_name,
+          });
+          existingMap.delete(existKey); // marcar como processado
+        } else {
+          // INSERT: novo item
+          newRows.push({
+            year_month: yearMonth,
+            marca: comboMarca || marca || '',
+            tag0,
+            tag01: tag01 || '',
+            tag02: tag02 || null,
+            tag03: tag03 || null,
+            comparison_type: compType,
+            real_value: realVal,
+            compare_value: compareVal,
+            variance_abs: varAbs,
+            variance_pct: varPct,
+            owner_email: owner?.email || null,
+            owner_name: owner?.name || null,
+            version: nextVersion,
+            snapshot_at: snapshotAt,
+          });
+        }
+      };
+
+      processComparison(orcVal, 'orcado');
+      processComparison(a1Val, 'a1');
+    }
+
+    // 6.5 Linhas calculadas: MARGEM DE CONTRIBUIÇÃO e EBITDA
+    // Agregar por prefixo tag0 + cenário + marca
+    const prefixTotals = new Map<string, number>();
+    for (const row of allAggData) {
+      const rowMarca = row.marca || '';
+      const prefix = (row.tag0 || '').slice(0, 3); // '01.', '02.', etc.
+      const key = `${rowMarca}|${prefix}|${row.scenario}`;
+      prefixTotals.set(key, (prefixTotals.get(key) || 0) + Number(row.total_amount || 0));
+    }
+
+    const calcMarcas = [...new Set(allAggData.map(r => r.marca || ''))];
+    for (const m of calcMarcas) {
+      const get = (prefix: string, scenario: string) => prefixTotals.get(`${m}|${prefix}|${scenario}`) || 0;
+
+      // MARGEM = 01. + 02. + 03.
+      const margemReal = get('01.', 'Real') + get('02.', 'Real') + get('03.', 'Real');
+      const margemOrc = get('01.', 'Orçado') + get('02.', 'Orçado') + get('03.', 'Orçado');
+      const margemA1 = get('01.', 'A-1') + get('02.', 'A-1') + get('03.', 'A-1');
+
+      // EBITDA = MARGEM + 04.
+      const ebitdaReal = margemReal + get('04.', 'Real');
+      const ebitdaOrc = margemOrc + get('04.', 'Orçado');
+      const ebitdaA1 = margemA1 + get('04.', 'A-1');
+
+      const addCalcRow = (label: string, realV: number, orcV: number, a1V: number) => {
+        const addComp = (compareVal: number, compType: 'orcado' | 'a1') => {
+          if (realV === 0 && compareVal === 0) return;
+          const varAbs = realV - compareVal;
+          const varPct = compareVal !== 0 ? Math.round(((realV - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
+          newRows.push({
+            year_month: yearMonth,
+            marca: m || marca || '',
+            tag0: label,
+            tag01: '',
+            tag02: null,
+            tag03: null,
+            comparison_type: compType,
+            real_value: realV,
+            compare_value: compareVal,
+            variance_abs: varAbs,
+            variance_pct: varPct,
+            owner_email: null,
+            owner_name: null,
+            version: nextVersion,
+            snapshot_at: snapshotAt,
+          });
+        };
+        addComp(orcV, 'orcado');
+        addComp(a1V, 'a1');
+      };
+
+      addCalcRow('MARGEM DE CONTRIBUIÇÃO', margemReal, margemOrc, margemA1);
+      addCalcRow('EBITDA', ebitdaReal, ebitdaOrc, ebitdaA1);
+    }
+
+    debug(`📊 Calc rows adicionados: MARGEM + EBITDA para ${calcMarcas.length} marca(s)`);
+
+    if (newRows.length === 0 && updateItems.length === 0) {
+      return { created: 0, updated: 0, version: nextVersion, error: `Nenhum desvio gerado. dre_agg: ${allAggData.length} linhas (${Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`).join(', ')})` };
+    }
+
+    debug(`📊 ${newRows.length} novos + ${updateItems.length} atualizações`);
+
+    // 7. Deletar pendentes/notificados antigos (serão re-inseridos com novos valores)
+    let delQuery = supabase
+      .from('variance_justifications')
+      .delete()
+      .eq('year_month', yearMonth);
+    if (marca) delQuery = delQuery.eq('marca', marca);
+    delQuery = delQuery.in('status', ['pending', 'notified']);
+
+    const { error: delError } = await delQuery;
+    if (delError) {
+      debug(`⚠️ Erro ao limpar antigos (continuando): ${delError.message}`);
+    }
+
+    // 7.5 Deletar calc rows antigos (MARGEM/EBITDA) — sempre re-inseridos
+    let delCalcQuery = supabase
+      .from('variance_justifications')
+      .delete()
+      .eq('year_month', yearMonth)
+      .in('tag0', ['MARGEM DE CONTRIBUIÇÃO', 'EBITDA']);
+    if (marca) delCalcQuery = delCalcQuery.eq('marca', marca);
+
+    const { error: delCalcError } = await delCalcQuery;
+    if (delCalcError) {
+      debug(`⚠️ Erro ao limpar calc rows antigos (continuando): ${delCalcError.message}`);
+    }
+
+    // 8. UPDATE existentes (justificados/aprovados/rejeitados) com novos valores financeiros
+    let totalUpdated = 0;
+    for (const item of updateItems) {
+      const { error: updErr } = await supabase
+        .from('variance_justifications')
+        .update({
+          real_value: item.real_value,
+          compare_value: item.compare_value,
+          variance_abs: item.variance_abs,
+          variance_pct: item.variance_pct,
+          version: item.version,
+          owner_email: item.owner_email,
+          owner_name: item.owner_name,
+          snapshot_at: snapshotAt,
+        })
+        .eq('id', item.id);
+
+      if (!updErr) totalUpdated++;
+      else debug(`⚠️ Erro update id=${item.id}: ${updErr.message}`);
+    }
+
+    // 9. INSERT novos em batches de 200
+    let totalCreated = 0;
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < newRows.length; i += BATCH_SIZE) {
+      const batch = newRows.slice(i, i + BATCH_SIZE);
+      const { data: inserted, error: insertErr } = await supabase
+        .from('variance_justifications')
+        .insert(batch)
+        .select('id');
+
+      if (insertErr) {
+        debug(`⚠️ Erro batch ${i}: ${insertErr.message}, tentando individual...`);
+        for (const row of batch) {
+          const { error: singleErr } = await supabase
+            .from('variance_justifications')
+            .insert(row);
+          if (!singleErr) totalCreated++;
+        }
+      } else {
+        totalCreated += inserted?.length || batch.length;
+      }
+    }
+
+    const diagParts = Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`);
+    const diagnostics = `dre_agg: ${allAggData.length} linhas (${diagParts.join(', ')})`;
+    debug(`✅ v${nextVersion}: ${totalCreated} criados + ${totalUpdated} atualizados — snapshot_at=${snapshotAt} — ${diagnostics}`);
+    return { created: totalCreated, updated: totalUpdated, version: nextVersion, snapshot_at: snapshotAt, diagnostics };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('❌ generateVarianceItems:', msg);
+    return { created: 0, updated: 0, version: 0, error: msg };
+  }
+};
+
+/**
+ * Pacoteiro submete justificativa para um item tag03.
+ */
+export const submitJustification = async (
+  id: number,
+  justification: string,
+  actionPlan?: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const updates: any = {
+    justification,
+    action_plan: actionPlan || null,
+    status: 'justified',
+    justified_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from('variance_justifications')
+    .update(updates)
+    .eq('id', id)
+    .select('id');
+  if (error) {
+    console.error('Erro ao submeter justificativa:', error);
+    return { ok: false, error: error.message };
+  }
+  if (!data || data.length === 0) {
+    return { ok: false, error: 'Nenhuma linha atualizada. Verifique permissões (RLS).' };
+  }
+  return { ok: true };
+};
+
+/**
+ * FP&A aprova ou rejeita uma justificativa.
+ */
+export const reviewJustification = async (
+  id: number,
+  status: 'approved' | 'rejected',
+  reviewNote?: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data: userData } = await supabase
+    .from('users')
+    .select('email')
+    .limit(1);
+
+  const { data, error } = await supabase
+    .from('variance_justifications')
+    .update({
+      status,
+      reviewed_by: userData?.[0]?.email || null,
+      reviewed_at: new Date().toISOString(),
+      review_note: reviewNote || null,
+    })
+    .eq('id', id)
+    .select('id');
+  if (error) {
+    console.error('Erro ao revisar justificativa:', error);
+    return { ok: false, error: error.message };
+  }
+  if (!data || data.length === 0) {
+    return { ok: false, error: 'Nenhuma linha atualizada. Verifique permissões (RLS).' };
+  }
+  return { ok: true };
+};
+
+/**
+ * Aprovar/rejeitar em massa.
+ */
+export const bulkReviewJustifications = async (
+  ids: number[],
+  status: 'approved' | 'rejected',
+  reviewNote?: string
+): Promise<{ ok: boolean; count: number; error?: string }> => {
+  const { data, error } = await supabase
+    .from('variance_justifications')
+    .update({
+      status,
+      reviewed_at: new Date().toISOString(),
+      review_note: reviewNote || null,
+    })
+    .in('id', ids)
+    .select('id');
+  if (error) {
+    console.error('Erro ao revisar em massa:', error);
+    return { ok: false, count: 0, error: error.message };
+  }
+  return { ok: true, count: data?.length || 0 };
+};
+
+/**
+ * Salva síntese IA em uma linha de justificativa.
+ */
+export const updateVarianceAiSummary = async (
+  id: number,
+  aiSummary: string
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('variance_justifications')
+    .update({
+      ai_summary: aiSummary,
+      ai_summary_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao salvar ai_summary:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+};
+
+// ── Variance Thresholds ──
+
+export const getVarianceThresholds = async (): Promise<VarianceThreshold[]> => {
+  const { data, error } = await supabase
+    .from('variance_thresholds')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('Erro ao buscar variance_thresholds:', error);
+    return [];
+  }
+  return (data || []) as VarianceThreshold[];
+};
+
+export const upsertVarianceThreshold = async (
+  row: Omit<VarianceThreshold, 'id' | 'created_at'>
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('variance_thresholds')
+    .upsert({
+      marca: row.marca || null,
+      tag0: row.tag0 || null,
+      min_abs_value: row.min_abs_value,
+      min_pct_value: row.min_pct_value,
+      active: row.active,
+    });
+  if (error) {
+    console.error('Erro ao upsert variance_thresholds:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+};
+
+export const deleteVarianceThreshold = async (id: number): Promise<boolean> => {
+  const { error } = await supabase
+    .from('variance_thresholds')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao excluir variance_thresholds:', error);
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Realtime subscription para variance_justifications.
+ */
+export const subscribeVarianceJustifications = (onChange: () => void) => {
+  const channel = supabase
+    .channel('variance_justifications_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'variance_justifications' }, () => {
+      onChange();
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
