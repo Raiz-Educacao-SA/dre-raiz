@@ -2854,7 +2854,10 @@ export const generateVarianceItems = async (
       if (!page || page.length === 0) {
         hasMore = false;
       } else {
-        const filtered = page.filter((r: any) => isDrePrefix(r.tag0));
+        // Filtrar DRE prefixes + agregar tag02 como folha (ignorar tag03)
+        const filtered = page
+          .filter((r: any) => isDrePrefix(r.tag0))
+          .map((r: any) => ({ ...r, tag03: null }));
         allAggData = allAggData.concat(filtered);
         detailCount += filtered.length;
         hasMore = page.length === PAGE_SIZE;

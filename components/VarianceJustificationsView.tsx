@@ -336,9 +336,9 @@ const VarianceJustificationsView: React.FC = () => {
   const ytdStats = useMemo(() => {
     const allMonths = [...new Set(ytdItems.map(i => i.year_month))].sort();
     const totalJustified = ytdItems.filter(i =>
-      i.tag03 !== null && (i.status === 'justified' || i.status === 'approved')
+      i.tag02 !== null && (i.status === 'justified' || i.status === 'approved')
     ).length;
-    const totalLeaves = ytdItems.filter(i => i.tag03 !== null).length;
+    const totalLeaves = ytdItems.filter(i => i.tag02 !== null).length;
     return { months: allMonths, totalJustified, totalLeaves };
   }, [ytdItems]);
 
@@ -529,22 +529,11 @@ const VarianceJustificationsView: React.FC = () => {
 
         for (const tag02 of [...tag02Set].sort()) {
           const tag02All = tag01All.filter(i => i.tag02 === tag02);
-          const tag02Key = `${tag0}|${tag01}|${tag02}`;
           const tag02Orc = orcMap.get(`${tag0}|${tag01}|${tag02}|`) || null;
           const tag02A1 = a1Map.get(`${tag0}|${tag01}|${tag02}|`) || null;
-          const tag03Set = new Set(tag02All.filter(i => i.tag03).map(i => i.tag03!));
 
-          rows.push(buildRow(2, tag02Key, tag02, tag0, tag01, tag02, null, tag03Set.size > 0, tag02All, tag02Orc, tag02A1));
-
-          if (!expandedNodes.has(tag02Key) || tag03Set.size === 0) continue;
-
-          for (const tag03 of [...tag03Set].sort()) {
-            const tag03Orc = orcMap.get(`${tag0}|${tag01}|${tag02}|${tag03}`) || null;
-            const tag03A1 = a1Map.get(`${tag0}|${tag01}|${tag02}|${tag03}`) || null;
-            const tag03Items = tag02All.filter(i => i.tag03 === tag03);
-
-            rows.push(buildRow(3, `leaf-${tag03Orc?.id || tag03A1?.id || tag03}`, tag03, tag0, tag01, tag02, tag03, false, tag03Items, tag03Orc, tag03A1));
-          }
+          // tag02 = folha (nível de justificativa)
+          rows.push(buildRow(2, `leaf-${tag02Orc?.id || tag02A1?.id || tag02}`, tag02, tag0, tag01, tag02, null, false, tag02All, tag02Orc, tag02A1));
         }
       }
     }
@@ -706,34 +695,34 @@ const VarianceJustificationsView: React.FC = () => {
     }
   };
 
-  // ── AI Cascade (tag0 → tag01 → tag02 → tag03) ──
+  // ── AI Cascade (tag02 → tag01 → tag0) ──
 
   const triggerAiCascade = async (justifiedItem: VarianceJustification) => {
-    if (!justifiedItem.tag02 || !justifiedItem.tag03) return;
+    if (!justifiedItem.tag02) return;
     const comp = justifiedItem.comparison_type;
 
-    // 1. Check if ALL tag03 siblings under this tag02 are justified → generate tag02 synthesis
-    const tag03Siblings = items.filter(
+    // 1. Check if ALL tag02 siblings under this tag01 are justified → generate tag01 synthesis
+    const tag02Siblings = items.filter(
       i => i.tag0 === justifiedItem.tag0 && i.tag01 === justifiedItem.tag01 &&
-           i.tag02 === justifiedItem.tag02 && i.tag03 !== null && i.comparison_type === comp
+           i.tag02 !== null && i.comparison_type === comp
     );
-    const allTag03Justified = tag03Siblings.every(
+    const allTag02Justified = tag02Siblings.every(
       i => i.status === 'justified' || i.status === 'approved' || i.id === justifiedItem.id
     );
 
-    if (allTag03Justified && tag03Siblings.length > 0) {
-      const tag02Item = items.find(
+    if (allTag02Justified && tag02Siblings.length > 0) {
+      const tag01Item = items.find(
         i => i.tag0 === justifiedItem.tag0 && i.tag01 === justifiedItem.tag01 &&
-             i.tag02 === justifiedItem.tag02 && i.tag03 === null && i.comparison_type === comp
+             i.tag02 === null && i.comparison_type === comp
       );
-      if (tag02Item && !tag02Item.ai_summary) {
-        await generateSynthesis('tag02', tag02Item, tag03Siblings);
+      if (tag01Item && !tag01Item.ai_summary) {
+        await generateSynthesis('tag01', tag01Item, tag02Siblings);
       }
     }
   };
 
   const generateSynthesis = async (
-    level: 'tag02' | 'tag01' | 'tag0' | 'ytd',
+    level: 'tag01' | 'tag0' | 'ytd',
     targetItem: VarianceJustification,
     childItems: VarianceJustification[]
   ) => {
@@ -741,13 +730,12 @@ const VarianceJustificationsView: React.FC = () => {
     setSynthesizing(synthKey);
     try {
       const labelFn = (c: VarianceJustification) => {
-        if (level === 'tag02') return c.tag03 || '—';
         if (level === 'tag01') return c.tag02 || '—';
         if (level === 'tag0') return c.tag01 || '—';
         return c.year_month || '—';
       };
       const textFn = (c: VarianceJustification) => {
-        if (level === 'tag02') return c.justification || '—';
+        if (level === 'tag01') return c.justification || '—';
         return c.ai_summary || '—';
       };
 
@@ -759,13 +747,13 @@ const VarianceJustificationsView: React.FC = () => {
         text: textFn(c),
       }));
 
-      const parentLabel = level === 'tag02'
-        ? (targetItem.tag02 || targetItem.tag01)
-        : level === 'tag01'
+      const parentLabel = level === 'tag01'
         ? targetItem.tag01
+        : level === 'tag0'
+        ? targetItem.tag0
         : targetItem.tag0;
 
-      // Map to the anthropicService level type (tag0 uses 'tag01' level prompt style)
+      // Map to the anthropicService level type
       const apiLevel = level === 'tag0' ? 'tag01' : level === 'ytd' ? 'ytd' : level;
 
       const summary = await generateVarianceSummary(apiLevel as any, summaryItems, {
@@ -780,23 +768,7 @@ const VarianceJustificationsView: React.FC = () => {
       // Continue cascade upward
       const comp = targetItem.comparison_type;
 
-      if (level === 'tag02') {
-        // tag02 done → check if all tag02 siblings under same tag01 have summaries → generate tag01
-        const tag02Siblings = items.filter(
-          i => i.tag0 === targetItem.tag0 && i.tag01 === targetItem.tag01 &&
-               i.tag02 !== null && i.tag03 === null && i.comparison_type === comp
-        );
-        const allTag02HaveSummary = tag02Siblings.every(i => i.ai_summary || i.id === targetItem.id);
-        if (allTag02HaveSummary && tag02Siblings.length > 0) {
-          const tag01Item = items.find(
-            i => i.tag0 === targetItem.tag0 && i.tag01 === targetItem.tag01 &&
-                 i.tag02 === null && i.tag03 === null && i.comparison_type === comp
-          );
-          if (tag01Item && !tag01Item.ai_summary) {
-            await generateSynthesis('tag01', tag01Item, tag02Siblings);
-          }
-        }
-      } else if (level === 'tag01') {
+      if (level === 'tag01') {
         // tag01 done → check if all tag01 siblings under same tag0 have summaries → generate tag0
         const tag01Siblings = items.filter(
           i => i.tag0 === targetItem.tag0 && i.tag01 !== '' &&
@@ -827,21 +799,15 @@ const VarianceJustificationsView: React.FC = () => {
     if (row.depth === 0) {
       const tag01Items = items.filter(
         i => i.tag0 === row.tag0 && i.tag01 !== '' &&
-             i.tag02 === null && i.tag03 === null && i.comparison_type === compType
+             i.tag02 === null && i.comparison_type === compType
       );
       if (tag01Items.length > 0) await generateSynthesis('tag0', dbItem, tag01Items);
     } else if (row.depth === 1) {
       const tag02Items = items.filter(
         i => i.tag0 === row.tag0 && i.tag01 === row.tag01 &&
-             i.tag02 !== null && i.tag03 === null && i.comparison_type === compType
+             i.tag02 !== null && i.comparison_type === compType
       );
       if (tag02Items.length > 0) await generateSynthesis('tag01', dbItem, tag02Items);
-    } else if (row.depth === 2 && row.tag02) {
-      const tag03Items = items.filter(
-        i => i.tag0 === row.tag0 && i.tag01 === row.tag01 && i.tag02 === row.tag02 &&
-             i.tag03 !== null && i.comparison_type === compType
-      );
-      if (tag03Items.length > 0) await generateSynthesis('tag02', dbItem, tag03Items);
     }
   };
 
@@ -877,12 +843,12 @@ const VarianceJustificationsView: React.FC = () => {
     const aiSummary = isOrc ? row.orcAiSummary : row.a1AiSummary;
     const borderCls = isOrc ? 'border-l-2 border-emerald-200/60' : 'border-l-2 border-purple-200/60';
 
-    const canJustify = row.depth === 3 && dbItem &&
+    const canJustify = row.depth === 2 && dbItem &&
       (status === 'pending' || status === 'notified' || status === 'rejected') &&
       (isAdminOrManager || row.ownerEmail === user?.email);
-    const canSynthesis = row.depth <= 2 && isAdminOrManager && dbItem;
+    const canSynthesis = row.depth <= 1 && isAdminOrManager && dbItem;
     const canReview = isAdminOrManager && dbItem && status === 'justified';
-    const synthLevel = row.depth === 0 ? 'tag0' : row.depth === 1 ? 'tag01' : 'tag02';
+    const synthLevel = row.depth === 0 ? 'tag0' : 'tag01';
     const isSynth = dbItem ? synthesizing === `${synthLevel}-${dbItem.id}` : false;
     const hasData = dbItem || compare !== 0;
 
@@ -1009,7 +975,7 @@ const VarianceJustificationsView: React.FC = () => {
       <tr key={`${row.groupKey}-${idx}`} className={`group ${bgClass} ${hoverClass} transition-colors`}>
         {/* Checkbox */}
         <td className={`px-1 py-0.5 text-center w-7 ${isEbitdaTotal ? 'bg-slate-800' : isCalcRow ? 'bg-[#F44C00]' : isDark ? 'bg-[#152e55] group-hover:bg-[#1e3d6e]' : ''}`}>
-          {row.depth === 3 && !isCalcRow && (row.orcDbItem || row.a1DbItem) && (
+          {row.depth === 2 && !isCalcRow && (row.orcDbItem || row.a1DbItem) && (
             <input
               type="checkbox"
               checked={
@@ -1575,12 +1541,6 @@ const VarianceJustificationsView: React.FC = () => {
                     <span className="font-semibold">{justifyItem.tag02}</span>
                   </div>
                 )}
-                {justifyItem.tag03 && (
-                  <div className="flex gap-2">
-                    <span className="text-gray-400">Tag03:</span>
-                    <span className="font-semibold">{justifyItem.tag03}</span>
-                  </div>
-                )}
                 <div className="flex gap-4 mt-2 pt-2 border-t border-gray-200">
                   <div>
                     <span className="text-gray-400">Real:</span>{' '}
@@ -1671,7 +1631,7 @@ const VarianceJustificationsView: React.FC = () => {
                 Rejeitar Justificativa
               </h3>
               <p className="text-xs text-gray-600 mb-3">
-                {reviewItem.tag01} › {reviewItem.tag02} › {reviewItem.tag03}
+                {reviewItem.tag01} › {reviewItem.tag02}
               </p>
               <div className="bg-gray-50 rounded-lg p-3 mb-3 text-xs">
                 <span className="font-bold">Justificativa do pacoteiro:</span>

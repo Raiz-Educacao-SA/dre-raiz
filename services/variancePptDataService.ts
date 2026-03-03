@@ -151,15 +151,8 @@ export function prepareVariancePptData(
       const tag02Children: VariancePptNode[] = [];
       for (const tag02 of tag02Set) {
         const tag02Items = tag01Items.filter(i => i.tag02 === tag02);
-        const tag03Set = [...new Set(tag02Items.filter(i => i.tag03).map(i => i.tag03!))].sort();
-
-        const tag03Children: VariancePptNode[] = [];
-        for (const tag03 of tag03Set) {
-          const tag03Items = tag02Items.filter(i => i.tag03 === tag03);
-          tag03Children.push(buildNode(3, tag03, tag0, tag01, tag02, tag03, tag03Items, []));
-        }
-
-        tag02Children.push(buildNode(2, tag02, tag0, tag01, tag02, null, tag02Items, tag03Children));
+        // tag02 = folha (sem tag03)
+        tag02Children.push(buildNode(2, tag02, tag0, tag01, tag02, null, tag02Items, []));
       }
 
       tag01Nodes.push(buildNode(1, tag01, tag0, tag01, null, null, tag01Items, tag02Children));
@@ -183,8 +176,8 @@ export function prepareVariancePptData(
   // Calc rows: prefer DB-stored MARGEM/EBITDA items, fallback to computed
   const calcRows = computeCalcRows(sections, items, orcMap, a1Map);
 
-  // Stats: count leaves (tag03) from the original items (excluding calc rows)
-  const leaves = items.filter(i => i.tag03 !== null && !CALC_TAG0S.has(i.tag0));
+  // Stats: count leaves (tag02) from the original items (excluding calc rows)
+  const leaves = items.filter(i => i.tag02 !== null && !CALC_TAG0S.has(i.tag0));
   const stats = computeStats(leaves);
 
   // Version + snapshotAt
