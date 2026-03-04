@@ -11,7 +11,8 @@ import {
   Building2,
   ChevronDown,
   Check,
-  X
+  X,
+  Calendar
 } from 'lucide-react';
 import { ExecutiveSummary, ActionsList, SlideDeck, useChartRegistry, buildPpt, fetchAnalysisContext } from '../analysisPack';
 import AIFinancialView from './AIFinancialView';
@@ -39,6 +40,11 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
   // Filtros
   const [selectedMarcas, setSelectedMarcas] = useState<string[]>([]);
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [isYtd, setIsYtd] = useState(false);
 
   // Estados separados para cada aba
   const [summaryData, setSummaryData] = useState<{ summary: any; meta: any } | null>(null);
@@ -81,6 +87,17 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
     localStorage.setItem('analysisActiveTab', activeTab);
   }, [activeTab]);
 
+  // Helper: compute start/end dates for the query
+  const getDateRange = () => {
+    const endDate = selectedMonth;
+    let startDate = selectedMonth;
+    if (isYtd) {
+      const [year] = selectedMonth.split('-');
+      startDate = `${year}-01`;
+    }
+    return { startDate, endDate };
+  };
+
   // ========================================
   // Gerar Sumário Executivo
   // ========================================
@@ -89,10 +106,13 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
     try {
       // Tentar API primeiro
       try {
+        const { startDate, endDate } = getDateRange();
         const context = await fetchAnalysisContext({
           scenario: 'Real',
           marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
           filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
+          startDate,
+          endDate,
         });
 
         const response = await fetch('/api/llm-proxy?action=generate-ai', {
@@ -135,10 +155,13 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
     try {
       // Tentar API primeiro
       try {
+        const { startDate, endDate } = getDateRange();
         const context = await fetchAnalysisContext({
           scenario: 'Real',
           marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
           filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
+          startDate,
+          endDate,
         });
 
         const response = await fetch('/api/llm-proxy?action=generate-ai', {
@@ -175,10 +198,13 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
     try {
       // Tentar API primeiro
       try {
+        const { startDate, endDate } = getDateRange();
         const context = await fetchAnalysisContext({
           scenario: 'Real',
           marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
           filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
+          startDate,
+          endDate,
         });
 
         const response = await fetch('/api/llm-proxy?action=generate-ai', {
@@ -260,6 +286,34 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Filtro de Mês */}
+              <div className="flex items-center gap-2 bg-white px-4 h-[52px] rounded-lg border-2 border-gray-100 shadow-sm">
+                <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
+                  <Calendar size={14} />
+                </div>
+                <div className="flex flex-col justify-center">
+                  <span className="text-[7px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">MÊS</span>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={e => setSelectedMonth(e.target.value)}
+                    className="font-black text-[10px] uppercase tracking-tight text-gray-900 bg-transparent border-none outline-none cursor-pointer w-[120px]"
+                  />
+                </div>
+              </div>
+
+              {/* Toggle YTD */}
+              <button
+                onClick={() => setIsYtd(!isYtd)}
+                className={`flex items-center gap-1.5 px-4 h-[52px] rounded-lg border-2 shadow-sm font-black text-xs uppercase transition-all ${
+                  isYtd
+                    ? 'border-purple-500 bg-purple-50 text-purple-700 ring-4 ring-purple-500/10'
+                    : 'border-gray-100 bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                YTD
+              </button>
+
               {/* Filtros */}
               <MultiSelectFilter
                 label="MARCA"
@@ -280,11 +334,12 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
               />
 
               {/* Clear Filters Button */}
-              {(selectedMarcas.length > 0 || selectedFiliais.length > 0) && (
+              {(selectedMarcas.length > 0 || selectedFiliais.length > 0 || isYtd) && (
                 <button
                   onClick={() => {
                     setSelectedMarcas([]);
                     setSelectedFiliais([]);
+                    setIsYtd(false);
                   }}
                   className="flex items-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-xs uppercase transition-all"
                   title="Limpar todos os filtros"

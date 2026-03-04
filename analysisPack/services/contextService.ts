@@ -30,11 +30,11 @@ export async function fetchAnalysisContext(
   }
 
   try {
-    // Determinar range de meses (últimos 12 meses)
+    // Usar params.startDate/endDate se fornecidos, senão mês atual
     const now = new Date();
-    const endMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const startD = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-    const startMonth = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}`;
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const endMonth = params?.endDate || currentMonth;
+    const startMonth = params?.startDate || endMonth;
 
     console.log(`🔄 Buscando dados DRE via get_soma_tags [${startMonth} → ${endMonth}]...`);
 
