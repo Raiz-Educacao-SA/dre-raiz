@@ -243,33 +243,29 @@ const VarianceJustificationsView: React.FC = () => {
     if (ytdItems.length === 0) return [];
 
     const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
-    const CALC_LABELS = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
-    const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3)) || CALC_LABELS.has(t);
+    const CALC_LABELS_YTD = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
+    const isDrePrefix = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
 
-    // 1. Aggregate ytdItems across months per (tag0, tag01, tag02, marca)
+    // 1. Aggregate ytdItems across months per (tag0, tag01, tag02, marca) — only DRE prefixes
     type PathAgg = { realByMonth: Map<string, number>; orcCompare: number; a1Compare: number; months: Set<string> };
     const pathMap = new Map<string, PathAgg>();
 
     for (const item of ytdItems) {
-      if (!isDre(item.tag0)) continue;
+      if (!isDrePrefix(item.tag0)) continue; // only 01.–05., CalcRows are computed
       const path = `${item.tag0}|${item.tag01 || ''}|${item.tag02 || ''}|${item.marca || ''}`;
       if (!pathMap.has(path)) pathMap.set(path, { realByMonth: new Map(), orcCompare: 0, a1Compare: 0, months: new Set() });
       const p = pathMap.get(path)!;
       p.months.add(item.year_month);
-      // Store real per month (same for orcado/a1, avoid double counting)
       if (!p.realByMonth.has(item.year_month)) p.realByMonth.set(item.year_month, Number(item.real_value));
       if (item.comparison_type === 'orcado') p.orcCompare += Number(item.compare_value);
       else p.a1Compare += Number(item.compare_value);
     }
 
-    // Helper: sum real from realByMonth
     const sumReal = (p: PathAgg) => [...p.realByMonth.values()].reduce((s, v) => s + v, 0);
 
-    // Helper: aggregate multiple paths
     const aggPaths = (paths: PathAgg[]) => {
       let real = 0, orc = 0, a1 = 0;
       const months = new Set<string>();
-      // Deduplicate real across paths by month
       const realByMonth = new Map<string, number>();
       for (const p of paths) {
         orc += p.orcCompare;
@@ -286,47 +282,16 @@ const VarianceJustificationsView: React.FC = () => {
     const varPct = (real: number, compare: number) =>
       compare !== 0 ? Math.round(((real - compare) / Math.abs(compare)) * 1000) / 10 : null;
 
-    // 2. Build tree — same hierarchy as main table
-    const CALC_ROW_ORDER: Record<string, number> = {
-      'MARGEM DE CONTRIBUIÇÃO': 3.5,
-      'EBITDA (S/ RATEIO RAIZ CSC)': 4.5,
-      'EBITDA TOTAL': 5.5,
-    };
-
-    // Collect unique tag0s from tag01-level items (no tag02)
+    // 2. Build tree — only regular DRE tag0s (sorted by numeric prefix)
     const tag0Set = new Set<string>();
     for (const [key] of pathMap) {
-      const tag0 = key.split('|')[0];
-      tag0Set.add(tag0);
+      tag0Set.add(key.split('|')[0]);
     }
-    const tag0Sorted = [...tag0Set].sort((a, b) => {
-      const aOrd = CALC_ROW_ORDER[a] ?? (parseFloat(a) || 999);
-      const bOrd = CALC_ROW_ORDER[b] ?? (parseFloat(b) || 999);
-      return aOrd - bOrd;
-    });
+    const tag0Sorted = [...tag0Set].sort((a, b) => (parseFloat(a) || 999) - (parseFloat(b) || 999));
 
     const rows: YtdFlatRow[] = [];
 
     for (const tag0 of tag0Sorted) {
-      const isCalc = CALC_LABELS.has(tag0);
-
-      if (isCalc) {
-        // CalcRows (MARGEM, EBITDA) — aggregate all paths under this tag0 directly (tag01='')
-        const calcPaths: PathAgg[] = [];
-        for (const [key, val] of pathMap) {
-          if (key.split('|')[0] === tag0) calcPaths.push(val);
-        }
-        const calcAgg = aggPaths(calcPaths);
-        rows.push({
-          depth: 0, groupKey: `ytd-${tag0}`, label: tag0, tag0, tag01: '', tag02: null, marca: null,
-          hasChildren: false,
-          ytdReal: calcAgg.real, orcCompare: calcAgg.orc, orcVarPct: varPct(calcAgg.real, calcAgg.orc),
-          a1Compare: calcAgg.a1, a1VarPct: varPct(calcAgg.real, calcAgg.a1), months: calcAgg.months,
-        });
-        continue;
-      }
-
-      // Regular DRE tag0 — paths under this tag0, only tag01-level (no tag02)
       const tag01Paths: [string, PathAgg][] = [];
       const tag01Set = new Set<string>();
       for (const [key, val] of pathMap) {
@@ -352,7 +317,6 @@ const VarianceJustificationsView: React.FC = () => {
         const tag01A1 = tag01Path?.a1Compare || 0;
         const tag01Months = tag01Path ? [...tag01Path.months].sort() : [];
 
-        // Check for tag02 children
         const tag02Set = new Set<string>();
         for (const [key] of pathMap) {
           const [t0, t1, t2] = key.split('|');
@@ -369,7 +333,6 @@ const VarianceJustificationsView: React.FC = () => {
         if (!ytdExpandedNodes.has(`ytd-${tag0}|${tag01}`) || tag02Set.size === 0) continue;
 
         for (const tag02 of [...tag02Set].sort()) {
-          // Tag02 paths (all marcas under this tag02)
           const tag02Paths: PathAgg[] = [];
           const marcaSet = new Set<string>();
           for (const [key, val] of pathMap) {
@@ -405,6 +368,39 @@ const VarianceJustificationsView: React.FC = () => {
         }
       }
     }
+
+    // ── Inject CalcRows (computed from depth-0 values) ──
+    const d0ytd = new Map<string, { real: number; orc: number; a1: number; months: string[] }>();
+    for (const row of rows) {
+      if (row.depth === 0) d0ytd.set(row.tag0.slice(0, 3), { real: row.ytdReal, orc: row.orcCompare, a1: row.a1Compare, months: row.months });
+    }
+    const gpy = (p: string) => d0ytd.get(p) || { real: 0, orc: 0, a1: 0, months: [] as string[] };
+    const allYtdMonths = [...new Set(rows.filter(r => r.depth === 0).flatMap(r => r.months))].sort();
+
+    const mRy = gpy('01.').real + gpy('02.').real + gpy('03.').real;
+    const mOy = gpy('01.').orc + gpy('02.').orc + gpy('03.').orc;
+    const mAy = gpy('01.').a1 + gpy('02.').a1 + gpy('03.').a1;
+    const eRy = mRy + gpy('04.').real, eOy = mOy + gpy('04.').orc, eAy = mAy + gpy('04.').a1;
+    const etRy = eRy + gpy('05.').real, etOy = eOy + gpy('05.').orc, etAy = eAy + gpy('05.').a1;
+
+    const makeYtdCalc = (label: string, r: number, o: number, a: number): YtdFlatRow => ({
+      depth: 0, groupKey: `ytd-${label}`, label, tag0: label, tag01: '', tag02: null, marca: null,
+      hasChildren: false,
+      ytdReal: r, orcCompare: o, orcVarPct: varPct(r, o),
+      a1Compare: a, a1VarPct: varPct(r, a), months: allYtdMonths,
+    });
+
+    const insertAfterYtd = (prefix: string, calcRow: YtdFlatRow) => {
+      let idx = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].tag0.startsWith(prefix)) idx = i;
+      }
+      if (idx >= 0) rows.splice(idx + 1, 0, calcRow);
+      else rows.push(calcRow);
+    };
+    insertAfterYtd('05.', makeYtdCalc('EBITDA TOTAL', etRy, etOy, etAy));
+    insertAfterYtd('04.', makeYtdCalc('EBITDA (S/ RATEIO RAIZ CSC)', eRy, eOy, eAy));
+    insertAfterYtd('03.', makeYtdCalc('MARGEM DE CONTRIBUIÇÃO', mRy, mOy, mAy));
 
     return rows;
   }, [ytdItems, ytdExpandedNodes]);
@@ -507,12 +503,17 @@ const VarianceJustificationsView: React.FC = () => {
   const flatRows = useMemo(() => {
     if (items.length === 0) return [];
 
+    const CALC_LABELS_SET = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
+
+    // Filter out DB CalcRows — they'll be computed client-side
+    const dreItems = items.filter(i => !CALC_LABELS_SET.has(i.tag0));
+
     // Index items by tag path + comparison type
     const pathKey = (i: VarianceJustification) =>
       `${i.tag0}|${i.tag01 || ''}|${i.tag02 || ''}|${i.tag03 || ''}`;
     const orcMap = new Map<string, VarianceJustification>();
     const a1Map = new Map<string, VarianceJustification>();
-    for (const item of items) {
+    for (const item of dreItems) {
       const pk = pathKey(item);
       if (item.comparison_type === 'orcado') orcMap.set(pk, item);
       else if (item.comparison_type === 'a1') a1Map.set(pk, item);
@@ -524,6 +525,8 @@ const VarianceJustificationsView: React.FC = () => {
       if (filtered.length === 0) return { real: 0, compare: 0, varAbs: 0, varPct: null as number | null };
       return aggValues(filtered);
     };
+
+    const varPctCalc = (r: number, c: number) => c !== 0 ? Math.round(((r - c) / Math.abs(c)) * 1000) / 10 : null;
 
     const buildRow = (
       depth: number, groupKey: string, label: string,
@@ -556,22 +559,13 @@ const VarianceJustificationsView: React.FC = () => {
       };
     };
 
-    // Collect unique tag0 values, sort with calc rows in correct position
-    const CALC_ROW_ORDER: Record<string, number> = {
-      'MARGEM DE CONTRIBUIÇÃO': 3.5,           // after 03., before 04.
-      'EBITDA (S/ RATEIO RAIZ CSC)': 4.5,      // after 04., before 05.
-      'EBITDA TOTAL': 5.5,                      // after 05.
-    };
-    const tag0Set = new Set(items.map(i => i.tag0));
+    // Sort only by numeric prefix (CalcRows are computed after)
+    const tag0Set = new Set(dreItems.map(i => i.tag0));
     const rows: FlatRow[] = [];
-    const tag0Sorted = [...tag0Set].sort((a, b) => {
-      const aOrd = CALC_ROW_ORDER[a] ?? (parseFloat(a) || 999);
-      const bOrd = CALC_ROW_ORDER[b] ?? (parseFloat(b) || 999);
-      return aOrd - bOrd;
-    });
+    const tag0Sorted = [...tag0Set].sort((a, b) => (parseFloat(a) || 999) - (parseFloat(b) || 999));
 
     for (const tag0 of tag0Sorted) {
-      const tag0All = items.filter(i => i.tag0 === tag0);
+      const tag0All = dreItems.filter(i => i.tag0 === tag0);
       // Para agregação tag0: usar apenas itens nível tag01 (sem tag02) para não duplicar
       const tag0Level = tag0All.filter(i => !i.tag02);
       const tag0Key = tag0;
@@ -618,6 +612,42 @@ const VarianceJustificationsView: React.FC = () => {
         }
       }
     }
+
+    // ── Inject CalcRows (computed from depth-0 values) ──
+    const d0 = new Map<string, { real: number; orc: number; a1: number }>();
+    for (const row of rows) {
+      if (row.depth === 0) d0.set(row.tag0.slice(0, 3), { real: row.real, orc: row.orcCompare, a1: row.a1Compare });
+    }
+    const gp = (p: string) => d0.get(p) || { real: 0, orc: 0, a1: 0 };
+
+    const mR = gp('01.').real + gp('02.').real + gp('03.').real;
+    const mO = gp('01.').orc + gp('02.').orc + gp('03.').orc;
+    const mA = gp('01.').a1 + gp('02.').a1 + gp('03.').a1;
+    const eR = mR + gp('04.').real, eO = mO + gp('04.').orc, eA = mA + gp('04.').a1;
+    const etR = eR + gp('05.').real, etO = eO + gp('05.').orc, etA = eA + gp('05.').a1;
+
+    const makeCalc = (label: string, r: number, o: number, a: number): FlatRow => ({
+      depth: 0, groupKey: label, label, tag0: label, tag01: '', tag02: null, tag03: null, marca: null,
+      hasChildren: false, real: r,
+      orcCompare: o, orcVarAbs: r - o, orcVarPct: varPctCalc(r, o),
+      orcStatus: '', orcDbItem: null, orcAiSummary: null,
+      a1Compare: a, a1VarAbs: r - a, a1VarPct: varPctCalc(r, a),
+      a1Status: '', a1DbItem: null, a1AiSummary: null,
+      ownerEmail: null, ownerName: null,
+    });
+
+    // Insert after last row of each prefix group (reverse order to preserve indices)
+    const insertAfterPrefix = (prefix: string, calcRow: FlatRow) => {
+      let idx = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i].tag0.startsWith(prefix)) idx = i;
+      }
+      if (idx >= 0) rows.splice(idx + 1, 0, calcRow);
+      else rows.push(calcRow);
+    };
+    insertAfterPrefix('05.', makeCalc('EBITDA TOTAL', etR, etO, etA));
+    insertAfterPrefix('04.', makeCalc('EBITDA (S/ RATEIO RAIZ CSC)', eR, eO, eA));
+    insertAfterPrefix('03.', makeCalc('MARGEM DE CONTRIBUIÇÃO', mR, mO, mA));
 
     return rows;
   }, [items, expandedNodes]);
