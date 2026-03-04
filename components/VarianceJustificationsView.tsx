@@ -369,6 +369,56 @@ const VarianceJustificationsView: React.FC = () => {
       }
     }
 
+    // ── Recalcular pais quando filtro de marca ativo (YTD) ──
+    if (filterMarca) {
+      const ytdMarcaRows = rows.filter(r => r.depth === 3);
+
+      // depth 2
+      for (const row of rows) {
+        if (row.depth !== 2) continue;
+        const children = ytdMarcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01 && m.tag02 === row.tag02);
+        if (children.length === 0) continue;
+        row.ytdReal = children.reduce((s, c) => s + c.ytdReal, 0);
+        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+
+      // depth 1
+      const ytdD2 = rows.filter(r => r.depth === 2);
+      for (const row of rows) {
+        if (row.depth !== 1) continue;
+        const children = ytdD2.filter(c => c.tag0 === row.tag0 && c.tag01 === row.tag01);
+        if (children.length === 0) {
+          const directMarcas = ytdMarcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01);
+          if (directMarcas.length === 0) continue;
+          row.ytdReal = directMarcas.reduce((s, c) => s + c.ytdReal, 0);
+          row.orcCompare = directMarcas.reduce((s, c) => s + c.orcCompare, 0);
+          row.a1Compare = directMarcas.reduce((s, c) => s + c.a1Compare, 0);
+        } else {
+          row.ytdReal = children.reduce((s, c) => s + c.ytdReal, 0);
+          row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
+          row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        }
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+
+      // depth 0
+      const ytdD1 = rows.filter(r => r.depth === 1);
+      for (const row of rows) {
+        if (row.depth !== 0) continue;
+        const children = ytdD1.filter(c => c.tag0 === row.tag0);
+        if (children.length === 0) continue;
+        row.ytdReal = children.reduce((s, c) => s + c.ytdReal, 0);
+        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
+        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+    }
+
     // ── Inject CalcRows (computed from depth-0 values) ──
     const d0ytd = new Map<string, { real: number; orc: number; a1: number; months: string[] }>();
     for (const row of rows) {
@@ -403,7 +453,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterYtd('03.', makeYtdCalc('MARGEM DE CONTRIBUIÇÃO', mRy, mOy, mAy));
 
     return rows;
-  }, [ytdItems, ytdExpandedNodes]);
+  }, [ytdItems, ytdExpandedNodes, filterMarca]);
 
   // YTD stats
   const ytdStats = useMemo(() => {
@@ -613,6 +663,66 @@ const VarianceJustificationsView: React.FC = () => {
       }
     }
 
+    // ── Recalcular pais quando filtro de marca ativo ──
+    // Rows depth 0/1/2 são consolidados (marca=''). Quando filtramos 1 marca,
+    // recalcular a partir dos filhos marca (depth 3).
+    if (filterMarca) {
+      // Coletar valores por tag0+tag01+tag02 das marcas filtradas
+      const marcaRows = rows.filter(r => r.depth === 3);
+
+      // Recalcular depth 2 (tag02): somar marcas filhas
+      for (const row of rows) {
+        if (row.depth !== 2) continue;
+        const children = marcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01 && m.tag02 === row.tag02);
+        if (children.length === 0) continue;
+        row.real = children.reduce((s, c) => s + c.real, 0);
+        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
+        row.orcVarAbs = row.real - row.orcCompare;
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        row.a1VarAbs = row.real - row.a1Compare;
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+
+      // Recalcular depth 1 (tag01): somar tag02 filhos (já recalculados)
+      const d2Rows = rows.filter(r => r.depth === 2);
+      for (const row of rows) {
+        if (row.depth !== 1) continue;
+        const children = d2Rows.filter(c => c.tag0 === row.tag0 && c.tag01 === row.tag01);
+        if (children.length === 0) {
+          // Se não tem filhos tag02, usar marcaRows diretas
+          const directMarcas = marcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01);
+          if (directMarcas.length === 0) continue;
+          row.real = directMarcas.reduce((s, c) => s + c.real, 0);
+          row.orcCompare = directMarcas.reduce((s, c) => s + c.orcCompare, 0);
+          row.a1Compare = directMarcas.reduce((s, c) => s + c.a1Compare, 0);
+        } else {
+          row.real = children.reduce((s, c) => s + c.real, 0);
+          row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
+          row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        }
+        row.orcVarAbs = row.real - row.orcCompare;
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1VarAbs = row.real - row.a1Compare;
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+
+      // Recalcular depth 0 (tag0): somar tag01 filhos (já recalculados)
+      const d1Rows = rows.filter(r => r.depth === 1);
+      for (const row of rows) {
+        if (row.depth !== 0) continue;
+        const children = d1Rows.filter(c => c.tag0 === row.tag0);
+        if (children.length === 0) continue;
+        row.real = children.reduce((s, c) => s + c.real, 0);
+        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
+        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        row.orcVarAbs = row.real - row.orcCompare;
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1VarAbs = row.real - row.a1Compare;
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+    }
+
     // ── Inject CalcRows (computed from depth-0 values) ──
     const d0 = new Map<string, { real: number; orc: number; a1: number }>();
     for (const row of rows) {
@@ -650,7 +760,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterPrefix('03.', makeCalc('MARGEM DE CONTRIBUIÇÃO', mR, mO, mA));
 
     return rows;
-  }, [items, expandedNodes]);
+  }, [items, expandedNodes, filterMarca]);
 
   // ── Stats ──
 
