@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   FileText,
   ListChecks,
@@ -16,22 +16,12 @@ import {
 } from 'lucide-react';
 import { ExecutiveSummary, ActionsList, SlideDeck, useChartRegistry, buildPpt, fetchAnalysisContext } from '../analysisPack';
 import AIFinancialView from './AIFinancialView';
-import type { Transaction, SchoolKPIs } from '../types';
 import type { AnalysisPack, AnalysisContext } from '../analysisPack/types/schema';
-import { filterTransactionsByPermissions } from '../services/permissionsService';
-
-interface AnalysisViewProps {
-  transactions: Transaction[];
-  kpis: SchoolKPIs;
-  // ✅ RLS: Permissões do usuário
-  allowedMarcas?: string[];
-  allowedFiliais?: string[];
-  allowedCategories?: string[];
-}
+import { getMarcasEFiliais } from '../services/supabaseService';
 
 type TabType = 'summary' | 'actions' | 'slides' | 'ai';
 
-export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) {
+export default function AnalysisView() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem('analysisActiveTab');
     return (saved as TabType) || 'summary';
@@ -46,6 +36,10 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
   });
   const [isYtd, setIsYtd] = useState(false);
 
+  // Opções de marca/filial (carregadas via RPC leve)
+  const [allMarcas, setAllMarcas] = useState<string[]>([]);
+  const [allFiliais, setAllFiliais] = useState<Array<{ marca: string; label: string }>>([]);
+
   // Estados separados para cada aba
   const [summaryData, setSummaryData] = useState<{ summary: any; meta: any } | null>(null);
   const [actionsData, setActionsData] = useState<any[] | null>(null);
@@ -58,29 +52,19 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
 
   const chartRegistry = useChartRegistry();
 
-  // 🔒 RLS: Filtrar transações por permissões do usuário
-  const permissionFilteredTransactions = useMemo(() => {
-    console.log('🔒 AnalysisView: Aplicando permissões RLS nas transações...');
-    const filtered = filterTransactionsByPermissions(transactions);
-    console.log(`🔒 AnalysisView: ${transactions.length} → ${filtered.length} transações após RLS`);
-    return filtered;
-  }, [transactions]);
+  // Carregar marcas/filiais via RPC leve (SELECT DISTINCT — dezenas de rows)
+  useEffect(() => {
+    getMarcasEFiliais().then(({ marcas, filiais }) => {
+      setAllMarcas(marcas);
+      setAllFiliais(filiais);
+    }).catch(err => console.error('Erro ao carregar marcas/filiais:', err));
+  }, []);
 
-  // Marcas únicas
-  const uniqueBrands = useMemo(() => {
-    const brands = new Set(permissionFilteredTransactions.map(t => t.marca).filter(Boolean));
-    return Array.from(brands).sort();
-  }, [permissionFilteredTransactions]);
-
-  // Filiais disponíveis (filtradas por marca)
+  // Filiais filtradas por marca selecionada
   const availableBranches = useMemo(() => {
-    let filtered = permissionFilteredTransactions;
-    if (selectedMarcas.length > 0) {
-      filtered = permissionFilteredTransactions.filter(t => selectedMarcas.includes(t.marca || ''));
-    }
-    const branches = new Set(filtered.map(t => t.filial).filter(Boolean));
-    return Array.from(branches).sort();
-  }, [permissionFilteredTransactions, selectedMarcas]);
+    if (selectedMarcas.length === 0) return allFiliais.map(f => f.label);
+    return allFiliais.filter(f => selectedMarcas.includes(f.marca)).map(f => f.label);
+  }, [allFiliais, selectedMarcas]);
 
   // Salvar aba ativa
   useEffect(() => {
@@ -291,7 +275,7 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
               <MultiSelectFilter
                 label="MARCA"
                 icon={<Flag size={14} />}
-                options={uniqueBrands}
+                options={allMarcas}
                 selected={selectedMarcas}
                 onChange={setSelectedMarcas}
                 colorScheme="blue"
@@ -536,8 +520,8 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
           {/* ==================== ABA IA ==================== */}
           {activeTab === 'ai' && (
             <AIFinancialView
-              transactions={permissionFilteredTransactions}
-              kpis={kpis}
+              transactions={[]}
+              kpis={{} as any}
             />
           )}
         </div>

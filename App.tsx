@@ -1148,13 +1148,7 @@ const App: React.FC = () => {
           {currentView === 'analysis' && (
             <ErrorBoundary fallbackMessage="Erro ao carregar Análises">
               <Suspense fallback={<LoadingSpinner message="Carregando análises..." />}>
-                <AnalysisView
-                  transactions={filteredTransactions}
-                  kpis={kpis}
-                  allowedMarcas={allowedMarcas}
-                  allowedFiliais={allowedFiliais}
-                  allowedCategories={allowedCategories}
-                />
+                <AnalysisView />
               </Suspense>
             </ErrorBoundary>
           )}
