@@ -53,7 +53,7 @@ function truncate(text: string, max: number): string {
 
 function SlideCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`relative bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden ${className}`}
+    <section className={`relative bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden w-full h-full ${className}`}
       style={{ aspectRatio: '16 / 9' }}
     >
       {children}
@@ -727,19 +727,29 @@ function PresentationMode({
   onExit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center select-none">
-      {/* Slide container — 16:9 centered, max size */}
-      <div className="relative w-full h-full flex items-center justify-center p-4">
-        <div className="w-full max-h-full" style={{ maxWidth: 'calc((100vh - 80px) * 16 / 9)', aspectRatio: '16 / 9' }}>
+    <div className="fixed inset-0 z-[9999] bg-black flex items-center justify-center select-none cursor-none group/pres">
+      {/* Slide — fills viewport, 16:9 max fit, no padding */}
+      <div
+        className="w-full h-full flex items-center justify-center"
+        style={{ padding: 0 }}
+      >
+        <div
+          className="w-full h-full"
+          style={{
+            maxWidth: 'calc(100vh * 16 / 9)',
+            maxHeight: 'calc(100vw * 9 / 16)',
+            aspectRatio: '16 / 9',
+          }}
+        >
           {slides[currentSlide]}
         </div>
       </div>
 
-      {/* Bottom bar */}
-      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-black/80">
+      {/* Bottom bar — hidden by default, shows on hover/mouse move */}
+      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-gradient-to-t from-black/90 to-transparent opacity-0 group-hover/pres:opacity-100 transition-opacity duration-300 cursor-default">
         <button onClick={onExit} className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm transition-colors">
           <X size={16} />
-          ESC para sair
+          ESC
         </button>
 
         <div className="flex items-center gap-4">
@@ -762,12 +772,12 @@ function PresentationMode({
           </button>
         </div>
 
-        <div className="w-24" />
+        <div className="w-16" />
       </div>
 
-      {/* Click zones — left/right */}
-      <div className="absolute inset-y-0 left-0 w-1/3 cursor-pointer" onClick={onPrev} />
-      <div className="absolute inset-y-0 right-0 w-1/3 cursor-pointer" onClick={onNext} />
+      {/* Click zones — left/right (invisible) */}
+      <div className="absolute inset-y-0 left-0 w-1/3 cursor-none" onClick={onPrev} />
+      <div className="absolute inset-y-0 right-0 w-1/3 cursor-none" onClick={onNext} />
     </div>
   );
 }
