@@ -26,7 +26,7 @@ type TabType = 'justificativas' | 'summary' | 'actions' | 'slides';
 export default function AnalysisView() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem('analysisActiveTab');
-    return (saved as TabType) || 'justificativas';
+    return (saved as TabType) || 'summary';
   });
 
   // Filtros
