@@ -53,8 +53,7 @@ export async function fetchAnalysisContext(
     );
 
     if (!somaData || somaData.length === 0) {
-      console.warn("⚠️ Nenhum dado retornado por get_soma_tags, usando mock");
-      return getMockContext();
+      throw new Error(`Nenhum dado encontrado para o período ${startMonth} → ${endMonth}. Verifique os filtros.`);
     }
 
     console.log(`✅ ${somaData.length} linhas de get_soma_tags`);
@@ -93,8 +92,7 @@ export async function fetchAnalysisContext(
 
   } catch (error) {
     console.error("❌ Erro ao buscar contexto de análise:", error);
-    console.warn("⚠️ Fallback para contexto MOCK");
-    return getMockContext();
+    throw error;
   }
 }
 

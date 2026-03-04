@@ -17,6 +17,26 @@ IMPORTANTE: Retorne APENAS um JSON válido no formato AnalysisPack sem texto adi
 }
 
 export function buildUserPrompt(ctx: AnalysisContext) {
+  // Compact dataset summary for the AI — full data, not just keys
+  const ds = ctx.datasets as Record<string, any>;
+  const datasetSummary: Record<string, any> = {};
+  for (const [key, val] of Object.entries(ds)) {
+    if (key === 'r12' && val?.series) {
+      // Summarise R12: only last 3 months to save tokens
+      const x = val.x as string[];
+      datasetSummary.r12 = {
+        months: x.slice(-3),
+        series: (val.series as any[]).map(s => ({
+          key: s.key,
+          name: s.name,
+          last3: (s.data as number[]).slice(-3),
+        })),
+      };
+    } else {
+      datasetSummary[key] = val;
+    }
+  }
+
   return `
 Crie um pacote de análise e slides para:
 - Organização: ${ctx.org_name}
@@ -27,8 +47,8 @@ Crie um pacote de análise e slides para:
 KPIs (já calculados):
 ${JSON.stringify(ctx.kpis, null, 2)}
 
-Datasets disponíveis (use por referência; não invente chaves):
-${JSON.stringify(Object.keys(ctx.datasets), null, 2)}
+Datasets (dados reais — use estes números na análise):
+${JSON.stringify(datasetSummary, null, 2)}
 
 Regras:
 ${JSON.stringify(ctx.analysis_rules ?? {}, null, 2)}

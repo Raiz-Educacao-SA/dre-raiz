@@ -104,44 +104,36 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
   const handleGenerateSummary = async () => {
     setSummaryLoading(true);
     try {
-      // Tentar API primeiro
-      try {
-        const { startDate, endDate } = getDateRange();
-        const context = await fetchAnalysisContext({
-          scenario: 'Real',
-          marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
-          filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
-          startDate,
-          endDate,
-        });
+      const { startDate, endDate } = getDateRange();
+      const context = await fetchAnalysisContext({
+        scenario: 'Real',
+        marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
+        filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
+        startDate,
+        endDate,
+      });
 
-        const response = await fetch('/api/llm-proxy?action=generate-ai', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ context, type: 'summary' }),
-        });
+      console.log('📤 Contexto enviado:', { period: context.period_label, scope: context.scope_label, kpis: context.kpis?.length });
 
-        if (response.ok) {
-          const { data } = await response.json();
-          setSummaryData({
-            summary: data.executive_summary,
-            meta: data.meta,
-          });
-          return;
-        }
-      } catch (apiError) {
-        console.warn('API não disponível, usando mock data:', apiError);
+      const response = await fetch('/api/llm-proxy?action=generate-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context, type: 'summary' }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.message || errBody.error || `Erro ${response.status}`);
       }
 
-      // Fallback: Usar mock data
-      const { mockAnalysisPack } = await import('../analysisPack/mock/mockData');
+      const { data } = await response.json();
       setSummaryData({
-        summary: mockAnalysisPack.executive_summary,
-        meta: mockAnalysisPack.meta,
+        summary: data.executive_summary,
+        meta: data.meta,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao gerar sumário:', error);
-      alert('❌ Erro ao gerar sumário. Tente novamente.');
+      alert(`❌ Erro ao gerar sumário: ${error.message || 'Tente novamente.'}`);
     } finally {
       setSummaryLoading(false);
     }
@@ -153,38 +145,31 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
   const handleGenerateActions = async () => {
     setActionsLoading(true);
     try {
-      // Tentar API primeiro
-      try {
-        const { startDate, endDate } = getDateRange();
-        const context = await fetchAnalysisContext({
-          scenario: 'Real',
-          marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
-          filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
-          startDate,
-          endDate,
-        });
+      const { startDate, endDate } = getDateRange();
+      const context = await fetchAnalysisContext({
+        scenario: 'Real',
+        marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
+        filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
+        startDate,
+        endDate,
+      });
 
-        const response = await fetch('/api/llm-proxy?action=generate-ai', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ context, type: 'actions' }),
-        });
+      const response = await fetch('/api/llm-proxy?action=generate-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context, type: 'actions' }),
+      });
 
-        if (response.ok) {
-          const { data } = await response.json();
-          setActionsData(data.actions);
-          return;
-        }
-      } catch (apiError) {
-        console.warn('API não disponível, usando mock data:', apiError);
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.message || errBody.error || `Erro ${response.status}`);
       }
 
-      // Fallback: Usar mock data
-      const { mockAnalysisPack } = await import('../analysisPack/mock/mockData');
-      setActionsData(mockAnalysisPack.actions);
-    } catch (error) {
+      const { data } = await response.json();
+      setActionsData(data.actions);
+    } catch (error: any) {
       console.error('Erro ao gerar ações:', error);
-      alert('❌ Erro ao gerar plano de ação. Tente novamente.');
+      alert(`❌ Erro ao gerar plano de ação: ${error.message || 'Tente novamente.'}`);
     } finally {
       setActionsLoading(false);
     }
@@ -196,46 +181,34 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
   const handleGenerateSlides = async () => {
     setSlidesLoading(true);
     try {
-      // Tentar API primeiro
-      try {
-        const { startDate, endDate } = getDateRange();
-        const context = await fetchAnalysisContext({
-          scenario: 'Real',
-          marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
-          filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
-          startDate,
-          endDate,
-        });
+      const { startDate, endDate } = getDateRange();
+      const context = await fetchAnalysisContext({
+        scenario: 'Real',
+        marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
+        filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
+        startDate,
+        endDate,
+      });
 
-        const response = await fetch('/api/llm-proxy?action=generate-ai', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ context, type: 'full' }),
-        });
+      const response = await fetch('/api/llm-proxy?action=generate-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context, type: 'full' }),
+      });
 
-        if (response.ok) {
-          const { data } = await response.json();
-          setSlidesData({
-            pack: data,
-            context: context,
-          });
-          return;
-        }
-      } catch (apiError) {
-        console.warn('API não disponível, usando mock data:', apiError);
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.message || errBody.error || `Erro ${response.status}`);
       }
 
-      // Fallback: Usar mock data
-      const { mockAnalysisPack } = await import('../analysisPack/mock/mockData');
-      const { getMockContext } = await import('../analysisPack/mock/mockContext');
-
+      const { data } = await response.json();
       setSlidesData({
-        pack: mockAnalysisPack,
-        context: getMockContext(),
+        pack: data,
+        context: context,
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao gerar slides:', error);
-      alert('❌ Erro ao gerar slides. Tente novamente.');
+      alert(`❌ Erro ao gerar slides: ${error.message || 'Tente novamente.'}`);
     } finally {
       setSlidesLoading(false);
     }
