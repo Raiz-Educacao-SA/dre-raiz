@@ -248,10 +248,10 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                   return (
                     <tr key={idx} className="font-bold bg-white border-b border-gray-100">
                       <td className="px-2 py-1.5" style={{ color: hex(C.darkText) }}>{section.tag0}</td>
-                      <td className="text-right px-2 py-1.5" style={{ color: hex(section.sectionColor) }}>{fmtK(node.real)}</td>
-                      <td className="text-right px-2 py-1.5" style={{ color: hex(C.mutedText) }}>{fmtK(node.orcCompare)}</td>
+                      <td className="text-right px-2 py-1.5" style={{ color: hex(C.darkText) }}>{fmtK(node.real)}</td>
+                      <td className="text-right px-2 py-1.5" style={{ color: hex(C.darkText) }}>{fmtK(node.orcCompare)}</td>
                       <td className="text-right px-2 py-1.5" style={{ color: deltaColor(node.orcVarPct, invertDelta) }}>{fmtPct(node.orcVarPct)}</td>
-                      <td className="text-right px-2 py-1.5" style={{ color: hex(C.mutedText) }}>{fmtK(node.a1Compare)}</td>
+                      <td className="text-right px-2 py-1.5" style={{ color: hex(C.darkText) }}>{fmtK(node.a1Compare)}</td>
                       <td className="text-right px-2 py-1.5" style={{ color: deltaColor(node.a1VarPct, invertDelta) }}>{fmtPct(node.a1VarPct)}</td>
                     </tr>
                   );
@@ -350,10 +350,10 @@ function SectionSlide({ section, data }: { section: VariancePptSection; data: Va
               ).map((t01, idx) => (
                 <tr key={idx} className="border-b border-gray-100 bg-white">
                   <td className="px-2 py-1.5 text-gray-800">↳ {t01.label}</td>
-                  <td className="text-right px-2 py-1.5 font-medium" style={{ color: hex(section.sectionColor) }}>{fmtK(t01.real)}</td>
-                  <td className="text-right px-2 py-1.5 text-gray-500">{fmtK(t01.orcCompare)}</td>
+                  <td className="text-right px-2 py-1.5 font-medium" style={{ color: hex(C.darkText) }}>{fmtK(t01.real)}</td>
+                  <td className="text-right px-2 py-1.5" style={{ color: hex(C.darkText) }}>{fmtK(t01.orcCompare)}</td>
                   <td className="text-right px-2 py-1.5 font-medium" style={{ color: deltaColor(t01.orcVarPct, invertDelta) }}>{fmtPct(t01.orcVarPct)}</td>
-                  <td className="text-right px-2 py-1.5 text-gray-500">{fmtK(t01.a1Compare)}</td>
+                  <td className="text-right px-2 py-1.5" style={{ color: hex(C.darkText) }}>{fmtK(t01.a1Compare)}</td>
                   <td className="text-right px-2 py-1.5 font-medium" style={{ color: deltaColor(t01.a1VarPct, invertDelta) }}>{fmtPct(t01.a1VarPct)}</td>
                 </tr>
               ))}
@@ -464,13 +464,13 @@ function DetailSlide({ section, data }: { section: VariancePptSection; data: Var
               const indent = row.depth === 0 ? '' : row.depth === 1 ? '↳ ' : '\u00A0\u00A0\u00A0↳ ';
               const isBold = row.depth === 0;
               const textColor = row.depth <= 1 ? hex(C.darkText) : hex(C.mutedText);
-              const realColor = row.depth === 0 ? hex(section.sectionColor) : textColor;
+              const realColor = textColor;
               const fontSize = row.depth === 0 ? '11px' : row.depth === 1 ? '10px' : '9px';
               return (
                 <tr key={idx} className="border-b border-gray-100 bg-white" style={{ fontSize }}>
                   <td className="px-2 py-1" style={{ color: textColor, fontWeight: isBold ? 700 : 400 }}>{indent}{row.label}</td>
                   <td className="text-right px-2 py-1" style={{ color: realColor, fontWeight: isBold ? 700 : 400 }}>{fmtK(row.real)}</td>
-                  <td className="text-right px-2 py-1" style={{ color: hex(C.mutedText) }}>{fmtK(row.orc)}</td>
+                  <td className="text-right px-2 py-1" style={{ color: textColor }}>{fmtK(row.orc)}</td>
                   <td className="text-right px-2 py-1" style={{ color: deltaColor(row.varPct, section.invertDelta), fontWeight: isBold ? 700 : 400 }}>{fmtPct(row.varPct)}</td>
                   <td className="px-2 py-1">
                     <div className="flex items-center gap-1">

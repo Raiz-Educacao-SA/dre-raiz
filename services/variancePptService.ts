@@ -264,10 +264,10 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
 
     rows.push([
       { text: section.tag0, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white } } },
-      { text: fmtK(node.real), options: { bold: true, fontSize: 7, fontFace: FONT, color: section.sectionColor, fill: { color: C.white }, align: 'right' } },
-      { text: fmtK(node.orcCompare), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(node.real), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(node.orcCompare), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white }, align: 'right' } },
       { text: fmtPct(node.orcVarPct), options: { bold: true, fontSize: 7, fontFace: FONT, color: dOrcColor, fill: { color: C.white }, align: 'right' } },
-      { text: fmtK(node.a1Compare), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(node.a1Compare), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white }, align: 'right' } },
       { text: fmtPct(node.a1VarPct), options: { bold: true, fontSize: 7, fontFace: FONT, color: dA1Color, fill: { color: C.white }, align: 'right' } },
     ]);
 
@@ -404,10 +404,10 @@ function addSectionSlide(pptx: PptxGenJS, section: VariancePptSection, data: Var
     const dA1Color = deltaColor(node.a1VarPct, section.invertDelta);
     rows.push([
       { text: `↳ ${node.label}`, options: { fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white }, align: 'left' } },
-      { text: fmtK(node.real), options: { fontSize: 7, fontFace: FONT, color: section.sectionColor, fill: { color: C.white }, align: 'right' } },
-      { text: fmtK(node.orcCompare), options: { fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(node.real), options: { fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(node.orcCompare), options: { fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white }, align: 'right' } },
       { text: fmtPct(node.orcVarPct), options: { fontSize: 7, fontFace: FONT, color: dOrcColor, fill: { color: C.white }, align: 'right' } },
-      { text: fmtK(node.a1Compare), options: { fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(node.a1Compare), options: { fontSize: 7, fontFace: FONT, color: C.darkText, fill: { color: C.white }, align: 'right' } },
       { text: fmtPct(node.a1VarPct), options: { fontSize: 7, fontFace: FONT, color: dA1Color, fill: { color: C.white }, align: 'right' } },
     ]);
   }
@@ -600,14 +600,13 @@ function addDetailSlide(pptx: PptxGenJS, section: VariancePptSection, data: Vari
     const isBold = row.depth === 0;
     const fontSize = row.depth === 0 ? 7 : row.depth === 1 ? 6.5 : 6;
     const textColor = row.depth === 0 ? C.darkText : row.depth === 1 ? C.darkText : C.mutedText;
-    const realColor = row.depth === 0 ? section.sectionColor : textColor;
     const dColor = deltaColor(row.varPct, section.invertDelta);
     const stDot = row.status ? `●  ` : '';
 
     tableRows.push([
       { text: `${indent}${row.label}`, options: { bold: isBold, fontSize, fontFace: FONT, color: textColor, fill: { color: C.white }, align: 'left' } },
-      { text: fmtK(row.real), options: { bold: isBold, fontSize, fontFace: FONT, color: realColor, fill: { color: C.white }, align: 'right' } },
-      { text: fmtK(row.orc), options: { bold: isBold, fontSize, fontFace: FONT, color: C.mutedText, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(row.real), options: { bold: isBold, fontSize, fontFace: FONT, color: textColor, fill: { color: C.white }, align: 'right' } },
+      { text: fmtK(row.orc), options: { bold: isBold, fontSize, fontFace: FONT, color: textColor, fill: { color: C.white }, align: 'right' } },
       { text: fmtPct(row.varPct), options: { bold: isBold, fontSize, fontFace: FONT, color: dColor, fill: { color: C.white }, align: 'right' } },
       { text: `${stDot}${truncate(row.justText, 60)}`, options: { fontSize: 6, fontFace: FONT, color: row.justText ? C.darkText : C.mutedText, fill: { color: C.white }, align: 'left' } },
     ]);
