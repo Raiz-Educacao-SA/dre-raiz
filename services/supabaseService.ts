@@ -3335,7 +3335,7 @@ export const generateVarianceItems = async (
     }
 
     const diagParts = Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`);
-    const diagnostics = `get_soma_tags: ${somaData.length} + dre_agg detalhe: ${detailCount} = ${allAggData.length} linhas (${diagParts.join(', ')})`;
+    const diagnostics = `soma_tags: ${somaData.length} + snapshot tag02: ${tag02Count} = ${allAggData.length} linhas (${diagParts.join(', ')})`;
     debug(`✅ v${nextVersion}: ${totalCreated} criados + ${totalUpdated} atualizados — snapshot_at=${snapshotAt} — ${diagnostics}`);
     return { created: totalCreated, updated: totalUpdated, version: nextVersion, snapshot_at: snapshotAt, diagnostics };
   } catch (e) {

@@ -28,6 +28,7 @@ import { Transaction, TransactionType, TransactionStatus, ManualChange, Paginati
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
 import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
 import ContaContabilSelector from './ContaContabilSelector';
+import { toast } from 'sonner';
 // ExcelJS carregado sob demanda via dynamic import
 import type ExcelJS from 'exceljs';
 import debounce from 'lodash.debounce';
@@ -676,8 +677,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
       console.log(`✅ Busca concluída [${tableName}]: ${response.data.length} registros retornados (página ${page})`);
       console.log(`📊 Total de registros: ${response.totalCount}, Mais páginas: ${response.hasMore}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Erro ao buscar dados:', error);
+      toast.error(error?.message || 'Erro ao buscar dados. Verifique sua conexão.');
     } finally {
       setIsSearching(false);
     }

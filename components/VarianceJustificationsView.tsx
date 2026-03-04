@@ -18,6 +18,8 @@ import {
   Building2,
   TrendingUp,
   Filter,
+  ChevronsDown,
+  ChevronsUp,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -588,6 +590,11 @@ const VarianceJustificationsView: React.FC = () => {
     // Filter out DB CalcRows — they'll be computed client-side
     const dreItems = items.filter(i => !CALC_LABELS_SET.has(i.tag0));
 
+    // Debug: contagem de itens por nível
+    const withTag02 = dreItems.filter(i => i.tag02);
+    const withMarca = dreItems.filter(i => i.marca && i.marca !== '');
+    console.log(`📊 flatRows: ${dreItems.length} dreItems, ${withTag02.length} com tag02, ${withMarca.length} com marca`);
+
     // Index items by tag path + comparison type
     const pathKey = (i: VarianceJustification) =>
       `${i.tag0}|${i.tag01 || ''}|${i.tag02 || ''}|${i.tag03 || ''}`;
@@ -1056,6 +1063,32 @@ const VarianceJustificationsView: React.FC = () => {
     });
   };
 
+  const expandAll = () => {
+    // Compute ALL expandable keys from items (not just visible flatRows)
+    const CALC_SET = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
+    const dreItems = items.filter(i => !CALC_SET.has(i.tag0));
+    const allKeys = new Set<string>();
+    const tag0Set = new Set(dreItems.map(i => i.tag0));
+    for (const tag0 of tag0Set) {
+      allKeys.add(tag0); // depth 0
+      const t0Items = dreItems.filter(i => i.tag0 === tag0);
+      const tag01Set = new Set(t0Items.filter(i => i.tag01).map(i => i.tag01));
+      for (const tag01 of tag01Set) {
+        allKeys.add(`${tag0}|${tag01}`); // depth 1
+        const t1Items = t0Items.filter(i => i.tag01 === tag01);
+        const tag02Set = new Set(t1Items.filter(i => i.tag02).map(i => i.tag02!));
+        for (const tag02 of tag02Set) {
+          allKeys.add(`${tag0}|${tag01}|${tag02}`); // depth 2
+        }
+      }
+    }
+    setExpandedNodes(allKeys);
+  };
+
+  const collapseAll = () => {
+    setExpandedNodes(new Set());
+  };
+
   // ── Column visibility based on filterType ──
 
   const showOrc = filterType !== 'a1';
@@ -1235,14 +1268,18 @@ const VarianceJustificationsView: React.FC = () => {
         </td>
 
         {/* Label */}
-        <td className={`py-0.5 ${fontClass}`} style={{ paddingLeft: `${isCalcRow ? 8 : indent + 8}px`, paddingRight: 4 }}>
+        <td
+          className={`py-0.5 ${fontClass} ${row.hasChildren && !isCalcRow ? 'cursor-pointer select-none' : ''}`}
+          style={{ paddingLeft: `${isCalcRow ? 8 : indent + 8}px`, paddingRight: 4 }}
+          onClick={() => { if (row.hasChildren && !isCalcRow) toggleNode(row.groupKey); }}
+        >
           <div className="flex items-center gap-1">
             {isCalcRow ? (
               <span className="text-white/80 text-[10px] mr-0.5">▶</span>
             ) : row.hasChildren ? (
-              <button onClick={() => toggleNode(row.groupKey)} className={`${isDark ? 'text-white/60 hover:text-white' : 'text-gray-400 hover:text-gray-700'} flex-shrink-0`}>
+              <span className={`${isDark ? 'text-white/60' : 'text-gray-400'} flex-shrink-0`}>
                 {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-              </button>
+              </span>
             ) : (
               <span className="w-[11px] inline-block flex-shrink-0" />
             )}
@@ -1435,7 +1472,28 @@ const VarianceJustificationsView: React.FC = () => {
         )}
       </div>
 
-      {/* Table */}
+      {/* Expand/Collapse + Table */}
+      {flatRows.length > 0 && (
+        <div className="flex-shrink-0 flex items-center gap-2 px-3 py-1 bg-gray-50 border-b border-gray-200">
+          <button
+            onClick={expandAll}
+            className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <ChevronsDown size={10} /> Expandir Tudo
+          </button>
+          <button
+            onClick={collapseAll}
+            className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold uppercase rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <ChevronsUp size={10} /> Recolher
+          </button>
+          <span className="text-[9px] text-gray-400 ml-2">
+            {items.filter(i => i.tag02).length > 0
+              ? `${items.filter(i => i.tag02).length} itens tag02+marca`
+              : 'Sem detalhe tag02/marca — regenere os desvios'}
+          </span>
+        </div>
+      )}
       <div className="flex-1 overflow-auto">
         {loading ? (
           <div className="flex items-center justify-center h-64">
