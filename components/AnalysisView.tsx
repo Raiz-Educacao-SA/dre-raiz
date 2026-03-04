@@ -14,7 +14,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { ExecutiveSummary, ActionsList } from '../analysisPack';
-import { getMarcasEFiliais, getVarianceJustifications } from '../services/supabaseService';
+import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
 import type { AnalysisContext } from '../analysisPack/types/schema';
 import type { VariancePptData } from '../services/variancePptTypes';
@@ -152,13 +152,15 @@ export default function AnalysisView() {
   const handleGenerateSlides = async () => {
     setSlidesLoading(true);
     try {
-      // Step 1: Fetch variance data
-      const items = await getVarianceJustifications({
-        year_month: selectedMonth,
-        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
-      });
+      // Step 1: Fetch data — live RPCs when marca selected, snapshot otherwise
+      const hasMarca = selectedMarcas.length > 0;
+      const items = hasMarca
+        ? await fetchLiveDreForPpt(selectedMonth, selectedMarcas[0])
+        : await getVarianceJustifications({ year_month: selectedMonth });
       if (!items || items.length === 0) {
-        alert('Nenhum dado de desvio encontrado para o periodo selecionado. Gere os desvios primeiro na aba Justificativas.');
+        alert(hasMarca
+          ? 'Nenhum dado encontrado para essa marca/periodo. Verifique se existem lancamentos.'
+          : 'Nenhum dado de desvio encontrado para o periodo selecionado. Gere os desvios primeiro na aba Justificativas.');
         return;
       }
 
@@ -166,16 +168,28 @@ export default function AnalysisView() {
       const { prepareVariancePptData } = await import('../services/variancePptDataService');
       const data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
 
-      // Step 3: Enrich with AI (silent fallback if fails)
-      try {
-        const { enrichVarianceWithAi, injectAiInsights } = await import('../services/variancePptAiService');
-        const insights = await enrichVarianceWithAi(data);
-        if (insights) {
-          injectAiInsights(data, insights);
-        }
-      } catch (aiErr) {
-        console.warn('AI enrichment skipped:', aiErr);
-      }
+      // Step 3: Marca breakdown (parallel with AI) — ambos com fallback silencioso
+      const [, breakdown] = await Promise.all([
+        (async () => {
+          try {
+            const { enrichVarianceWithAi, injectAiInsights } = await import('../services/variancePptAiService');
+            const insights = await enrichVarianceWithAi(data);
+            if (insights) injectAiInsights(data, insights);
+          } catch (aiErr) {
+            console.warn('AI enrichment skipped:', aiErr);
+          }
+        })(),
+        (async () => {
+          try {
+            if (allMarcas.length === 0) return null;
+            return await fetchMarcaBreakdown(selectedMonth, allMarcas, selectedMarcas.length > 0 ? selectedMarcas : null);
+          } catch (err) {
+            console.warn('Marca breakdown skipped:', err);
+            return null;
+          }
+        })(),
+      ]);
+      if (breakdown) data.marcaBreakdowns = breakdown;
 
       // Step 4: Set preview data
       setVariancePreviewData(data);
@@ -197,24 +211,38 @@ export default function AnalysisView() {
 
       // If no preview loaded, run full pipeline
       if (!data) {
-        const items = await getVarianceJustifications({
-          year_month: selectedMonth,
-          marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
-        });
+        const hasMarca = selectedMarcas.length > 0;
+        const items = hasMarca
+          ? await fetchLiveDreForPpt(selectedMonth, selectedMarcas[0])
+          : await getVarianceJustifications({ year_month: selectedMonth });
         if (!items || items.length === 0) {
-          alert('Nenhum dado de desvio encontrado para o periodo selecionado.');
+          alert('Nenhum dado encontrado para o periodo selecionado.');
           return;
         }
         const { prepareVariancePptData } = await import('../services/variancePptDataService');
         data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
 
-        try {
-          const { enrichVarianceWithAi, injectAiInsights } = await import('../services/variancePptAiService');
-          const insights = await enrichVarianceWithAi(data);
-          if (insights) injectAiInsights(data, insights);
-        } catch (aiErr) {
-          console.warn('AI enrichment skipped:', aiErr);
-        }
+        const [, breakdown] = await Promise.all([
+          (async () => {
+            try {
+              const { enrichVarianceWithAi, injectAiInsights } = await import('../services/variancePptAiService');
+              const insights = await enrichVarianceWithAi(data!);
+              if (insights) injectAiInsights(data!, insights);
+            } catch (aiErr) {
+              console.warn('AI enrichment skipped:', aiErr);
+            }
+          })(),
+          (async () => {
+            try {
+              if (allMarcas.length === 0) return null;
+              return await fetchMarcaBreakdown(selectedMonth, allMarcas, selectedMarcas.length > 0 ? selectedMarcas : null);
+            } catch (err) {
+              console.warn('Marca breakdown skipped:', err);
+              return null;
+            }
+          })(),
+        ]);
+        if (breakdown) data.marcaBreakdowns = breakdown;
       }
 
       // Generate PPTX from data

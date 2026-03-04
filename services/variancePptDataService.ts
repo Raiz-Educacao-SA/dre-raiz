@@ -202,6 +202,7 @@ export function prepareVariancePptData(
     stats,
     executiveSummary: null,
     closingSummary: null,
+    marcaBreakdowns: null,
   };
 }
 

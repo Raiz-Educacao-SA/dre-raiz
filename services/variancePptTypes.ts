@@ -64,6 +64,13 @@ export interface VariancePptCalcRow {
   deltaA1Pct: number | null;
 }
 
+export interface VariancePptMarcaEntry {
+  marca: string;
+  real: number;
+  orcado: number;
+  a1: number;
+}
+
 export interface VariancePptData {
   monthLabel: string;          // 'Março 2026'
   monthShort: string;          // 'MAR/26'
@@ -77,6 +84,7 @@ export interface VariancePptData {
   stats: VariancePptStats;
   executiveSummary: string | null;
   closingSummary: string | null;
+  marcaBreakdowns: Record<string, VariancePptMarcaEntry[]> | null;
 }
 
 export interface VarianceAiInsights {

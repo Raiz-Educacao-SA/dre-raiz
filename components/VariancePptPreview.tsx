@@ -1,12 +1,14 @@
 // ─── Variance PPT Preview — HTML Slide Cards ────────────────────────
 // Renders VariancePptData as visual slide cards (same structure as PPTX)
 
-import React from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Play, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import type {
   VariancePptData,
   VariancePptSection,
   VariancePptNode,
   VariancePptCalcRow,
+  VariancePptMarcaEntry,
 } from '../services/variancePptTypes';
 import { VARIANCE_COLORS } from '../services/variancePptTypes';
 
@@ -132,7 +134,7 @@ function CoverSlide({ data }: { data: VariancePptData }) {
         {/* Title */}
         <div>
           <h2 className="text-3xl font-black leading-tight" style={{ color: hex(C.accent) }}>
-            Justificativas de Desvios
+            Book de Resultados
           </h2>
           <h2 className="text-3xl font-black leading-tight" style={{ color: hex(C.accent) }}>
             DRE Gerencial
@@ -222,13 +224,13 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
         <div className="flex-1 min-w-0 overflow-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr style={{ backgroundColor: hex(C.headerBg) }}>
-                <th className="text-left px-2 py-1.5 text-white font-bold text-[11px]">DESCRICAO</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">REAL {data.year}</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">ORCADO</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">D% Orc</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">{a1Label}</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">D% {a1Label}</th>
+              <tr style={{ backgroundColor: hex(C.lightGray) }}>
+                <th className="text-left px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>DESCRICAO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>REAL {data.year}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>ORCADO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% Orc</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>{a1Label}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% {a1Label}</th>
               </tr>
             </thead>
             <tbody>
@@ -237,12 +239,12 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                   const { section } = entry;
                   const { node, invertDelta } = section;
                   return (
-                    <tr key={idx} className="font-bold text-white" style={{ backgroundColor: '#4B5563' }}>
-                      <td className="px-2 py-1.5">{section.tag0}</td>
-                      <td className="text-right px-2 py-1.5">{fmtK(node.real)}</td>
-                      <td className="text-right px-2 py-1.5">{fmtK(node.orcCompare)}</td>
+                    <tr key={idx} className="font-bold bg-white border-b border-gray-100">
+                      <td className="px-2 py-1.5" style={{ color: hex(C.darkText) }}>{section.tag0}</td>
+                      <td className="text-right px-2 py-1.5" style={{ color: hex(section.sectionColor) }}>{fmtK(node.real)}</td>
+                      <td className="text-right px-2 py-1.5" style={{ color: hex(C.mutedText) }}>{fmtK(node.orcCompare)}</td>
                       <td className="text-right px-2 py-1.5" style={{ color: deltaColor(node.orcVarPct, invertDelta) }}>{fmtPct(node.orcVarPct)}</td>
-                      <td className="text-right px-2 py-1.5">{fmtK(node.a1Compare)}</td>
+                      <td className="text-right px-2 py-1.5" style={{ color: hex(C.mutedText) }}>{fmtK(node.a1Compare)}</td>
                       <td className="text-right px-2 py-1.5" style={{ color: deltaColor(node.a1VarPct, invertDelta) }}>{fmtPct(node.a1VarPct)}</td>
                     </tr>
                   );
@@ -324,34 +326,37 @@ function SectionSlide({ section, data }: { section: VariancePptSection; data: Va
         <div className="overflow-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr style={{ backgroundColor: hex(C.headerBg) }}>
-                <th className="text-left px-2 py-1.5 text-white font-bold text-[11px]">DESCRICAO</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">REAL {data.year}</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">ORCADO</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">D% Orc</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">{a1Label}</th>
-                <th className="text-right px-2 py-1.5 text-white font-bold text-[11px]">D% {a1Label}</th>
+              <tr style={{ backgroundColor: hex(C.lightGray) }}>
+                <th className="text-left px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>DESCRICAO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>REAL {data.year}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>ORCADO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% Orc</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>{a1Label}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% {a1Label}</th>
               </tr>
             </thead>
             <tbody>
-              {section.tag01Nodes.map((t01, idx) => (
-                <tr key={idx} className="border-b border-gray-100">
-                  <td className="px-2 py-1.5 text-gray-800">{t01.label}</td>
-                  <td className="text-right px-2 py-1.5 text-gray-800">{fmtK(t01.real)}</td>
+              {(section.tag0.startsWith('01.')
+                ? [...section.tag01Nodes].sort((a, b) => b.real - a.real)
+                : section.tag01Nodes
+              ).map((t01, idx) => (
+                <tr key={idx} className="border-b border-gray-100 bg-white">
+                  <td className="px-2 py-1.5 text-gray-800">↳ {t01.label}</td>
+                  <td className="text-right px-2 py-1.5 font-medium" style={{ color: hex(section.sectionColor) }}>{fmtK(t01.real)}</td>
                   <td className="text-right px-2 py-1.5 text-gray-500">{fmtK(t01.orcCompare)}</td>
                   <td className="text-right px-2 py-1.5 font-medium" style={{ color: deltaColor(t01.orcVarPct, invertDelta) }}>{fmtPct(t01.orcVarPct)}</td>
                   <td className="text-right px-2 py-1.5 text-gray-500">{fmtK(t01.a1Compare)}</td>
                   <td className="text-right px-2 py-1.5 font-medium" style={{ color: deltaColor(t01.a1VarPct, invertDelta) }}>{fmtPct(t01.a1VarPct)}</td>
                 </tr>
               ))}
-              {/* Total */}
-              <tr className="font-bold text-white" style={{ backgroundColor: '#374151' }}>
+              {/* Total — bg = sectionColor */}
+              <tr className="font-bold text-white" style={{ backgroundColor: hex(section.sectionColor) }}>
                 <td className="px-2 py-1.5">TOTAL</td>
                 <td className="text-right px-2 py-1.5">{fmtK(node.real)}</td>
                 <td className="text-right px-2 py-1.5">{fmtK(node.orcCompare)}</td>
-                <td className="text-right px-2 py-1.5" style={{ color: deltaColor(node.orcVarPct, invertDelta) }}>{fmtPct(node.orcVarPct)}</td>
+                <td className="text-right px-2 py-1.5">{fmtPct(node.orcVarPct)}</td>
                 <td className="text-right px-2 py-1.5">{fmtK(node.a1Compare)}</td>
-                <td className="text-right px-2 py-1.5" style={{ color: deltaColor(node.a1VarPct, invertDelta) }}>{fmtPct(node.a1VarPct)}</td>
+                <td className="text-right px-2 py-1.5">{fmtPct(node.a1VarPct)}</td>
               </tr>
             </tbody>
           </table>
@@ -438,24 +443,25 @@ function DetailSlide({ section, data }: { section: VariancePptSection; data: Var
       <div className="p-4 overflow-auto h-[calc(100%-48px)]">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr style={{ backgroundColor: hex(C.headerBg) }}>
-              <th className="text-left px-2 py-1.5 text-white font-bold text-[10px]">CONTA</th>
-              <th className="text-right px-2 py-1.5 text-white font-bold text-[10px]">REAL</th>
-              <th className="text-right px-2 py-1.5 text-white font-bold text-[10px]">ORC</th>
-              <th className="text-right px-2 py-1.5 text-white font-bold text-[10px]">D%</th>
-              <th className="text-left px-2 py-1.5 text-white font-bold text-[10px]">JUSTIFICATIVA / SINTESE</th>
+            <tr style={{ backgroundColor: hex(C.lightGray) }}>
+              <th className="text-left px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>CONTA</th>
+              <th className="text-right px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>REAL</th>
+              <th className="text-right px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>ORC</th>
+              <th className="text-right px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>D%</th>
+              <th className="text-left px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>JUSTIFICATIVA / SINTESE</th>
             </tr>
           </thead>
           <tbody>
             {displayRows.map((row, idx) => {
-              const indent = row.depth === 0 ? '' : row.depth === 1 ? '\u00A0\u00A0\u00A0' : '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0';
+              const indent = row.depth === 0 ? '' : row.depth === 1 ? '↳ ' : '\u00A0\u00A0\u00A0↳ ';
               const isBold = row.depth === 0;
               const textColor = row.depth <= 1 ? hex(C.darkText) : hex(C.mutedText);
+              const realColor = row.depth === 0 ? hex(section.sectionColor) : textColor;
               const fontSize = row.depth === 0 ? '11px' : row.depth === 1 ? '10px' : '9px';
               return (
-                <tr key={idx} className="border-b border-gray-100" style={{ fontSize }}>
+                <tr key={idx} className="border-b border-gray-100 bg-white" style={{ fontSize }}>
                   <td className="px-2 py-1" style={{ color: textColor, fontWeight: isBold ? 700 : 400 }}>{indent}{row.label}</td>
-                  <td className="text-right px-2 py-1" style={{ color: textColor, fontWeight: isBold ? 700 : 400 }}>{fmtK(row.real)}</td>
+                  <td className="text-right px-2 py-1" style={{ color: realColor, fontWeight: isBold ? 700 : 400 }}>{fmtK(row.real)}</td>
                   <td className="text-right px-2 py-1" style={{ color: hex(C.mutedText) }}>{fmtK(row.orc)}</td>
                   <td className="text-right px-2 py-1" style={{ color: deltaColor(row.varPct, section.invertDelta), fontWeight: isBold ? 700 : 400 }}>{fmtPct(row.varPct)}</td>
                   <td className="px-2 py-1">
@@ -478,6 +484,98 @@ function DetailSlide({ section, data }: { section: VariancePptSection; data: Var
             )}
           </tbody>
         </table>
+      </div>
+    </SlideCard>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MARCA BREAKDOWN SLIDE (CSS bar chart per marca)
+// ═══════════════════════════════════════════════════════════════════════
+
+function MarcaSlide({
+  section,
+  data,
+  entries,
+}: {
+  section: VariancePptSection;
+  data: VariancePptData;
+  entries: VariancePptMarcaEntry[];
+}) {
+  if (entries.length === 0) return null;
+
+  const maxVal = Math.max(...entries.flatMap(e => [Math.abs(e.real), Math.abs(e.orcado), Math.abs(e.a1)]), 1);
+  const totalReal = entries.reduce((s, e) => s + e.real, 0);
+  const totalOrc = entries.reduce((s, e) => s + e.orcado, 0);
+  const deltaAbs = totalReal - totalOrc;
+  const deltaPct = totalOrc !== 0 ? Math.round(((totalReal - totalOrc) / Math.abs(totalOrc)) * 1000) / 10 : null;
+  const favorable = section.invertDelta ? (deltaPct !== null && deltaPct <= 0) : (deltaPct !== null && deltaPct >= 0);
+
+  return (
+    <SlideCard>
+      <SlideHeader title={`${section.label.toUpperCase()} POR MARCA`} monthShort={data.monthShort} color={section.sectionColor} />
+      <div className="flex gap-4 p-4 h-[calc(100%-48px)]">
+        {/* Left: bar chart */}
+        <div className="flex-1 min-w-0 flex flex-col justify-end">
+          <div className="flex items-end gap-3 h-full px-2">
+            {entries.map((entry, idx) => {
+              const barH = (v: number) => `${Math.max((Math.abs(v) / maxVal) * 100, 2)}%`;
+              return (
+                <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full min-w-0">
+                  <div className="flex items-end gap-0.5 w-full justify-center" style={{ height: '80%' }}>
+                    {/* Real */}
+                    <div className="flex flex-col items-center gap-0.5 flex-1 max-w-6">
+                      <span className="text-[8px] font-bold" style={{ color: hex(section.sectionColor) }}>{fmtK(entry.real)}</span>
+                      <div className="w-full rounded-t" style={{ height: barH(entry.real), backgroundColor: hex(section.sectionColor), minHeight: 2 }} />
+                    </div>
+                    {/* Orcado */}
+                    <div className="flex flex-col items-center gap-0.5 flex-1 max-w-6">
+                      <span className="text-[8px] font-bold" style={{ color: hex(C.orcado) }}>{fmtK(entry.orcado)}</span>
+                      <div className="w-full rounded-t" style={{ height: barH(entry.orcado), backgroundColor: hex(C.orcado), minHeight: 2 }} />
+                    </div>
+                    {/* A-1 */}
+                    <div className="flex flex-col items-center gap-0.5 flex-1 max-w-6">
+                      <span className="text-[8px] font-bold" style={{ color: hex(C.teal) }}>{fmtK(entry.a1)}</span>
+                      <div className="w-full rounded-t" style={{ height: barH(entry.a1), backgroundColor: hex(C.teal), minHeight: 2 }} />
+                    </div>
+                  </div>
+                  <div className="text-[9px] font-bold text-gray-600 mt-1 truncate w-full text-center" title={entry.marca}>
+                    {entry.marca}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Legend */}
+          <div className="flex items-center gap-4 justify-center mt-2 pt-2 border-t border-gray-100">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-2 rounded-sm" style={{ backgroundColor: hex(section.sectionColor) }} />
+              <span className="text-[9px] text-gray-600">Real</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-2 rounded-sm" style={{ backgroundColor: hex(C.orcado) }} />
+              <span className="text-[9px] text-gray-600">Orcado</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-2 rounded-sm" style={{ backgroundColor: hex(C.teal) }} />
+              <span className="text-[9px] text-gray-600">{data.a1Year}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right: KPIs */}
+        <div className="w-48 shrink-0 flex flex-col gap-2">
+          <KpiCard label="TOTAL REAL" value={`R$ ${fmtK(totalReal)} mil`} color={hex(section.sectionColor)} />
+          <KpiCard label="TOTAL ORCADO" value={`R$ ${fmtK(totalOrc)} mil`} color={hex(C.orcado)} />
+          <KpiCard
+            label={deltaAbs >= 0 ? 'ECONOMIA' : 'DESVIO'}
+            value={`${fmtPct(deltaPct)}`}
+            color={favorable ? hex(C.deltaPositivo) : hex(C.deltaNegativo)}
+          />
+          <div className="text-[9px] text-gray-500 text-center mt-1">
+            {fmtK(Math.abs(deltaAbs))} mil
+          </div>
+        </div>
       </div>
     </SlideCard>
   );
@@ -602,6 +700,71 @@ function SummarySlide({ data }: { data: VariancePptData }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// PRESENTATION MODE — Fullscreen slide-by-slide
+// ═══════════════════════════════════════════════════════════════════════
+
+function PresentationMode({
+  slides,
+  currentSlide,
+  totalSlides,
+  onPrev,
+  onNext,
+  onExit,
+}: {
+  slides: React.ReactNode[];
+  currentSlide: number;
+  totalSlides: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onExit: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center select-none">
+      {/* Slide container — 16:9 centered, max size */}
+      <div className="relative w-full h-full flex items-center justify-center p-4">
+        <div className="w-full max-h-full" style={{ maxWidth: 'calc((100vh - 80px) * 16 / 9)', aspectRatio: '16 / 9' }}>
+          {slides[currentSlide]}
+        </div>
+      </div>
+
+      {/* Bottom bar */}
+      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-black/80">
+        <button onClick={onExit} className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm transition-colors">
+          <X size={16} />
+          ESC para sair
+        </button>
+
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onPrev}
+            disabled={currentSlide === 0}
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-default transition-colors"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <span className="text-gray-400 text-sm font-medium tabular-nums">
+            {currentSlide + 1} / {totalSlides}
+          </span>
+          <button
+            onClick={onNext}
+            disabled={currentSlide === totalSlides - 1}
+            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-default transition-colors"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </div>
+
+        <div className="w-24" />
+      </div>
+
+      {/* Click zones — left/right */}
+      <div className="absolute inset-y-0 left-0 w-1/3 cursor-pointer" onClick={onPrev} />
+      <div className="absolute inset-y-0 right-0 w-1/3 cursor-pointer" onClick={onNext} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -610,28 +773,118 @@ interface VariancePptPreviewProps {
 }
 
 export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
+  const [presenting, setPresenting] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  // Build slide array
+  const slides = useMemo(() => {
+    const s: React.ReactNode[] = [];
+    s.push(<CoverSlide key="cover" data={data} />);
+    s.push(<OverviewSlide key="overview" data={data} />);
+    for (const section of data.sections) {
+      if (section.tag01Nodes.length > 0) {
+        s.push(<SectionSlide key={`section-${section.tag0}`} section={section} data={data} />);
+        s.push(<DetailSlide key={`detail-${section.tag0}`} section={section} data={data} />);
+      }
+      const marcaEntries = data.marcaBreakdowns?.[section.tag0];
+      if (marcaEntries && marcaEntries.length > 0) {
+        s.push(<MarcaSlide key={`marca-${section.tag0}`} section={section} data={data} entries={marcaEntries} />);
+      }
+    }
+    s.push(<SummarySlide key="summary" data={data} />);
+    return s;
+  }, [data]);
+
+  const totalSlides = slides.length;
+
+  const goNext = useCallback(() => setCurrentSlide(c => Math.min(c + 1, totalSlides - 1)), [totalSlides]);
+  const goPrev = useCallback(() => setCurrentSlide(c => Math.max(c - 1, 0)), []);
+  const exitPresentation = useCallback(() => {
+    setPresenting(false);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }, []);
+
+  const startPresentation = useCallback(() => {
+    setCurrentSlide(0);
+    setPresenting(true);
+    document.documentElement.requestFullscreen().catch(() => {});
+  }, []);
+
+  // Keyboard navigation
+  useEffect(() => {
+    if (!presenting) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); goNext(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'Escape') { e.preventDefault(); exitPresentation(); }
+      else if (e.key === 'Home') { e.preventDefault(); setCurrentSlide(0); }
+      else if (e.key === 'End') { e.preventDefault(); setCurrentSlide(totalSlides - 1); }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [presenting, goNext, goPrev, exitPresentation, totalSlides]);
+
+  // Exit presentation if user exits fullscreen manually
+  useEffect(() => {
+    if (!presenting) return;
+    const handleFsChange = () => {
+      if (!document.fullscreenElement) setPresenting(false);
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, [presenting]);
+
   return (
     <div className="space-y-6">
+      {/* Apresentar button */}
+      <div className="flex justify-end">
+        <button
+          onClick={startPresentation}
+          className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium shadow-sm"
+        >
+          <Play size={16} />
+          Apresentar
+        </button>
+      </div>
+
       {/* Slide 1: Cover */}
       <CoverSlide data={data} />
 
       {/* Slide 2: Overview */}
       <OverviewSlide data={data} />
 
-      {/* Slides 3-N: Section slides */}
-      {data.sections.map(section => (
-        <SectionSlide key={`section-${section.tag0}`} section={section} data={data} />
-      ))}
-
-      {/* Detail slides */}
-      {data.sections.map(section => (
-        section.tag01Nodes.length > 0
-          ? <DetailSlide key={`detail-${section.tag0}`} section={section} data={data} />
-          : null
-      ))}
+      {/* Slides 3-N: Section + Detail + Marca paired */}
+      {data.sections.map(section => {
+        const marcaEntries = data.marcaBreakdowns?.[section.tag0];
+        return (
+          <React.Fragment key={section.tag0}>
+            {section.tag01Nodes.length > 0 && (
+              <>
+                <SectionSlide section={section} data={data} />
+                <DetailSlide section={section} data={data} />
+              </>
+            )}
+            {marcaEntries && marcaEntries.length > 0 && (
+              <MarcaSlide section={section} data={data} entries={marcaEntries} />
+            )}
+          </React.Fragment>
+        );
+      })}
 
       {/* Final: Summary */}
       <SummarySlide data={data} />
+
+      {/* Presentation mode overlay */}
+      {presenting && (
+        <PresentationMode
+          slides={slides}
+          currentSlide={currentSlide}
+          totalSlides={totalSlides}
+          onPrev={goPrev}
+          onNext={goNext}
+          onExit={exitPresentation}
+        />
+      )}
     </div>
   );
 }

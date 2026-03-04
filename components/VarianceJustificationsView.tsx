@@ -105,7 +105,14 @@ const VarianceJustificationsView: React.FC = () => {
   const isAdminOrManager = isAdmin || user?.role === 'manager';
 
   // Filters
-  const [yearMonth, setYearMonth] = useState(MONTHS_OPTIONS[1]?.value || '');
+  // Default: mês anterior (último fechado) — índice 3 após reverse (0=+2, 1=+1, 2=current, 3=prev)
+  const [yearMonth, setYearMonth] = useState(() => {
+    const now = new Date();
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevVal = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    const match = MONTHS_OPTIONS.find(m => m.value === prevVal);
+    return match?.value || MONTHS_OPTIONS[3]?.value || '';
+  });
   const [filterMarcas, setFilterMarcas] = useState<string[]>([]);
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [filterType, setFilterType] = useState('');
