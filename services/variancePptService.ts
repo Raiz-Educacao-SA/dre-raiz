@@ -234,16 +234,24 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
   const a1Label = String(data.a1Year);
 
   // Left: DRE condensed table (55%)
+  // Header: dark background, white text — establishes visual authority
   const headerRow = [
-    { text: 'DESCRIÇÃO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'left' as const } },
-    { text: `REAL ${data.year}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: 'ORÇADO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: 'Δ% Orç', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: a1Label, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: `Δ% ${a1Label}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
+    { text: 'DESCRIÇÃO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'left' as const } },
+    { text: `REAL ${data.year}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: 'ORÇADO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: 'Δ% Orç', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: a1Label, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: `Δ% ${a1Label}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
   ];
 
   const rows: any[][] = [headerRow];
+
+  // Calc row styles: soft tinted instead of loud solid fills
+  const CALC_STYLES = {
+    margem:      { bg: 'FEF3C7', text: '92400E' }, // amber-100, amber-800
+    ebitdaSr:    { bg: 'E5E7EB', text: '1F2937' }, // gray-200, dark text
+    ebitdaTotal: { bg: '374151', text: C.white },   // gray-700, white
+  };
 
   const margemCalc = data.calcRows.find(c => c.label === 'MARGEM DE CONTRIBUIÇÃO');
   const ebitdaSrCalc = data.calcRows.find(c => c.label === 'EBITDA (S/ RATEIO RAIZ CSC)');
@@ -263,19 +271,19 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
       { text: fmtPct(node.a1VarPct), options: { bold: true, fontSize: 7, fontFace: FONT, color: dA1Color, fill: { color: C.white }, align: 'right' } },
     ]);
 
-    // Insert MARGEM after 03.
+    // Insert MARGEM after 03. — soft amber tint
     if (section.tag0.startsWith('03.') && margemCalc) {
-      addCalcRowToTable(rows, margemCalc, C.accent);
+      addCalcRowToTable(rows, margemCalc, CALC_STYLES.margem.bg, CALC_STYLES.margem.text);
     }
-    // Insert EBITDA (S/ RATEIO) after 04.
+    // Insert EBITDA (S/ RATEIO) after 04. — neutral gray
     if (section.tag0.startsWith('04.') && ebitdaSrCalc) {
-      addCalcRowToTable(rows, ebitdaSrCalc, C.headerBg);
+      addCalcRowToTable(rows, ebitdaSrCalc, CALC_STYLES.ebitdaSr.bg, CALC_STYLES.ebitdaSr.text);
     }
   }
 
-  // EBITDA TOTAL at end
+  // EBITDA TOTAL at end — prominent but balanced
   if (ebitdaTotalCalc) {
-    addCalcRowToTable(rows, ebitdaTotalCalc, C.headerBg);
+    addCalcRowToTable(rows, ebitdaTotalCalc, CALC_STYLES.ebitdaTotal.bg, CALC_STYLES.ebitdaTotal.text);
   }
 
   const rowH = Math.min(0.3, 5.5 / rows.length);
@@ -350,15 +358,15 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
   }
 }
 
-function addCalcRowToTable(rows: any[][], calc: VariancePptCalcRow, bgColor: string) {
+function addCalcRowToTable(rows: any[][], calc: VariancePptCalcRow, bgColor: string, textColor: string = C.white) {
   const dOrcColor = calc.deltaOrcPct != null && calc.deltaOrcPct >= 0 ? C.deltaPositivo : C.deltaNegativo;
   const dA1Color = calc.deltaA1Pct != null && calc.deltaA1Pct >= 0 ? C.deltaPositivo : C.deltaNegativo;
   rows.push([
-    { text: calc.label, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: bgColor } } },
-    { text: fmtK(calc.real), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: bgColor }, align: 'right' } },
-    { text: fmtK(calc.orcado), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: bgColor }, align: 'right' } },
+    { text: calc.label, options: { bold: true, fontSize: 7, fontFace: FONT, color: textColor, fill: { color: bgColor } } },
+    { text: fmtK(calc.real), options: { bold: true, fontSize: 7, fontFace: FONT, color: textColor, fill: { color: bgColor }, align: 'right' } },
+    { text: fmtK(calc.orcado), options: { bold: true, fontSize: 7, fontFace: FONT, color: textColor, fill: { color: bgColor }, align: 'right' } },
     { text: fmtPct(calc.deltaOrcPct), options: { bold: true, fontSize: 7, fontFace: FONT, color: dOrcColor, fill: { color: bgColor }, align: 'right' } },
-    { text: fmtK(calc.a1), options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: bgColor }, align: 'right' } },
+    { text: fmtK(calc.a1), options: { bold: true, fontSize: 7, fontFace: FONT, color: textColor, fill: { color: bgColor }, align: 'right' } },
     { text: fmtPct(calc.deltaA1Pct), options: { bold: true, fontSize: 7, fontFace: FONT, color: dA1Color, fill: { color: bgColor }, align: 'right' } },
   ]);
 }
@@ -376,12 +384,12 @@ function addSectionSlide(pptx: PptxGenJS, section: VariancePptSection, data: Var
   // Top: tag01 financial table
   const a1Label = String(data.a1Year);
   const headerRow = [
-    { text: 'DESCRIÇÃO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'left' as const } },
-    { text: `REAL ${data.year}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: 'ORÇADO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: 'Δ% Orç', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: a1Label, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: `Δ% ${a1Label}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
+    { text: 'DESCRIÇÃO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'left' as const } },
+    { text: `REAL ${data.year}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: 'ORÇADO', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: 'Δ% Orç', options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: a1Label, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: `Δ% ${a1Label}`, options: { bold: true, fontSize: 7, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
   ];
 
   const rows: any[][] = [headerRow];
@@ -578,11 +586,11 @@ function addDetailSlide(pptx: PptxGenJS, section: VariancePptSection, data: Vari
 
   // Table header — light theme
   const headerRow = [
-    { text: 'CONTA', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'left' as const } },
-    { text: 'REAL', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: 'ORC', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: 'Δ%', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'right' as const } },
-    { text: 'JUSTIFICATIVA / SÍNTESE', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.mutedText, fill: { color: C.lightGray }, align: 'left' as const } },
+    { text: 'CONTA', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'left' as const } },
+    { text: 'REAL', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: 'ORC', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: 'Δ%', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'right' as const } },
+    { text: 'JUSTIFICATIVA / SÍNTESE', options: { bold: true, fontSize: 6.5, fontFace: FONT, color: C.white, fill: { color: C.headerBg }, align: 'left' as const } },
   ];
 
   const tableRows: any[][] = [headerRow];

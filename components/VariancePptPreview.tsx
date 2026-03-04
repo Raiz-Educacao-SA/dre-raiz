@@ -184,20 +184,27 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
   const ebitdaTotalCalc = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
 
   // Build ordered rows: sections interleaved with calc rows
-  type RowEntry = { type: 'section'; section: VariancePptSection } | { type: 'calc'; calc: VariancePptCalcRow; bg: string };
+  type RowEntry = { type: 'section'; section: VariancePptSection } | { type: 'calc'; calc: VariancePptCalcRow; bg: string; textColor?: string };
   const entries: RowEntry[] = [];
+
+  // Calc row styles: soft tinted backgrounds instead of loud solid fills
+  const CALC_STYLES = {
+    margem:     { bg: 'FEF3C7', text: '92400E' }, // amber-100 bg, amber-800 text
+    ebitdaSr:   { bg: 'E5E7EB', text: '1F2937' }, // gray-200 bg, dark text
+    ebitdaTotal:{ bg: '374151', text: 'FFFFFF' }, // gray-700 bg, white text
+  };
 
   for (const section of data.sections) {
     entries.push({ type: 'section', section });
     if (section.tag0.startsWith('03.') && margemCalc) {
-      entries.push({ type: 'calc', calc: margemCalc, bg: C.accent });
+      entries.push({ type: 'calc', calc: margemCalc, bg: CALC_STYLES.margem.bg, textColor: CALC_STYLES.margem.text });
     }
     if (section.tag0.startsWith('04.') && ebitdaSrCalc) {
-      entries.push({ type: 'calc', calc: ebitdaSrCalc, bg: C.headerBg });
+      entries.push({ type: 'calc', calc: ebitdaSrCalc, bg: CALC_STYLES.ebitdaSr.bg, textColor: CALC_STYLES.ebitdaSr.text });
     }
   }
   if (ebitdaTotalCalc) {
-    entries.push({ type: 'calc', calc: ebitdaTotalCalc, bg: C.headerBg });
+    entries.push({ type: 'calc', calc: ebitdaTotalCalc, bg: CALC_STYLES.ebitdaTotal.bg, textColor: CALC_STYLES.ebitdaTotal.text });
   }
 
   const ebitda = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
@@ -224,13 +231,13 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
         <div className="flex-1 min-w-0 overflow-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr style={{ backgroundColor: hex(C.lightGray) }}>
-                <th className="text-left px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>DESCRICAO</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>REAL {data.year}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>ORCADO</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% Orc</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>{a1Label}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% {a1Label}</th>
+              <tr style={{ backgroundColor: hex(C.headerBg) }}>
+                <th className="text-left px-2 py-1.5 font-bold text-[11px] text-white">DESCRICAO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">REAL {data.year}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">ORCADO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">D% Orc</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">{a1Label}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">D% {a1Label}</th>
               </tr>
             </thead>
             <tbody>
@@ -249,11 +256,12 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                     </tr>
                   );
                 } else {
-                  const { calc, bg } = entry;
+                  const { calc, bg, textColor } = entry;
+                  const baseColor = textColor || 'FFFFFF';
                   const dOrcColor = calc.deltaOrcPct != null && calc.deltaOrcPct >= 0 ? hex(C.deltaPositivo) : hex(C.deltaNegativo);
                   const dA1Color = calc.deltaA1Pct != null && calc.deltaA1Pct >= 0 ? hex(C.deltaPositivo) : hex(C.deltaNegativo);
                   return (
-                    <tr key={idx} className="font-bold text-white" style={{ backgroundColor: hex(bg) }}>
+                    <tr key={idx} className="font-bold" style={{ backgroundColor: hex(bg), color: hex(baseColor) }}>
                       <td className="px-2 py-1.5">{calc.label}</td>
                       <td className="text-right px-2 py-1.5">{fmtK(calc.real)}</td>
                       <td className="text-right px-2 py-1.5">{fmtK(calc.orcado)}</td>
@@ -326,13 +334,13 @@ function SectionSlide({ section, data }: { section: VariancePptSection; data: Va
         <div className="overflow-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
-              <tr style={{ backgroundColor: hex(C.lightGray) }}>
-                <th className="text-left px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>DESCRICAO</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>REAL {data.year}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>ORCADO</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% Orc</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>{a1Label}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[11px]" style={{ color: hex(C.mutedText) }}>D% {a1Label}</th>
+              <tr style={{ backgroundColor: hex(C.headerBg) }}>
+                <th className="text-left px-2 py-1.5 font-bold text-[11px] text-white">DESCRICAO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">REAL {data.year}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">ORCADO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">D% Orc</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">{a1Label}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[11px] text-white">D% {a1Label}</th>
               </tr>
             </thead>
             <tbody>
@@ -443,12 +451,12 @@ function DetailSlide({ section, data }: { section: VariancePptSection; data: Var
       <div className="p-4 overflow-auto h-[calc(100%-48px)]">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr style={{ backgroundColor: hex(C.lightGray) }}>
-              <th className="text-left px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>CONTA</th>
-              <th className="text-right px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>REAL</th>
-              <th className="text-right px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>ORC</th>
-              <th className="text-right px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>D%</th>
-              <th className="text-left px-2 py-1.5 font-bold text-[10px]" style={{ color: hex(C.mutedText) }}>JUSTIFICATIVA / SINTESE</th>
+            <tr style={{ backgroundColor: hex(C.headerBg) }}>
+              <th className="text-left px-2 py-1.5 font-bold text-[10px] text-white">CONTA</th>
+              <th className="text-right px-2 py-1.5 font-bold text-[10px] text-white">REAL</th>
+              <th className="text-right px-2 py-1.5 font-bold text-[10px] text-white">ORC</th>
+              <th className="text-right px-2 py-1.5 font-bold text-[10px] text-white">D%</th>
+              <th className="text-left px-2 py-1.5 font-bold text-[10px] text-white">JUSTIFICATIVA / SINTESE</th>
             </tr>
           </thead>
           <tbody>
