@@ -174,8 +174,8 @@ export default function AnalysisView() {
   };
 
   const tabs = [
-    { id: 'justificativas', label: 'Justificativas', icon: ClipboardCheck },
     { id: 'summary', label: 'Sumário Executivo', icon: FileText },
+    { id: 'justificativas', label: 'Justificativas', icon: ClipboardCheck },
     { id: 'actions', label: 'Plano de Ação', icon: ListChecks },
     { id: 'slides', label: 'Slides de Análise', icon: Presentation },
   ];
