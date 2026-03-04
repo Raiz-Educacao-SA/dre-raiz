@@ -15,7 +15,6 @@ import {
   FileText,
   TrendingUp,
   Building2,
-  ClipboardCheck,
 } from 'lucide-react';
 import { ViewType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -36,11 +35,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
     { id: 'soma_tags',     label: 'DRE Gerencial',      icon: TableProperties },
     { id: 'movements',     label: 'Lançamentos',         icon: ReceiptText },
     { id: 'manual_changes',label: 'Aprovações',          icon: History, badge: pendingCount },
-    { id: 'justificativas', label: 'Justificativas',      icon: ClipboardCheck },
+    { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
     ...(isAdmin ? [
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
       { id: 'kpis',          label: 'Indicadores e KPIs', icon: BarChart3 },
-      { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
       { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
       { id: 'executive_dashboard', label: 'CEO Dashboard', icon: TrendingUp },
       { id: 'holding_dashboard', label: 'Holding', icon: Building2 },

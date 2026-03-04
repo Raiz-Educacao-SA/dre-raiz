@@ -52,7 +52,10 @@ ${JSON.stringify(datasetSummary, null, 2)}
 
 Regras:
 ${JSON.stringify(ctx.analysis_rules ?? {}, null, 2)}
-
+${datasetSummary.justifications?.length > 0 ? `
+Justificativas dos responsáveis (já preenchidas pelos gestores — incorpore na análise):
+${JSON.stringify(datasetSummary.justifications, null, 2)}
+` : ''}
 Instruções:
 1) Gere de 5 a 12 slides.
 2) Use pelo menos: 1 waterfall/bridge, 1 linha R12 e 1 pareto.

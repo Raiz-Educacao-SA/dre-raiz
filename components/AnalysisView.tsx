@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import {
   FileText,
   ListChecks,
   Presentation,
   Sparkles,
-  Download,
   FileSpreadsheet,
   RefreshCw,
   Flag,
@@ -12,19 +11,22 @@ import {
   ChevronDown,
   Check,
   X,
-  Calendar
+  Calendar,
+  ClipboardCheck
 } from 'lucide-react';
-import { ExecutiveSummary, ActionsList, SlideDeck, useChartRegistry, buildPpt, fetchAnalysisContext } from '../analysisPack';
-import AIFinancialView from './AIFinancialView';
+import { ExecutiveSummary, ActionsList, SlideDeck, useChartRegistry, buildPpt } from '../analysisPack';
 import type { AnalysisPack, AnalysisContext } from '../analysisPack/types/schema';
-import { getMarcasEFiliais } from '../services/supabaseService';
+import { getMarcasEFiliais, getVarianceJustifications } from '../services/supabaseService';
+import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
 
-type TabType = 'summary' | 'actions' | 'slides' | 'ai';
+const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
+
+type TabType = 'justificativas' | 'summary' | 'actions' | 'slides';
 
 export default function AnalysisView() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem('analysisActiveTab');
-    return (saved as TabType) || 'summary';
+    return (saved as TabType) || 'justificativas';
   });
 
   // Filtros
@@ -71,15 +73,31 @@ export default function AnalysisView() {
     localStorage.setItem('analysisActiveTab', activeTab);
   }, [activeTab]);
 
-  // Helper: compute start/end dates for the query
-  const getDateRange = () => {
-    const endDate = selectedMonth;
-    let startDate = selectedMonth;
-    if (isYtd) {
-      const [year] = selectedMonth.split('-');
-      startDate = `${year}-01`;
+  // Helper: buscar snapshot do variance_justifications e montar contexto
+  const fetchSnapshotContext = async () => {
+    const marca = selectedMarcas.length > 0 ? selectedMarcas[0] : undefined;
+    const items = await getVarianceJustifications({
+      year_month: selectedMonth,
+      marca,
+    });
+    if (!items || items.length === 0) {
+      throw new Error(`Nenhum snapshot encontrado para ${selectedMonth}${marca ? ` / ${marca}` : ''}. Gere os desvios primeiro na aba Justificativas.`);
     }
-    return { startDate, endDate };
+    return buildContextFromSnapshot(items, { year_month: selectedMonth, marca });
+  };
+
+  // Helper: chamar API de IA com contexto
+  const callAI = async (context: AnalysisContext, type: string) => {
+    const response = await fetch('/api/llm-proxy?action=generate-ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, type }),
+    });
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody.message || errBody.error || `Erro ${response.status}`);
+    }
+    return (await response.json()).data;
   };
 
   // ========================================
@@ -88,36 +106,12 @@ export default function AnalysisView() {
   const handleGenerateSummary = async () => {
     setSummaryLoading(true);
     try {
-      const { startDate, endDate } = getDateRange();
-      const context = await fetchAnalysisContext({
-        scenario: 'Real',
-        marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
-        filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
-        startDate,
-        endDate,
-      });
-
-      console.log('📤 Contexto enviado:', { period: context.period_label, scope: context.scope_label, kpis: context.kpis?.length });
-
-      const response = await fetch('/api/llm-proxy?action=generate-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context, type: 'summary' }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.message || errBody.error || `Erro ${response.status}`);
-      }
-
-      const { data } = await response.json();
-      setSummaryData({
-        summary: data.executive_summary,
-        meta: data.meta,
-      });
+      const context = await fetchSnapshotContext();
+      const data = await callAI(context, 'summary');
+      setSummaryData({ summary: data.executive_summary, meta: data.meta });
     } catch (error: any) {
       console.error('Erro ao gerar sumário:', error);
-      alert(`❌ Erro ao gerar sumário: ${error.message || 'Tente novamente.'}`);
+      alert(`❌ ${error.message || 'Erro ao gerar sumário.'}`);
     } finally {
       setSummaryLoading(false);
     }
@@ -129,31 +123,12 @@ export default function AnalysisView() {
   const handleGenerateActions = async () => {
     setActionsLoading(true);
     try {
-      const { startDate, endDate } = getDateRange();
-      const context = await fetchAnalysisContext({
-        scenario: 'Real',
-        marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
-        filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
-        startDate,
-        endDate,
-      });
-
-      const response = await fetch('/api/llm-proxy?action=generate-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context, type: 'actions' }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.message || errBody.error || `Erro ${response.status}`);
-      }
-
-      const { data } = await response.json();
+      const context = await fetchSnapshotContext();
+      const data = await callAI(context, 'actions');
       setActionsData(data.actions);
     } catch (error: any) {
       console.error('Erro ao gerar ações:', error);
-      alert(`❌ Erro ao gerar plano de ação: ${error.message || 'Tente novamente.'}`);
+      alert(`❌ ${error.message || 'Erro ao gerar plano de ação.'}`);
     } finally {
       setActionsLoading(false);
     }
@@ -165,34 +140,12 @@ export default function AnalysisView() {
   const handleGenerateSlides = async () => {
     setSlidesLoading(true);
     try {
-      const { startDate, endDate } = getDateRange();
-      const context = await fetchAnalysisContext({
-        scenario: 'Real',
-        marca: selectedMarcas.length > 0 ? selectedMarcas[0] : undefined,
-        filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
-        startDate,
-        endDate,
-      });
-
-      const response = await fetch('/api/llm-proxy?action=generate-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context, type: 'full' }),
-      });
-
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.message || errBody.error || `Erro ${response.status}`);
-      }
-
-      const { data } = await response.json();
-      setSlidesData({
-        pack: data,
-        context: context,
-      });
+      const context = await fetchSnapshotContext();
+      const data = await callAI(context, 'full');
+      setSlidesData({ pack: data, context });
     } catch (error: any) {
       console.error('Erro ao gerar slides:', error);
-      alert(`❌ Erro ao gerar slides: ${error.message || 'Tente novamente.'}`);
+      alert(`❌ ${error.message || 'Erro ao gerar slides.'}`);
     } finally {
       setSlidesLoading(false);
     }
@@ -221,10 +174,10 @@ export default function AnalysisView() {
   };
 
   const tabs = [
+    { id: 'justificativas', label: 'Justificativas', icon: ClipboardCheck },
     { id: 'summary', label: 'Sumário Executivo', icon: FileText },
     { id: 'actions', label: 'Plano de Ação', icon: ListChecks },
     { id: 'slides', label: 'Slides de Análise', icon: Presentation },
-    { id: 'ai', label: 'IA Financeira', icon: Sparkles },
   ];
 
   return (
@@ -242,7 +195,7 @@ export default function AnalysisView() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            {activeTab !== 'justificativas' && <div className="flex items-center gap-3">
               {/* Filtro de Mês */}
               <div className="flex items-center gap-2 bg-white px-4 h-[52px] rounded-lg border-2 border-gray-100 shadow-sm">
                 <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
@@ -305,7 +258,7 @@ export default function AnalysisView() {
                   Limpar
                 </button>
               )}
-            </div>
+            </div>}
           </div>
 
           <div className="flex items-center justify-end mb-4">
@@ -419,7 +372,14 @@ export default function AnalysisView() {
 
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
+        {/* ==================== ABA JUSTIFICATIVAS ==================== */}
+        {activeTab === 'justificativas' && (
+          <Suspense fallback={<div className="flex items-center justify-center py-20"><RefreshCw size={32} className="text-gray-400 animate-spin" /></div>}>
+            <VarianceJustificationsView />
+          </Suspense>
+        )}
+
+        <div className={`max-w-7xl mx-auto p-6 ${activeTab === 'justificativas' ? 'hidden' : ''}`}>
           {/* ==================== ABA SUMÁRIO ==================== */}
           {activeTab === 'summary' && (
             <div>
@@ -517,13 +477,6 @@ export default function AnalysisView() {
             </div>
           )}
 
-          {/* ==================== ABA IA ==================== */}
-          {activeTab === 'ai' && (
-            <AIFinancialView
-              transactions={[]}
-              kpis={{} as any}
-            />
-          )}
         </div>
       </div>
     </div>
