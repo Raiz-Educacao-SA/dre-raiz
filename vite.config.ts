@@ -2,6 +2,10 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { IncomingMessage, ServerResponse } from 'http';
+import * as dotenv from 'dotenv';
+
+// Carrega .env no process.env (para middlewares dev que usam process.env)
+dotenv.config();
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
@@ -233,7 +237,7 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
-        // Dev middleware for /api/send-welcome-email — Resend email proxy
+        // Dev middleware for /api/send-welcome-email — proxy direto para Resend
         {
           name: 'send-welcome-email-middleware',
           configureServer(server) {
@@ -258,11 +262,26 @@ export default defineConfig(({ mode }) => {
               const body = JSON.parse(Buffer.concat(chunks).toString());
 
               try {
-                // Inject EMAIL_API_KEY into process.env for the handler
-                process.env.EMAIL_API_KEY = env.EMAIL_API_KEY || process.env.EMAIL_API_KEY || '';
+                const apiKey = env.EMAIL_API_KEY || process.env.EMAIL_API_KEY || '';
+                if (!apiKey) {
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ sent: false, reason: 'EMAIL_API_KEY não configurado no .env' }));
+                  return;
+                }
 
+                const { name, email, role, marcas } = body;
+                if (!email || !name) {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Campos obrigatórios: name, email' }));
+                  return;
+                }
+
+                // Importar handler e gerar HTML via ssrLoadModule
+                process.env.EMAIL_API_KEY = apiKey;
                 const mod = await server.ssrLoadModule('./api/send-welcome-email.ts');
-                const mockReq = { method: 'POST', body } as any;
+
+                // Chamar o buildWelcomeEmail se exportado, senão usar handler completo
+                const mockReq = { method: 'POST', body: { name, email, role, marcas } } as any;
                 let mockResult: any = null;
                 const mockRes = {
                   status: (code: number) => ({
@@ -272,11 +291,66 @@ export default defineConfig(({ mode }) => {
 
                 await mod.default(mockReq, mockRes);
 
-                const code = mockResult?.code || 200;
-                res.writeHead(code, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify(mockResult?.data || { error: 'Sem resposta do handler' }));
+                if (mockResult) {
+                  res.writeHead(mockResult.code || 200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify(mockResult.data));
+                } else {
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Handler sem resposta' }));
+                }
               } catch (err: any) {
                 console.error('send-welcome-email dev error:', err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+          },
+        },
+        // Dev middleware for /api/test-smtp — testa conexão SMTP
+        {
+          name: 'test-smtp-middleware',
+          configureServer(server) {
+            server.middlewares.use('/api/test-smtp', async (req: IncomingMessage, res: ServerResponse) => {
+              if (req.method === 'OPTIONS') {
+                res.writeHead(200, {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                  'Access-Control-Allow-Headers': 'Content-Type',
+                });
+                res.end();
+                return;
+              }
+              if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method not allowed' }));
+                return;
+              }
+
+              const chunks: Buffer[] = [];
+              for await (const chunk of req) chunks.push(chunk as Buffer);
+              const body = JSON.parse(Buffer.concat(chunks).toString());
+
+              try {
+                const mod = await server.ssrLoadModule('./api/test-smtp.ts');
+                let mockResult: any = null;
+                const mockReq = { method: 'POST', body } as any;
+                const mockRes = {
+                  status: (code: number) => ({
+                    json: (data: any) => { mockResult = { code, data }; return mockRes; }
+                  }),
+                } as any;
+
+                await mod.default(mockReq, mockRes);
+
+                if (mockResult) {
+                  res.writeHead(mockResult.code || 200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify(mockResult.data));
+                } else {
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Handler sem resposta' }));
+                }
+              } catch (err: any) {
+                console.error('test-smtp dev error:', err.message);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: err.message }));
               }

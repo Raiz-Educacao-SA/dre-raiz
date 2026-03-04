@@ -53,7 +53,7 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp'>('import');
 
   // Estados para aba PDD
   const [pddData, setPddData] = useState<supabaseService.SharePdd[]>([]);
@@ -95,6 +95,21 @@ const AdminPanel: React.FC = () => {
 
   // Estado para busca de usuários
   const [userSearch, setUserSearch] = useState('');
+
+  // Estados para aba SMTP
+  const [smtpHost, setSmtpHost] = useState('email-smtp.sa-east-1.amazonaws.com');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [smtpUsername, setSmtpUsername] = useState('');
+  const [smtpPassword, setSmtpPassword] = useState('');
+  const [smtpFromName, setSmtpFromName] = useState('DRE Raiz');
+  const [smtpFromEmail, setSmtpFromEmail] = useState('noreply@raizeducacao.com.br');
+  const [smtpUseTls, setSmtpUseTls] = useState(true);
+  const [smtpEnabled, setSmtpEnabled] = useState(true);
+  const [smtpLoading, setSmtpLoading] = useState(false);
+  const [smtpSaving, setSmtpSaving] = useState(false);
+  const [smtpTesting, setSmtpTesting] = useState(false);
+  const [smtpConfigured, setSmtpConfigured] = useState(false);
+  const [smtpMessage, setSmtpMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estados para aba Banco
   const [bancoYear, setBancoYear] = useState(String(new Date().getFullYear()));
@@ -163,6 +178,7 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'tributos' && tribData.length === 0) loadAllTributos();
     if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
     if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
+    if (activeTab === 'smtp' && !smtpConfigured && !smtpLoading) loadSmtpConfig();
   }, [activeTab]);
 
   // Realtime: sincroniza share_pdd e pdd_contas com banco
@@ -1358,6 +1374,91 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  // ===== SMTP Config handlers =====
+  const loadSmtpConfig = async () => {
+    setSmtpLoading(true);
+    try {
+      const config = await supabaseService.getSmtpConfig();
+      if (config) {
+        setSmtpHost(config.host);
+        setSmtpPort(String(config.port));
+        setSmtpUsername(config.username);
+        setSmtpPassword(config.password_encrypted);
+        setSmtpFromName(config.from_name);
+        setSmtpFromEmail(config.from_email);
+        setSmtpUseTls(config.use_tls);
+        setSmtpEnabled(config.enabled);
+        setSmtpConfigured(true);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar smtp_config:', err);
+    } finally {
+      setSmtpLoading(false);
+    }
+  };
+
+  const handleSmtpSave = async () => {
+    if (!smtpHost || !smtpUsername || !smtpPassword || !smtpFromEmail) {
+      setSmtpMessage({ type: 'error', text: 'Preencha todos os campos obrigatórios.' });
+      return;
+    }
+    setSmtpSaving(true);
+    setSmtpMessage(null);
+    try {
+      await supabaseService.upsertSmtpConfig({
+        host: smtpHost,
+        port: parseInt(smtpPort) || 587,
+        username: smtpUsername,
+        password_encrypted: smtpPassword,
+        from_name: smtpFromName,
+        from_email: smtpFromEmail,
+        use_tls: smtpUseTls,
+        enabled: smtpEnabled,
+      });
+      setSmtpConfigured(true);
+      setSmtpMessage({ type: 'success', text: 'Configuração SMTP salva com sucesso!' });
+    } catch (err: any) {
+      setSmtpMessage({ type: 'error', text: `Erro ao salvar: ${err.message}` });
+    } finally {
+      setSmtpSaving(false);
+    }
+  };
+
+  const handleSmtpTest = async () => {
+    if (!smtpHost || !smtpUsername || !smtpPassword || !smtpFromEmail) {
+      setSmtpMessage({ type: 'error', text: 'Preencha todos os campos antes de testar.' });
+      return;
+    }
+    setSmtpTesting(true);
+    setSmtpMessage({ type: 'info', text: 'Testando conexão SMTP...' });
+    try {
+      const resp = await fetch('/api/test-smtp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          host: smtpHost,
+          port: parseInt(smtpPort) || 587,
+          username: smtpUsername,
+          password: smtpPassword,
+          from_name: smtpFromName,
+          from_email: smtpFromEmail,
+          use_tls: smtpUseTls,
+          test_email: currentUser?.email || '',
+        }),
+      });
+      const result = await resp.json();
+      if (result.success) {
+        setSmtpMessage({ type: 'success', text: `Teste OK! Email enviado para ${currentUser?.email}` });
+      } else {
+        setSmtpMessage({ type: 'error', text: `Falha: ${result.error || 'Erro desconhecido'}` });
+      }
+    } catch (err: any) {
+      setSmtpMessage({ type: 'error', text: `Erro de conexão: ${err.message}` });
+    } finally {
+      setSmtpTesting(false);
+    }
+  };
+
   // Se não é admin, não pode acessar
   if (!isAdmin) {
     return (
@@ -1512,6 +1613,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'depara' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('smtp')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'smtp'
+              ? 'text-sky-700 bg-sky-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Mail size={14} />
+            Email/SMTP
+          </div>
+          {activeTab === 'smtp' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -4012,6 +4129,173 @@ const AdminPanel: React.FC = () => {
             <p className="text-[10px] text-indigo-600">
               <strong>Automação:</strong> A normalização roda automaticamente todo dia à meia-noite (pg_cron).
               Use o botão "Executar Agora" para rodar manualmente. A tabela é sincronizada em tempo real com o Supabase.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Aba: Email/SMTP */}
+      {activeTab === 'smtp' && (
+        <div className="bg-gradient-to-r from-sky-50 to-cyan-50 border border-sky-300 rounded-xl p-4 shadow">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-sky-100 p-2 rounded-lg">
+              <Mail className="text-sky-600" size={20} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-black text-sky-900">Configuração SMTP</h2>
+              <p className="text-xs text-sky-700">Configure o servidor de email para envios do sistema (AWS SES ou outro)</p>
+            </div>
+            <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+              smtpConfigured ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${smtpConfigured ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+              {smtpConfigured ? 'Configurado' : 'Não configurado'}
+            </div>
+          </div>
+
+          {/* Mensagem */}
+          {smtpMessage && (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-3 text-xs font-bold ${
+              smtpMessage.type === 'success' ? 'bg-green-100 text-green-800' :
+              smtpMessage.type === 'error' ? 'bg-red-100 text-red-800' :
+              'bg-blue-100 text-blue-800'
+            }`}>
+              {smtpMessage.type === 'success' ? <CheckCircle size={14} /> :
+               smtpMessage.type === 'error' ? <AlertTriangle size={14} /> :
+               <Loader2 size={14} className="animate-spin" />}
+              {smtpMessage.text}
+            </div>
+          )}
+
+          {smtpLoading ? (
+            <div className="text-center py-12 text-sky-500 text-xs font-bold">Carregando configuração...</div>
+          ) : (
+            <div className="bg-white/60 rounded-lg border border-sky-200 p-4">
+              <div className="grid grid-cols-2 gap-4">
+                {/* Host */}
+                <div>
+                  <label className="block text-xs font-bold text-sky-800 mb-1">Host SMTP *</label>
+                  <input
+                    type="text"
+                    value={smtpHost}
+                    onChange={(e) => setSmtpHost(e.target.value)}
+                    placeholder="email-smtp.sa-east-1.amazonaws.com"
+                    className="w-full px-3 py-2 text-xs border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"
+                  />
+                </div>
+
+                {/* Porta */}
+                <div>
+                  <label className="block text-xs font-bold text-sky-800 mb-1">Porta *</label>
+                  <input
+                    type="number"
+                    value={smtpPort}
+                    onChange={(e) => setSmtpPort(e.target.value)}
+                    placeholder="587"
+                    className="w-full px-3 py-2 text-xs border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"
+                  />
+                </div>
+
+                {/* Usuário */}
+                <div>
+                  <label className="block text-xs font-bold text-sky-800 mb-1">Usuário SMTP *</label>
+                  <input
+                    type="text"
+                    value={smtpUsername}
+                    onChange={(e) => setSmtpUsername(e.target.value)}
+                    placeholder="Credencial IAM SMTP"
+                    className="w-full px-3 py-2 text-xs border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"
+                  />
+                </div>
+
+                {/* Senha */}
+                <div>
+                  <label className="block text-xs font-bold text-sky-800 mb-1">Senha SMTP *</label>
+                  <input
+                    type="password"
+                    value={smtpPassword}
+                    onChange={(e) => setSmtpPassword(e.target.value)}
+                    placeholder="Credencial IAM SMTP"
+                    className="w-full px-3 py-2 text-xs border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"
+                  />
+                </div>
+
+                {/* Email remetente */}
+                <div>
+                  <label className="block text-xs font-bold text-sky-800 mb-1">Email Remetente *</label>
+                  <input
+                    type="email"
+                    value={smtpFromEmail}
+                    onChange={(e) => setSmtpFromEmail(e.target.value)}
+                    placeholder="noreply@raizeducacao.com.br"
+                    className="w-full px-3 py-2 text-xs border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"
+                  />
+                </div>
+
+                {/* Nome remetente */}
+                <div>
+                  <label className="block text-xs font-bold text-sky-800 mb-1">Nome Remetente</label>
+                  <input
+                    type="text"
+                    value={smtpFromName}
+                    onChange={(e) => setSmtpFromName(e.target.value)}
+                    placeholder="DRE Raiz"
+                    className="w-full px-3 py-2 text-xs border border-sky-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div className="flex items-center gap-6 mt-4 pt-4 border-t border-sky-100">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={smtpUseTls}
+                    onChange={(e) => setSmtpUseTls(e.target.checked)}
+                    className="w-4 h-4 rounded border-sky-300 text-sky-600 focus:ring-sky-400"
+                  />
+                  <span className="text-xs font-bold text-sky-800">TLS Ativado</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={smtpEnabled}
+                    onChange={(e) => setSmtpEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded border-sky-300 text-sky-600 focus:ring-sky-400"
+                  />
+                  <span className="text-xs font-bold text-sky-800">SMTP Ativo</span>
+                  <span className="text-[10px] text-sky-500">(desativar usa Resend como fallback)</span>
+                </label>
+              </div>
+
+              {/* Botões */}
+              <div className="flex items-center gap-3 mt-4 pt-4 border-t border-sky-100">
+                <button
+                  onClick={handleSmtpTest}
+                  disabled={smtpTesting || !smtpHost || !smtpUsername || !smtpPassword}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-white border border-sky-300 text-sky-700 text-xs font-bold rounded-lg hover:bg-sky-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {smtpTesting ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                  {smtpTesting ? 'Testando...' : 'Testar Conexão'}
+                </button>
+                <button
+                  onClick={handleSmtpSave}
+                  disabled={smtpSaving || !smtpHost || !smtpUsername || !smtpPassword || !smtpFromEmail}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-sky-600 text-white text-xs font-bold rounded-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {smtpSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {smtpSaving ? 'Salvando...' : 'Salvar Configuração'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Info */}
+          <div className="mt-3 p-2 bg-sky-100/50 rounded-lg border border-sky-200">
+            <p className="text-[10px] text-sky-600">
+              <strong>Como funciona:</strong> Com SMTP configurado, todos os emails de liberação de acesso usam o servidor SMTP cadastrado (ex: AWS SES).
+              Se desativado ou em caso de falha, o sistema usa o Resend como fallback.
+              O email de teste é enviado para o email do admin logado ({currentUser?.email}).
             </p>
           </div>
         </div>

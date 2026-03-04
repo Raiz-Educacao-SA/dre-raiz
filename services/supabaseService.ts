@@ -3,6 +3,7 @@ import { Transaction, ManualChange, PaginationParams, PaginatedResponse, ContaCo
 import { addPermissionFiltersToObject, applyPermissionFilters } from './permissionsService';
 import { debug } from '../utils/logger';
 import { z } from 'zod';
+import type { VariancePptMarcaEntry } from './variancePptTypes';
 
 // ── Zod schemas para validação de parâmetros RPC ──────────────────────────────
 const MAX_ARRAY_LENGTH = 500;
@@ -2743,9 +2744,9 @@ export const getVarianceJustifications = async (
     if (filters?.year_month) query = query.eq('year_month', filters.year_month);
     if (filters?.marcas && filters.marcas.length > 0) {
       const marcaFilters = filters.marcas.map(m => `marca.eq.${m}`).join(',');
-      query = query.or(`${marcaFilters},marca.eq.`);
+      query = query.or(`${marcaFilters},marca.is.null,marca.eq.`);
     } else if (filters?.marca) {
-      query = query.or(`marca.eq.${filters.marca},marca.eq.`);
+      query = query.or(`marca.eq.${filters.marca},marca.is.null,marca.eq.`);
     }
     if (filters?.status) query = query.eq('status', filters.status);
     if (filters?.owner_email) query = query.eq('owner_email', filters.owner_email);
@@ -2794,9 +2795,9 @@ export const getVarianceYtdItems = async (
 
     if (marcas && marcas.length > 0) {
       const marcaFilters = marcas.map(m => `marca.eq.${m}`).join(',');
-      query = query.or(`${marcaFilters},marca.eq.`);
+      query = query.or(`${marcaFilters},marca.is.null,marca.eq.`);
     } else if (marca) {
-      query = query.or(`marca.eq.${marca},marca.eq.`);
+      query = query.or(`marca.eq.${marca},marca.is.null,marca.eq.`);
     }
 
     const { data, error } = await query;
@@ -2814,6 +2815,148 @@ export const getVarianceYtdItems = async (
   }
   return allData;
 };
+
+/**
+ * Busca dados LIVE do DRE (via RPCs) para gerar slides PPT com filtro de marca.
+ * Usa mesmas fontes do DRE Gerencial: get_soma_tags + get_variance_snapshot.
+ * Retorna VarianceJustification[] compatível com prepareVariancePptData.
+ */
+export async function fetchLiveDreForPpt(
+  yearMonth: string,
+  marca: string,
+): Promise<VarianceJustification[]> {
+  const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
+  const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
+  const now = new Date().toISOString();
+
+  // 1. get_soma_tags → tag0+tag01 (Real, Orçado, A-1)
+  const { data: somaData, error: somaError } = await supabase.rpc('get_soma_tags', {
+    p_month_from: yearMonth,
+    p_month_to: yearMonth,
+    p_marcas: [marca],
+    p_nome_filiais: null,
+    p_tags02: null,
+    p_tags01: null,
+    p_recurring: 'Sim',
+    p_tags03: null,
+  });
+  if (somaError || !somaData?.length) return [];
+
+  // 2. get_variance_snapshot → tag02 detail
+  const PAGE_SIZE = 1000;
+  let snapOffset = 0;
+  let snapMore = true;
+  const snapRows: any[] = [];
+  while (snapMore) {
+    const { data: snapPage, error: snapError } = await supabase
+      .rpc('get_variance_snapshot', {
+        p_year_month: yearMonth,
+        p_marcas: [marca],
+        p_recurring: 'Sim',
+      })
+      .range(snapOffset, snapOffset + PAGE_SIZE - 1);
+    if (snapError || !snapPage?.length) { snapMore = false; break; }
+    for (const r of snapPage) {
+      if (isDre(r.tag0) && r.tag02) snapRows.push(r);
+    }
+    snapMore = snapPage.length === PAGE_SIZE;
+    snapOffset += PAGE_SIZE;
+  }
+
+  // 3. Aggregate all data by (tag0, tag01, tag02, scenario)
+  const aggMap = new Map<string, number>();
+  const combos = new Set<string>();
+
+  for (const r of (somaData as any[]).filter((r: any) => isDre(r.tag0))) {
+    const key = `${r.tag0}|${r.tag01 || ''}||${r.scenario}`;
+    aggMap.set(key, (aggMap.get(key) || 0) + Number(r.total || 0));
+    combos.add(`${r.tag0}|${r.tag01 || ''}|`);
+  }
+  for (const r of snapRows) {
+    const key = `${r.tag0}|${r.tag01 || ''}|${r.tag02}|${r.scenario}`;
+    aggMap.set(key, (aggMap.get(key) || 0) + Number(r.total || 0));
+    combos.add(`${r.tag0}|${r.tag01 || ''}|${r.tag02}`);
+  }
+
+  // 4. Build VarianceJustification items
+  const items: VarianceJustification[] = [];
+  let id = 1;
+
+  const base: Omit<VarianceJustification, 'id' | 'tag0' | 'tag01' | 'tag02' | 'tag03' | 'comparison_type' | 'real_value' | 'compare_value' | 'variance_abs' | 'variance_pct'> = {
+    year_month: yearMonth, marca, status: 'pending' as const,
+    owner_email: null, owner_name: null, justification: null, action_plan: null,
+    ai_summary: null, ai_summary_at: null, justified_at: null,
+    reviewed_by: null, reviewed_at: null, review_note: null, notified_at: null,
+    version: 1, snapshot_at: now, created_at: now, updated_at: now,
+  };
+
+  for (const combo of combos) {
+    const [tag0, tag01, tag02] = combo.split('|');
+    const real = aggMap.get(`${combo}|Real`) || 0;
+    const orc = aggMap.get(`${combo}|Orçado`) || 0;
+    const a1 = aggMap.get(`${combo}|A-1`) || 0;
+
+    const addComp = (compareVal: number, compType: 'orcado' | 'a1') => {
+      if (real === 0 && compareVal === 0) return;
+      const varAbs = real - compareVal;
+      const varPct = compareVal !== 0 ? Math.round(((real - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
+      items.push({ ...base, id: id++, tag0, tag01: tag01 || '', tag02: tag02 || null, tag03: null, comparison_type: compType, real_value: real, compare_value: compareVal, variance_abs: varAbs, variance_pct: varPct });
+    };
+    addComp(orc, 'orcado');
+    addComp(a1, 'a1');
+  }
+
+  // 5. Calc rows (MARGEM, EBITDA)
+  const prefixAgg = new Map<string, number>();
+  for (const r of (somaData as any[]).filter((r: any) => isDre(r.tag0))) {
+    const pk = `${(r.tag0 || '').slice(0, 3)}|${r.scenario}`;
+    prefixAgg.set(pk, (prefixAgg.get(pk) || 0) + Number(r.total || 0));
+  }
+  const g = (p: string, s: string) => prefixAgg.get(`${p}|${s}`) || 0;
+
+  const addCalc = (label: string, real: number, orc: number, a1: number) => {
+    const addC = (cv: number, ct: 'orcado' | 'a1') => {
+      if (real === 0 && cv === 0) return;
+      const va = real - cv;
+      const vp = cv !== 0 ? Math.round(((real - cv) / Math.abs(cv)) * 1000) / 10 : null;
+      items.push({ ...base, id: id++, tag0: label, tag01: '', tag02: null, tag03: null, comparison_type: ct, real_value: real, compare_value: cv, variance_abs: va, variance_pct: vp });
+    };
+    addC(orc, 'orcado');
+    addC(a1, 'a1');
+  };
+
+  const mR = g('01.','Real') + g('02.','Real') + g('03.','Real');
+  const mO = g('01.','Orçado') + g('02.','Orçado') + g('03.','Orçado');
+  const mA = g('01.','A-1') + g('02.','A-1') + g('03.','A-1');
+  addCalc('MARGEM DE CONTRIBUIÇÃO', mR, mO, mA);
+
+  const eR = mR + g('04.','Real'), eO = mO + g('04.','Orçado'), eA = mA + g('04.','A-1');
+  addCalc('EBITDA (S/ RATEIO RAIZ CSC)', eR, eO, eA);
+  addCalc('EBITDA TOTAL', eR + g('05.','Real'), eO + g('05.','Orçado'), eA + g('05.','A-1'));
+
+  // 6. Merge justifications from snapshot (if any exist for this marca)
+  const { data: justData } = await supabase
+    .from('variance_justifications')
+    .select('tag0,tag01,tag02,comparison_type,justification,ai_summary,status,owner_name')
+    .eq('year_month', yearMonth)
+    .or(`marca.eq.${marca},marca.is.null,marca.eq.`)
+    .in('status', ['justified', 'approved']);
+  if (justData) {
+    const justMap = new Map<string, typeof justData[0]>();
+    for (const j of justData) justMap.set(`${j.tag0}|${j.tag01 || ''}|${j.tag02 || ''}|${j.comparison_type}`, j);
+    for (const item of items) {
+      const j = justMap.get(`${item.tag0}|${item.tag01 || ''}|${item.tag02 || ''}|${item.comparison_type}`);
+      if (j) {
+        item.justification = j.justification;
+        item.ai_summary = j.ai_summary;
+        item.status = j.status as any;
+        item.owner_name = j.owner_name;
+      }
+    }
+  }
+
+  return items;
+}
 
 /**
  * Gera itens de desvio para um mês/marca.
@@ -2911,6 +3054,11 @@ export const generateVarianceItems = async (
     }
 
     const tag02Count = allAggData.filter(r => r.tag02).length;
+    const detailCount = tag02Count;
+    const scenarioCounts: Record<string, number> = {};
+    for (const row of allAggData) {
+      scenarioCounts[row.scenario] = (scenarioCounts[row.scenario] || 0) + 1;
+    }
     debug(`📊 Total: ${allAggData.length} linhas (${allAggData.length - tag02Count} soma + ${tag02Count} tag02+marca)`);
 
     // 2. Buscar versão atual e próxima
@@ -3358,4 +3506,132 @@ export const subscribeVarianceJustifications = (onChange: () => void) => {
     })
     .subscribe();
   return () => { supabase.removeChannel(channel); };
+};
+
+// ── Marca Breakdown for Variance PPT ──
+
+/**
+ * Busca breakdown por marca para slides de análise.
+ * Usa RPC `get_soma_tags_by_marca` — UMA query que retorna (tag0, marca, scenario, total).
+ * Retorna Record<tag0, VariancePptMarcaEntry[]> ordenado por |real| desc.
+ */
+export async function fetchMarcaBreakdown(
+  yearMonth: string,
+  allMarcas: string[],
+  filterMarcas?: string[] | null,
+): Promise<Record<string, VariancePptMarcaEntry[]>> {
+  const marcas = filterMarcas && filterMarcas.length > 0 ? filterMarcas : allMarcas;
+  if (marcas.length === 0) return {};
+
+  const { data, error } = await supabase.rpc('get_soma_tags_by_marca', {
+    p_month: yearMonth,
+    p_marcas: marcas,
+    p_recurring: 'Sim',
+  });
+
+  if (error) {
+    console.error('fetchMarcaBreakdown RPC error:', error);
+    return {};
+  }
+  if (!data || data.length === 0) return {};
+
+  // Aggregate by (tag0, marca, scenario) — RPC já retorna agrupado, mas pode ter múltiplas rows por tag0_map
+  const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
+  const agg = new Map<string, number>();
+
+  for (const row of data as { tag0: string; marca: string; scenario: string; total: number }[]) {
+    if (!DRE_PREFIXES.has((row.tag0 || '').slice(0, 3))) continue;
+    const key = `${row.tag0}|${row.marca}|${row.scenario}`;
+    agg.set(key, (agg.get(key) || 0) + Number(row.total || 0));
+  }
+
+  // Build result keyed by tag0
+  const tag0Set = new Set<string>();
+  for (const key of agg.keys()) {
+    tag0Set.add(key.split('|')[0]);
+  }
+
+  const result: Record<string, VariancePptMarcaEntry[]> = {};
+  for (const tag0 of tag0Set) {
+    const entries: VariancePptMarcaEntry[] = marcas.map(marca => ({
+      marca,
+      real: agg.get(`${tag0}|${marca}|Real`) || 0,
+      orcado: agg.get(`${tag0}|${marca}|Orçado`) || 0,
+      a1: agg.get(`${tag0}|${marca}|A-1`) || 0,
+    }));
+    entries.sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
+    result[tag0] = entries;
+  }
+
+  return result;
+}
+
+// ============================================================
+// SMTP Config — configuração global de email
+// ============================================================
+
+export interface SmtpConfig {
+  id: number;
+  host: string;
+  port: number;
+  username: string;
+  password_encrypted: string;
+  from_name: string;
+  from_email: string;
+  use_tls: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const getSmtpConfig = async (): Promise<SmtpConfig | null> => {
+  const { data, error } = await supabase
+    .from('smtp_config')
+    .select('*')
+    .eq('enabled', true)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .single();
+  if (error) {
+    if (error.code === 'PGRST116') return null; // no rows
+    console.error('Erro ao buscar smtp_config:', error);
+    return null;
+  }
+  return data;
+};
+
+export const upsertSmtpConfig = async (config: Omit<SmtpConfig, 'id' | 'created_at' | 'updated_at'>): Promise<SmtpConfig | null> => {
+  // Busca registro existente
+  const { data: existing } = await supabase
+    .from('smtp_config')
+    .select('id')
+    .limit(1)
+    .single();
+
+  if (existing) {
+    // Update
+    const { data, error } = await supabase
+      .from('smtp_config')
+      .update(config)
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) {
+      console.error('Erro ao atualizar smtp_config:', error);
+      throw error;
+    }
+    return data;
+  } else {
+    // Insert
+    const { data, error } = await supabase
+      .from('smtp_config')
+      .insert(config)
+      .select()
+      .single();
+    if (error) {
+      console.error('Erro ao inserir smtp_config:', error);
+      throw error;
+    }
+    return data;
+  }
 };

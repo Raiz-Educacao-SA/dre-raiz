@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
+import * as nodemailer from 'nodemailer';
 
-// Domínio de teste do Resend — trocar para 'DRE Raiz <noreply@raizeducacao.com.br>' após verificar domínio
-const EMAIL_FROM = 'DRE Raiz <onboarding@resend.dev>';
+// Resend fallback
+const RESEND_EMAIL_FROM = 'DRE Raiz <onboarding@resend.dev>';
 
 function escapeHtml(str: string): string {
   return str
@@ -219,6 +221,90 @@ function buildWelcomeEmail(params: {
 </html>`;
 }
 
+// Busca config SMTP do Supabase
+async function getSmtpConfigFromDb(): Promise<{
+  host: string;
+  port: number;
+  username: string;
+  password_encrypted: string;
+  from_name: string;
+  from_email: string;
+  use_tls: boolean;
+} | null> {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) return null;
+
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabase
+    .from('smtp_config')
+    .select('host, port, username, password_encrypted, from_name, from_email, use_tls')
+    .eq('enabled', true)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error || !data) return null;
+  return data;
+}
+
+// Envia via SMTP (Nodemailer)
+async function sendViaSmtp(config: {
+  host: string;
+  port: number;
+  username: string;
+  password_encrypted: string;
+  from_name: string;
+  from_email: string;
+  use_tls: boolean;
+}, to: string, subject: string, html: string): Promise<{ sent: boolean; id?: string; reason?: string }> {
+  const transporter = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.port === 465,
+    auth: {
+      user: config.username,
+      pass: config.password_encrypted,
+    },
+    tls: config.use_tls ? { rejectUnauthorized: false } : undefined,
+  });
+
+  const info = await transporter.sendMail({
+    from: `${config.from_name} <${config.from_email}>`,
+    to,
+    subject,
+    html,
+  });
+
+  return { sent: true, id: info.messageId };
+}
+
+// Envia via Resend (fallback)
+async function sendViaResend(apiKey: string, to: string, subject: string, html: string): Promise<{ sent: boolean; id?: string; reason?: string }> {
+  const emailRes = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      from: RESEND_EMAIL_FROM,
+      to: [to],
+      subject,
+      html,
+    }),
+  });
+
+  if (!emailRes.ok) {
+    const errBody = await emailRes.text();
+    console.error('Resend API erro:', emailRes.status, errBody);
+    return { sent: false, reason: `Resend ${emailRes.status}: ${errBody}` };
+  }
+
+  const result = await emailRes.json();
+  return { sent: true, id: result.id };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -234,12 +320,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!email || !name) {
       return res.status(400).json({ error: 'Campos obrigatórios: name, email' });
-    }
-
-    const apiKey = process.env.EMAIL_API_KEY;
-    if (!apiKey) {
-      console.error('⚠️ EMAIL_API_KEY não configurado');
-      return res.status(200).json({ sent: false, reason: 'EMAIL_API_KEY não configurado' });
     }
 
     const date = new Date().toLocaleDateString('pt-BR', {
@@ -258,30 +338,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       date,
     });
 
-    const emailRes = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        from: EMAIL_FROM,
-        to: [email],
-        subject: 'Seu acesso ao DRE Raiz foi liberado!',
-        html,
-      }),
-    });
+    const subject = 'Seu acesso ao DRE Raiz foi liberado!';
 
-    if (!emailRes.ok) {
-      const errBody = await emailRes.text();
-      console.error('⚠️ Resend API erro:', emailRes.status, errBody);
-      return res.status(200).json({ sent: false, reason: `Resend ${emailRes.status}: ${errBody}` });
+    // 1) Tenta enviar via SMTP configurado no Supabase
+    const smtpConfig = await getSmtpConfigFromDb();
+    if (smtpConfig) {
+      try {
+        const result = await sendViaSmtp(smtpConfig, email, subject, html);
+        return res.status(200).json({ ...result, provider: 'smtp' });
+      } catch (smtpErr: any) {
+        console.error('SMTP falhou, tentando Resend fallback:', smtpErr.message);
+        // Cai no fallback Resend abaixo
+      }
     }
 
-    const result = await emailRes.json();
-    return res.status(200).json({ sent: true, id: result.id });
+    // 2) Fallback: Resend
+    const apiKey = process.env.EMAIL_API_KEY;
+    if (!apiKey) {
+      console.error('EMAIL_API_KEY não configurado e SMTP não disponível');
+      return res.status(200).json({ sent: false, reason: 'Nenhum provedor de email configurado (SMTP não encontrado, EMAIL_API_KEY ausente)' });
+    }
+
+    const result = await sendViaResend(apiKey, email, subject, html);
+    return res.status(200).json({ ...result, provider: 'resend' });
   } catch (err: any) {
-    console.error('❌ Erro ao enviar email de boas-vindas:', err);
+    console.error('Erro ao enviar email de boas-vindas:', err);
     return res.status(500).json({ error: err.message });
   }
 }
