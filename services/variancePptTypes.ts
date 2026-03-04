@@ -31,6 +31,8 @@ export interface VariancePptNode {
   orcStatus: string;
   a1Status: string;
   ownerName: string | null;
+  enrichedInsight: string | null;
+  enrichedDrivers: string[] | null;
   children: VariancePptNode[];
 }
 
@@ -73,4 +75,16 @@ export interface VariancePptData {
   sections: VariancePptSection[];
   calcRows: VariancePptCalcRow[];
   stats: VariancePptStats;
+  executiveSummary: string | null;
+  closingSummary: string | null;
+}
+
+export interface VarianceAiInsights {
+  executive_summary: string;
+  sections: Record<string, {
+    insight: string;
+    key_drivers: string[];
+    risk_flag: string | null;
+  }>;
+  closing_summary: string;
 }

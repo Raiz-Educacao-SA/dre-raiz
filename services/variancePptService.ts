@@ -338,6 +338,15 @@ function addOverviewSlide(pptx: PptxGenJS, data: VariancePptData) {
     x: 8.0, y: barY + 0.6, w: 4.5, h: 0.18,
     fontSize: 7, fontFace: FONT, bold: true, color: C.mutedText,
   });
+
+  // Executive summary box (if enriched)
+  if (data.executiveSummary) {
+    const execY = barY + 1.0;
+    const execH = 7.1 - execY - 0.1;
+    if (execH > 0.5) {
+      addInsightsBox(slide, data.executiveSummary, 7.8, execY, 4.9, execH);
+    }
+  }
 }
 
 function addCalcRowToTable(rows: any[][], calc: VariancePptCalcRow, bgColor: string) {
@@ -412,63 +421,97 @@ function addSectionSlide(pptx: PptxGenJS, section: VariancePptSection, data: Var
     rowH,
   });
 
-  // Bottom-left (55%): AI Summary box
+  // Bottom-left (55%): AI Summary box — prefer enriched insight over DB summary
   const bottomY = 0.85 + Math.min(maxTableH, rows.length * rowH) + 0.2;
   const bottomH = 7.1 - bottomY;
 
-  addInsightsBox(slide, node.orcAiSummary || '', 0.3, bottomY, 7.0, bottomH);
+  const insightText = node.enrichedInsight || node.orcAiSummary || '';
+  addInsightsBox(slide, insightText, 0.3, bottomY, 7.0, bottomH);
 
-  // Bottom-right (45%): Top 3 desvios with justification
-  const top3 = [...section.tag01Nodes]
-    .sort((a, b) => Math.abs(b.orcVarPct || 0) - Math.abs(a.orcVarPct || 0))
-    .slice(0, 3);
+  // Bottom-right (45%): Top 3 desvios — prefer enriched drivers if available
+  const hasEnrichedDrivers = node.enrichedDrivers && node.enrichedDrivers.length > 0;
 
-  slide.addText('TOP DESVIOS', {
-    x: 7.6, y: bottomY, w: 5.4, h: 0.25,
-    fontSize: 9, fontFace: FONT, bold: true, color: C.headerBg,
-  });
+  const top3 = hasEnrichedDrivers
+    ? [] // not used when enriched drivers exist
+    : [...section.tag01Nodes]
+        .sort((a, b) => Math.abs(b.orcVarPct || 0) - Math.abs(a.orcVarPct || 0))
+        .slice(0, 3);
 
-  const cardH = Math.min(1.2, (bottomH - 0.35) / 3);
-  top3.forEach((n, idx) => {
-    const cy = bottomY + 0.3 + idx * cardH;
-    const borderColor = deltaColor(n.orcVarPct, section.invertDelta);
-
-    slide.addShape('roundRect' as any, {
-      x: 7.6, y: cy, w: 5.4, h: cardH - 0.08,
-      fill: { color: C.white },
-      line: { color: 'E5E7EB', width: 0.5 },
-      rectRadius: 0.06,
-    });
-    // Colored left border
-    slide.addShape('rect' as any, {
-      x: 7.6, y: cy, w: 0.06, h: cardH - 0.08,
-      fill: { color: borderColor },
+  if (hasEnrichedDrivers) {
+    // Enriched drivers mode: render as bullet list
+    slide.addText('DRIVERS PRINCIPAIS', {
+      x: 7.6, y: bottomY, w: 5.4, h: 0.25,
+      fontSize: 9, fontFace: FONT, bold: true, color: C.accent,
     });
 
-    slide.addText(n.label, {
-      x: 7.8, y: cy + 0.04, w: 3.5, h: 0.2,
-      fontSize: 8, fontFace: FONT, bold: true, color: C.headerBg,
+    const drivers = node.enrichedDrivers!;
+    const driverH = Math.min(0.9, (bottomH - 0.35) / drivers.length);
+    drivers.forEach((driver, idx) => {
+      const cy = bottomY + 0.3 + idx * driverH;
+
+      slide.addShape('roundRect' as any, {
+        x: 7.6, y: cy, w: 5.4, h: driverH - 0.08,
+        fill: { color: C.white },
+        line: { color: 'E5E7EB', width: 0.5 },
+        rectRadius: 0.06,
+      });
+      slide.addShape('rect' as any, {
+        x: 7.6, y: cy, w: 0.06, h: driverH - 0.08,
+        fill: { color: C.accent },
+      });
+      slide.addText(driver, {
+        x: 7.8, y: cy + 0.06, w: 5.0, h: driverH - 0.2,
+        fontSize: 7.5, fontFace: FONT, color: C.darkText,
+        lineSpacingMultiple: 1.3, valign: 'middle',
+      });
+    });
+  } else {
+    // Fallback: Top 3 desvios with justification
+    slide.addText('TOP DESVIOS', {
+      x: 7.6, y: bottomY, w: 5.4, h: 0.25,
+      fontSize: 9, fontFace: FONT, bold: true, color: C.headerBg,
     });
 
-    slide.addText(`Δ Orç: ${fmtPct(n.orcVarPct)}`, {
-      x: 11.3, y: cy + 0.04, w: 1.5, h: 0.2,
-      fontSize: 7, fontFace: FONT, bold: true, color: borderColor, align: 'right',
-    });
+    const cardH = Math.min(1.2, (bottomH - 0.35) / 3);
+    top3.forEach((n, idx) => {
+      const cy = bottomY + 0.3 + idx * cardH;
+      const borderColor = deltaColor(n.orcVarPct, section.invertDelta);
 
-    // Status dot + justification/summary preview
-    const justText = n.orcAiSummary || n.orcJustification || 'Sem justificativa';
-    const stColor = statusDot(n.orcStatus);
+      slide.addShape('roundRect' as any, {
+        x: 7.6, y: cy, w: 5.4, h: cardH - 0.08,
+        fill: { color: C.white },
+        line: { color: 'E5E7EB', width: 0.5 },
+        rectRadius: 0.06,
+      });
+      slide.addShape('rect' as any, {
+        x: 7.6, y: cy, w: 0.06, h: cardH - 0.08,
+        fill: { color: borderColor },
+      });
 
-    slide.addShape('rect' as any, {
-      x: 7.8, y: cy + 0.3, w: 0.1, h: 0.1,
-      fill: { color: stColor },
+      slide.addText(n.label, {
+        x: 7.8, y: cy + 0.04, w: 3.5, h: 0.2,
+        fontSize: 8, fontFace: FONT, bold: true, color: C.headerBg,
+      });
+
+      slide.addText(`Δ Orç: ${fmtPct(n.orcVarPct)}`, {
+        x: 11.3, y: cy + 0.04, w: 1.5, h: 0.2,
+        fontSize: 7, fontFace: FONT, bold: true, color: borderColor, align: 'right',
+      });
+
+      const justText = n.orcAiSummary || n.orcJustification || 'Sem justificativa';
+      const stColor = statusDot(n.orcStatus);
+
+      slide.addShape('rect' as any, {
+        x: 7.8, y: cy + 0.3, w: 0.1, h: 0.1,
+        fill: { color: stColor },
+      });
+      slide.addText(truncate(justText, 80), {
+        x: 7.98, y: cy + 0.26, w: 4.8, h: cardH - 0.4,
+        fontSize: 6.5, fontFace: FONT, color: C.mutedText,
+        lineSpacingMultiple: 1.3, valign: 'top',
+      });
     });
-    slide.addText(truncate(justText, 80), {
-      x: 7.98, y: cy + 0.26, w: 4.8, h: cardH - 0.4,
-      fontSize: 6.5, fontFace: FONT, color: C.mutedText,
-      lineSpacingMultiple: 1.3, valign: 'top',
-    });
-  });
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -697,6 +740,12 @@ function addSummarySlide(pptx: PptxGenJS, data: VariancePptData) {
       x: 7, y: 2.0, w: 5.8, h: 0.5,
       fontSize: 12, fontFace: FONT, bold: true, color: C.approved,
     });
+  }
+
+  // Closing summary (if enriched)
+  if (data.closingSummary) {
+    const closingY = 5.2;
+    addInsightsBox(slide, data.closingSummary, 0.5, closingY, 5.5, 1.6);
   }
 
   // Footer

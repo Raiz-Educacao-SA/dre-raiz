@@ -13,11 +13,13 @@ import {
   ClipboardCheck,
   Loader2
 } from 'lucide-react';
-import { ExecutiveSummary, ActionsList, SlideDeck, useChartRegistry, buildPpt } from '../analysisPack';
-import type { AnalysisPack, AnalysisContext } from '../analysisPack/types/schema';
+import { ExecutiveSummary, ActionsList } from '../analysisPack';
 import { getMarcasEFiliais, getVarianceJustifications } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
+import type { AnalysisContext } from '../analysisPack/types/schema';
+import type { VariancePptData } from '../services/variancePptTypes';
 import MultiSelectFilter from './MultiSelectFilter';
+import VariancePptPreview from './VariancePptPreview';
 
 const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
 
@@ -56,15 +58,13 @@ export default function AnalysisView() {
   // Estados separados para cada aba
   const [summaryData, setSummaryData] = useState<{ summary: any; meta: any } | null>(null);
   const [actionsData, setActionsData] = useState<any[] | null>(null);
-  const [slidesData, setSlidesData] = useState<{ pack: AnalysisPack; context: AnalysisContext } | null>(null);
+  const [variancePreviewData, setVariancePreviewData] = useState<VariancePptData | null>(null);
 
   // Loading states separados
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [actionsLoading, setActionsLoading] = useState(false);
   const [slidesLoading, setSlidesLoading] = useState(false);
   const [variancePptLoading, setVariancePptLoading] = useState(false);
-
-  const chartRegistry = useChartRegistry();
 
   // Carregar marcas/filiais via RPC leve (SELECT DISTINCT — dezenas de rows)
   useEffect(() => {
@@ -147,65 +147,82 @@ export default function AnalysisView() {
   };
 
   // ========================================
-  // Gerar Slides Completos
+  // Gerar Slides (Variance preview)
   // ========================================
   const handleGenerateSlides = async () => {
     setSlidesLoading(true);
     try {
-      const context = await fetchSnapshotContext();
-      const data = await callAI(context, 'full');
-      setSlidesData({ pack: data, context });
+      // Step 1: Fetch variance data
+      const items = await getVarianceJustifications({
+        year_month: selectedMonth,
+        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
+      });
+      if (!items || items.length === 0) {
+        alert('Nenhum dado de desvio encontrado para o periodo selecionado. Gere os desvios primeiro na aba Justificativas.');
+        return;
+      }
+
+      // Step 2: Transform to PPT structure
+      const { prepareVariancePptData } = await import('../services/variancePptDataService');
+      const data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
+
+      // Step 3: Enrich with AI (silent fallback if fails)
+      try {
+        const { enrichVarianceWithAi, injectAiInsights } = await import('../services/variancePptAiService');
+        const insights = await enrichVarianceWithAi(data);
+        if (insights) {
+          injectAiInsights(data, insights);
+        }
+      } catch (aiErr) {
+        console.warn('AI enrichment skipped:', aiErr);
+      }
+
+      // Step 4: Set preview data
+      setVariancePreviewData(data);
     } catch (error: any) {
       console.error('Erro ao gerar slides:', error);
-      alert(`❌ ${error.message || 'Erro ao gerar slides.'}`);
+      alert(`${error.message || 'Erro ao gerar slides.'}`);
     } finally {
       setSlidesLoading(false);
     }
   };
 
   // ========================================
-  // Exportar PowerPoint
+  // Exportar PPT Executivo
   // ========================================
   const handleExportPpt = async () => {
-    if (!slidesData) {
-      alert('⚠️ Gere os slides primeiro!');
-      return;
-    }
-
-    try {
-      const pngs = await chartRegistry.exportAllPngBase64();
-      await buildPpt({
-        pack: slidesData.pack,
-        chartImages: pngs,
-        fileName: `Analise-${slidesData.context.period_label}.pptx`,
-      });
-    } catch (error) {
-      console.error('Erro ao exportar PowerPoint:', error);
-      alert('❌ Erro ao exportar PowerPoint');
-    }
-  };
-
-  // ========================================
-  // Exportar PPT Justificativas (sem IA)
-  // ========================================
-  const handleVariancePpt = async () => {
     setVariancePptLoading(true);
     try {
-      const items = await getVarianceJustifications({
-        year_month: selectedMonth,
-        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
-      });
-      if (!items || items.length === 0) {
-        alert('⚠️ Nenhum dado de desvio encontrado para o período selecionado.');
-        return;
+      let data = variancePreviewData;
+
+      // If no preview loaded, run full pipeline
+      if (!data) {
+        const items = await getVarianceJustifications({
+          year_month: selectedMonth,
+          marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
+        });
+        if (!items || items.length === 0) {
+          alert('Nenhum dado de desvio encontrado para o periodo selecionado.');
+          return;
+        }
+        const { prepareVariancePptData } = await import('../services/variancePptDataService');
+        data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
+
+        try {
+          const { enrichVarianceWithAi, injectAiInsights } = await import('../services/variancePptAiService');
+          const insights = await enrichVarianceWithAi(data);
+          if (insights) injectAiInsights(data, insights);
+        } catch (aiErr) {
+          console.warn('AI enrichment skipped:', aiErr);
+        }
       }
-      const { prepareVariancePptData } = await import('../services/variancePptDataService');
+
+      // Generate PPTX from data
       const { generateVariancePpt } = await import('../services/variancePptService');
-      const data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
       await generateVariancePpt(data);
     } catch (error: any) {
-      console.error('Erro ao exportar PPT Justificativas:', error);
-      alert(`❌ ${error.message || 'Erro ao gerar apresentação de justificativas.'}`);
+      console.error('Erro ao exportar PPT Executivo:', error);
+      alert(`${error.message || 'Erro ao gerar apresentacao executiva.'}`);
     } finally {
       setVariancePptLoading(false);
     }
@@ -366,18 +383,8 @@ export default function AnalysisView() {
                   )}
                 </button>
 
-                {slidesData && (
-                  <button
-                    onClick={handleExportPpt}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold text-sm transition-all"
-                  >
-                    <FileSpreadsheet size={16} />
-                    Exportar PowerPoint
-                  </button>
-                )}
-
                 <button
-                  onClick={handleVariancePpt}
+                  onClick={handleExportPpt}
                   disabled={variancePptLoading}
                   className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-lg hover:from-orange-700 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-sm transition-all"
                 >
@@ -386,7 +393,7 @@ export default function AnalysisView() {
                   ) : (
                     <Presentation size={16} />
                   )}
-                  Exportar PPT Justificativas
+                  Exportar PPT Executivo
                 </button>
               </div>
             )}
@@ -402,7 +409,7 @@ export default function AnalysisView() {
               let hasContent = false;
               if (tab.id === 'summary') hasContent = !!summaryData;
               if (tab.id === 'actions') hasContent = !!actionsData;
-              if (tab.id === 'slides') hasContent = !!slidesData;
+              if (tab.id === 'slides') hasContent = !!variancePreviewData;
 
               return (
                 <button
@@ -502,13 +509,9 @@ export default function AnalysisView() {
           {/* ==================== ABA SLIDES ==================== */}
           {activeTab === 'slides' && (
             <div>
-              {slidesData ? (
+              {variancePreviewData ? (
                 <div className="space-y-4">
-                  <SlideDeck
-                    pack={slidesData.pack}
-                    ctx={slidesData.context}
-                    onRegisterChart={chartRegistry.register}
-                  />
+                  <VariancePptPreview data={variancePreviewData} />
 
                   {/* Botão para regerar */}
                   <div className="flex justify-center">
@@ -526,7 +529,7 @@ export default function AnalysisView() {
                 <EmptyState
                   icon={<Presentation size={48} className="text-gray-400" />}
                   title="Nenhum slide gerado"
-                  description="Clique no botão acima para gerar slides completos com IA."
+                  description="Clique em Gerar Slides para visualizar a apresentacao com dados de desvios e insights IA."
                   loading={slidesLoading}
                 />
               )}

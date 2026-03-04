@@ -158,6 +158,69 @@ export default defineConfig(({ mode }) => {
                       res.end(JSON.stringify({ error: 'IA retornou texto não-JSON' }));
                     }
                   }
+                } else if (action === 'enrich-variance') {
+                  const parsed = JSON.parse(body);
+                  const { system: sysPrompt, user: userPrompt } = parsed;
+                  if (!sysPrompt || !userPrompt) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'system e user são obrigatórios' }));
+                    return;
+                  }
+
+                  const apiKey = env.VITE_ANTHROPIC_API_KEY || '';
+                  if (!apiKey) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'VITE_ANTHROPIC_API_KEY não configurado' }));
+                    return;
+                  }
+
+                  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-api-key': apiKey,
+                      'anthropic-version': '2023-06-01',
+                    },
+                    body: JSON.stringify({
+                      model: 'claude-haiku-4-5-20251001',
+                      max_tokens: 3000,
+                      system: sysPrompt,
+                      messages: [{ role: 'user', content: userPrompt }],
+                      temperature: 0.4,
+                    }),
+                  });
+
+                  if (!upstream.ok) {
+                    const errText = await upstream.text();
+                    console.error('Claude API error (enrich-variance):', upstream.status, errText);
+                    res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: `Erro Claude API (${upstream.status})` }));
+                    return;
+                  }
+
+                  const aiData = await upstream.json() as any;
+                  const aiText = aiData?.content?.[0]?.text;
+                  if (!aiText) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Resposta vazia do Claude' }));
+                    return;
+                  }
+
+                  try {
+                    const result = JSON.parse(aiText);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify(result));
+                  } catch {
+                    const match = aiText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || aiText.match(/(\{[\s\S]*\})/);
+                    if (match) {
+                      const result = JSON.parse(match[1]);
+                      res.writeHead(200, { 'Content-Type': 'application/json' });
+                      res.end(JSON.stringify(result));
+                    } else {
+                      res.writeHead(422, { 'Content-Type': 'application/json' });
+                      res.end(JSON.stringify({ error: 'IA retornou texto não-JSON' }));
+                    }
+                  }
                 } else {
                   res.writeHead(400, { 'Content-Type': 'application/json' });
                   res.end(JSON.stringify({ error: `Unknown action: ${action}` }));

@@ -247,6 +247,64 @@ async function handleGenerateAi(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+// ── Enrich Variance handler ──
+
+async function handleEnrichVariance(req: VercelRequest, res: VercelResponse) {
+  setCors(req, res);
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const ANTHROPIC_API_KEY = process.env.VITE_ANTHROPIC_API_KEY;
+  if (!ANTHROPIC_API_KEY) return res.status(500).json({ error: 'Anthropic API key not configured' });
+
+  try {
+    const { system, user } = req.body;
+    if (!system || !user) {
+      return res.status(400).json({ error: 'system e user são obrigatórios' });
+    }
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 3000,
+        system,
+        messages: [{ role: 'user', content: user }],
+        temperature: 0.4,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Claude API error (enrich-variance):', response.status, errText);
+      return res.status(response.status).json({ error: `Erro Claude API (${response.status})` });
+    }
+
+    const data = await response.json();
+    const text = data?.content?.[0]?.text;
+    if (!text) return res.status(500).json({ error: 'Resposta vazia do Claude' });
+
+    try {
+      return res.status(200).json(JSON.parse(text));
+    } catch {
+      const match = text.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || text.match(/(\{[\s\S]*\})/);
+      if (match) {
+        return res.status(200).json(JSON.parse(match[1]));
+      }
+      return res.status(422).json({ error: 'IA retornou texto não-JSON' });
+    }
+  } catch (error: any) {
+    console.error('Error enriching variance:', error);
+    return res.status(500).json({ error: 'Serviço de IA indisponível' });
+  }
+}
+
 // ── Router ──
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -256,6 +314,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     case 'anthropic': return handleAnthropic(req, res);
     case 'groq': return handleGroq(req, res);
     case 'generate-ai': return handleGenerateAi(req, res);
+    case 'enrich-variance': return handleEnrichVariance(req, res);
     default: return res.status(400).json({ error: `Unknown action: ${action}` });
   }
 }

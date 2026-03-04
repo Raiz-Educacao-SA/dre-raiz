@@ -127,6 +127,8 @@ export function prepareVariancePptData(
       orcStatus: orcDirect?.status || '',
       a1Status: a1Direct?.status || '',
       ownerName: orcDirect?.owner_name || a1Direct?.owner_name || null,
+      enrichedInsight: null,
+      enrichedDrivers: null,
       children,
     };
   }
@@ -198,6 +200,8 @@ export function prepareVariancePptData(
     sections,
     calcRows,
     stats,
+    executiveSummary: null,
+    closingSummary: null,
   };
 }
 
