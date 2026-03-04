@@ -16,8 +16,8 @@ import { generatePresentation } from './slidePptxService';
 
 // API URL (mesmo padrão do anthropicService)
 const ANTHROPIC_API_URL = import.meta.env.DEV
-  ? 'http://localhost:3021/api/anthropic'
-  : '/api/anthropic';
+  ? 'http://localhost:3021/api/llm-proxy?action=anthropic'
+  : '/api/llm-proxy?action=anthropic';
 
 // ============================================
 // INTERFACES

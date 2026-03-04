@@ -3,8 +3,8 @@ import { Transaction, SchoolKPIs, IAInsight, AIChartResponse } from "../types";
 
 // API URL - detecta automaticamente produção vs desenvolvimento
 const PROXY_URL = import.meta.env.PROD
-  ? "/api/anthropic"  // Produção: usa Vercel serverless function
-  : "http://localhost:3021/api/anthropic";  // Desenvolvimento: usa proxy local
+  ? "/api/llm-proxy?action=anthropic"  // Produção: usa Vercel serverless function
+  : "http://localhost:3021/api/llm-proxy?action=anthropic";  // Desenvolvimento: usa proxy local
 
 // Configurações
 const ANTHROPIC_MODEL = import.meta.env.VITE_ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";

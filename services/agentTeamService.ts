@@ -676,7 +676,7 @@ async function callClaudeViaProxy(
   const STEP_TIMEOUT_MS = 7 * 60 * 1000; // 7 minutos
   const timeout = setTimeout(() => controller.abort(), STEP_TIMEOUT_MS);
 
-  const res = await fetch('/api/anthropic', {
+  const res = await fetch('/api/llm-proxy?action=anthropic', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

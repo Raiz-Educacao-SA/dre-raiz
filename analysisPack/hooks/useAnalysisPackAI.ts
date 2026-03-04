@@ -22,7 +22,7 @@ export function useAnalysisPackAI(): UseAnalysisPackAIReturn {
     setError(null);
 
     try {
-      const response = await fetch('/api/analysis/generate-ai', {
+      const response = await fetch('/api/llm-proxy?action=generate-ai', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

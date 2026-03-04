@@ -349,7 +349,7 @@ export async function markRunCompletedIfFinished(
       ? `https://${process.env.VERCEL_URL}`
       : process.env.API_BASE_URL || 'http://localhost:3002';
 
-    fetch(`${baseUrl}/api/agent-team/send-completion-email`, {
+    fetch(`${baseUrl}/api/agent-team/notifications?action=send-completion-email`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runId }),

@@ -2,8 +2,8 @@
 import { Transaction, SchoolKPIs, IAInsight, AIChartResponse } from "../types";
 
 // Vite proxy (dev) ou Vercel function (prod) — sempre URL relativa
-const ANTHROPIC_API_URL = "/api/anthropic";
-const GROQ_API_URL      = "/api/groq";
+const ANTHROPIC_API_URL = "/api/llm-proxy?action=anthropic";
+const GROQ_API_URL      = "/api/llm-proxy?action=groq";
 
 /** Verifica se o erro da Anthropic é por saldo insuficiente */
 const isCreditError = (status: number, body: string): boolean =>
@@ -708,6 +708,86 @@ Reescreva com visão de FP&A conforme as diretrizes.`;
   const text = data.content?.[0]?.text;
   if (!text) throw new Error('Resposta vazia da IA');
   return text;
+};
+
+/**
+ * generateVarianceSummary — Síntese IA hierárquica para justificativas de desvios
+ *
+ * Nível 1 (tag02): resume justificativas das tag03 abaixo
+ * Nível 2 (tag01): resume sínteses das tag02 abaixo
+ * Nível 3 (ytd):   consolida sínteses mês a mês
+ */
+export type VarianceSummaryLevel = 'tag02' | 'tag01' | 'ytd';
+
+export interface VarianceSummaryItem {
+  label: string;       // tag03 name, tag02 name, ou year_month
+  real: number;
+  compare: number;
+  variance_pct: number | null;
+  text: string;        // justificativa do pacoteiro (tag02) ou ai_summary (tag01/ytd)
+}
+
+export const generateVarianceSummary = async (
+  level: VarianceSummaryLevel,
+  items: VarianceSummaryItem[],
+  context: { parentLabel: string; marca?: string }
+): Promise<string> => {
+  const fmtVal = (v: number) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const fmtPct = (v: number | null) => v !== null ? `${v > 0 ? '+' : ''}${v.toFixed(1)}%` : 'N/D';
+
+  const itemsTable = items.map(item =>
+    `- ${item.label}: Real ${fmtVal(item.real)} | Comparação ${fmtVal(item.compare)} | Δ ${fmtPct(item.variance_pct)}\n  Justificativa/Síntese: ${item.text}`
+  ).join('\n');
+
+  let systemPrompt: string;
+  let userPrompt: string;
+
+  switch (level) {
+    case 'tag02':
+      systemPrompt = 'Você é um analista financeiro sênior da Raiz Educação. Seu papel é sintetizar justificativas de desvios orçamentários de forma objetiva e executiva.';
+      userPrompt = `Resuma em 2-3 frases as justificativas dos projetos (tag03) abaixo para o segmento "${context.parentLabel}"${context.marca ? ` da marca ${context.marca}` : ''}. Seja objetivo e destaque os principais drivers de variação.\n\n${itemsTable}`;
+      break;
+    case 'tag01':
+      systemPrompt = 'Você é um analista financeiro sênior da Raiz Educação. Seu papel é consolidar análises de segmentos em uma visão de centro de custo.';
+      userPrompt = `Consolide em 2-3 frases as análises dos segmentos (tag02) abaixo para o centro de custo "${context.parentLabel}"${context.marca ? ` da marca ${context.marca}` : ''}. Destaque os segmentos mais relevantes e seus drivers.\n\n${itemsTable}`;
+      break;
+    case 'ytd':
+      systemPrompt = 'Você é um analista financeiro sênior da Raiz Educação. Seu papel é produzir análises acumuladas (YTD) com visão de tendência.';
+      userPrompt = `Consolide a análise acumulada (YTD) das justificativas mês a mês para "${context.parentLabel}"${context.marca ? ` da marca ${context.marca}` : ''}. Destaque tendências, evolução e padrões recorrentes.\n\n${itemsTable}`;
+      break;
+  }
+
+  try {
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 800,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.5,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      if (isCreditError(response.status, errBody)) {
+        console.warn('⚠️ Anthropic sem crédito — usando Groq (Llama) como fallback para síntese');
+        return callGroqFallback(systemPrompt, userPrompt, 800, 0.5);
+      }
+      console.error('Anthropic API error (variance summary):', response.status, errBody);
+      throw new Error(`Serviço de IA indisponível (${response.status})`);
+    }
+
+    const data = await response.json();
+    const text = data.content?.[0]?.text;
+    if (!text) throw new Error('Resposta vazia da IA');
+    return text;
+  } catch (error) {
+    console.error('Erro em generateVarianceSummary:', error);
+    throw error;
+  }
 };
 
 function getFallbackInsights(kpis: SchoolKPIs): IAInsight[] {

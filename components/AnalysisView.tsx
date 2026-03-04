@@ -95,7 +95,7 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
           filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
         });
 
-        const response = await fetch('/api/analysis/generate-ai', {
+        const response = await fetch('/api/llm-proxy?action=generate-ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ context, type: 'summary' }),
@@ -141,7 +141,7 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
           filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
         });
 
-        const response = await fetch('/api/analysis/generate-ai', {
+        const response = await fetch('/api/llm-proxy?action=generate-ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ context, type: 'actions' }),
@@ -181,7 +181,7 @@ export default function AnalysisView({ transactions, kpis }: AnalysisViewProps) 
           filial: selectedFiliais.length > 0 ? selectedFiliais[0] : undefined,
         });
 
-        const response = await fetch('/api/analysis/generate-ai', {
+        const response = await fetch('/api/llm-proxy?action=generate-ai', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ context, type: 'full' }),

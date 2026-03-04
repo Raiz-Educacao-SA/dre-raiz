@@ -75,10 +75,8 @@ interface CutPlanData {
 // Fetch helper
 // --------------------------------------------
 
-const API_BASE = '/api/agent-team';
-
-async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, options);
+async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(url, options);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -110,9 +108,9 @@ export default function CEOView() {
     const load = async () => {
       try {
         const [healthRes, forecastRes, brandsRes] = await Promise.all([
-          fetchJSON<HealthData>('/health-score'),
-          fetchJSON<ForecastData>('/forecast'),
-          fetchJSON<{ brands: BrandScore[] }>('/brand-health-score'),
+          fetchJSON<HealthData>('/api/agent-team/queries?action=health-score'),
+          fetchJSON<ForecastData>('/api/agent-team/queries?action=forecast'),
+          fetchJSON<{ brands: BrandScore[] }>('/api/agent-team/queries?action=brand-health-score'),
         ]);
 
         if (cancelled) return;
@@ -138,7 +136,7 @@ export default function CEOView() {
     const loadAlerts = async () => {
       try {
         // Fetch alerts from the latest completed run
-        const runRes = await fetchJSON<{ run: { id: string } | null }>('/runs?limit=1');
+        const runRes = await fetchJSON<{ run: { id: string } | null }>('/api/agent-team/queries?action=runs&limit=1');
         if (cancelled) return;
 
         // Alerts are stored in agent_alerts table — fetch via supabase directly
@@ -163,7 +161,7 @@ export default function CEOView() {
   const handleGenerateCutPlan = useCallback(async (targetScore: number) => {
     setLoadingCutPlan(true);
     try {
-      const result = await fetchJSON<CutPlanData>('/generate-cut-plan', {
+      const result = await fetchJSON<CutPlanData>('/api/agent-team/operations?action=generate-cut-plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_score: targetScore }),
@@ -180,7 +178,7 @@ export default function CEOView() {
   const handleDismissAlert = useCallback((alertId: string) => {
     setAlerts((prev) => prev.filter((a) => a.id !== alertId));
     // Fire-and-forget: mark as dismissed in DB
-    fetch(`${API_BASE}/review-step`, {
+    fetch('/api/agent-team/pipeline-router?action=review-step', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ alertId, action: 'dismiss' }),

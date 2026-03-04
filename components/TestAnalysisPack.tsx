@@ -44,7 +44,7 @@ export default function TestAnalysisPack() {
         });
         setContext(ctx);
 
-        const response = await fetch("/api/analysis/generate-ai", {
+        const response = await fetch("/api/llm-proxy?action=generate-ai", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ context: ctx }),
