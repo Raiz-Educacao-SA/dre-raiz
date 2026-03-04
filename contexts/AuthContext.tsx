@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { auth, googleProvider, signInWithPopup, signOut as firebaseSignOut } from '../firebase';
 import * as supabaseService from '../services/supabaseService';
@@ -41,6 +41,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Buscar dados do usuário no Supabase
   const fetchUserData = async (firebaseUser: FirebaseUser): Promise<User | null> => {
@@ -152,25 +153,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   // Monitorar mudanças de autenticação do Firebase
+  // Função para renovar sessão Supabase a partir do Firebase token
+  const refreshSupabaseSession = async (firebaseUser: FirebaseUser) => {
+    try {
+      const idToken = await firebaseUser.getIdToken(true); // force refresh
+      await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
+      console.log('🔄 Sessão Supabase renovada');
+    } catch (err) {
+      console.warn('⚠️ Supabase signInWithIdToken falhou:', err);
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+      // Limpar interval anterior
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+        refreshIntervalRef.current = null;
+      }
+
       if (firebaseUser) {
         // Restaura sessão Supabase para que RLS funcione (ex: reload de página)
-        try {
-          const idToken = await firebaseUser.getIdToken();
-          await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
-        } catch (err) {
-          console.warn('⚠️ Supabase signInWithIdToken falhou:', err);
-        }
+        await refreshSupabaseSession(firebaseUser);
+
         const userData = await fetchUserData(firebaseUser);
         setUser(userData);
+
+        // Renovar token Supabase a cada 45 min (Firebase token expira em 60 min)
+        refreshIntervalRef.current = setInterval(() => {
+          refreshSupabaseSession(firebaseUser);
+        }, 45 * 60 * 1000);
       } else {
         setUser(null);
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
   }, []);
 
   const signInWithGoogle = async () => {

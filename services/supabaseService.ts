@@ -3270,9 +3270,11 @@ export const generateVarianceItems = async (
     if (marca) delQuery = delQuery.eq('marca', marca);
     delQuery = delQuery.in('status', ['pending', 'notified']);
 
-    const { error: delError } = await delQuery;
+    const { error: delError, count: delCount } = await delQuery;
     if (delError) {
-      debug(`⚠️ Erro ao limpar antigos (continuando): ${delError.message}`);
+      console.error(`❌ DELETE variance_justifications falhou:`, delError);
+    } else {
+      console.log(`🗑️ DELETE pendentes/notificados: ${delCount ?? '?'} removidos`);
     }
 
     // 7.5 Deletar calc rows antigos (MARGEM/EBITDA) — sempre re-inseridos
@@ -3320,7 +3322,7 @@ export const generateVarianceItems = async (
         .select('id');
 
       if (insertErr) {
-        debug(`⚠️ Erro batch ${i}: ${insertErr.message}, tentando individual...`);
+        console.error(`❌ INSERT batch ${i} falhou:`, insertErr, '| Primeira row:', JSON.stringify(batch[0]));
         for (const row of batch) {
           const { error: singleErr } = await supabase
             .from('variance_justifications')

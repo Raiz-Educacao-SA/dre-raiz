@@ -167,13 +167,16 @@ const VarianceJustificationsView: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getVarianceJustifications({
+      const filters = {
         year_month: yearMonth || undefined,
         marcas: filterMarcas.length > 0 ? filterMarcas : undefined,
         status: filterStatuses.length === 1 ? filterStatuses[0] : undefined,
         comparison_type: filterType || undefined,
         owner_email: (!isAdminOrManager && user?.email) ? user.email : undefined,
-      });
+      };
+      console.log('📋 Justificativas — fetchData com filtros:', filters);
+      const data = await getVarianceJustifications(filters);
+      console.log('📋 Justificativas — retornou', data.length, 'items. Primeiro:', data[0]);
       // Client-side filter for multi-status
       const filtered = filterStatuses.length > 1
         ? data.filter(d => filterStatuses.includes(d.status))
