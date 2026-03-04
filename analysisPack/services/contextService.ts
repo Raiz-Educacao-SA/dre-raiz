@@ -1,6 +1,7 @@
-import type { AnalysisContext, Transaction, SchoolKPIs, CurrencyCode } from "../../types";
+import type { AnalysisContext, CurrencyCode } from "../../types";
+import type { SomaTagsRow } from "../../services/supabaseService";
 import { getMockContext } from "../mock/mockContext";
-import { getAllTransactions } from "../../services/supabaseService";
+import { getSomaTags } from "../../services/supabaseService";
 import { buildDatasets, buildKPIs } from "./dataBuilder";
 
 export interface FetchContextParams {
@@ -16,8 +17,8 @@ export interface FetchContextParams {
 }
 
 /**
- * Busca o contexto de análise real do Supabase
- * ou retorna mock se configurado
+ * Busca o contexto de análise real do Supabase via get_soma_tags
+ * Retorna dados Real, Orçado e A-1 agregados por tag0+tag01+mês
  */
 export async function fetchAnalysisContext(
   params?: FetchContextParams
@@ -29,62 +30,50 @@ export async function fetchAnalysisContext(
   }
 
   try {
-    console.log("🔄 Buscando transações do Supabase...");
+    // Determinar range de meses (últimos 12 meses)
+    const now = new Date();
+    const endMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const startD = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const startMonth = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, '0')}`;
 
-    // 1. Buscar todas as transações do Supabase
-    const allTransactions = await getAllTransactions();
+    console.log(`🔄 Buscando dados DRE via get_soma_tags [${startMonth} → ${endMonth}]...`);
 
-    if (!allTransactions || allTransactions.length === 0) {
-      console.warn("⚠️ Nenhuma transação encontrada, usando mock como fallback");
+    // Buscar dados agregados (Real + Orçado + A-1 em uma só chamada)
+    const marcas = params?.marca ? [params.marca] : undefined;
+    const filiais = params?.filial ? [params.filial] : undefined;
+
+    const somaData = await getSomaTags(
+      startMonth,
+      endMonth,
+      marcas,
+      filiais,
+      undefined, // tags02
+      undefined, // tags01
+      'Sim',     // recurring
+    );
+
+    if (!somaData || somaData.length === 0) {
+      console.warn("⚠️ Nenhum dado retornado por get_soma_tags, usando mock");
       return getMockContext();
     }
 
-    console.log(`✅ ${allTransactions.length} transações carregadas`);
+    console.log(`✅ ${somaData.length} linhas de get_soma_tags`);
 
-    // 2. Aplicar filtros se fornecidos
-    let filteredTransactions = allTransactions;
+    // Separar por cenário
+    const realRows = somaData.filter(r => r.scenario === 'Real');
+    const orcadoRows = somaData.filter(r => r.scenario === 'Orçado');
+    const a1Rows = somaData.filter(r => r.scenario === 'A-1');
 
-    if (params?.marca) {
-      filteredTransactions = filteredTransactions.filter(t => t.marca === params.marca);
-      console.log(`🔍 Filtro [marca=${params.marca}]: ${filteredTransactions.length} transações`);
-    }
+    console.log(`📊 Real: ${realRows.length} | Orçado: ${orcadoRows.length} | A-1: ${a1Rows.length}`);
 
-    if (params?.filial) {
-      filteredTransactions = filteredTransactions.filter(t => t.filial === params.filial);
-      console.log(`🔍 Filtro [filial=${params.filial}]: ${filteredTransactions.length} transações`);
-    }
+    // Construir datasets e KPIs com dados reais
+    const datasets = buildDatasets(realRows, orcadoRows, a1Rows);
+    const kpis = buildKPIs(realRows, orcadoRows, a1Rows);
 
-    if (params?.scenario) {
-      filteredTransactions = filteredTransactions.filter(t => t.scenario === params.scenario);
-      console.log(`🔍 Filtro [scenario=${params.scenario}]: ${filteredTransactions.length} transações`);
-    }
-
-    if (params?.startDate) {
-      filteredTransactions = filteredTransactions.filter(t => t.date >= params.startDate!);
-      console.log(`🔍 Filtro [startDate=${params.startDate}]: ${filteredTransactions.length} transações`);
-    }
-
-    if (params?.endDate) {
-      filteredTransactions = filteredTransactions.filter(t => t.date <= params.endDate!);
-      console.log(`🔍 Filtro [endDate=${params.endDate}]: ${filteredTransactions.length} transações`);
-    }
-
-    // 3. Calcular KPIs a partir das transações
-    console.log("📊 Calculando KPIs...");
-    const schoolKPIs = calculateSchoolKPIs(filteredTransactions);
-
-    // 4. Construir datasets (R12, waterfall, pareto, heatmap, table)
-    console.log("📈 Construindo datasets...");
-    const datasets = buildDatasets(filteredTransactions);
-
-    // 5. Construir lista de KPIs formatados
-    const kpis = buildKPIs(schoolKPIs, filteredTransactions);
-
-    // 6. Determinar labels de período e escopo
-    const period_label = params?.periodId || detectPeriodLabel(filteredTransactions);
+    // Labels de período e escopo
+    const period_label = params?.periodId || detectPeriodLabel(realRows);
     const scope_label = params?.scopeId || detectScopeLabel(params);
 
-    // 7. Construir contexto
     const context: AnalysisContext = {
       org_name: params?.org_name || "RAIZ EDUCAÇÃO",
       currency: params?.currency || "BRL",
@@ -99,7 +88,7 @@ export async function fetchAnalysisContext(
       },
     };
 
-    console.log("✅ Contexto de análise construído com sucesso");
+    console.log("✅ Contexto de análise construído com dados reais");
     return context;
 
   } catch (error) {
@@ -109,106 +98,32 @@ export async function fetchAnalysisContext(
   }
 }
 
-/**
- * Calcula SchoolKPIs a partir das transações
- */
-function calculateSchoolKPIs(transactions: Transaction[]): SchoolKPIs {
-  const totalRevenue = transactions
-    .filter(t => t.type === 'REVENUE')
-    .reduce((sum, t) => sum + t.amount, 0);
+/** Detecta label do período a partir dos meses nos dados */
+function detectPeriodLabel(rows: SomaTagsRow[]): string {
+  if (!rows.length) return "Período não especificado";
 
-  const totalFixedCosts = transactions
-    .filter(t => t.type === 'FIXED_COST')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const totalVariableCosts = transactions
-    .filter(t => t.type === 'VARIABLE_COST')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const sgaCosts = transactions
-    .filter(t => t.type === 'SGA')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const rateioCosts = transactions
-    .filter(t => t.type === 'RATEIO')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const totalCosts = totalFixedCosts + totalVariableCosts + sgaCosts + rateioCosts;
-  const ebitda = totalRevenue - totalCosts;
-  const netMargin = totalRevenue > 0 ? (ebitda / totalRevenue) * 100 : 0;
-
-  // Estimativa de alunos ativos (você pode ajustar essa lógica)
-  const activeStudents = 11450; // TODO: buscar de outra fonte ou calcular
-
-  const costPerStudent = activeStudents > 0 ? totalCosts / activeStudents : 0;
-  const revenuePerStudent = activeStudents > 0 ? totalRevenue / activeStudents : 0;
-
-  // KPIs calculados
-  const targetEbitda = totalRevenue * 0.20; // 20% de margem target
-  const breakEvenPoint = totalFixedCosts / (netMargin / 100 || 0.01);
-  const marginOfSafety = totalRevenue > breakEvenPoint ? ((totalRevenue - breakEvenPoint) / totalRevenue) * 100 : 0;
-  const costReductionNeeded = ebitda < targetEbitda ? targetEbitda - ebitda : 0;
-
-  return {
-    totalRevenue,
-    totalFixedCosts,
-    totalVariableCosts,
-    sgaCosts,
-    ebitda,
-    netMargin,
-    costPerStudent,
-    revenuePerStudent,
-    activeStudents,
-    breakEvenPoint,
-    defaultRate: 4.2, // TODO: calcular ou buscar
-    targetEbitda,
-    costReductionNeeded,
-    marginOfSafety,
-    churnRate: 3.5, // TODO: calcular ou buscar
-    waterPerStudent: 0, // TODO: calcular ou buscar
-    energyPerClassroom: 0, // TODO: calcular ou buscar
-    consumptionMaterialPerStudent: 0, // TODO: calcular ou buscar
-    eventsPerStudent: 0, // TODO: calcular ou buscar
-  };
-}
-
-/**
- * Detecta o label de período baseado nas transações
- */
-function detectPeriodLabel(transactions: Transaction[]): string {
-  if (!transactions.length) return "Período não especificado";
-
-  const dates = transactions.map(t => new Date(t.date));
-  const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-  const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
-
+  const months = [...new Set(rows.map(r => r.month))].sort();
+  const first = months[0];
+  const last = months[months.length - 1];
   const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-  if (minDate.getFullYear() === maxDate.getFullYear()) {
-    if (minDate.getMonth() === maxDate.getMonth()) {
-      // Mesmo mês
-      return `${monthNames[minDate.getMonth()]}/${minDate.getFullYear()}`;
-    } else {
-      // Múltiplos meses do mesmo ano
-      return `YTD ${monthNames[maxDate.getMonth()]}/${maxDate.getFullYear()}`;
-    }
+  const [fy, fm] = first.split('-').map(Number);
+  const [ly, lm] = last.split('-').map(Number);
+
+  if (fy === ly && fm === lm) {
+    return `${monthNames[fm - 1]}/${fy}`;
+  } else if (months.length >= 12) {
+    return `R12M até ${monthNames[lm - 1]}/${ly}`;
   } else {
-    // Múltiplos anos
-    return `${monthNames[minDate.getMonth()]}/${minDate.getFullYear()} - ${monthNames[maxDate.getMonth()]}/${maxDate.getFullYear()}`;
+    return `YTD ${monthNames[lm - 1]}/${ly}`;
   }
 }
 
-/**
- * Detecta o label de escopo baseado nos filtros
- */
+/** Detecta label de escopo */
 function detectScopeLabel(params?: FetchContextParams): string {
   if (!params) return "Consolidado";
-
   const parts: string[] = [];
-
   if (params.marca) parts.push(`Marca: ${params.marca}`);
   if (params.filial) parts.push(`Filial: ${params.filial}`);
-  if (params.scenario) parts.push(`Cenário: ${params.scenario}`);
-
   return parts.length > 0 ? parts.join(" | ") : "Consolidado";
 }

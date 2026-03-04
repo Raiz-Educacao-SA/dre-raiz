@@ -6,7 +6,7 @@ export async function callClaudeJSON<T extends ClaudeJSON>(args: {
   jsonSchema: any; // JSON Schema (simplificado)
   maxTokens?: number;
 }) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY não configurado");
 
   const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-5-20250929";

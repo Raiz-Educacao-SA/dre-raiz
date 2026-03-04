@@ -1,165 +1,197 @@
-import type { Transaction, SchoolKPIs, KPI, DatasetRegistry, CurrencyCode } from "../../types";
+import type { KPI, DatasetRegistry } from "../../types";
+import type { SomaTagsRow } from "../../services/supabaseService";
+
+// ── DRE prefixes ──
+const PREFIX_LABELS: Record<string, string> = {
+  '01.': 'Receita Líquida',
+  '02.': 'Custos Variáveis',
+  '03.': 'Custos Fixos',
+  '04.': 'SG&A',
+  '05.': 'Rateio Raiz',
+};
+
+/** Aggregate rows by tag0 prefix (first 3 chars) */
+function sumByPrefix(rows: SomaTagsRow[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const prefix = (r.tag0 || '').slice(0, 3);
+    if (!prefix.match(/^\d{2}\./)) continue;
+    map.set(prefix, (map.get(prefix) || 0) + Number(r.total || 0));
+  }
+  return map;
+}
+
+/** Aggregate rows by month + tag0 prefix */
+function sumByMonthPrefix(rows: SomaTagsRow[]): Map<string, Map<string, number>> {
+  const map = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const prefix = (r.tag0 || '').slice(0, 3);
+    if (!prefix.match(/^\d{2}\./)) continue;
+    if (!map.has(r.month)) map.set(r.month, new Map());
+    const m = map.get(r.month)!;
+    m.set(prefix, (m.get(prefix) || 0) + Number(r.total || 0));
+  }
+  return map;
+}
+
+/** Helper: get prefix value or 0 */
+const gp = (map: Map<string, number>, p: string) => map.get(p) || 0;
+
+/** Calculate totals from prefix map */
+function calcTotals(prefixMap: Map<string, number>) {
+  const revenue = gp(prefixMap, '01.');
+  const varCosts = gp(prefixMap, '02.');
+  const fixCosts = gp(prefixMap, '03.');
+  const sga = gp(prefixMap, '04.');
+  const rateio = gp(prefixMap, '05.');
+  const totalCosts = Math.abs(varCosts) + Math.abs(fixCosts) + Math.abs(sga) + Math.abs(rateio);
+  const margem = revenue + varCosts + fixCosts; // varCosts/fixCosts are negative
+  const ebitda = margem + sga;
+  const ebitdaTotal = ebitda + rateio;
+  return { revenue, varCosts, fixCosts, sga, rateio, totalCosts, margem, ebitda, ebitdaTotal };
+}
 
 /**
- * Constrói todos os datasets a partir de transações
+ * Constrói datasets a partir de dados reais de get_soma_tags
  */
-export function buildDatasets(transactions: Transaction[]): DatasetRegistry {
-  // Ordenar transações por data
-  const sorted = [...transactions].sort((a, b) =>
-    new Date(a.date).getTime() - new Date(b.date).getTime()
-  );
+export function buildDatasets(
+  realRows: SomaTagsRow[],
+  orcadoRows: SomaTagsRow[],
+  a1Rows: SomaTagsRow[],
+): DatasetRegistry {
+  const realByMonth = sumByMonthPrefix(realRows);
+  const orcByMonth = sumByMonthPrefix(orcadoRows);
 
-  // Construir série R12 (últimos 12 meses)
-  const monthlyData = new Map<string, { revenue: number; costs: number; ebitda: number }>();
+  const realTotals = sumByPrefix(realRows);
+  const orcTotals = sumByPrefix(orcadoRows);
+  const a1Totals = sumByPrefix(a1Rows);
 
-  sorted.forEach(t => {
-    const month = t.date.substring(0, 7); // YYYY-MM
-    if (!monthlyData.has(month)) {
-      monthlyData.set(month, { revenue: 0, costs: 0, ebitda: 0 });
-    }
-    const data = monthlyData.get(month)!;
+  const realCalc = calcTotals(realTotals);
+  const orcCalc = calcTotals(orcTotals);
 
-    if (t.type === 'REVENUE') {
-      data.revenue += t.amount;
-    } else {
-      data.costs += Math.abs(t.amount);
-    }
-    data.ebitda = data.revenue - data.costs;
-  });
-
-  // Pegar últimos 12 meses
-  const months = Array.from(monthlyData.keys()).sort().slice(-12);
-  const r12Data = months.map(m => monthlyData.get(m)!);
+  // ── 1. R12 — Monthly revenue, EBITDA, costs (Real + Orçado) ──
+  const allMonths = [...new Set([...realByMonth.keys(), ...orcByMonth.keys()])].sort().slice(-12);
+  const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
   const r12 = {
-    x: months.map(m => {
+    x: allMonths.map(m => {
       const [year, month] = m.split('-');
-      const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
       return `${monthNames[parseInt(month) - 1]}/${year.substring(2)}`;
     }),
     series: [
       {
-        key: 'revenue',
-        name: 'Receita',
+        key: 'revenue_real',
+        name: 'Receita Real',
         unit: 'currency' as const,
-        data: r12Data.map(d => d.revenue)
+        data: allMonths.map(m => gp(realByMonth.get(m) || new Map(), '01.')),
       },
       {
-        key: 'ebitda',
-        name: 'EBITDA',
+        key: 'revenue_orcado',
+        name: 'Receita Orçado',
         unit: 'currency' as const,
-        data: r12Data.map(d => d.ebitda)
+        data: allMonths.map(m => gp(orcByMonth.get(m) || new Map(), '01.')),
       },
       {
-        key: 'costs',
-        name: 'Custos Totais',
+        key: 'ebitda_real',
+        name: 'EBITDA Real',
         unit: 'currency' as const,
-        data: r12Data.map(d => d.costs)
-      }
-    ]
+        data: allMonths.map(m => {
+          const pm = realByMonth.get(m) || new Map();
+          const { ebitdaTotal } = calcTotals(pm);
+          return ebitdaTotal;
+        }),
+      },
+      {
+        key: 'ebitda_orcado',
+        name: 'EBITDA Orçado',
+        unit: 'currency' as const,
+        data: allMonths.map(m => {
+          const pm = orcByMonth.get(m) || new Map();
+          const { ebitdaTotal } = calcTotals(pm);
+          return ebitdaTotal;
+        }),
+      },
+    ],
   };
 
-  // Construir ponte de EBITDA
-  const totalRevenue = transactions
-    .filter(t => t.type === 'REVENUE')
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalFixedCosts = transactions
-    .filter(t => t.type === 'FIXED_COST')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const totalVariableCosts = transactions
-    .filter(t => t.type === 'VARIABLE_COST')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const sgaCosts = transactions
-    .filter(t => t.type === 'SGA')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const rateioCosts = transactions
-    .filter(t => t.type === 'RATEIO')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
-
-  const ebitdaReal = totalRevenue - totalFixedCosts - totalVariableCosts - sgaCosts - rateioCosts;
-
-  // Simulação: plano era 95% do real (ajuste conforme sua lógica de orçamento)
-  const ebitdaPlano = ebitdaReal * 0.95;
-  const revenueGap = totalRevenue * 0.05;
+  // ── 2. EBITDA Bridge (waterfall) — Real vs Orçado ──
+  const revenueGap = realCalc.revenue - orcCalc.revenue;
+  const varCostGap = Math.abs(realCalc.varCosts) - Math.abs(orcCalc.varCosts);
+  const fixCostGap = Math.abs(realCalc.fixCosts) - Math.abs(orcCalc.fixCosts);
+  const sgaGap = Math.abs(realCalc.sga) - Math.abs(orcCalc.sga);
+  const rateioGap = Math.abs(realCalc.rateio) - Math.abs(orcCalc.rateio);
 
   const ebitda_bridge_vs_plan_ytd = {
     start_label: 'EBITDA Orçado',
     end_label: 'EBITDA Real',
-    start_value: ebitdaPlano,
-    end_value: ebitdaReal,
+    start_value: orcCalc.ebitdaTotal,
+    end_value: realCalc.ebitdaTotal,
     steps: [
-      { label: 'Gap Receita', value: revenueGap * 0.15 },
-      { label: 'Custos Variáveis', value: -totalVariableCosts * 0.05 },
-      { label: 'Custos Fixos', value: -totalFixedCosts * 0.03 },
-      { label: 'SG&A', value: -sgaCosts * 0.08 },
-      { label: 'Outros', value: (ebitdaReal - ebitdaPlano) - (revenueGap * 0.15 - totalVariableCosts * 0.05 - totalFixedCosts * 0.03 - sgaCosts * 0.08) }
-    ]
+      { label: 'Δ Receita', value: revenueGap },
+      { label: 'Δ Custos Variáveis', value: -varCostGap },
+      { label: 'Δ Custos Fixos', value: -fixCostGap },
+      { label: 'Δ SG&A', value: -sgaGap },
+      { label: 'Δ Rateio', value: -rateioGap },
+    ],
   };
 
-  // Construir Pareto de variações de custo
-  const costByCategory = new Map<string, number>();
-  transactions
-    .filter(t => t.type !== 'REVENUE')
-    .forEach(t => {
-      const current = costByCategory.get(t.category) || 0;
-      costByCategory.set(t.category, current + Math.abs(t.amount));
-    });
+  // ── 3. Pareto — Top variações por tag01 (Real vs Orçado) ──
+  const tag01Real = new Map<string, number>();
+  const tag01Orc = new Map<string, number>();
+  for (const r of realRows) {
+    if (!r.tag01) continue;
+    tag01Real.set(r.tag01, (tag01Real.get(r.tag01) || 0) + Number(r.total || 0));
+  }
+  for (const r of orcadoRows) {
+    if (!r.tag01) continue;
+    tag01Orc.set(r.tag01, (tag01Orc.get(r.tag01) || 0) + Number(r.total || 0));
+  }
+  const allTag01s = new Set([...tag01Real.keys(), ...tag01Orc.keys()]);
+  const paretoItems = [...allTag01s]
+    .map(tag01 => ({
+      name: tag01,
+      value: (tag01Real.get(tag01) || 0) - (tag01Orc.get(tag01) || 0),
+    }))
+    .filter(i => Math.abs(i.value) > 0)
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+    .slice(0, 10);
 
-  // Simulação de variações (você pode substituir por lógica real de comparação com orçamento)
-  const pareto_cost_variance_ytd = {
-    items: Array.from(costByCategory.entries())
-      .map(([name, value]) => ({
-        name,
-        value: value * (Math.random() * 0.15 - 0.05) // Simulação: -5% a +10% de variação
-      }))
-      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-      .slice(0, 10)
-  };
+  const pareto_cost_variance_ytd = { items: paretoItems };
 
-  // Construir heatmap de variações por marca/categoria
-  const brands = Array.from(new Set(transactions.map(t => t.marca).filter(b => b)));
-  const categories = ['REVENUE', 'FIXED_COST', 'VARIABLE_COST', 'SGA', 'RATEIO'];
+  // ── 4. Heatmap — Variação % por tag0 prefix (Real vs Orçado) ──
+  const prefixes = ['01.', '02.', '03.', '04.', '05.'];
   const heatmapValues: Array<[number, number, number]> = [];
-
-  brands.forEach((brand, xIdx) => {
-    categories.forEach((category, yIdx) => {
-      const categoryTransactions = transactions.filter(
-        t => t.marca === brand && (t.type === category || (category === 'REVENUE' && t.type === 'REVENUE'))
-      );
-      const total = categoryTransactions.reduce((sum, t) => sum + (t.type === 'REVENUE' ? t.amount : Math.abs(t.amount)), 0);
-
-      // Simulação de variação % vs orçamento
-      const variance = (Math.random() * 20 - 10); // -10% a +10%
-      heatmapValues.push([xIdx, yIdx, variance]);
-    });
+  prefixes.forEach((prefix, yIdx) => {
+    const real = gp(realTotals, prefix);
+    const orc = gp(orcTotals, prefix);
+    const varPct = orc !== 0 ? ((real - orc) / Math.abs(orc)) * 100 : 0;
+    heatmapValues.push([0, yIdx, Math.round(varPct * 10) / 10]);
   });
 
   const heatmap_variance = {
-    x: brands.length > 0 ? brands : ['Marca A', 'Marca B', 'Marca C'],
-    y: ['Receita', 'Custos Fixos', 'Custos Variáveis', 'SG&A', 'Rateio'],
-    values: heatmapValues.length > 0 ? heatmapValues : [
-      [0, 0, 5], [0, 1, -3], [0, 2, 2], [0, 3, -1], [0, 4, 0],
-      [1, 0, -2], [1, 1, 4], [1, 2, -5], [1, 3, 1], [1, 4, 0],
-      [2, 0, 3], [2, 1, -1], [2, 2, 0], [2, 3, -2], [2, 4, 1]
-    ],
-    unit: 'percent' as const
+    x: ['Consolidado'],
+    y: prefixes.map(p => PREFIX_LABELS[p] || p),
+    values: heatmapValues,
+    unit: 'percent' as const,
   };
 
-  // Construir tabela de drivers
+  // ── 5. Drivers Table — Real, Orçado, A-1 ──
+  const a1Calc = calcTotals(a1Totals);
+  const fmtVar = (r: number, c: number) => c !== 0 ? `${((r - c) / Math.abs(c) * 100).toFixed(1)}%` : '—';
+  const marginReal = realCalc.revenue !== 0 ? (realCalc.ebitdaTotal / realCalc.revenue * 100).toFixed(1) + '%' : '0%';
+  const marginOrc = orcCalc.revenue !== 0 ? (orcCalc.ebitdaTotal / orcCalc.revenue * 100).toFixed(1) + '%' : '0%';
+  const marginA1 = a1Calc.revenue !== 0 ? (a1Calc.ebitdaTotal / a1Calc.revenue * 100).toFixed(1) + '%' : '0%';
+
   const drivers_table = {
-    columns: ['Indicador', 'Real', 'Plano', 'Var %', 'Prior Year', 'YoY %'],
+    columns: ['Indicador', 'Real', 'Orçado', 'Var vs Orç', 'A-1', 'Var vs A-1'],
     rows: [
-      ['Receita Total', totalRevenue, totalRevenue * 0.97, '3.1%', totalRevenue * 0.95, '5.3%'],
-      ['EBITDA', ebitdaReal, ebitdaPlano, ((ebitdaReal - ebitdaPlano) / ebitdaPlano * 100).toFixed(1) + '%', ebitdaReal * 0.92, '8.7%'],
-      ['Custos Fixos', totalFixedCosts, totalFixedCosts * 1.02, '-2.0%', totalFixedCosts * 0.98, '2.0%'],
-      ['Custos Variáveis', totalVariableCosts, totalVariableCosts * 1.03, '-2.9%', totalVariableCosts * 0.97, '3.1%'],
-      ['SG&A', sgaCosts, sgaCosts * 1.05, '-4.8%', sgaCosts * 0.95, '5.3%'],
-      ['Margem EBITDA %', ((ebitdaReal / totalRevenue) * 100).toFixed(1) + '%', '15.0%', '2.3pp', '14.2%', '1.1pp']
-    ]
+      ['Receita Líquida', realCalc.revenue, orcCalc.revenue, fmtVar(realCalc.revenue, orcCalc.revenue), a1Calc.revenue, fmtVar(realCalc.revenue, a1Calc.revenue)],
+      ['Custos Variáveis', realCalc.varCosts, orcCalc.varCosts, fmtVar(realCalc.varCosts, orcCalc.varCosts), a1Calc.varCosts, fmtVar(realCalc.varCosts, a1Calc.varCosts)],
+      ['Custos Fixos', realCalc.fixCosts, orcCalc.fixCosts, fmtVar(realCalc.fixCosts, orcCalc.fixCosts), a1Calc.fixCosts, fmtVar(realCalc.fixCosts, a1Calc.fixCosts)],
+      ['SG&A', realCalc.sga, orcCalc.sga, fmtVar(realCalc.sga, orcCalc.sga), a1Calc.sga, fmtVar(realCalc.sga, a1Calc.sga)],
+      ['EBITDA Total', realCalc.ebitdaTotal, orcCalc.ebitdaTotal, fmtVar(realCalc.ebitdaTotal, orcCalc.ebitdaTotal), a1Calc.ebitdaTotal, fmtVar(realCalc.ebitdaTotal, a1Calc.ebitdaTotal)],
+      ['Margem EBITDA %', marginReal, marginOrc, '—', marginA1, '—'],
+    ],
   };
 
   return {
@@ -167,78 +199,79 @@ export function buildDatasets(transactions: Transaction[]): DatasetRegistry {
     ebitda_bridge_vs_plan_ytd,
     pareto_cost_variance_ytd,
     heatmap_variance,
-    drivers_table
+    drivers_table,
   };
 }
 
 /**
- * Constrói lista de KPIs formatados
+ * Constrói lista de KPIs formatados a partir de dados reais
  */
-export function buildKPIs(kpis: SchoolKPIs, transactions: Transaction[]): KPI[] {
-  const totalRevenue = transactions
-    .filter(t => t.type === 'REVENUE')
-    .reduce((sum, t) => sum + t.amount, 0);
+export function buildKPIs(
+  realRows: SomaTagsRow[],
+  orcadoRows: SomaTagsRow[],
+  a1Rows: SomaTagsRow[],
+): KPI[] {
+  const realCalc = calcTotals(sumByPrefix(realRows));
+  const orcCalc = calcTotals(sumByPrefix(orcadoRows));
+  const a1Calc = calcTotals(sumByPrefix(a1Rows));
 
-  const totalCosts = transactions
-    .filter(t => t.type !== 'REVENUE')
-    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const delta = (actual: number, ref: number) =>
+    ref !== 0 ? ((actual - ref) / Math.abs(ref)) * 100 : null;
 
-  // Simulação de valores de plano e prior (ajuste conforme sua lógica)
-  const revenuePlan = totalRevenue * 0.97;
-  const revenuePrior = totalRevenue * 0.95;
-  const ebitdaPlan = kpis.targetEbitda;
-  const ebitdaPrior = kpis.ebitda * 0.92;
+  const marginReal = realCalc.revenue !== 0 ? realCalc.ebitdaTotal / realCalc.revenue : 0;
+  const marginOrc = orcCalc.revenue !== 0 ? orcCalc.ebitdaTotal / orcCalc.revenue : 0;
+  const marginA1 = a1Calc.revenue !== 0 ? a1Calc.ebitdaTotal / a1Calc.revenue : 0;
 
   return [
     {
       code: 'REVENUE',
       name: 'Receita Líquida',
       unit: 'currency',
-      actual: totalRevenue,
-      plan: revenuePlan,
-      prior: revenuePrior,
-      delta_vs_plan: ((totalRevenue - revenuePlan) / revenuePlan) * 100,
-      delta_vs_prior: ((totalRevenue - revenuePrior) / revenuePrior) * 100
+      actual: realCalc.revenue,
+      plan: orcCalc.revenue,
+      prior: a1Calc.revenue,
+      delta_vs_plan: delta(realCalc.revenue, orcCalc.revenue),
+      delta_vs_prior: delta(realCalc.revenue, a1Calc.revenue),
     },
     {
       code: 'EBITDA',
-      name: 'EBITDA',
+      name: 'EBITDA Total',
       unit: 'currency',
-      actual: kpis.ebitda,
-      plan: ebitdaPlan,
-      prior: ebitdaPrior,
-      delta_vs_plan: ((kpis.ebitda - ebitdaPlan) / ebitdaPlan) * 100,
-      delta_vs_prior: ((kpis.ebitda - ebitdaPrior) / ebitdaPrior) * 100
+      actual: realCalc.ebitdaTotal,
+      plan: orcCalc.ebitdaTotal,
+      prior: a1Calc.ebitdaTotal,
+      delta_vs_plan: delta(realCalc.ebitdaTotal, orcCalc.ebitdaTotal),
+      delta_vs_prior: delta(realCalc.ebitdaTotal, a1Calc.ebitdaTotal),
     },
     {
       code: 'MARGIN',
       name: 'Margem EBITDA',
       unit: 'percent',
-      actual: kpis.netMargin / 100,
-      plan: 0.15,
-      prior: 0.142,
-      delta_vs_plan: (kpis.netMargin / 100) - 0.15,
-      delta_vs_prior: (kpis.netMargin / 100) - 0.142
+      actual: marginReal,
+      plan: marginOrc,
+      prior: marginA1,
+      delta_vs_plan: marginReal - marginOrc,
+      delta_vs_prior: marginReal - marginA1,
     },
     {
       code: 'OPEX',
       name: 'SG&A',
       unit: 'currency',
-      actual: kpis.sgaCosts,
-      plan: kpis.sgaCosts * 0.95,
-      prior: kpis.sgaCosts * 0.98,
-      delta_vs_plan: ((kpis.sgaCosts - kpis.sgaCosts * 0.95) / (kpis.sgaCosts * 0.95)) * 100,
-      delta_vs_prior: ((kpis.sgaCosts - kpis.sgaCosts * 0.98) / (kpis.sgaCosts * 0.98)) * 100
+      actual: realCalc.sga,
+      plan: orcCalc.sga,
+      prior: a1Calc.sga,
+      delta_vs_plan: delta(realCalc.sga, orcCalc.sga),
+      delta_vs_prior: delta(realCalc.sga, a1Calc.sga),
     },
     {
-      code: 'COST_STUDENT',
-      name: 'Custo por Aluno',
+      code: 'VAR_COSTS',
+      name: 'Custos Variáveis',
       unit: 'currency',
-      actual: kpis.costPerStudent,
-      plan: kpis.costPerStudent * 1.02,
-      prior: kpis.costPerStudent * 1.01,
-      delta_vs_plan: ((kpis.costPerStudent - kpis.costPerStudent * 1.02) / (kpis.costPerStudent * 1.02)) * 100,
-      delta_vs_prior: ((kpis.costPerStudent - kpis.costPerStudent * 1.01) / (kpis.costPerStudent * 1.01)) * 100
-    }
+      actual: realCalc.varCosts,
+      plan: orcCalc.varCosts,
+      prior: a1Calc.varCosts,
+      delta_vs_plan: delta(realCalc.varCosts, orcCalc.varCosts),
+      delta_vs_prior: delta(realCalc.varCosts, a1Calc.varCosts),
+    },
   ];
 }
