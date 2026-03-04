@@ -409,6 +409,7 @@ const VarianceJustificationsView: React.FC = () => {
     tag01: string;
     tag02: string | null;
     tag03: string | null;
+    marca: string | null;
     hasChildren: boolean;
     real: number;
     // vs Orçado
@@ -466,12 +467,13 @@ const VarianceJustificationsView: React.FC = () => {
       hasChildren: boolean,
       allItems: VarianceJustification[],
       orcDirect: VarianceJustification | null, a1Direct: VarianceJustification | null,
+      marca: string | null = null,
     ): FlatRow => {
       const orcAgg = aggForType(allItems, 'orcado');
       const a1Agg = aggForType(allItems, 'a1');
       const realVal = orcDirect ? Number(orcDirect.real_value) : a1Direct ? Number(a1Direct.real_value) : orcAgg.real || a1Agg.real;
       return {
-        depth, groupKey, label, tag0, tag01, tag02, tag03, hasChildren,
+        depth, groupKey, label, tag0, tag01, tag02, tag03, marca, hasChildren,
         real: realVal,
         orcCompare: orcDirect ? Number(orcDirect.compare_value) : orcAgg.compare,
         orcVarAbs: orcDirect ? Number(orcDirect.variance_abs) : orcAgg.varAbs,
@@ -529,11 +531,22 @@ const VarianceJustificationsView: React.FC = () => {
 
         for (const tag02 of [...tag02Set].sort()) {
           const tag02All = tag01All.filter(i => i.tag02 === tag02);
-          const tag02Orc = orcMap.get(`${tag0}|${tag01}|${tag02}|`) || null;
-          const tag02A1 = a1Map.get(`${tag0}|${tag01}|${tag02}|`) || null;
+          const marcaSet = new Set(tag02All.map(i => i.marca).filter(Boolean));
+          const hasMarcaChildren = marcaSet.size > 0;
+          const tag02Key = `${tag0}|${tag01}|${tag02}`;
 
-          // tag02 = folha (nível de justificativa)
-          rows.push(buildRow(2, `leaf-${tag02Orc?.id || tag02A1?.id || tag02}`, tag02, tag0, tag01, tag02, null, false, tag02All, tag02Orc, tag02A1));
+          // tag02 = pai das marcas (agregado via allItems, sem orcDirect)
+          rows.push(buildRow(2, tag02Key, tag02, tag0, tag01, tag02, null, hasMarcaChildren, tag02All, null, null, null));
+
+          if (!expandedNodes.has(tag02Key) || !hasMarcaChildren) continue;
+
+          for (const marcaName of [...marcaSet].sort()) {
+            const marcaItems = tag02All.filter(i => i.marca === marcaName);
+            const marcaOrc = marcaItems.find(i => i.comparison_type === 'orcado') || null;
+            const marcaA1 = marcaItems.find(i => i.comparison_type === 'a1') || null;
+
+            rows.push(buildRow(3, `marca-${marcaOrc?.id || marcaA1?.id || `${tag02Key}|${marcaName}`}`, marcaName, tag0, tag01, tag02, null, false, marcaItems, marcaOrc, marcaA1, marcaName));
+          }
         }
       }
     }
@@ -594,7 +607,7 @@ const VarianceJustificationsView: React.FC = () => {
     if (!yearMonth) return;
     setNotifying(true);
     try {
-      const response = await fetch('/api/variance/notify', {
+      const response = await fetch('/api/agent-team/notifications?action=variance-notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ yearMonth, marca: filterMarca || undefined }),
@@ -843,7 +856,7 @@ const VarianceJustificationsView: React.FC = () => {
     const aiSummary = isOrc ? row.orcAiSummary : row.a1AiSummary;
     const borderCls = isOrc ? 'border-l-2 border-emerald-200/60' : 'border-l-2 border-purple-200/60';
 
-    const canJustify = row.depth === 2 && dbItem &&
+    const canJustify = !row.hasChildren && row.depth >= 2 && dbItem &&
       (status === 'pending' || status === 'notified' || status === 'rejected') &&
       (isAdminOrManager || row.ownerEmail === user?.email);
     const canSynthesis = row.depth <= 1 && isAdminOrManager && dbItem;
@@ -959,6 +972,8 @@ const VarianceJustificationsView: React.FC = () => {
       ? 'bg-blue-50 border-b border-blue-100'
       : row.depth === 2
       ? 'bg-gray-50 border-b border-gray-100'
+      : row.depth === 3
+      ? 'bg-orange-50/40 border-b border-orange-100/50'
       : 'bg-white border-b border-gray-50';
 
     const fontClass = isCalcRow
@@ -967,6 +982,7 @@ const VarianceJustificationsView: React.FC = () => {
       ? 'font-black text-[11px] uppercase tracking-tight'
       : row.depth === 1 ? 'font-bold text-[11px]'
       : row.depth === 2 ? 'font-semibold text-[11px]'
+      : row.depth === 3 ? 'font-medium text-[10px]'
       : 'text-[11px]';
 
     const hoverClass = isEbitdaTotal ? 'hover:bg-slate-600' : isCalcRow ? 'hover:bg-orange-600' : isDark ? 'hover:bg-[#1e3d6e]' : 'hover:bg-yellow-100';
@@ -975,7 +991,7 @@ const VarianceJustificationsView: React.FC = () => {
       <tr key={`${row.groupKey}-${idx}`} className={`group ${bgClass} ${hoverClass} transition-colors`}>
         {/* Checkbox */}
         <td className={`px-1 py-0.5 text-center w-7 ${isEbitdaTotal ? 'bg-slate-800' : isCalcRow ? 'bg-[#F44C00]' : isDark ? 'bg-[#152e55] group-hover:bg-[#1e3d6e]' : ''}`}>
-          {row.depth === 2 && !isCalcRow && (row.orcDbItem || row.a1DbItem) && (
+          {!row.hasChildren && row.depth >= 2 && !isCalcRow && (row.orcDbItem || row.a1DbItem) && (
             <input
               type="checkbox"
               checked={
@@ -1011,7 +1027,8 @@ const VarianceJustificationsView: React.FC = () => {
             )}
             {!isCalcRow && row.depth === 0 && <span className="text-amber-400 text-[9px] mr-0.5">◆</span>}
             {!isCalcRow && row.depth === 1 && <span className="text-blue-400 text-[9px] mr-0.5">◇</span>}
-            {!isCalcRow && row.depth > 1 && <span className="text-[9px] text-gray-300 flex-shrink-0">{row.tag0.slice(0, 3)}</span>}
+            {!isCalcRow && row.depth === 2 && <span className="text-[9px] text-gray-300 flex-shrink-0">{row.tag0.slice(0, 3)}</span>}
+            {!isCalcRow && row.depth === 3 && <Building2 size={9} className="text-orange-400 flex-shrink-0" />}
             <span className="truncate" title={row.label}>{row.label}</span>
           </div>
         </td>

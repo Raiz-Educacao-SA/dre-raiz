@@ -2724,26 +2724,41 @@ export interface VarianceFilters {
 export const getVarianceJustifications = async (
   filters?: VarianceFilters
 ): Promise<VarianceJustification[]> => {
-  let query = supabase
-    .from('variance_justifications')
-    .select('*')
-    .order('tag0')
-    .order('tag01')
-    .order('tag02')
-    .order('tag03');
+  const PAGE = 1000;
+  let offset = 0;
+  let allData: VarianceJustification[] = [];
+  let keepGoing = true;
 
-  if (filters?.year_month) query = query.eq('year_month', filters.year_month);
-  if (filters?.marca) query = query.eq('marca', filters.marca);
-  if (filters?.status) query = query.eq('status', filters.status);
-  if (filters?.owner_email) query = query.eq('owner_email', filters.owner_email);
-  if (filters?.comparison_type) query = query.eq('comparison_type', filters.comparison_type);
+  while (keepGoing) {
+    let query = supabase
+      .from('variance_justifications')
+      .select('*')
+      .order('tag0')
+      .order('tag01')
+      .order('tag02')
+      .order('tag03')
+      .range(offset, offset + PAGE - 1);
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('Erro ao buscar variance_justifications:', error);
-    return [];
+    if (filters?.year_month) query = query.eq('year_month', filters.year_month);
+    if (filters?.marca) query = query.eq('marca', filters.marca);
+    if (filters?.status) query = query.eq('status', filters.status);
+    if (filters?.owner_email) query = query.eq('owner_email', filters.owner_email);
+    if (filters?.comparison_type) query = query.eq('comparison_type', filters.comparison_type);
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Erro ao buscar variance_justifications:', error);
+      return allData;
+    }
+    if (!data || data.length === 0) {
+      keepGoing = false;
+    } else {
+      allData = allData.concat(data as VarianceJustification[]);
+      keepGoing = data.length === PAGE;
+      offset += PAGE;
+    }
   }
-  return (data || []) as VarianceJustification[];
+  return allData;
 };
 
 /**
@@ -2829,7 +2844,7 @@ export const generateVarianceItems = async (
     debug(`📊 get_soma_tags: ${somaData.length} linhas para ${yearMonth} (marca=${marca || 'consolidado'})`);
 
     // 1.5 DETALHE SUPLEMENTAR — dre_agg (tag02+tag03 granular)
-    const PAGE_SIZE = 5000;
+    const PAGE_SIZE = 1000;
     let offset = 0;
     let hasMore = true;
     let detailCount = 0;
