@@ -916,13 +916,13 @@ const VarianceJustificationsView: React.FC = () => {
 
     return (
       <>
-        <td className={`px-2 py-1 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums ${borderCls}`}>
+        <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums ${borderCls}`}>
           {hasData ? fmt(compare) : <span className={onDark ? 'text-white/20' : 'text-gray-300'}>—</span>}
         </td>
-        <td className={`px-2 py-1 text-right whitespace-nowrap font-mono text-[10px] tabular-nums ${hasData ? deltaColor(varPct, onDark) : ''}`}>
+        <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono text-[10px] tabular-nums ${hasData ? deltaColor(varPct, onDark) : ''}`}>
           {hasData && varPct !== null ? fmtPct(varPct) : <span className={onDark ? 'text-white/20' : 'text-gray-300'}>—</span>}
         </td>
-        <td className="px-1 py-1">
+        <td className="px-1 py-0.5">
           {hasData ? (
             <div className="flex items-center gap-0.5 flex-nowrap">
               {status && (
@@ -1500,7 +1500,7 @@ const VarianceJustificationsView: React.FC = () => {
                           {/* vs Orçado */}
                           {showOrc && (
                             <>
-                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums border-l ${isDark ? 'border-white/10' : 'border-emerald-200/60'}`}>
+                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums border-l-2 ${isDark ? 'border-white/10' : 'border-emerald-200/60'}`}>
                                 {row.orcCompare !== 0 ? fmt(row.orcCompare) : <span className={isDark ? 'text-white/30' : 'text-gray-300'}>—</span>}
                               </td>
                               <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono text-[10px] font-bold tabular-nums ${isDark ? (row.orcVarPct === null || row.orcVarPct === 0 ? 'text-white/40' : row.orcVarPct > 0 ? 'text-lime-300' : 'text-red-200') : deltaColor(row.orcVarPct)}`}>
@@ -1512,7 +1512,7 @@ const VarianceJustificationsView: React.FC = () => {
                           {/* vs A-1 */}
                           {showA1 && (
                             <>
-                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums border-l ${isDark ? 'border-white/10' : 'border-purple-200/60'}`}>
+                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums border-l-2 ${isDark ? 'border-white/10' : 'border-purple-200/60'}`}>
                                 {row.a1Compare !== 0 ? fmt(row.a1Compare) : <span className={isDark ? 'text-white/30' : 'text-gray-300'}>—</span>}
                               </td>
                               <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono text-[10px] font-bold tabular-nums ${isDark ? (row.a1VarPct === null || row.a1VarPct === 0 ? 'text-white/40' : row.a1VarPct > 0 ? 'text-lime-300' : 'text-red-200') : deltaColor(row.a1VarPct)}`}>
