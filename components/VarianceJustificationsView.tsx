@@ -17,7 +17,7 @@ import {
   CalendarDays,
   Building2,
   TrendingUp,
-  Presentation,
+  Filter,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -37,6 +37,7 @@ import {
 } from '../services/supabaseService';
 import { generateVarianceSummary, VarianceSummaryItem } from '../services/anthropicService';
 import { toast } from 'sonner';
+import MultiSelectFilter from './MultiSelectFilter';
 
 // ── Helpers ──
 
@@ -105,8 +106,8 @@ const VarianceJustificationsView: React.FC = () => {
 
   // Filters
   const [yearMonth, setYearMonth] = useState(MONTHS_OPTIONS[1]?.value || '');
-  const [filterMarca, setFilterMarca] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterMarcas, setFilterMarcas] = useState<string[]>([]);
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [filterType, setFilterType] = useState('');
 
   // Year labels
@@ -118,7 +119,7 @@ const VarianceJustificationsView: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [notifying, setNotifying] = useState(false);
-  const [exportingPpt, setExportingPpt] = useState(false);
+
 
   // Tree state
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
@@ -161,14 +162,18 @@ const VarianceJustificationsView: React.FC = () => {
     try {
       const data = await getVarianceJustifications({
         year_month: yearMonth || undefined,
-        marca: filterMarca || undefined,
-        status: filterStatus || undefined,
+        marcas: filterMarcas.length > 0 ? filterMarcas : undefined,
+        status: filterStatuses.length === 1 ? filterStatuses[0] : undefined,
         comparison_type: filterType || undefined,
         owner_email: (!isAdminOrManager && user?.email) ? user.email : undefined,
       });
-      setItems(data);
+      // Client-side filter for multi-status
+      const filtered = filterStatuses.length > 1
+        ? data.filter(d => filterStatuses.includes(d.status))
+        : data;
+      setItems(filtered);
 
-      // Extract unique marcas
+      // Extract unique marcas (always from unfiltered data for dropdown options)
       const marcas = [...new Set(data.map(d => d.marca).filter(Boolean))].sort();
       setAvailableMarcas(prev => {
         if (prev.length === 0 && marcas.length > 0) return marcas;
@@ -179,7 +184,7 @@ const VarianceJustificationsView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [yearMonth, filterMarca, filterStatus, filterType, isAdminOrManager, user?.email]);
+  }, [yearMonth, filterMarcas, filterStatuses, filterType, isAdminOrManager, user?.email]);
 
   useEffect(() => {
     fetchData();
@@ -199,14 +204,19 @@ const VarianceJustificationsView: React.FC = () => {
     setYtdLoading(true);
     try {
       const year = yearMonth.slice(0, 4);
-      const data = await getVarianceYtdItems(`${year}-01`, yearMonth, filterMarca || undefined);
+      const data = await getVarianceYtdItems(
+        `${year}-01`,
+        yearMonth,
+        undefined,
+        filterMarcas.length > 0 ? filterMarcas : undefined
+      );
       setYtdItems(data);
     } catch (e) {
       console.error('Erro ao buscar YTD:', e);
     } finally {
       setYtdLoading(false);
     }
-  }, [yearMonth, filterMarca]);
+  }, [yearMonth, filterMarcas]);
 
   useEffect(() => {
     if (showYtd) fetchYtd();
@@ -370,9 +380,9 @@ const VarianceJustificationsView: React.FC = () => {
     }
 
     // ── Recalcular pais quando filtro de marca ativo (YTD) ──
-    // Agrega diretamente dos ytdItems fonte (marca=filterMarca) — independe de drill-down
-    if (filterMarca) {
-      const marcaYtd = ytdItems.filter(i => i.marca === filterMarca && isDrePrefix(i.tag0));
+    // Agrega diretamente dos ytdItems fonte (marca=filterMarcas) — independe de drill-down
+    if (filterMarcas.length > 0) {
+      const marcaYtd = ytdItems.filter(i => filterMarcas.includes(i.marca || '') && isDrePrefix(i.tag0));
 
       // Indexar por (tag0, tag01, tag02) — somar real por mês (dedup) e compares
       type YtdMarcaAgg = { realByMonth: Map<string, number>; orc: number; a1: number };
@@ -463,7 +473,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterYtd('03.', makeYtdCalc('MARGEM DE CONTRIBUIÇÃO', mRy, mOy, mAy));
 
     return rows;
-  }, [ytdItems, ytdExpandedNodes, filterMarca]);
+  }, [ytdItems, ytdExpandedNodes, filterMarcas]);
 
   // YTD stats
   const ytdStats = useMemo(() => {
@@ -504,7 +514,7 @@ const VarianceJustificationsView: React.FC = () => {
 
       const summary = await generateVarianceSummary('ytd', summaryItems, {
         parentLabel: `${tag0} > ${tag01}`,
-        marca: filterMarca || undefined,
+        marca: filterMarcas.length > 0 ? filterMarcas[0] : undefined,
       });
 
       setYtdSummaries(prev => ({ ...prev, [key]: summary }));
@@ -674,9 +684,9 @@ const VarianceJustificationsView: React.FC = () => {
     }
 
     // ── Recalcular pais quando filtro de marca ativo ──
-    // Agrega diretamente dos items fonte (marca=filterMarca) — independe de drill-down aberto
-    if (filterMarca) {
-      const marcaItems = dreItems.filter(i => i.marca === filterMarca);
+    // Agrega diretamente dos items fonte (marca=filterMarcas) — independe de drill-down aberto
+    if (filterMarcas.length > 0) {
+      const marcaItems = dreItems.filter(i => filterMarcas.includes(i.marca || ''));
 
       // Indexar marcaItems por (tag0, tag01, tag02, compType)
       type MarcaAgg = { real: number; orc: number; a1: number };
@@ -772,7 +782,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterPrefix('03.', makeCalc('MARGEM DE CONTRIBUIÇÃO', mR, mO, mA));
 
     return rows;
-  }, [items, expandedNodes, filterMarca]);
+  }, [items, expandedNodes, filterMarcas]);
 
   // ── Stats ──
 
@@ -803,7 +813,7 @@ const VarianceJustificationsView: React.FC = () => {
     }
     setGenerating(true);
     try {
-      const result = await generateVarianceItems(yearMonth, filterMarca || undefined);
+      const result = await generateVarianceItems(yearMonth, filterMarcas.length > 0 ? filterMarcas[0] : undefined);
       if (result.error) {
         toast.error(`Erro: ${result.error}`);
       } else {
@@ -830,7 +840,7 @@ const VarianceJustificationsView: React.FC = () => {
       const response = await fetch('/api/agent-team/notifications?action=variance-notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ yearMonth, marca: filterMarca || undefined }),
+        body: JSON.stringify({ yearMonth, marca: filterMarcas.length > 0 ? filterMarcas[0] : undefined }),
       });
       const result = await response.json();
       if (result.sent) {
@@ -863,25 +873,6 @@ const VarianceJustificationsView: React.FC = () => {
       toast.error(result.error || 'Erro ao revisar em massa');
     }
   };
-
-  // ── PPT export ──
-
-  const handleExportPpt = useCallback(async () => {
-    if (items.length === 0) { toast.error('Nenhum dado para exportar'); return; }
-    setExportingPpt(true);
-    try {
-      toast.info('Gerando apresentação...');
-      const { prepareVariancePptData } = await import('../services/variancePptDataService');
-      const { generateVariancePpt } = await import('../services/variancePptService');
-      const data = prepareVariancePptData(items, yearMonth, filterMarca || null);
-      await generateVariancePpt(data);
-      toast.success('Apresentação exportada!');
-    } catch (err: any) {
-      toast.error(err?.message || 'Erro ao gerar apresentação');
-    } finally {
-      setExportingPpt(false);
-    }
-  }, [items, yearMonth, filterMarca]);
 
   // ── Justification submit ──
 
@@ -1310,49 +1301,41 @@ const VarianceJustificationsView: React.FC = () => {
         {/* Filters + Actions */}
         <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm overflow-x-auto">
           {/* Month */}
-          <div className="flex items-center gap-1 shrink-0">
-            <CalendarDays size={12} className="text-purple-500" />
-            <select
-              value={yearMonth}
-              onChange={e => setYearMonth(e.target.value)}
-              className="text-[10px] font-bold bg-white border border-gray-200 rounded-lg px-1.5 py-1 cursor-pointer hover:border-purple-300 transition-colors"
-            >
-              {MONTHS_OPTIONS.map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-          </div>
+          <MultiSelectFilter
+            label="MÊS"
+            icon={<CalendarDays size={12} />}
+            options={MONTHS_OPTIONS.map(m => m.value)}
+            selected={yearMonth ? [yearMonth] : []}
+            onChange={sel => setYearMonth(sel.length > 0 ? sel[sel.length - 1] : '')}
+            colorScheme="purple"
+            compact
+          />
 
           <div className="h-5 w-px bg-blue-200 shrink-0" />
 
           {/* Marca */}
-          <div className="flex items-center gap-1 shrink-0">
-            <Building2 size={12} className="text-orange-500" />
-            <select
-              value={filterMarca}
-              onChange={e => setFilterMarca(e.target.value)}
-              className="text-[10px] font-bold bg-white border border-gray-200 rounded-lg px-1.5 py-1 cursor-pointer hover:border-orange-300 transition-colors"
-            >
-              <option value="">Todas as Marcas</option>
-              {availableMarcas.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
+          <MultiSelectFilter
+            label="MARCA"
+            icon={<Building2 size={12} />}
+            options={availableMarcas}
+            selected={filterMarcas}
+            onChange={setFilterMarcas}
+            colorScheme="orange"
+            compact
+          />
 
           <div className="h-5 w-px bg-blue-200 shrink-0" />
 
           {/* Status */}
-          <select
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value)}
-            className="text-[10px] font-bold bg-white border border-gray-200 rounded-lg px-1.5 py-1 cursor-pointer hover:border-blue-300 transition-colors"
-          >
-            <option value="">Todos os Status</option>
-            {Object.entries(STATUS_LABELS).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
+          <MultiSelectFilter
+            label="STATUS"
+            icon={<Filter size={12} />}
+            options={Object.keys(STATUS_LABELS)}
+            selected={filterStatuses}
+            onChange={setFilterStatuses}
+            colorScheme="blue"
+            compact
+          />
 
           <div className="h-5 w-px bg-blue-200 shrink-0" />
 
@@ -1418,19 +1401,6 @@ const VarianceJustificationsView: React.FC = () => {
                 </>
               )}
             </>
-          )}
-
-          {/* PPT export */}
-          {isAdminOrManager && (
-            <button
-              onClick={handleExportPpt}
-              disabled={exportingPpt || items.length === 0}
-              className="flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-sm disabled:opacity-50 shrink-0"
-              title="Exportar apresentação PPTX"
-            >
-              {exportingPpt ? <Loader2 size={11} className="animate-spin" /> : <Presentation size={11} />}
-              PPT
-            </button>
           )}
 
           {/* Settings toggle */}
@@ -1538,7 +1508,7 @@ const VarianceJustificationsView: React.FC = () => {
           <div className="flex items-center gap-2">
             <TrendingUp size={14} className="text-indigo-600" />
             <span className="text-[11px] font-black uppercase tracking-wider text-indigo-900">
-              Consolidado YTD — Jan a {yearMonth ? new Date(yearMonth + '-01').toLocaleString('pt-BR', { month: 'short', year: 'numeric' }) : '...'}
+              Consolidado YTD — Jan a {yearMonth ? (() => { const [y, m] = yearMonth.split('-'); return new Date(Number(y), Number(m) - 1, 15).toLocaleString('pt-BR', { month: 'short', year: 'numeric' }); })() : '...'}
             </span>
             {showYtd && ytdStats.months.length > 0 && (
               <span className="text-[9px] text-indigo-500 font-bold">

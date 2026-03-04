@@ -163,9 +163,9 @@ export default defineConfig(({ mode }) => {
                   res.end(JSON.stringify({ error: `Unknown action: ${action}` }));
                 }
               } catch (err: any) {
-                console.error('LLM proxy error:', err.message);
+                console.error('LLM proxy error:', err.message, err.stack);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'Serviço de IA indisponível' }));
+                res.end(JSON.stringify({ error: 'Serviço de IA indisponível', message: err.message }));
               }
             });
           },

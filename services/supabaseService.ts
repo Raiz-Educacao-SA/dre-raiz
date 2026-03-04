@@ -2713,6 +2713,7 @@ export interface VarianceThreshold {
 export interface VarianceFilters {
   year_month?: string;
   marca?: string;
+  marcas?: string[];
   status?: string;
   owner_email?: string;
   comparison_type?: string;
@@ -2740,7 +2741,12 @@ export const getVarianceJustifications = async (
       .range(offset, offset + PAGE - 1);
 
     if (filters?.year_month) query = query.eq('year_month', filters.year_month);
-    if (filters?.marca) query = query.or(`marca.eq.${filters.marca},marca.eq.`);
+    if (filters?.marcas && filters.marcas.length > 0) {
+      const marcaFilters = filters.marcas.map(m => `marca.eq.${m}`).join(',');
+      query = query.or(`${marcaFilters},marca.eq.`);
+    } else if (filters?.marca) {
+      query = query.or(`marca.eq.${filters.marca},marca.eq.`);
+    }
     if (filters?.status) query = query.eq('status', filters.status);
     if (filters?.owner_email) query = query.eq('owner_email', filters.owner_email);
     if (filters?.comparison_type) query = query.eq('comparison_type', filters.comparison_type);
@@ -2767,25 +2773,46 @@ export const getVarianceJustifications = async (
 export const getVarianceYtdItems = async (
   yearStart: string,
   throughMonth: string,
-  marca?: string
+  marca?: string,
+  marcas?: string[]
 ): Promise<VarianceJustification[]> => {
-  let query = supabase
-    .from('variance_justifications')
-    .select('*')
-    .gte('year_month', yearStart)
-    .lte('year_month', throughMonth)
-    .order('year_month')
-    .order('tag0')
-    .order('tag01');
+  const PAGE = 1000;
+  let offset = 0;
+  let allData: VarianceJustification[] = [];
+  let keepGoing = true;
 
-  if (marca) query = query.or(`marca.eq.${marca},marca.eq.`);
+  while (keepGoing) {
+    let query = supabase
+      .from('variance_justifications')
+      .select('*')
+      .gte('year_month', yearStart)
+      .lte('year_month', throughMonth)
+      .order('year_month')
+      .order('tag0')
+      .order('tag01')
+      .range(offset, offset + PAGE - 1);
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('Erro ao buscar YTD:', error);
-    return [];
+    if (marcas && marcas.length > 0) {
+      const marcaFilters = marcas.map(m => `marca.eq.${m}`).join(',');
+      query = query.or(`${marcaFilters},marca.eq.`);
+    } else if (marca) {
+      query = query.or(`marca.eq.${marca},marca.eq.`);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Erro ao buscar YTD:', error);
+      return allData;
+    }
+    if (!data || data.length === 0) {
+      keepGoing = false;
+    } else {
+      allData = allData.concat(data as VarianceJustification[]);
+      keepGoing = data.length === PAGE;
+      offset += PAGE;
+    }
   }
-  return (data || []) as VarianceJustification[];
+  return allData;
 };
 
 /**

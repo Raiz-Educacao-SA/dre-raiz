@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, Suspense } from 'react';
 import {
   FileText,
   ListChecks,
@@ -8,18 +8,29 @@ import {
   RefreshCw,
   Flag,
   Building2,
-  ChevronDown,
-  Check,
   X,
-  Calendar,
-  ClipboardCheck
+  CalendarDays,
+  ClipboardCheck,
+  Loader2
 } from 'lucide-react';
 import { ExecutiveSummary, ActionsList, SlideDeck, useChartRegistry, buildPpt } from '../analysisPack';
 import type { AnalysisPack, AnalysisContext } from '../analysisPack/types/schema';
 import { getMarcasEFiliais, getVarianceJustifications } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
+import MultiSelectFilter from './MultiSelectFilter';
 
 const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
+
+const MONTHS_OPTIONS = (() => {
+  const now = new Date();
+  const months: string[] = [];
+  for (let i = -12; i <= 2; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    months.push(val);
+  }
+  return months.reverse();
+})();
 
 type TabType = 'justificativas' | 'summary' | 'actions' | 'slides';
 
@@ -51,6 +62,7 @@ export default function AnalysisView() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [actionsLoading, setActionsLoading] = useState(false);
   const [slidesLoading, setSlidesLoading] = useState(false);
+  const [variancePptLoading, setVariancePptLoading] = useState(false);
 
   const chartRegistry = useChartRegistry();
 
@@ -173,6 +185,32 @@ export default function AnalysisView() {
     }
   };
 
+  // ========================================
+  // Exportar PPT Justificativas (sem IA)
+  // ========================================
+  const handleVariancePpt = async () => {
+    setVariancePptLoading(true);
+    try {
+      const items = await getVarianceJustifications({
+        year_month: selectedMonth,
+        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
+      });
+      if (!items || items.length === 0) {
+        alert('⚠️ Nenhum dado de desvio encontrado para o período selecionado.');
+        return;
+      }
+      const { prepareVariancePptData } = await import('../services/variancePptDataService');
+      const { generateVariancePpt } = await import('../services/variancePptService');
+      const data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
+      await generateVariancePpt(data);
+    } catch (error: any) {
+      console.error('Erro ao exportar PPT Justificativas:', error);
+      alert(`❌ ${error.message || 'Erro ao gerar apresentação de justificativas.'}`);
+    } finally {
+      setVariancePptLoading(false);
+    }
+  };
+
   const tabs = [
     { id: 'summary', label: 'Sumário Executivo', icon: FileText },
     { id: 'justificativas', label: 'Justificativas', icon: ClipboardCheck },
@@ -195,27 +233,24 @@ export default function AnalysisView() {
               </p>
             </div>
 
-            {activeTab !== 'justificativas' && <div className="flex items-center gap-3">
-              {/* Filtro de Mês */}
-              <div className="flex items-center gap-2 bg-white px-4 h-[52px] rounded-lg border-2 border-gray-100 shadow-sm">
-                <div className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
-                  <Calendar size={14} />
-                </div>
-                <div className="flex flex-col justify-center">
-                  <span className="text-[7px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">MÊS</span>
-                  <input
-                    type="month"
-                    value={selectedMonth}
-                    onChange={e => setSelectedMonth(e.target.value)}
-                    className="font-black text-[10px] uppercase tracking-tight text-gray-900 bg-transparent border-none outline-none cursor-pointer w-[120px]"
-                  />
-                </div>
-              </div>
+            {activeTab !== 'justificativas' && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm">
+              {/* Mês */}
+              <MultiSelectFilter
+                label="MÊS"
+                icon={<CalendarDays size={12} />}
+                options={MONTHS_OPTIONS}
+                selected={selectedMonth ? [selectedMonth] : []}
+                onChange={sel => setSelectedMonth(sel.length > 0 ? sel[sel.length - 1] : '')}
+                colorScheme="purple"
+                compact
+              />
+
+              <div className="h-5 w-px bg-blue-200 shrink-0" />
 
               {/* Toggle YTD */}
               <button
                 onClick={() => setIsYtd(!isYtd)}
-                className={`flex items-center gap-1.5 px-4 h-[52px] rounded-lg border-2 shadow-sm font-black text-xs uppercase transition-all ${
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border-2 shadow-sm font-black text-[9px] uppercase transition-all ${
                   isYtd
                     ? 'border-purple-500 bg-purple-50 text-purple-700 ring-4 ring-purple-500/10'
                     : 'border-gray-100 bg-white text-gray-600 hover:bg-gray-50'
@@ -224,39 +259,47 @@ export default function AnalysisView() {
                 YTD
               </button>
 
-              {/* Filtros */}
+              <div className="h-5 w-px bg-blue-200 shrink-0" />
+
+              {/* Marca */}
               <MultiSelectFilter
                 label="MARCA"
-                icon={<Flag size={14} />}
+                icon={<Flag size={12} />}
                 options={allMarcas}
                 selected={selectedMarcas}
                 onChange={setSelectedMarcas}
-                colorScheme="blue"
+                colorScheme="orange"
+                compact
               />
 
+              {/* Filial */}
               <MultiSelectFilter
                 label="FILIAL"
-                icon={<Building2 size={14} />}
+                icon={<Building2 size={12} />}
                 options={availableBranches}
                 selected={selectedFiliais}
                 onChange={setSelectedFiliais}
-                colorScheme="orange"
+                colorScheme="blue"
+                compact
               />
 
               {/* Clear Filters Button */}
               {(selectedMarcas.length > 0 || selectedFiliais.length > 0 || isYtd) && (
-                <button
-                  onClick={() => {
-                    setSelectedMarcas([]);
-                    setSelectedFiliais([]);
-                    setIsYtd(false);
-                  }}
-                  className="flex items-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-xs uppercase transition-all"
-                  title="Limpar todos os filtros"
-                >
-                  <X size={14} />
-                  Limpar
-                </button>
+                <>
+                  <div className="h-5 w-px bg-blue-200 shrink-0" />
+                  <button
+                    onClick={() => {
+                      setSelectedMarcas([]);
+                      setSelectedFiliais([]);
+                      setIsYtd(false);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-500 border border-rose-200 rounded-lg font-black text-[9px] uppercase transition-all"
+                    title="Limpar todos os filtros"
+                  >
+                    <X size={10} />
+                    Limpar
+                  </button>
+                </>
               )}
             </div>}
           </div>
@@ -332,6 +375,19 @@ export default function AnalysisView() {
                     Exportar PowerPoint
                   </button>
                 )}
+
+                <button
+                  onClick={handleVariancePpt}
+                  disabled={variancePptLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-orange-500 text-white rounded-lg hover:from-orange-700 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed font-bold text-sm transition-all"
+                >
+                  {variancePptLoading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Presentation size={16} />
+                  )}
+                  Exportar PPT Justificativas
+                </button>
               </div>
             )}
           </div>
@@ -521,154 +577,3 @@ function EmptyState({
   );
 }
 
-// ========================================
-// MultiSelectFilter Component
-// ========================================
-interface MultiSelectFilterProps {
-  label: string;
-  icon: React.ReactNode;
-  options: string[];
-  selected: string[];
-  onChange: (selected: string[]) => void;
-  colorScheme: 'blue' | 'orange';
-}
-
-function MultiSelectFilter({
-  label,
-  icon,
-  options,
-  selected,
-  onChange,
-  colorScheme
-}: MultiSelectFilterProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const colors = {
-    blue: {
-      border: 'border-[#1B75BB]',
-      borderLight: 'border-gray-100',
-      bg: 'bg-[#1B75BB]',
-      bgLight: 'bg-blue-50',
-      text: 'text-[#1B75BB]',
-      ring: 'ring-[#1B75BB]/10'
-    },
-    orange: {
-      border: 'border-[#F44C00]',
-      borderLight: 'border-gray-100',
-      bg: 'bg-[#F44C00]',
-      bgLight: 'bg-orange-50',
-      text: 'text-[#F44C00]',
-      ring: 'ring-[#F44C00]/10'
-    }
-  };
-
-  const scheme = colors[colorScheme];
-  const hasSelection = selected.length > 0;
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const toggleOption = (option: string) => {
-    if (selected.includes(option)) {
-      onChange(selected.filter(item => item !== option));
-    } else {
-      onChange([...selected, option]);
-    }
-  };
-
-  const selectAll = () => {
-    onChange(options);
-  };
-
-  const clearAll = () => {
-    onChange([]);
-  };
-
-  const displayText = selected.length === 0
-    ? 'TODAS'
-    : selected.length === 1
-    ? selected[0].toUpperCase()
-    : `${selected.length} SELECIONADAS`;
-
-  return (
-    <div ref={dropdownRef} className="relative">
-      <div
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 bg-white px-4 h-[52px] rounded-lg border-2 shadow-sm transition-all cursor-pointer hover:shadow-md ${
-          hasSelection ? `${scheme.border} ring-4 ${scheme.ring}` : scheme.borderLight
-        }`}
-      >
-        <div className={`p-1.5 rounded-lg ${hasSelection ? `${scheme.bg} text-white` : `${scheme.bgLight} ${scheme.text}`}`}>
-          {icon}
-        </div>
-        <div className="flex flex-col justify-center">
-          <span className="text-[7px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">{label}</span>
-          <div className="flex items-center gap-1.5">
-            <span className="font-black text-[10px] uppercase tracking-tight text-gray-900 min-w-[120px]">
-              {displayText}
-            </span>
-            <ChevronDown size={12} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          </div>
-        </div>
-      </div>
-
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-2 bg-white rounded-lg border-2 border-gray-200 shadow-xl z-50 min-w-[240px] max-h-[400px] overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-2 duration-200">
-          {/* Header with actions */}
-          <div className="p-2 border-b border-gray-100 flex gap-2">
-            <button
-              onClick={selectAll}
-              className="flex-1 px-2 py-1.5 text-[9px] font-black uppercase bg-gray-100 hover:bg-gray-200 rounded transition-all"
-            >
-              Selecionar Todas
-            </button>
-            <button
-              onClick={clearAll}
-              className="flex-1 px-2 py-1.5 text-[9px] font-black uppercase bg-gray-100 hover:bg-gray-200 rounded transition-all"
-            >
-              Limpar
-            </button>
-          </div>
-
-          {/* Options list */}
-          <div className="overflow-y-auto flex-1">
-            {options.map((option) => {
-              const isSelected = selected.includes(option);
-              return (
-                <label
-                  key={option}
-                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors"
-                >
-                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
-                    isSelected
-                      ? `${scheme.border} ${scheme.bg}`
-                      : 'border-gray-300'
-                  }`}>
-                    {isSelected && <Check size={12} className="text-white" />}
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => toggleOption(option)}
-                    className="sr-only"
-                  />
-                  <span className="text-xs font-bold text-gray-900">{option}</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
