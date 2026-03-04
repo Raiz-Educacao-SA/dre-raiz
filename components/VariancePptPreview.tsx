@@ -727,16 +727,13 @@ function PresentationMode({
   onExit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[9999] bg-black flex items-center justify-center select-none cursor-none group/pres">
-      {/* Slide — fills viewport, 16:9 max fit, no padding */}
-      <div
-        className="w-full h-full flex items-center justify-center"
-        style={{ padding: 0 }}
-      >
+    <div className="fixed inset-0 z-[9999] bg-black flex flex-col select-none">
+      {/* Slide area — fills all space above taskbar */}
+      <div className="flex-1 min-h-0 flex items-center justify-center">
         <div
           className="w-full h-full"
           style={{
-            maxWidth: 'calc(100vh * 16 / 9)',
+            maxWidth: 'calc((100vh - 40px) * 16 / 9)',
             maxHeight: 'calc(100vw * 9 / 16)',
             aspectRatio: '16 / 9',
           }}
@@ -745,39 +742,39 @@ function PresentationMode({
         </div>
       </div>
 
-      {/* Bottom bar — hidden by default, shows on hover/mouse move */}
-      <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-6 py-3 bg-gradient-to-t from-black/90 to-transparent opacity-0 group-hover/pres:opacity-100 transition-opacity duration-300 cursor-default">
-        <button onClick={onExit} className="flex items-center gap-1.5 text-gray-400 hover:text-white text-sm transition-colors">
-          <X size={16} />
+      {/* Taskbar — always visible, fixed at bottom */}
+      <div className="h-10 shrink-0 flex items-center justify-between px-4 bg-gray-950 border-t border-gray-800">
+        <button onClick={onExit} className="flex items-center gap-1.5 text-gray-400 hover:text-white text-xs transition-colors">
+          <X size={14} />
           ESC
         </button>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={onPrev}
             disabled={currentSlide === 0}
-            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-default transition-colors"
+            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-default transition-colors"
           >
-            <ChevronLeft size={20} />
+            <ChevronLeft size={16} />
           </button>
-          <span className="text-gray-400 text-sm font-medium tabular-nums">
+          <span className="text-gray-400 text-xs font-medium tabular-nums">
             {currentSlide + 1} / {totalSlides}
           </span>
           <button
             onClick={onNext}
             disabled={currentSlide === totalSlides - 1}
-            className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-default transition-colors"
+            className="p-1 rounded text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:cursor-default transition-colors"
           >
-            <ChevronRight size={20} />
+            <ChevronRight size={16} />
           </button>
         </div>
 
-        <div className="w-16" />
+        <div className="w-14" />
       </div>
 
-      {/* Click zones — left/right (invisible) */}
-      <div className="absolute inset-y-0 left-0 w-1/3 cursor-none" onClick={onPrev} />
-      <div className="absolute inset-y-0 right-0 w-1/3 cursor-none" onClick={onNext} />
+      {/* Click zones — left/right */}
+      <div className="absolute top-0 left-0 w-1/3 cursor-pointer" style={{ height: 'calc(100% - 40px)' }} onClick={onPrev} />
+      <div className="absolute top-0 right-0 w-1/3 cursor-pointer" style={{ height: 'calc(100% - 40px)' }} onClick={onNext} />
     </div>
   );
 }
