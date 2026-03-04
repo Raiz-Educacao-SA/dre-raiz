@@ -89,6 +89,75 @@ export default defineConfig(({ mode }) => {
                   const text = data.choices?.[0]?.message?.content || '';
                   res.writeHead(200, { 'Content-Type': 'application/json' });
                   res.end(JSON.stringify({ content: [{ type: 'text', text }] }));
+                } else if (action === 'generate-ai') {
+                  const parsed = JSON.parse(body);
+                  const ctx = parsed.context;
+                  if (!ctx) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'context obrigatório' }));
+                    return;
+                  }
+
+                  // Load prompts via Vite SSR
+                  const prompts = await server.ssrLoadModule('./analysisPack/utils/prompts.ts') as any;
+                  const systemPrompt = prompts.buildSystemPrompt();
+                  const userPrompt = prompts.buildUserPrompt(ctx);
+
+                  const apiKey = env.VITE_ANTHROPIC_API_KEY || '';
+                  if (!apiKey) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'VITE_ANTHROPIC_API_KEY não configurado' }));
+                    return;
+                  }
+
+                  const model = env.ANTHROPIC_MODEL || 'claude-sonnet-4-5-20250929';
+                  const upstream = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-api-key': apiKey,
+                      'anthropic-version': '2023-06-01',
+                    },
+                    body: JSON.stringify({
+                      model,
+                      max_tokens: 5000,
+                      system: systemPrompt,
+                      messages: [{ role: 'user', content: userPrompt }],
+                    }),
+                  });
+
+                  if (!upstream.ok) {
+                    const errText = await upstream.text();
+                    console.error('Claude API error:', upstream.status, errText);
+                    res.writeHead(upstream.status, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: `Erro Claude API (${upstream.status})`, message: errText }));
+                    return;
+                  }
+
+                  const aiData = await upstream.json() as any;
+                  const aiText = aiData?.content?.[0]?.text;
+                  if (!aiText) {
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Resposta vazia do Claude' }));
+                    return;
+                  }
+
+                  try {
+                    const result = JSON.parse(aiText);
+                    res.writeHead(200, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ success: true, data: result }));
+                  } catch {
+                    // Try extracting JSON from markdown
+                    const match = aiText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/) || aiText.match(/(\{[\s\S]*\})/);
+                    if (match) {
+                      const result = JSON.parse(match[1]);
+                      res.writeHead(200, { 'Content-Type': 'application/json' });
+                      res.end(JSON.stringify({ success: true, data: result }));
+                    } else {
+                      res.writeHead(422, { 'Content-Type': 'application/json' });
+                      res.end(JSON.stringify({ error: 'IA retornou texto não-JSON' }));
+                    }
+                  }
                 } else {
                   res.writeHead(400, { 'Content-Type': 'application/json' });
                   res.end(JSON.stringify({ error: `Unknown action: ${action}` }));
