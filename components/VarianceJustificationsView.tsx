@@ -243,7 +243,8 @@ const VarianceJustificationsView: React.FC = () => {
     if (ytdItems.length === 0) return [];
 
     const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
-    const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
+    const CALC_LABELS = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
+    const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3)) || CALC_LABELS.has(t);
 
     // 1. Aggregate ytdItems across months per (tag0, tag01, tag02, marca)
     type PathAgg = { realByMonth: Map<string, number>; orcCompare: number; a1Compare: number; months: Set<string> };
@@ -307,7 +308,25 @@ const VarianceJustificationsView: React.FC = () => {
     const rows: YtdFlatRow[] = [];
 
     for (const tag0 of tag0Sorted) {
-      // Paths under this tag0, only tag01-level (no tag02)
+      const isCalc = CALC_LABELS.has(tag0);
+
+      if (isCalc) {
+        // CalcRows (MARGEM, EBITDA) — aggregate all paths under this tag0 directly (tag01='')
+        const calcPaths: PathAgg[] = [];
+        for (const [key, val] of pathMap) {
+          if (key.split('|')[0] === tag0) calcPaths.push(val);
+        }
+        const calcAgg = aggPaths(calcPaths);
+        rows.push({
+          depth: 0, groupKey: `ytd-${tag0}`, label: tag0, tag0, tag01: '', tag02: null, marca: null,
+          hasChildren: false,
+          ytdReal: calcAgg.real, orcCompare: calcAgg.orc, orcVarPct: varPct(calcAgg.real, calcAgg.orc),
+          a1Compare: calcAgg.a1, a1VarPct: varPct(calcAgg.real, calcAgg.a1), months: calcAgg.months,
+        });
+        continue;
+      }
+
+      // Regular DRE tag0 — paths under this tag0, only tag01-level (no tag02)
       const tag01Paths: [string, PathAgg][] = [];
       const tag01Set = new Set<string>();
       for (const [key, val] of pathMap) {
