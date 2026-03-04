@@ -152,6 +152,7 @@ const VarianceJustificationsView: React.FC = () => {
   const [ytdSummaries, setYtdSummaries] = useState<Record<string, string>>({});
   const [ytdSynthKey, setYtdSynthKey] = useState<string | null>(null);
   const [ytdExpandedSummaries, setYtdExpandedSummaries] = useState<Set<string>>(new Set());
+  const [ytdExpandedNodes, setYtdExpandedNodes] = useState<Set<string>>(new Set());
 
   // ── Fetch data ──
 
@@ -211,126 +212,183 @@ const VarianceJustificationsView: React.FC = () => {
     if (showYtd) fetchYtd();
   }, [showYtd, fetchYtd]);
 
-  // ── YTD aggregation ──
+  // ── YTD aggregation — mesma estrutura da tabela principal ──
 
-  type YtdRow = {
+  type YtdFlatRow = {
+    depth: number;
+    groupKey: string;
+    label: string;
     tag0: string;
     tag01: string;
-    compType: 'orcado' | 'a1';
+    tag02: string | null;
+    marca: string | null;
+    hasChildren: boolean;
     ytdReal: number;
-    ytdCompare: number;
-    ytdVarPct: number | null;
-    months: string[];
-    monthsWithSummary: string[];
-    monthlySummaries: { month: string; summary: string }[];
-  };
-
-  const ytdRows = useMemo((): YtdRow[] => {
-    if (ytdItems.length === 0) return [];
-
-    // Only tag01-level rows (no tag02, no tag03)
-    const tag01Items = ytdItems.filter(i => i.tag01 && i.tag02 === null && i.tag03 === null);
-    const grouped = new Map<string, VarianceJustification[]>();
-
-    for (const item of tag01Items) {
-      const key = `${item.tag0}|${item.tag01}|${item.comparison_type}`;
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key)!.push(item);
-    }
-
-    const rows: YtdRow[] = [];
-    for (const [key, group] of grouped) {
-      const [tag0, tag01, compType] = key.split('|');
-      const ytdReal = group.reduce((s, i) => s + Number(i.real_value), 0);
-      const ytdCompare = group.reduce((s, i) => s + Number(i.compare_value), 0);
-      const ytdVarPct = ytdCompare !== 0
-        ? Math.round(((ytdReal - ytdCompare) / Math.abs(ytdCompare)) * 1000) / 10
-        : null;
-      const months = group.map(i => i.year_month).sort();
-      const monthsWithSummary = group.filter(i => i.ai_summary).map(i => i.year_month).sort();
-      const monthlySummaries = group
-        .filter(i => i.ai_summary)
-        .map(i => ({ month: i.year_month, summary: i.ai_summary! }))
-        .sort((a, b) => a.month.localeCompare(b.month));
-
-      rows.push({
-        tag0, tag01,
-        compType: compType as 'orcado' | 'a1',
-        ytdReal, ytdCompare, ytdVarPct,
-        months, monthsWithSummary, monthlySummaries,
-      });
-    }
-
-    return rows.sort((a, b) => a.tag0.localeCompare(b.tag0) || a.tag01.localeCompare(b.tag01) || a.compType.localeCompare(b.compType));
-  }, [ytdItems]);
-
-  // Aggregate tag0-level YTD
-  type YtdTag0Row = {
-    tag0: string;
-    compType: 'orcado' | 'a1';
-    ytdReal: number;
-    ytdCompare: number;
-    ytdVarPct: number | null;
+    orcCompare: number;
+    orcVarPct: number | null;
+    a1Compare: number;
+    a1VarPct: number | null;
     months: string[];
   };
 
-  const ytdTag0Rows = useMemo((): YtdTag0Row[] => {
+  const toggleYtdNode = (key: string) => {
+    setYtdExpandedNodes(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const ytdFlatRows = useMemo((): YtdFlatRow[] => {
     if (ytdItems.length === 0) return [];
 
-    const tag0Items = ytdItems.filter(i => i.tag01 === '' && i.tag02 === null && i.tag03 === null);
-    const grouped = new Map<string, VarianceJustification[]>();
+    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
+    const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
 
-    for (const item of tag0Items) {
-      const key = `${item.tag0}|${item.comparison_type}`;
-      if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key)!.push(item);
+    // 1. Aggregate ytdItems across months per (tag0, tag01, tag02, marca)
+    type PathAgg = { realByMonth: Map<string, number>; orcCompare: number; a1Compare: number; months: Set<string> };
+    const pathMap = new Map<string, PathAgg>();
+
+    for (const item of ytdItems) {
+      if (!isDre(item.tag0)) continue;
+      const path = `${item.tag0}|${item.tag01 || ''}|${item.tag02 || ''}|${item.marca || ''}`;
+      if (!pathMap.has(path)) pathMap.set(path, { realByMonth: new Map(), orcCompare: 0, a1Compare: 0, months: new Set() });
+      const p = pathMap.get(path)!;
+      p.months.add(item.year_month);
+      // Store real per month (same for orcado/a1, avoid double counting)
+      if (!p.realByMonth.has(item.year_month)) p.realByMonth.set(item.year_month, Number(item.real_value));
+      if (item.comparison_type === 'orcado') p.orcCompare += Number(item.compare_value);
+      else p.a1Compare += Number(item.compare_value);
     }
 
-    // If no tag0-level rows exist, aggregate from tag01 rows
-    if (grouped.size === 0) {
-      const tag01Items = ytdItems.filter(i => i.tag01 && i.tag02 === null && i.tag03 === null);
-      const tag0Agg = new Map<string, { real: number; compare: number; months: Set<string> }>();
+    // Helper: sum real from realByMonth
+    const sumReal = (p: PathAgg) => [...p.realByMonth.values()].reduce((s, v) => s + v, 0);
 
-      for (const item of tag01Items) {
-        const key = `${item.tag0}|${item.comparison_type}`;
-        if (!tag0Agg.has(key)) tag0Agg.set(key, { real: 0, compare: 0, months: new Set() });
-        const agg = tag0Agg.get(key)!;
-        agg.real += Number(item.real_value);
-        agg.compare += Number(item.compare_value);
-        agg.months.add(item.year_month);
+    // Helper: aggregate multiple paths
+    const aggPaths = (paths: PathAgg[]) => {
+      let real = 0, orc = 0, a1 = 0;
+      const months = new Set<string>();
+      // Deduplicate real across paths by month
+      const realByMonth = new Map<string, number>();
+      for (const p of paths) {
+        orc += p.orcCompare;
+        a1 += p.a1Compare;
+        for (const [m, v] of p.realByMonth) {
+          realByMonth.set(m, (realByMonth.get(m) || 0) + v);
+        }
+        for (const m of p.months) months.add(m);
+      }
+      real = [...realByMonth.values()].reduce((s, v) => s + v, 0);
+      return { real, orc, a1, months: [...months].sort() };
+    };
+
+    const varPct = (real: number, compare: number) =>
+      compare !== 0 ? Math.round(((real - compare) / Math.abs(compare)) * 1000) / 10 : null;
+
+    // 2. Build tree — same hierarchy as main table
+    const CALC_ROW_ORDER: Record<string, number> = {
+      'MARGEM DE CONTRIBUIÇÃO': 3.5,
+      'EBITDA (S/ RATEIO RAIZ CSC)': 4.5,
+      'EBITDA TOTAL': 5.5,
+    };
+
+    // Collect unique tag0s from tag01-level items (no tag02)
+    const tag0Set = new Set<string>();
+    for (const [key] of pathMap) {
+      const tag0 = key.split('|')[0];
+      tag0Set.add(tag0);
+    }
+    const tag0Sorted = [...tag0Set].sort((a, b) => {
+      const aOrd = CALC_ROW_ORDER[a] ?? (parseFloat(a) || 999);
+      const bOrd = CALC_ROW_ORDER[b] ?? (parseFloat(b) || 999);
+      return aOrd - bOrd;
+    });
+
+    const rows: YtdFlatRow[] = [];
+
+    for (const tag0 of tag0Sorted) {
+      // Paths under this tag0, only tag01-level (no tag02)
+      const tag01Paths: [string, PathAgg][] = [];
+      const tag01Set = new Set<string>();
+      for (const [key, val] of pathMap) {
+        const [t0, t1, t2] = key.split('|');
+        if (t0 !== tag0) continue;
+        if (t1 && !t2) { tag01Paths.push([key, val]); tag01Set.add(t1); }
       }
 
-      const rows: YtdTag0Row[] = [];
-      for (const [key, agg] of tag0Agg) {
-        const [tag0, compType] = key.split('|');
-        const ytdVarPct = agg.compare !== 0
-          ? Math.round(((agg.real - agg.compare) / Math.abs(agg.compare)) * 1000) / 10
-          : null;
+      const tag0Agg = aggPaths(tag01Paths.map(([, v]) => v));
+      rows.push({
+        depth: 0, groupKey: `ytd-${tag0}`, label: tag0, tag0, tag01: '', tag02: null, marca: null,
+        hasChildren: tag01Set.size > 0,
+        ytdReal: tag0Agg.real, orcCompare: tag0Agg.orc, orcVarPct: varPct(tag0Agg.real, tag0Agg.orc),
+        a1Compare: tag0Agg.a1, a1VarPct: varPct(tag0Agg.real, tag0Agg.a1), months: tag0Agg.months,
+      });
+
+      if (!ytdExpandedNodes.has(`ytd-${tag0}`)) continue;
+
+      for (const tag01 of [...tag01Set].sort()) {
+        const tag01Path = pathMap.get(`${tag0}|${tag01}||`);
+        const tag01Real = tag01Path ? sumReal(tag01Path) : 0;
+        const tag01Orc = tag01Path?.orcCompare || 0;
+        const tag01A1 = tag01Path?.a1Compare || 0;
+        const tag01Months = tag01Path ? [...tag01Path.months].sort() : [];
+
+        // Check for tag02 children
+        const tag02Set = new Set<string>();
+        for (const [key] of pathMap) {
+          const [t0, t1, t2] = key.split('|');
+          if (t0 === tag0 && t1 === tag01 && t2) tag02Set.add(t2);
+        }
+
         rows.push({
-          tag0, compType: compType as 'orcado' | 'a1',
-          ytdReal: agg.real, ytdCompare: agg.compare, ytdVarPct,
-          months: [...agg.months].sort(),
+          depth: 1, groupKey: `ytd-${tag0}|${tag01}`, label: tag01, tag0, tag01, tag02: null, marca: null,
+          hasChildren: tag02Set.size > 0,
+          ytdReal: tag01Real, orcCompare: tag01Orc, orcVarPct: varPct(tag01Real, tag01Orc),
+          a1Compare: tag01A1, a1VarPct: varPct(tag01Real, tag01A1), months: tag01Months,
         });
+
+        if (!ytdExpandedNodes.has(`ytd-${tag0}|${tag01}`) || tag02Set.size === 0) continue;
+
+        for (const tag02 of [...tag02Set].sort()) {
+          // Tag02 paths (all marcas under this tag02)
+          const tag02Paths: PathAgg[] = [];
+          const marcaSet = new Set<string>();
+          for (const [key, val] of pathMap) {
+            const [t0, t1, t2, m] = key.split('|');
+            if (t0 === tag0 && t1 === tag01 && t2 === tag02) {
+              tag02Paths.push(val);
+              if (m) marcaSet.add(m);
+            }
+          }
+          const tag02Agg = aggPaths(tag02Paths);
+          const hasMarcas = marcaSet.size > 0;
+
+          rows.push({
+            depth: 2, groupKey: `ytd-${tag0}|${tag01}|${tag02}`, label: tag02, tag0, tag01, tag02, marca: null,
+            hasChildren: hasMarcas,
+            ytdReal: tag02Agg.real, orcCompare: tag02Agg.orc, orcVarPct: varPct(tag02Agg.real, tag02Agg.orc),
+            a1Compare: tag02Agg.a1, a1VarPct: varPct(tag02Agg.real, tag02Agg.a1), months: tag02Agg.months,
+          });
+
+          if (!ytdExpandedNodes.has(`ytd-${tag0}|${tag01}|${tag02}`) || !hasMarcas) continue;
+
+          for (const marcaName of [...marcaSet].sort()) {
+            const mp = pathMap.get(`${tag0}|${tag01}|${tag02}|${marcaName}`);
+            if (!mp) continue;
+            const mReal = sumReal(mp);
+            rows.push({
+              depth: 3, groupKey: `ytd-marca-${tag0}|${tag01}|${tag02}|${marcaName}`, label: marcaName,
+              tag0, tag01, tag02, marca: marcaName, hasChildren: false,
+              ytdReal: mReal, orcCompare: mp.orcCompare, orcVarPct: varPct(mReal, mp.orcCompare),
+              a1Compare: mp.a1Compare, a1VarPct: varPct(mReal, mp.a1Compare), months: [...mp.months].sort(),
+            });
+          }
+        }
       }
-      return rows.sort((a, b) => a.tag0.localeCompare(b.tag0) || a.compType.localeCompare(b.compType));
     }
 
-    const rows: YtdTag0Row[] = [];
-    for (const [key, group] of grouped) {
-      const [tag0, compType] = key.split('|');
-      const ytdReal = group.reduce((s, i) => s + Number(i.real_value), 0);
-      const ytdCompare = group.reduce((s, i) => s + Number(i.compare_value), 0);
-      const ytdVarPct = ytdCompare !== 0
-        ? Math.round(((ytdReal - ytdCompare) / Math.abs(ytdCompare)) * 1000) / 10
-        : null;
-      const months = [...new Set(group.map(i => i.year_month))].sort();
-      rows.push({
-        tag0, compType: compType as 'orcado' | 'a1',
-        ytdReal, ytdCompare, ytdVarPct, months,
-      });
-    }
-    return rows.sort((a, b) => a.tag0.localeCompare(b.tag0) || a.compType.localeCompare(b.compType));
-  }, [ytdItems]);
+    return rows;
+  }, [ytdItems, ytdExpandedNodes]);
 
   // YTD stats
   const ytdStats = useMemo(() => {
@@ -381,19 +439,6 @@ const VarianceJustificationsView: React.FC = () => {
       toast.error('Erro ao gerar síntese YTD');
     } finally {
       setYtdSynthKey(null);
-    }
-  };
-
-  const handleYtdSynthesisAll = async () => {
-    const eligible = ytdRows.filter(r => r.monthsWithSummary.length >= 2);
-    if (eligible.length === 0) {
-      toast.error('Nenhuma conta com 2+ meses sintetizados');
-      return;
-    }
-    for (const row of eligible) {
-      const key = `${row.tag0}|${row.tag01}|${row.compType}`;
-      if (ytdSummaries[key]) continue;
-      await handleYtdSynthesis(row.tag0, row.tag01, row.compType);
     }
   };
 
@@ -1336,202 +1381,160 @@ const VarianceJustificationsView: React.FC = () => {
 
         {/* YTD Content */}
         {showYtd && (
-          <div className="px-3 py-3 bg-gradient-to-b from-indigo-50/50 to-white max-h-[50vh] overflow-auto">
+          <div className="bg-gradient-to-b from-indigo-50/50 to-white max-h-[50vh] overflow-auto">
             {ytdLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="animate-spin text-indigo-400" size={24} />
                 <span className="ml-2 text-xs text-indigo-500">Carregando dados YTD...</span>
               </div>
-            ) : ytdRows.length === 0 ? (
+            ) : ytdFlatRows.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-gray-400">
                 <AlertTriangle size={24} className="mb-2" />
                 <p className="text-xs font-semibold">Nenhum dado YTD encontrado</p>
                 <p className="text-[10px] mt-1">Gere desvios para 2+ meses do mesmo ano</p>
               </div>
             ) : (
-              <>
-                {/* Action bar */}
-                {isAdminOrManager && (
-                  <div className="flex items-center justify-end mb-2">
-                    <button
-                      onClick={handleYtdSynthesisAll}
-                      disabled={ytdSynthKey !== null}
-                      className="flex items-center gap-1 px-2.5 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-sm disabled:opacity-50"
-                    >
-                      {ytdSynthKey ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
-                      Gerar Todas Sínteses YTD
-                    </button>
-                  </div>
-                )}
+              <table className="w-full text-left border-collapse">
+                <colgroup>
+                  <col style={{ minWidth: 180 }} />
+                  <col style={{ width: 90 }} />
+                  {showOrc && <col style={{ width: 90 }} />}
+                  {showOrc && <col style={{ width: 60 }} />}
+                  {showA1 && <col style={{ width: 90 }} />}
+                  {showA1 && <col style={{ width: 60 }} />}
+                  <col style={{ width: 70 }} />
+                </colgroup>
+                <thead className="sticky top-0 z-10 shadow-lg whitespace-nowrap">
+                  <tr className="bg-gradient-to-r from-indigo-800 via-indigo-700 to-purple-800 text-white h-7">
+                    <th rowSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider">Conta / Centro de Custo</th>
+                    <th rowSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-right">Real YTD</th>
+                    {showOrc && (
+                      <th colSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-center border-l border-white/20 bg-gradient-to-r from-emerald-600 to-emerald-500 shadow-sm">
+                        vs Orçado
+                      </th>
+                    )}
+                    {showA1 && (
+                      <th colSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-center border-l border-white/20 bg-gradient-to-r from-purple-600 to-purple-500 shadow-sm">
+                        vs {a1Year}
+                      </th>
+                    )}
+                    <th rowSpan={2} className="px-2 py-1 text-[9px] font-black uppercase tracking-wider text-center">Meses</th>
+                  </tr>
+                  <tr className="text-white h-6">
+                    {showOrc && (
+                      <>
+                        <th className="px-2 py-1 text-[8px] font-bold uppercase text-right border-l border-white/10 bg-gradient-to-br from-emerald-500 to-emerald-600">Orçado</th>
+                        <th className="px-2 py-1 text-[8px] font-bold uppercase text-right bg-gradient-to-br from-emerald-500 to-emerald-600">Δ %</th>
+                      </>
+                    )}
+                    {showA1 && (
+                      <>
+                        <th className="px-2 py-1 text-[8px] font-bold uppercase text-right border-l border-white/10 bg-gradient-to-br from-purple-500 to-purple-600">{a1Year}</th>
+                        <th className="px-2 py-1 text-[8px] font-bold uppercase text-right bg-gradient-to-br from-purple-500 to-purple-600">Δ %</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {ytdFlatRows.map((row, idx) => {
+                    const indent = row.depth * 20;
+                    const isExpanded = ytdExpandedNodes.has(row.groupKey);
+                    const CALC_TAGS = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
+                    const isCalcRow = CALC_TAGS.has(row.tag0);
+                    const isEbitdaTotal = row.tag0 === 'EBITDA TOTAL';
+                    const isDark = row.depth === 0 || isCalcRow;
 
-                {/* YTD Table */}
-                <table className="w-full text-left border-collapse">
-                  <colgroup>
-                    <col style={{ minWidth: 200 }} />
-                    <col style={{ width: 100 }} />
-                    <col style={{ width: 100 }} />
-                    <col style={{ width: 70 }} />
-                    <col style={{ width: 80 }} />
-                    <col style={{ width: 80 }} />
-                  </colgroup>
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-gradient-to-r from-indigo-800 via-indigo-700 to-purple-800 text-white">
-                      <th className="px-3 py-1.5 text-[9px] font-black uppercase tracking-wider">Conta</th>
-                      <th className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-right">Real YTD</th>
-                      <th className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-right">Comparação</th>
-                      <th className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-right">Δ %</th>
-                      <th className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-center">Meses</th>
-                      <th className="px-2 py-1.5 text-[9px] font-black uppercase tracking-wider text-center">IA</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const uniqueTag0s = [...new Set(ytdRows.map(r => r.tag0))].sort();
-                      const compTypes = (showOrc && showA1) ? ['orcado', 'a1'] as const : showOrc ? ['orcado'] as const : ['a1'] as const;
-                      const renderedRows: React.ReactNode[] = [];
+                    const bgClass = isEbitdaTotal
+                      ? 'bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white border-t-2 border-yellow-400'
+                      : isCalcRow
+                      ? 'bg-[#F44C00] text-white border-b border-orange-600'
+                      : row.depth === 0
+                      ? 'bg-[#152e55] text-white border-b border-[#1e3d6e]'
+                      : row.depth === 1
+                      ? 'bg-blue-50 border-b border-blue-100'
+                      : row.depth === 2
+                      ? 'bg-gray-50 border-b border-gray-100'
+                      : row.depth === 3
+                      ? 'bg-orange-50/40 border-b border-orange-100/50'
+                      : 'bg-white border-b border-gray-50';
 
-                      for (const tag0 of uniqueTag0s) {
-                        for (const ct of compTypes) {
-                          // Tag0 header row
-                          const tag0Data = ytdTag0Rows.find(r => r.tag0 === tag0 && r.compType === ct);
-                          if (!tag0Data) continue;
+                    const fontClass = isCalcRow
+                      ? 'font-black text-[12px] uppercase tracking-tight'
+                      : row.depth === 0
+                      ? 'font-black text-[11px] uppercase tracking-tight'
+                      : row.depth === 1 ? 'font-bold text-[11px]'
+                      : row.depth === 2 ? 'font-semibold text-[11px]'
+                      : row.depth === 3 ? 'font-medium text-[10px]'
+                      : 'text-[11px]';
 
-                          const tag0VarColor = tag0Data.ytdVarPct === null || tag0Data.ytdVarPct === 0
-                            ? 'text-white/40'
-                            : tag0Data.ytdVarPct > 0 ? 'text-lime-300' : 'text-red-200';
+                    const hoverClass = isEbitdaTotal ? 'hover:bg-slate-600' : isCalcRow ? 'hover:bg-orange-600' : isDark ? 'hover:bg-[#1e3d6e]' : 'hover:bg-yellow-100';
 
-                          const compLabel = ct === 'orcado' ? 'Orçado' : String(a1Year);
+                    const colCount = 2 + (showOrc ? 2 : 0) + (showA1 ? 2 : 0) + 1;
 
-                          renderedRows.push(
-                            <tr key={`ytd-t0-${tag0}-${ct}`} className="bg-[#152e55] text-white border-b border-[#1e3d6e]">
-                              <td className="px-3 py-1 text-[11px] font-black uppercase tracking-tight">
-                                <span className="text-amber-400 text-[9px] mr-1">◆</span>
-                                {tag0}
-                                {compTypes.length > 1 && (
-                                  <span className={`ml-1.5 text-[8px] font-bold px-1 py-0.5 rounded ${ct === 'orcado' ? 'bg-emerald-500/30 text-emerald-200' : 'bg-purple-500/30 text-purple-200'}`}>
-                                    vs {compLabel}
-                                  </span>
-                                )}
+                    return (
+                      <React.Fragment key={`ytd-${row.groupKey}-${idx}`}>
+                        <tr className={`group ${bgClass} ${hoverClass} transition-colors`}>
+                          {/* Label */}
+                          <td className={`py-0.5 ${fontClass}`} style={{ paddingLeft: `${isCalcRow ? 8 : indent + 8}px`, paddingRight: 4 }}>
+                            <div className="flex items-center gap-1">
+                              {isCalcRow ? (
+                                <span className="text-white/80 text-[10px] mr-0.5">▶</span>
+                              ) : row.hasChildren ? (
+                                <button onClick={() => toggleYtdNode(row.groupKey)} className={`${isDark ? 'text-white/60 hover:text-white' : 'text-gray-400 hover:text-gray-700'} flex-shrink-0`}>
+                                  {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                                </button>
+                              ) : (
+                                <span className="w-[11px] inline-block flex-shrink-0" />
+                              )}
+                              {!isCalcRow && row.depth === 0 && <span className="text-amber-400 text-[9px] mr-0.5">◆</span>}
+                              {!isCalcRow && row.depth === 1 && <span className="text-blue-400 text-[9px] mr-0.5">◇</span>}
+                              {!isCalcRow && row.depth === 2 && <span className="text-[9px] text-gray-300 flex-shrink-0">{row.tag0.slice(0, 3)}</span>}
+                              {!isCalcRow && row.depth === 3 && <Building2 size={9} className="text-orange-400 flex-shrink-0" />}
+                              <span className="truncate" title={row.label}>{row.label}</span>
+                            </div>
+                          </td>
+
+                          {/* Real YTD */}
+                          <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums`}>{fmt(row.ytdReal)}</td>
+
+                          {/* vs Orçado */}
+                          {showOrc && (
+                            <>
+                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums border-l ${isDark ? 'border-white/10' : 'border-emerald-200/60'}`}>
+                                {row.orcCompare !== 0 ? fmt(row.orcCompare) : <span className={isDark ? 'text-white/30' : 'text-gray-300'}>—</span>}
                               </td>
-                              <td className="px-2 py-1 text-right font-mono text-[11px] font-black tabular-nums">{fmt(tag0Data.ytdReal)}</td>
-                              <td className="px-2 py-1 text-right font-mono text-[11px] font-black tabular-nums">{fmt(tag0Data.ytdCompare)}</td>
-                              <td className={`px-2 py-1 text-right font-mono text-[10px] font-bold tabular-nums ${tag0VarColor}`}>
-                                {tag0Data.ytdVarPct !== null ? fmtPct(tag0Data.ytdVarPct) : 'N/D'}
+                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono text-[10px] font-bold tabular-nums ${isDark ? (row.orcVarPct === null || row.orcVarPct === 0 ? 'text-white/40' : row.orcVarPct > 0 ? 'text-lime-300' : 'text-red-200') : deltaColor(row.orcVarPct)}`}>
+                                {row.orcVarPct !== null ? fmtPct(row.orcVarPct) : <span className={isDark ? 'text-white/30' : 'text-gray-300'}>—</span>}
                               </td>
-                              <td className="px-2 py-1 text-center">
-                                <div className="flex justify-center gap-0.5">
-                                  {tag0Data.months.map(m => (
-                                    <span key={m} className="w-2 h-2 rounded-full bg-white/40" title={m} />
-                                  ))}
-                                </div>
+                            </>
+                          )}
+
+                          {/* vs A-1 */}
+                          {showA1 && (
+                            <>
+                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono ${fontClass} tabular-nums border-l ${isDark ? 'border-white/10' : 'border-purple-200/60'}`}>
+                                {row.a1Compare !== 0 ? fmt(row.a1Compare) : <span className={isDark ? 'text-white/30' : 'text-gray-300'}>—</span>}
                               </td>
-                              <td className="px-2 py-1" />
-                            </tr>
-                          );
+                              <td className={`px-2 py-0.5 text-right whitespace-nowrap font-mono text-[10px] font-bold tabular-nums ${isDark ? (row.a1VarPct === null || row.a1VarPct === 0 ? 'text-white/40' : row.a1VarPct > 0 ? 'text-lime-300' : 'text-red-200') : deltaColor(row.a1VarPct)}`}>
+                                {row.a1VarPct !== null ? fmtPct(row.a1VarPct) : <span className={isDark ? 'text-white/30' : 'text-gray-300'}>—</span>}
+                              </td>
+                            </>
+                          )}
 
-                          // Tag01 rows under this tag0
-                          const tag01Rows = ytdRows.filter(r => r.tag0 === tag0 && r.compType === ct);
-
-                          for (const row of tag01Rows) {
-                            const key = `${row.tag0}|${row.tag01}|${row.compType}`;
-                            const hasSummary = ytdSummaries[key];
-                            const isSynthesizing = ytdSynthKey === key;
-                            const canSynth = isAdminOrManager && row.monthsWithSummary.length >= 2;
-                            const isSummaryExpanded = ytdExpandedSummaries.has(key);
-
-                            renderedRows.push(
-                              <tr key={`ytd-${key}`} className="bg-blue-50 border-b border-blue-100 hover:bg-yellow-50 transition-colors">
-                                <td className="py-1 text-[11px] font-bold" style={{ paddingLeft: 28, paddingRight: 4 }}>
-                                  <span className="text-blue-400 text-[9px] mr-1">◇</span>
-                                  {row.tag01}
-                                </td>
-                                <td className="px-2 py-1 text-right font-mono text-[11px] font-bold tabular-nums">{fmt(row.ytdReal)}</td>
-                                <td className="px-2 py-1 text-right font-mono text-[11px] font-bold tabular-nums">{fmt(row.ytdCompare)}</td>
-                                <td className={`px-2 py-1 text-right font-mono text-[10px] font-bold tabular-nums ${deltaColor(row.ytdVarPct)}`}>
-                                  {row.ytdVarPct !== null ? fmtPct(row.ytdVarPct) : 'N/D'}
-                                </td>
-                                <td className="px-2 py-1 text-center">
-                                  <div className="flex justify-center gap-0.5">
-                                    {row.months.map(m => {
-                                      const hasMonthlySummary = row.monthsWithSummary.includes(m);
-                                      return (
-                                        <span
-                                          key={m}
-                                          className={`w-2 h-2 rounded-full ${hasMonthlySummary ? 'bg-indigo-500' : 'bg-gray-300'}`}
-                                          title={`${m}${hasMonthlySummary ? ' (síntese IA)' : ''}`}
-                                        />
-                                      );
-                                    })}
-                                  </div>
-                                </td>
-                                <td className="px-2 py-1 text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    {canSynth && !hasSummary && (
-                                      <button
-                                        onClick={() => handleYtdSynthesis(row.tag0, row.tag01, row.compType)}
-                                        disabled={isSynthesizing}
-                                        className="flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] font-bold rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200 disabled:opacity-50"
-                                      >
-                                        {isSynthesizing ? <Loader2 size={8} className="animate-spin" /> : <Sparkles size={8} />}
-                                        IA
-                                      </button>
-                                    )}
-                                    {hasSummary && (
-                                      <button
-                                        onClick={() => setYtdExpandedSummaries(prev => {
-                                          const n = new Set(prev);
-                                          if (n.has(key)) n.delete(key); else n.add(key);
-                                          return n;
-                                        })}
-                                        className="flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] font-bold rounded bg-indigo-500 text-white hover:bg-indigo-600"
-                                      >
-                                        <Sparkles size={8} />
-                                        {isSummaryExpanded ? 'Ocultar' : 'Ver'}
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-
-                            // AI summary row (expanded inline)
-                            if (hasSummary && isSummaryExpanded) {
-                              renderedRows.push(
-                                <tr key={`ytd-summary-${key}`} className="bg-indigo-50 border-b border-indigo-100">
-                                  <td colSpan={6} className="px-8 py-2">
-                                    <div className="flex items-start gap-2">
-                                      <Sparkles size={12} className="text-indigo-400 mt-0.5 flex-shrink-0" />
-                                      <div>
-                                        <span className="text-[9px] font-black uppercase text-indigo-500 block mb-0.5">
-                                          Síntese YTD — {row.tag0} &gt; {row.tag01} ({row.compType === 'orcado' ? 'vs Orçado' : `vs ${a1Year}`})
-                                        </span>
-                                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{hasSummary}</p>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            }
-                          }
-                        }
-                      }
-                      return renderedRows;
-                    })()}
-                  </tbody>
-                </table>
-
-                {/* Legend */}
-                <div className="mt-2 flex items-center gap-3 text-[9px] text-gray-400 px-1">
-                  <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                    <span>Mês com síntese IA</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-gray-300" />
-                    <span>Mês sem síntese</span>
-                  </div>
-                </div>
-              </>
+                          {/* Meses */}
+                          <td className="px-2 py-0.5 text-center">
+                            <div className="flex justify-center gap-0.5">
+                              {row.months.map(m => (
+                                <span key={m} className={`w-2 h-2 rounded-full ${isDark ? 'bg-white/40' : 'bg-indigo-300'}`} title={m} />
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         )}
