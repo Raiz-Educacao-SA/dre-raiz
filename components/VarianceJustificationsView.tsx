@@ -370,51 +370,60 @@ const VarianceJustificationsView: React.FC = () => {
     }
 
     // ── Recalcular pais quando filtro de marca ativo (YTD) ──
+    // Agrega diretamente dos ytdItems fonte (marca=filterMarca) — independe de drill-down
     if (filterMarca) {
-      const ytdMarcaRows = rows.filter(r => r.depth === 3);
+      const marcaYtd = ytdItems.filter(i => i.marca === filterMarca && isDrePrefix(i.tag0));
 
-      // depth 2
-      for (const row of rows) {
-        if (row.depth !== 2) continue;
-        const children = ytdMarcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01 && m.tag02 === row.tag02);
-        if (children.length === 0) continue;
-        row.ytdReal = children.reduce((s, c) => s + c.ytdReal, 0);
-        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
-        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
-        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
-        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      // Indexar por (tag0, tag01, tag02) — somar real por mês (dedup) e compares
+      type YtdMarcaAgg = { realByMonth: Map<string, number>; orc: number; a1: number };
+      const ytdByTag02 = new Map<string, YtdMarcaAgg>();
+
+      for (const item of marcaYtd) {
+        if (!item.tag02) continue;
+        const k2 = `${item.tag0}|${item.tag01}|${item.tag02}`;
+        if (!ytdByTag02.has(k2)) ytdByTag02.set(k2, { realByMonth: new Map(), orc: 0, a1: 0 });
+        const a = ytdByTag02.get(k2)!;
+        if (!a.realByMonth.has(item.year_month)) a.realByMonth.set(item.year_month, Number(item.real_value));
+        if (item.comparison_type === 'orcado') a.orc += Number(item.compare_value);
+        else a.a1 += Number(item.compare_value);
       }
 
-      // depth 1
-      const ytdD2 = rows.filter(r => r.depth === 2);
+      const sumMonths = (m: Map<string, number>) => [...m.values()].reduce((s, v) => s + v, 0);
+
+      // Agregar tag01 a partir dos tag02
+      const ytdByTag01 = new Map<string, { real: number; orc: number; a1: number }>();
+      for (const [k2, v] of ytdByTag02) {
+        const [t0, t1] = k2.split('|');
+        const k1 = `${t0}|${t1}`;
+        const cur = ytdByTag01.get(k1) || { real: 0, orc: 0, a1: 0 };
+        cur.real += sumMonths(v.realByMonth); cur.orc += v.orc; cur.a1 += v.a1;
+        ytdByTag01.set(k1, cur);
+      }
+
+      // Agregar tag0 a partir dos tag01
+      const ytdByTag0 = new Map<string, { real: number; orc: number; a1: number }>();
+      for (const [k1, v] of ytdByTag01) {
+        const t0 = k1.split('|')[0];
+        const cur = ytdByTag0.get(t0) || { real: 0, orc: 0, a1: 0 };
+        cur.real += v.real; cur.orc += v.orc; cur.a1 += v.a1;
+        ytdByTag0.set(t0, cur);
+      }
+
+      // Aplicar aos rows
       for (const row of rows) {
-        if (row.depth !== 1) continue;
-        const children = ytdD2.filter(c => c.tag0 === row.tag0 && c.tag01 === row.tag01);
-        if (children.length === 0) {
-          const directMarcas = ytdMarcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01);
-          if (directMarcas.length === 0) continue;
-          row.ytdReal = directMarcas.reduce((s, c) => s + c.ytdReal, 0);
-          row.orcCompare = directMarcas.reduce((s, c) => s + c.orcCompare, 0);
-          row.a1Compare = directMarcas.reduce((s, c) => s + c.a1Compare, 0);
-        } else {
-          row.ytdReal = children.reduce((s, c) => s + c.ytdReal, 0);
-          row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
-          row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        let agg: { real: number; orc: number; a1: number } | undefined;
+        if (row.depth === 0) agg = ytdByTag0.get(row.tag0);
+        else if (row.depth === 1) agg = ytdByTag01.get(`${row.tag0}|${row.tag01}`);
+        else if (row.depth === 2) {
+          const v = ytdByTag02.get(`${row.tag0}|${row.tag01}|${row.tag02}`);
+          if (v) agg = { real: sumMonths(v.realByMonth), orc: v.orc, a1: v.a1 };
         }
-        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
-        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
-      }
+        if (!agg) continue;
 
-      // depth 0
-      const ytdD1 = rows.filter(r => r.depth === 1);
-      for (const row of rows) {
-        if (row.depth !== 0) continue;
-        const children = ytdD1.filter(c => c.tag0 === row.tag0);
-        if (children.length === 0) continue;
-        row.ytdReal = children.reduce((s, c) => s + c.ytdReal, 0);
-        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
-        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        row.ytdReal = agg.real;
+        row.orcCompare = agg.orc;
         row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1Compare = agg.a1;
         row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
       }
     }
@@ -664,60 +673,61 @@ const VarianceJustificationsView: React.FC = () => {
     }
 
     // ── Recalcular pais quando filtro de marca ativo ──
-    // Rows depth 0/1/2 são consolidados (marca=''). Quando filtramos 1 marca,
-    // recalcular a partir dos filhos marca (depth 3).
+    // Agrega diretamente dos items fonte (marca=filterMarca) — independe de drill-down aberto
     if (filterMarca) {
-      // Coletar valores por tag0+tag01+tag02 das marcas filtradas
-      const marcaRows = rows.filter(r => r.depth === 3);
+      const marcaItems = dreItems.filter(i => i.marca === filterMarca);
 
-      // Recalcular depth 2 (tag02): somar marcas filhas
-      for (const row of rows) {
-        if (row.depth !== 2) continue;
-        const children = marcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01 && m.tag02 === row.tag02);
-        if (children.length === 0) continue;
-        row.real = children.reduce((s, c) => s + c.real, 0);
-        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
-        row.orcVarAbs = row.real - row.orcCompare;
-        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
-        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
-        row.a1VarAbs = row.real - row.a1Compare;
-        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
-      }
+      // Indexar marcaItems por (tag0, tag01, tag02, compType)
+      type MarcaAgg = { real: number; orc: number; a1: number };
+      const marcaByTag02 = new Map<string, MarcaAgg>();
+      const marcaByTag01 = new Map<string, MarcaAgg>();
+      const marcaByTag0 = new Map<string, MarcaAgg>();
 
-      // Recalcular depth 1 (tag01): somar tag02 filhos (já recalculados)
-      const d2Rows = rows.filter(r => r.depth === 2);
-      for (const row of rows) {
-        if (row.depth !== 1) continue;
-        const children = d2Rows.filter(c => c.tag0 === row.tag0 && c.tag01 === row.tag01);
-        if (children.length === 0) {
-          // Se não tem filhos tag02, usar marcaRows diretas
-          const directMarcas = marcaRows.filter(m => m.tag0 === row.tag0 && m.tag01 === row.tag01);
-          if (directMarcas.length === 0) continue;
-          row.real = directMarcas.reduce((s, c) => s + c.real, 0);
-          row.orcCompare = directMarcas.reduce((s, c) => s + c.orcCompare, 0);
-          row.a1Compare = directMarcas.reduce((s, c) => s + c.a1Compare, 0);
-        } else {
-          row.real = children.reduce((s, c) => s + c.real, 0);
-          row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
-          row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+      for (const item of marcaItems) {
+        const val = Number(item.real_value);
+        const cmp = Number(item.compare_value);
+        const isOrc = item.comparison_type === 'orcado';
+
+        // tag02 level
+        if (item.tag02) {
+          const k2 = `${item.tag0}|${item.tag01}|${item.tag02}`;
+          const cur2 = marcaByTag02.get(k2) || { real: 0, orc: 0, a1: 0 };
+          if (isOrc) { cur2.real = val; cur2.orc = cmp; }
+          else { cur2.real = val; cur2.a1 = cmp; }
+          marcaByTag02.set(k2, cur2);
         }
-        row.orcVarAbs = row.real - row.orcCompare;
-        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
-        row.a1VarAbs = row.real - row.a1Compare;
-        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
       }
 
-      // Recalcular depth 0 (tag0): somar tag01 filhos (já recalculados)
-      const d1Rows = rows.filter(r => r.depth === 1);
+      // Agregar tag01 a partir dos tag02
+      for (const [k2, v] of marcaByTag02) {
+        const [t0, t1] = k2.split('|');
+        const k1 = `${t0}|${t1}`;
+        const cur1 = marcaByTag01.get(k1) || { real: 0, orc: 0, a1: 0 };
+        cur1.real += v.real; cur1.orc += v.orc; cur1.a1 += v.a1;
+        marcaByTag01.set(k1, cur1);
+      }
+
+      // Agregar tag0 a partir dos tag01
+      for (const [k1, v] of marcaByTag01) {
+        const t0 = k1.split('|')[0];
+        const cur0 = marcaByTag0.get(t0) || { real: 0, orc: 0, a1: 0 };
+        cur0.real += v.real; cur0.orc += v.orc; cur0.a1 += v.a1;
+        marcaByTag0.set(t0, cur0);
+      }
+
+      // Aplicar aos rows
       for (const row of rows) {
-        if (row.depth !== 0) continue;
-        const children = d1Rows.filter(c => c.tag0 === row.tag0);
-        if (children.length === 0) continue;
-        row.real = children.reduce((s, c) => s + c.real, 0);
-        row.orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
-        row.a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+        let agg: MarcaAgg | undefined;
+        if (row.depth === 0) agg = marcaByTag0.get(row.tag0);
+        else if (row.depth === 1) agg = marcaByTag01.get(`${row.tag0}|${row.tag01}`);
+        else if (row.depth === 2) agg = marcaByTag02.get(`${row.tag0}|${row.tag01}|${row.tag02}`);
+        if (!agg) continue;
+
+        row.real = agg.real;
+        row.orcCompare = agg.orc;
         row.orcVarAbs = row.real - row.orcCompare;
         row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1Compare = agg.a1;
         row.a1VarAbs = row.real - row.a1Compare;
         row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
       }
