@@ -508,24 +508,28 @@ const VarianceJustificationsView: React.FC = () => {
 
     for (const tag0 of tag0Sorted) {
       const tag0All = items.filter(i => i.tag0 === tag0);
+      // Para agregação tag0: usar apenas itens nível tag01 (sem tag02) para não duplicar
+      const tag0Level = tag0All.filter(i => !i.tag02);
       const tag0Key = tag0;
       const tag0Orc = orcMap.get(`${tag0}|||`) || null;
       const tag0A1 = a1Map.get(`${tag0}|||`) || null;
       const tag01Set = new Set(tag0All.filter(i => i.tag01).map(i => i.tag01));
 
-      rows.push(buildRow(0, tag0Key, tag0, tag0, '', null, null, tag01Set.size > 0, tag0All, tag0Orc, tag0A1));
+      rows.push(buildRow(0, tag0Key, tag0, tag0, '', null, null, tag01Set.size > 0, tag0Level, tag0Orc, tag0A1));
 
       if (!expandedNodes.has(tag0Key)) continue;
 
       for (const tag01 of [...tag01Set].sort()) {
         if (!tag01) continue;
         const tag01All = tag0All.filter(i => i.tag01 === tag01);
+        // Para agregação tag01: usar apenas itens nível tag01 (sem tag02) para não duplicar
+        const tag01Level = tag01All.filter(i => !i.tag02);
         const tag01Key = `${tag0}|${tag01}`;
         const tag01Orc = orcMap.get(`${tag0}|${tag01}||`) || null;
         const tag01A1 = a1Map.get(`${tag0}|${tag01}||`) || null;
         const tag02Set = new Set(tag01All.filter(i => i.tag02).map(i => i.tag02!));
 
-        rows.push(buildRow(1, tag01Key, tag01, tag0, tag01, null, null, tag02Set.size > 0, tag01All, tag01Orc, tag01A1));
+        rows.push(buildRow(1, tag01Key, tag01, tag0, tag01, null, null, tag02Set.size > 0, tag01Level, tag01Orc, tag01A1));
 
         if (!expandedNodes.has(tag01Key) || tag02Set.size === 0) continue;
 

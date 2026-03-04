@@ -2830,62 +2830,61 @@ export const generateVarianceItems = async (
     const isDrePrefix = (tag0: string) => DRE_PREFIXES.has((tag0 || '').slice(0, 3));
 
     // Converter soma → formato unificado (tag02=null, tag03=null)
-    let allAggData: any[] = somaData.filter((row: any) => isDrePrefix(row.tag0)).map((row: any) => ({
+    // somaData = nível tag0+tag01 (fonte get_soma_tags, exata ao DRE Gerencial)
+    const allAggData: any[] = somaData.filter((row: any) => isDrePrefix(row.tag0)).map((row: any) => ({
       tag0: row.tag0,
       tag01: row.tag01,
       tag02: null,
       tag03: null,
       scenario: row.scenario,
-      year_month: row.month,
       total_amount: row.total,
       marca: marca || '',
     }));
 
-    debug(`📊 get_soma_tags: ${somaData.length} linhas para ${yearMonth} (marca=${marca || 'consolidado'})`);
+    debug(`📊 get_soma_tags: ${allAggData.length} linhas DRE para ${yearMonth}`);
 
-    // 1.5 DETALHE SUPLEMENTAR — dre_agg (tag02+tag03 granular)
+    // 1.5 DETALHE tag02+marca — RPC get_variance_snapshot
+    // Consulta MESMAS tabelas-fonte (transactions, transactions_orcado, transactions_ano_anterior)
+    // com mesmos filtros que get_soma_tags, agrupando por (tag0, tag01, tag02, marca)
     const PAGE_SIZE = 1000;
-    let offset = 0;
-    let hasMore = true;
-    let detailCount = 0;
+    let snapOffset = 0;
+    let snapMore = true;
 
-    while (hasMore) {
-      let aggQuery = supabase
-        .from('dre_agg')
-        .select('tag0, tag01, tag02, tag03, scenario, year_month, total_amount, marca')
-        .eq('year_month', yearMonth)
-        .in('scenario', ['Real', 'Orçado', 'A-1'])
-        .not('tag02', 'is', null)
-        .range(offset, offset + PAGE_SIZE - 1);
+    while (snapMore) {
+      const { data: snapPage, error: snapError } = await supabase
+        .rpc('get_variance_snapshot', {
+          p_year_month: yearMonth,
+          p_marcas: marca ? [marca] : null,
+          p_recurring: 'Sim',
+        })
+        .range(snapOffset, snapOffset + PAGE_SIZE - 1);
 
-      if (marca) aggQuery = aggQuery.eq('marca', marca);
-
-      const { data: page, error: aggError } = await aggQuery;
-      if (aggError) {
-        debug(`⚠️ dre_agg detalhe falhou (continuando sem tag02/tag03): ${aggError.message}`);
+      if (snapError) {
+        debug(`⚠️ get_variance_snapshot falhou: ${snapError.message}. Continuando sem tag02/marca.`);
         break;
       }
-
-      if (!page || page.length === 0) {
-        hasMore = false;
+      if (!snapPage || snapPage.length === 0) {
+        snapMore = false;
       } else {
-        // Filtrar DRE prefixes + agregar tag02 como folha (ignorar tag03)
-        const filtered = page
-          .filter((r: any) => isDrePrefix(r.tag0))
-          .map((r: any) => ({ ...r, tag03: null }));
-        allAggData = allAggData.concat(filtered);
-        detailCount += filtered.length;
-        hasMore = page.length === PAGE_SIZE;
-        offset += PAGE_SIZE;
+        for (const r of snapPage) {
+          if (!isDrePrefix(r.tag0) || !r.tag02) continue;
+          allAggData.push({
+            tag0: r.tag0,
+            tag01: r.tag01,
+            tag02: r.tag02,
+            tag03: null,
+            scenario: r.scenario,
+            total_amount: r.total,
+            marca: r.marca || '',
+          });
+        }
+        snapMore = snapPage.length === PAGE_SIZE;
+        snapOffset += PAGE_SIZE;
       }
     }
 
-    // Diagnóstico por cenário
-    const scenarioCounts: Record<string, number> = {};
-    for (const row of allAggData) {
-      scenarioCounts[row.scenario] = (scenarioCounts[row.scenario] || 0) + 1;
-    }
-    debug(`📊 Total: ${allAggData.length} linhas (${somaData.length} soma + ${detailCount} detalhe) — ${Object.entries(scenarioCounts).map(([k, v]) => `${k}:${v}`).join(', ')}`);
+    const tag02Count = allAggData.filter(r => r.tag02).length;
+    debug(`📊 Total: ${allAggData.length} linhas (${allAggData.length - tag02Count} soma + ${tag02Count} tag02+marca)`);
 
     // 2. Buscar versão atual e próxima
     let versionQuery = supabase
