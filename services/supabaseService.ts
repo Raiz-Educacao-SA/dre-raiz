@@ -2740,7 +2740,7 @@ export const getVarianceJustifications = async (
       .range(offset, offset + PAGE - 1);
 
     if (filters?.year_month) query = query.eq('year_month', filters.year_month);
-    if (filters?.marca) query = query.eq('marca', filters.marca);
+    if (filters?.marca) query = query.or(`marca.eq.${filters.marca},marca.eq.`);
     if (filters?.status) query = query.eq('status', filters.status);
     if (filters?.owner_email) query = query.eq('owner_email', filters.owner_email);
     if (filters?.comparison_type) query = query.eq('comparison_type', filters.comparison_type);
@@ -2778,7 +2778,7 @@ export const getVarianceYtdItems = async (
     .order('tag0')
     .order('tag01');
 
-  if (marca) query = query.eq('marca', marca);
+  if (marca) query = query.or(`marca.eq.${marca},marca.eq.`);
 
   const { data, error } = await query;
   if (error) {
