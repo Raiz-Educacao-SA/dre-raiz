@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2 } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
@@ -899,6 +899,7 @@ const AdminPanel: React.FC = () => {
   };
 
   const handleUpdateRole = async (userId: string, newRole: 'admin' | 'manager' | 'viewer' | 'approver' | 'pending') => {
+    const wasPending = selectedUser?.role === 'pending';
     setSaving(true);
     const success = await supabaseService.updateUserRole(userId, newRole);
 
@@ -908,6 +909,11 @@ const AdminPanel: React.FC = () => {
         setSelectedUser({ ...selectedUser, role: newRole });
       }
       showMessage('success', 'Função atualizada com sucesso!');
+
+      // Se saiu de pending → oferece enviar email de boas-vindas
+      if (wasPending && newRole !== 'pending') {
+        setShowWelcomeModal(true);
+      }
     } else {
       showMessage('error', 'Erro ao atualizar função.');
     }
@@ -979,6 +985,53 @@ const AdminPanel: React.FC = () => {
       showMessage('error', 'Erro ao deletar usuário. Tente novamente.');
     }
     setSaving(false);
+  };
+
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+
+  const handleSendWelcomeEmail = async () => {
+    if (!selectedUser) return;
+    if (selectedUser.role === 'pending') {
+      showMessage('error', 'Configure o perfil do usuário antes de enviar o email de liberação.');
+      return;
+    }
+
+    const marcaPerms = permissions
+      .filter(p => p.permission_type === 'cia')
+      .map(p => p.permission_value);
+    const marcasText = marcaPerms.length > 0 ? marcaPerms.join(', ') : 'Acesso total';
+
+    setSendingEmail(true);
+    try {
+      const res = await fetch('/api/send-welcome-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: selectedUser.name,
+          email: selectedUser.email,
+          role: selectedUser.role,
+          marcas: marcasText,
+        }),
+      });
+      const text = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        showMessage('error', `Resposta inesperada do servidor: ${text.slice(0, 100)}`);
+        setSendingEmail(false);
+        return;
+      }
+      if (data.sent) {
+        showMessage('success', `Email de liberação enviado para ${selectedUser.email}!`);
+      } else {
+        showMessage('error', `Falha ao enviar email: ${data.reason || data.error || 'Erro desconhecido'}`);
+      }
+    } catch (err: any) {
+      showMessage('error', `Erro ao enviar email: ${err.message}`);
+    }
+    setSendingEmail(false);
   };
 
   const showMessage = (type: 'success' | 'error', text: string) => {
@@ -1928,6 +1981,36 @@ const AdminPanel: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* Enviar Email de Liberação */}
+              {selectedUser.role !== 'pending' && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-2">
+                  <h3 className="text-[10px] font-black text-orange-700 uppercase tracking-wider mb-1 flex items-center gap-1">
+                    <Mail size={12} />
+                    Notificar Usuário
+                  </h3>
+                  <p className="text-[10px] text-orange-600 mb-2">
+                    Envia email informando que o acesso foi liberado.
+                  </p>
+                  <button
+                    onClick={handleSendWelcomeEmail}
+                    disabled={sendingEmail || saving}
+                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed text-xs"
+                  >
+                    {sendingEmail ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        Enviando...
+                      </>
+                    ) : (
+                      <>
+                        <Mail size={12} />
+                        Enviar Email de Liberação
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
 
               {/* Botão de Deletar Usuário */}
               {selectedUser.id !== currentUser?.uid && (
@@ -3930,6 +4013,78 @@ const AdminPanel: React.FC = () => {
               <strong>Automação:</strong> A normalização roda automaticamente todo dia à meia-noite (pg_cron).
               Use o botão "Executar Agora" para rodar manualmente. A tabela é sincronizada em tempo real com o Supabase.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Envio de Email de Boas-Vindas */}
+      {showWelcomeModal && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-orange-500 to-teal-400 p-6 text-center">
+              <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-3 border-2 border-white/30">
+                <CheckCircle size={32} className="text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-white">Usuário Aprovado!</h2>
+              <p className="text-white/90 text-sm mt-1">{selectedUser.name}</p>
+            </div>
+
+            {/* Body */}
+            <div className="p-6">
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-5">
+                <div className="flex items-center gap-3 mb-2">
+                  {selectedUser.photo_url ? (
+                    <img src={selectedUser.photo_url} alt="" className="w-10 h-10 rounded-full" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-orange-200 flex items-center justify-center">
+                      <UserIcon size={18} className="text-orange-600" />
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-semibold text-sm text-gray-900">{selectedUser.name}</p>
+                    <p className="text-xs text-gray-500">{selectedUser.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-[10px] font-bold uppercase bg-orange-500 text-white px-2 py-0.5 rounded-full">
+                    {selectedUser.role === 'admin' ? 'Admin' : selectedUser.role === 'manager' ? 'Gestor' : selectedUser.role === 'approver' ? 'Aprovador' : 'Viewer'}
+                  </span>
+                  <span className="text-[10px] text-gray-500">
+                    {permissions.filter(p => p.permission_type === 'cia').length > 0
+                      ? permissions.filter(p => p.permission_type === 'cia').map(p => p.permission_value).join(', ')
+                      : 'Acesso total'}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-sm text-gray-600 text-center mb-5">
+                Deseja enviar o <strong>email de boas-vindas</strong> informando que o acesso foi liberado?
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowWelcomeModal(false)}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors"
+                >
+                  Não, obrigado
+                </button>
+                <button
+                  onClick={async () => {
+                    setShowWelcomeModal(false);
+                    await handleSendWelcomeEmail();
+                  }}
+                  disabled={sendingEmail}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {sendingEmail ? (
+                    <><Loader2 size={14} className="animate-spin" /> Enviando...</>
+                  ) : (
+                    <><Mail size={14} /> Enviar Email</>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -170,6 +170,56 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // Dev middleware for /api/send-welcome-email — Resend email proxy
+        {
+          name: 'send-welcome-email-middleware',
+          configureServer(server) {
+            server.middlewares.use('/api/send-welcome-email', async (req: IncomingMessage, res: ServerResponse) => {
+              if (req.method === 'OPTIONS') {
+                res.writeHead(200, {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                  'Access-Control-Allow-Headers': 'Content-Type',
+                });
+                res.end();
+                return;
+              }
+              if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method not allowed' }));
+                return;
+              }
+
+              const chunks: Buffer[] = [];
+              for await (const chunk of req) chunks.push(chunk as Buffer);
+              const body = JSON.parse(Buffer.concat(chunks).toString());
+
+              try {
+                // Inject EMAIL_API_KEY into process.env for the handler
+                process.env.EMAIL_API_KEY = env.EMAIL_API_KEY || process.env.EMAIL_API_KEY || '';
+
+                const mod = await server.ssrLoadModule('./api/send-welcome-email.ts');
+                const mockReq = { method: 'POST', body } as any;
+                let mockResult: any = null;
+                const mockRes = {
+                  status: (code: number) => ({
+                    json: (data: any) => { mockResult = { code, data }; return mockRes; }
+                  }),
+                } as any;
+
+                await mod.default(mockReq, mockRes);
+
+                const code = mockResult?.code || 200;
+                res.writeHead(code, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(mockResult?.data || { error: 'Sem resposta do handler' }));
+              } catch (err: any) {
+                console.error('send-welcome-email dev error:', err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+          },
+        },
       ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
