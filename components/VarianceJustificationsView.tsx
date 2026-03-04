@@ -409,8 +409,9 @@ const VarianceJustificationsView: React.FC = () => {
         ytdByTag0.set(t0, cur);
       }
 
-      // Aplicar aos rows
+      // Aplicar aos rows (zerar se marca não tem dados naquele nível)
       for (const row of rows) {
+        if (row.depth === 3) continue; // marcas já têm valores corretos
         let agg: { real: number; orc: number; a1: number } | undefined;
         if (row.depth === 0) agg = ytdByTag0.get(row.tag0);
         else if (row.depth === 1) agg = ytdByTag01.get(`${row.tag0}|${row.tag01}`);
@@ -418,12 +419,12 @@ const VarianceJustificationsView: React.FC = () => {
           const v = ytdByTag02.get(`${row.tag0}|${row.tag01}|${row.tag02}`);
           if (v) agg = { real: sumMonths(v.realByMonth), orc: v.orc, a1: v.a1 };
         }
-        if (!agg) continue;
+        const val = agg || { real: 0, orc: 0, a1: 0 };
 
-        row.ytdReal = agg.real;
-        row.orcCompare = agg.orc;
+        row.ytdReal = val.real;
+        row.orcCompare = val.orc;
         row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
-        row.a1Compare = agg.a1;
+        row.a1Compare = val.a1;
         row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
       }
     }
@@ -715,19 +716,20 @@ const VarianceJustificationsView: React.FC = () => {
         marcaByTag0.set(t0, cur0);
       }
 
-      // Aplicar aos rows
+      // Aplicar aos rows (zerar se marca não tem dados naquele nível)
       for (const row of rows) {
+        if (row.depth === 3) continue; // marcas já têm valores corretos
         let agg: MarcaAgg | undefined;
         if (row.depth === 0) agg = marcaByTag0.get(row.tag0);
         else if (row.depth === 1) agg = marcaByTag01.get(`${row.tag0}|${row.tag01}`);
         else if (row.depth === 2) agg = marcaByTag02.get(`${row.tag0}|${row.tag01}|${row.tag02}`);
-        if (!agg) continue;
+        const v = agg || { real: 0, orc: 0, a1: 0 };
 
-        row.real = agg.real;
-        row.orcCompare = agg.orc;
+        row.real = v.real;
+        row.orcCompare = v.orc;
         row.orcVarAbs = row.real - row.orcCompare;
         row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
-        row.a1Compare = agg.a1;
+        row.a1Compare = v.a1;
         row.a1VarAbs = row.real - row.a1Compare;
         row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
       }
