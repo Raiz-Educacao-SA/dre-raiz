@@ -192,14 +192,18 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     tag03Options: string[]; // Lista completa de Tag03
   }>({ filiais: [], marcas: [], tag0Map: new Map(), tag0Options: [], tag01Options: [], tag02Options: [], tag03Options: [] });
 
-  // Carregar opções de lookup ao montar
+  // Ref para auto-load na primeira abertura (G6)
+  const initialLoadDoneRef = useRef(false);
+
+  // Carregar opções de lookup ao montar (G3: getContaContabilOptions unificado no Promise.all)
   useEffect(() => {
     Promise.all([
       getFiliais(),
       getTag0Map(),
       getTag0Options(),
       getTransactionFilterOptions(),  // 1 RPC = tag01 + tag02 + tag03 (server-side DISTINCT)
-    ]).then(([filiais, tag0Map, tag0Options, tagFilters]) => {
+      getContaContabilOptions(),      // G3: movido para cá (antes era useEffect separado)
+    ]).then(([filiais, tag0Map, tag0Options, tagFilters, contaOpts]) => {
       const marcas = [...new Set(filiais.map(f => f.cia))].sort();
       setFilterOptions({
         filiais, marcas, tag0Map, tag0Options,
@@ -207,6 +211,14 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         tag02Options: tagFilters.tag02Options,
         tag03Options: tagFilters.tag03Options,
       });
+      setContaContabilOptions(contaOpts.map(o => o.cod_conta));
+
+      // G6: Auto-load primeira página na abertura
+      if (!initialLoadDoneRef.current) {
+        initialLoadDoneRef.current = true;
+        // Dispara busca após filtros carregados (via trigger para garantir colFilters atuais)
+        setAutoSearchTrigger(prev => prev + 1);
+      }
     });
   }, []);
 
@@ -423,11 +435,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     }
   }, [colFilters.tag01, colFilters.tag02, filterOptions.tag03Options]);
 
-  // 🎯 Conta Contábil: busca da tabela tags (somente cod_conta com 14 dígitos)
+  // 🎯 Conta Contábil: carregado no Promise.all do mount (G3)
   const [contaContabilOptions, setContaContabilOptions] = useState<string[]>([]);
-  useEffect(() => {
-    getContaContabilOptions().then(opts => setContaContabilOptions(opts.map(o => o.cod_conta)));
-  }, []);
 
   // 🎯 EFEITO CASCATA: Limpar filtros downstream quando tag0 mudar
   useEffect(() => {
@@ -840,44 +849,52 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       setSearchedTransactions(allData);
       setHasSearchedTransactions(true);
 
-      // Buscar páginas restantes
-      for (let page = 2; page <= totalPages; page++) {
+      // G5: Buscar páginas restantes em batches paralelos de 3
+      const BATCH_SIZE = 3;
+      for (let batchStart = 2; batchStart <= totalPages; batchStart += BATCH_SIZE) {
         // Verificar se foi cancelado (usando ref)
         if (cancelSearchAllRef.current) {
-          console.log(`⚠️ Busca cancelada pelo usuário na página ${page}/${totalPages}`);
+          console.log(`⚠️ Busca cancelada pelo usuário na página ${batchStart}/${totalPages}`);
           console.log(`✅ ${allData.length} registros foram carregados antes do cancelamento`);
           break;
         }
 
-        console.log(`📄 Buscando página ${page}/${totalPages}...`);
+        // Montar batch de até BATCH_SIZE páginas
+        const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, totalPages);
+        const batchPages = Array.from({ length: batchEnd - batchStart + 1 }, (_, i) => batchStart + i);
 
-        const response = await getFilteredTransactions(filters, {
-          pageNumber: page,
-          pageSize: 1000,
-        }, tableNameAll);
+        console.log(`📄 Buscando páginas ${batchPages.join(', ')}/${totalPages} em paralelo...`);
 
-        allData = [...allData, ...response.data];
+        const batchResults = await Promise.all(
+          batchPages.map(page =>
+            getFilteredTransactions(filters, { pageNumber: page, pageSize: 1000 }, tableNameAll)
+          )
+        );
 
-        // Atualizar UI incrementalmente a cada 5 páginas
-        if (page % 5 === 0 || page === totalPages) {
-          setSearchedTransactions([...allData]);
-          console.log(`✅ Carregado: ${allData.length}/${totalRecords} registros (${Math.round((allData.length / totalRecords) * 100)}%)`);
+        for (const response of batchResults) {
+          allData = [...allData, ...response.data];
         }
 
+        // Atualizar UI após cada batch
+        setSearchedTransactions([...allData]);
+        console.log(`✅ Carregado: ${allData.length}/${totalRecords} registros (${Math.round((allData.length / totalRecords) * 100)}%)`);
+
         setSearchAllProgress({
-          current: page,
+          current: batchEnd,
           total: totalPages,
           loaded: allData.length
         });
 
         // Segurança: parar se passar de 150 páginas
-        if (page >= 150) {
+        if (batchEnd >= 150) {
           console.warn('⚠️ Limite de segurança atingido (150 páginas)');
           break;
         }
 
-        // Pequeno delay para não sobrecarregar (50ms)
-        await new Promise(resolve => setTimeout(resolve, 50));
+        // Pequeno delay entre batches para não sobrecarregar (50ms)
+        if (batchEnd < totalPages) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
       }
 
       // Atualização final
@@ -899,51 +916,17 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     }
   };
 
+  // G4: Dados já vêm filtrados do servidor — manter apenas filtro de cenário (safety net) e ordenação
   const filteredAndSorted = useMemo(() => {
-    console.log('🔍 Aplicando filtros client-side e ordenação:', {
-      activeTab,
-      totalTransactions: transactions.length,
-      activeFilters: Object.keys(colFilters).filter(key => {
-        const value = colFilters[key as keyof typeof colFilters];
-        return value && (Array.isArray(value) ? value.length > 0 : true);
-      })
-    });
-
     return transactions
       .filter(t => {
-        // 1. Filtrar por aba ativa (cenário) - case-insensitive e sem acentos
-        const scenarioNormalized = (t.scenario || '').toLowerCase().trim()
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
+        // Safety net: filtrar por cenário na aba "real" (servidor já filtra, mas protege contra edge cases)
         if (activeTab === 'real') {
-          // Aceitar 'real' ou vazio (transações sem cenário definido são consideradas 'real')
+          const scenarioNormalized = (t.scenario || '').toLowerCase().trim()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
           if (scenarioNormalized !== 'real' && scenarioNormalized !== '') return false;
         }
-        // Orçado e A-1: dados já vêm das tabelas corretas (transactions_orcado / transactions_ano_anterior)
-        // Não é necessário filtrar por scenario aqui
-
-        // 2. Aplicar filtros client-side (EXCETO período, que já foi aplicado no servidor)
-        return Object.entries(colFilters).every(([key, value]) => {
-          // Ignorar filtros vazios
-          if (!value || (Array.isArray(value) && value.length === 0)) return true;
-
-          // IMPORTANTE: NÃO filtrar por período aqui (já foi aplicado no servidor)
-          if (key === 'monthFrom' || key === 'monthTo') return true;
-
-          // Filtros de array (marca, filial, tags, category, recurring)
-          const tValue = String(t[key as keyof Transaction] || '');
-          if (Array.isArray(value)) {
-            // Comparação case-insensitive para campos que podem ter variação de maiúsculas/minúsculas
-            if (key === 'recurring') {
-              return value.some(v => String(v).toLowerCase() === tValue.toLowerCase());
-            }
-            return value.includes(tValue);
-          }
-
-          // Filtros de texto (ticket, vendor, description, amount)
-          const filterValue = String(value).toLowerCase();
-          return tValue.toLowerCase().includes(filterValue);
-        });
+        return true;
       })
       .sort((a, b) => {
         const aVal = a[sortConfig.key] ?? '';
@@ -953,7 +936,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         }
         return sortConfig.direction === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
       });
-  }, [transactions, colFilters, sortConfig, activeTab]);
+  }, [transactions, sortConfig, activeTab]);
 
   const totalAmount = useMemo(() => {
     return filteredAndSorted.reduce((sum, t) => t.type === 'REVENUE' ? sum + t.amount : sum - t.amount, 0);

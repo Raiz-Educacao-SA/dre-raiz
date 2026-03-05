@@ -352,33 +352,23 @@ export const getTag01sForTag02s = async (tags02: string[]): Promise<string[]> =>
 };
 
 /**
- * Retorna tag02 distintos apenas para os tag01s fornecidos (cascata)
+ * Retorna tag02 distintos apenas para os tag01s fornecidos (cascata via RPC DISTINCT)
  */
 export const getTag02OptionsForTag01s = async (tags01: string[]): Promise<string[]> => {
   if (tags01.length === 0) return [];
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('tag02')
-    .in('tag01', tags01)
-    .not('tag02', 'is', null)
-    .limit(10000);
+  const { data, error } = await supabase.rpc('get_tag02_for_tag01s', { p_tag01s: tags01 });
   if (error || !data) return [];
-  return [...new Set(data.map(r => r.tag02).filter(Boolean) as string[])].sort();
+  return data as string[];
 };
 
 /**
- * Retorna tag03 distintos apenas para os tag02s fornecidos (cascata)
+ * Retorna tag03 distintos apenas para os tag02s fornecidos (cascata via RPC DISTINCT)
  */
 export const getTag03OptionsForTag02s = async (tags02: string[]): Promise<string[]> => {
   if (tags02.length === 0) return [];
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('tag03')
-    .in('tag02', tags02)
-    .not('tag03', 'is', null)
-    .limit(10000);
+  const { data, error } = await supabase.rpc('get_tag03_for_tag02s', { p_tag02s: tags02 });
   if (error || !data) return [];
-  return [...new Set(data.map(r => r.tag03).filter(Boolean) as string[])].sort();
+  return data as string[];
 };
 
 /**
@@ -1091,22 +1081,19 @@ const applyTransactionFilters = (query: any, filters: TransactionFilters) => {
   if (filters.conta_contabil && filters.conta_contabil.length > 0) query = query.in('conta_contabil', filters.conta_contabil);
   if (filters.chave_id && filters.chave_id.trim() !== '') query = query.ilike('chave_id', `%${filters.chave_id.trim()}%`);
   if (filters.recurring && filters.recurring.length > 0) {
-    // Expandir variações com/sem acento para busca case-insensitive
-    const recurringPatterns: string[] = [];
+    // Expandir todas as variações de case/acento para usar eq (indexável) em vez de ilike (full-scan)
+    const allVariations: string[] = [];
     for (const val of filters.recurring) {
       const lower = val.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       if (lower === 'sim') {
-        recurringPatterns.push('recurring.ilike.sim', 'recurring.ilike.Sim', 'recurring.ilike.SIM');
+        allVariations.push('sim', 'Sim', 'SIM');
       } else if (lower === 'nao') {
-        recurringPatterns.push(
-          'recurring.ilike.nao', 'recurring.ilike.Nao', 'recurring.ilike.NAO',
-          'recurring.ilike.não', 'recurring.ilike.Não', 'recurring.ilike.NÃO'
-        );
+        allVariations.push('nao', 'Nao', 'NAO', 'não', 'Não', 'NÃO');
       } else {
-        recurringPatterns.push(`recurring.ilike.${val}`);
+        allVariations.push(val);
       }
     }
-    query = query.or(recurringPatterns.join(','));
+    query = query.in('recurring', [...new Set(allVariations)]);
   }
 
   // Filtros de texto (LIKE)
@@ -1127,9 +1114,9 @@ const applyTransactionFilters = (query: any, filters: TransactionFilters) => {
   // Real: scenario IS NULL ou 'Real' (DRE usa COALESCE(scenario, 'Real'))
   if (filters.scenario) {
     if (filters.scenario === 'Real') {
-      query = query.or('scenario.is.null,scenario.ilike.Real');
+      query = query.or('scenario.is.null,scenario.eq.Real');
     } else {
-      query = query.ilike('scenario', filters.scenario);
+      query = query.eq('scenario', filters.scenario);
     }
   }
 
@@ -1171,25 +1158,54 @@ export const getFilteredTransactions = async (
     return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
   }
 
-  debug('🔍 Buscando transações com filtros:', filters);
+  // Aplicar permissões nos filtros
+  filters = addPermissionFiltersToObject(filters);
+  debug('🔍 Buscando transações via RPC com filtros:', filters);
 
-  // Timeout para evitar requests pendurados
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 45000);
+  // Expandir recurring para todas as variações de case/acento
+  let expandedRecurring: string[] | null = null;
+  if (filters.recurring && filters.recurring.length > 0) {
+    const allVariations: string[] = [];
+    for (const val of filters.recurring) {
+      const lower = val.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (lower === 'sim') allVariations.push('sim', 'Sim', 'SIM');
+      else if (lower === 'nao') allVariations.push('nao', 'Nao', 'NAO', 'não', 'Não', 'NÃO');
+      else allVariations.push(val);
+    }
+    expandedRecurring = [...new Set(allVariations)];
+  }
+
+  // Construir parâmetros para a RPC
+  const buildRpcParams = (offset: number, limit: number) => ({
+    p_table_name: tableName,
+    p_month_from: filters.monthFrom || null,
+    p_month_to: filters.monthTo || null,
+    p_scenario: filters.scenario || null,
+    p_marcas: filters.marca?.length ? filters.marca : null,
+    p_nome_filiais: filters.nome_filial?.length ? filters.nome_filial : null,
+    p_tags01: filters.tag01?.length ? filters.tag01 : null,
+    p_tags02: filters.tag02?.length ? filters.tag02 : null,
+    p_tags03: filters.tag03?.length ? filters.tag03 : null,
+    p_categories: filters.category?.length ? filters.category : null,
+    p_conta_contabils: filters.conta_contabil?.length ? filters.conta_contabil : null,
+    p_recurring: expandedRecurring,
+    p_statuses: filters.status?.length ? filters.status : null,
+    p_ticket: filters.ticket || null,
+    p_vendor: filters.vendor || null,
+    p_description: filters.description || null,
+    p_amount: filters.amount ? parseFloat(filters.amount) || null : null,
+    p_chave_id: filters.chave_id || null,
+    p_offset: offset,
+    p_limit: limit,
+  });
 
   try {
     if (pagination) {
       const { pageNumber, pageSize } = pagination;
       debug(`📄 Paginação: Página ${pageNumber}, ${pageSize} registros/página`);
 
-      if (pageNumber < 1) {
-        console.error('❌ Erro: pageNumber deve ser >= 1');
-        return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
-      }
-      if (pageSize < 1 || pageSize > 50000) {
-        console.error('❌ Erro: pageSize deve estar entre 1 e 50000');
-        return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
-      }
+      if (pageNumber < 1) return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
+      if (pageSize < 1 || pageSize > 50000) return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
 
       // Verificar cache de página
       const cacheKey = _buildTxPageCacheKey(filters, pageNumber, pageSize, tableName);
@@ -1197,153 +1213,106 @@ export const getFilteredTransactions = async (
       if (cached && (Date.now() - cached.ts) < TX_PAGE_TTL) {
         debug(`⚡ Cache hit página ${pageNumber} (${cached.data.length} registros)`);
         const totalPages = Math.ceil(cached.totalCount / pageSize);
-        return {
-          data: cached.data,
-          totalCount: cached.totalCount,
-          currentPage: pageNumber,
-          totalPages,
-          hasMore: pageNumber < totalPages
-        };
+        return { data: cached.data, totalCount: cached.totalCount, currentPage: pageNumber, totalPages, hasMore: pageNumber < totalPages };
       }
 
-      // Se já conhecemos o total (páginas 2+), não recontar
-      const needsCount = knownTotalCount === undefined;
-      let query = supabase
-        .from(tableName)
-        .select(TX_SELECT_COLUMNS, needsCount ? { count: 'exact' } : { count: undefined as any });
-
-      query = applyTransactionFilters(query, filters);
-      query = query.order('date', { ascending: false }).order('id', { ascending: true });
-
       const offset = (pageNumber - 1) * pageSize;
-      const rangeEnd = offset + pageSize - 1;
-      query = query.range(offset, rangeEnd);
+      debug(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} via RPC...`);
 
-      debug(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} (range: ${offset}-${rangeEnd})${needsCount ? ' +count' : ' (count skip)'}...`);
-
-      const { data, count, error } = await query;
+      const { data, error } = await supabase.rpc('get_filtered_transactions_page', buildRpcParams(offset, pageSize));
 
       if (error) {
-        console.error('❌ Erro ao buscar transações:', error);
+        console.error('❌ Erro ao buscar transações via RPC:', error);
         throw new Error(error.message || 'Erro ao buscar transações');
       }
 
-      const totalCount = needsCount ? (count || 0) : knownTotalCount!;
-      debug(`📊 Total de registros filtrados: ${totalCount}`);
-
       if (!data || data.length === 0) {
-        return { data: [], totalCount, currentPage: pageNumber, totalPages: Math.ceil(totalCount / pageSize), hasMore: false };
+        return { data: [], totalCount: 0, currentPage: pageNumber, totalPages: 0, hasMore: false };
       }
 
+      // total_count vem em cada row (valor fixo)
+      const totalCount = knownTotalCount ?? (data[0]?.total_count || data.length);
+      debug(`📊 Total: ${totalCount} (${data.length} nesta página)`);
+
       const tag0Map = await getTag0Map();
-      const enriched = data.map(db => {
+      const enriched = data.map((db: any) => {
         const t = dbToTransaction(db);
         if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
         return t;
       });
 
-      // Cachear página
+      const totalPages = Math.ceil(totalCount / pageSize);
       _txPageCache[cacheKey] = { data: enriched, totalCount, ts: Date.now() };
 
-      const totalPages = Math.ceil(totalCount / pageSize);
-      return {
-        data: enriched,
-        totalCount,
-        currentPage: pageNumber,
-        totalPages,
-        hasMore: pageNumber < totalPages
-      };
+      return { data: enriched, totalCount, currentPage: pageNumber, totalPages, hasMore: pageNumber < totalPages };
     }
 
     // ═══════════════════════════════════════════════════════════
-    // SEM PAGINAÇÃO: Busca em lotes PARALELOS para contornar limite do Supabase
-    // O Supabase tem limite de ~1000 linhas por request (server-side).
-    // Buscamos em lotes de 1000 usando .range(), 3 lotes em paralelo.
+    // SEM PAGINAÇÃO: Busca em lotes via RPC
     // ═══════════════════════════════════════════════════════════
     const BATCH_SIZE = 1000;
     const PARALLEL_BATCHES = 3;
 
-    // Primeiro: obter contagem total
-    let countQuery = supabase
-      .from(tableName)
-      .select(TX_SELECT_COLUMNS, { count: 'exact', head: true });
-    countQuery = applyTransactionFilters(countQuery, filters);
-    const { count: totalCountRaw, error: countError } = await countQuery;
-
-    if (countError) {
-      console.error('❌ Erro ao contar transações:', countError);
-      throw new Error(countError.message || 'Erro ao contar transações');
+    // Primeiro lote
+    const { data: firstBatch, error: firstError } = await supabase.rpc('get_filtered_transactions_page', buildRpcParams(0, BATCH_SIZE));
+    if (firstError) {
+      console.error('❌ Erro no primeiro lote via RPC:', firstError);
+      throw new Error(firstError.message || 'Erro ao buscar transações');
     }
 
-    const totalCount = totalCountRaw || 0;
-    debug(`📊 Total de registros filtrados: ${totalCount}`);
-
-    if (totalCount === 0) {
+    if (!firstBatch || firstBatch.length === 0) {
       return { data: [], totalCount: 0, currentPage: 1, totalPages: 0, hasMore: false };
     }
 
-    // Criar todas as promises de lotes
+    const totalCount = firstBatch[0]?.total_count || firstBatch.length;
+
+    // Se tudo cabe no primeiro lote
+    if (firstBatch.length < BATCH_SIZE) {
+      const tag0Map = await getTag0Map();
+      const enriched = firstBatch.map((db: any) => {
+        const t = dbToTransaction(db);
+        if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
+        return t;
+      });
+      return { data: enriched, totalCount: enriched.length, currentPage: 1, totalPages: 1, hasMore: false };
+    }
+
+    // Múltiplos lotes
     const totalBatches = Math.ceil(totalCount / BATCH_SIZE);
-    debug(`📦 Buscando ${totalCount} registros em ${totalBatches} lotes de ${BATCH_SIZE} (${PARALLEL_BATCHES} em paralelo)...`);
+    debug(`📦 Buscando ${totalCount} registros em ${totalBatches} lotes via RPC...`);
 
     const fetchBatch = async (batchIdx: number) => {
-      const from = batchIdx * BATCH_SIZE;
-      const to = from + BATCH_SIZE - 1;
-
-      let batchQuery = supabase.from(tableName).select(TX_SELECT_COLUMNS);
-      batchQuery = applyTransactionFilters(batchQuery, filters);
-      batchQuery = batchQuery.order('date', { ascending: false }).order('id', { ascending: true });
-      batchQuery = batchQuery.range(from, to);
-
-      const { data, error } = await batchQuery;
+      const { data, error } = await supabase.rpc('get_filtered_transactions_page', buildRpcParams(batchIdx * BATCH_SIZE, BATCH_SIZE));
       if (error) {
-        console.error(`❌ Erro no lote ${batchIdx + 1}/${totalBatches}:`, error);
+        console.error(`❌ Erro no lote ${batchIdx + 1}:`, error);
         return [];
       }
       return data || [];
     };
 
-    // Executar lotes em paralelo (grupos de PARALLEL_BATCHES)
-    const allData: any[] = [];
-    for (let i = 0; i < totalBatches; i += PARALLEL_BATCHES) {
-      const batchIndices = Array.from(
-        { length: Math.min(PARALLEL_BATCHES, totalBatches - i) },
-        (_, j) => i + j
-      );
+    const allData: any[] = [...firstBatch];
 
+    for (let i = 1; i < totalBatches; i += PARALLEL_BATCHES) {
+      const batchIndices = Array.from({ length: Math.min(PARALLEL_BATCHES, totalBatches - i) }, (_, j) => i + j);
       const results = await Promise.all(batchIndices.map(fetchBatch));
-      for (const result of results) {
-        allData.push(...result);
-      }
-      debug(`  ✅ Lotes ${i + 1}-${i + batchIndices.length}/${totalBatches}: acumulado ${allData.length} registros`);
+      for (const result of results) allData.push(...result);
+
+      const lastResult = results[results.length - 1];
+      if (lastResult.length < BATCH_SIZE) break;
     }
 
-    debug(`✅ ${allData.length} transações carregadas de ${totalCount} total`);
+    debug(`✅ ${allData.length} transações carregadas`);
 
-    // Enriquecer com tag0
     const tag0Map = await getTag0Map();
-    const enriched = allData.map(db => {
+    const enriched = allData.map((db: any) => {
       const t = dbToTransaction(db);
       if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
       return t;
     });
 
-    return {
-      data: enriched,
-      totalCount,
-      currentPage: 1,
-      totalPages: 1,
-      hasMore: false
-    };
+    return { data: enriched, totalCount: enriched.length, currentPage: 1, totalPages: 1, hasMore: false };
   } catch (err: any) {
-    clearTimeout(timeoutId);
-    if (err?.name === 'AbortError') {
-      console.error('❌ getFilteredTransactions timeout (45s)');
-      throw new Error('A consulta demorou demais. Tente novamente com filtros mais específicos.');
-    }
     throw err;
-  } finally {
-    clearTimeout(timeoutId);
   }
 };
 

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { Transaction } from '../../types';
 import { Conflict, PendingOperation, ConnectionStatus } from '../types/sync';
 import { operationQueue } from '../services/OperationQueue';
@@ -492,6 +492,11 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
     return () => clearInterval(interval);
   }, [updatePendingOperations]);
 
+  // Ref para pendingOperations — permite acesso atualizado nos callbacks Realtime
+  // sem causar re-subscription (pendingOperations muda a cada 1s)
+  const pendingOpsRef = useRef(pendingOperations);
+  useEffect(() => { pendingOpsRef.current = pendingOperations; }, [pendingOperations]);
+
   /**
    * FASE 3: Realtime Subscription
    * Inscreve-se em mudanças quando filtros são aplicados
@@ -540,8 +545,8 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
         onUpdate: (transaction) => {
           console.log('📝 Realtime: Transação atualizada', transaction.id);
 
-          // Merge inteligente: verificar se está em operações pendentes
-          const isPending = pendingOperations.some(
+          // Merge inteligente: verificar se está em operações pendentes (via ref)
+          const isPending = pendingOpsRef.current.some(
             op => op.transactionId === transaction.id && op.status === 'executing'
           );
 
@@ -570,8 +575,8 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
         onDelete: (id) => {
           console.log('🗑️ Realtime: Transação deletada', id);
 
-          // Merge inteligente: verificar se está em operações pendentes
-          const isPending = pendingOperations.some(
+          // Merge inteligente: verificar se está em operações pendentes (via ref)
+          const isPending = pendingOpsRef.current.some(
             op => op.transactionId === id && op.status === 'executing'
           );
 
@@ -615,7 +620,7 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
       }
       setConnectionStatus('disconnected');
     };
-  }, [currentFilters, pendingOperations]);
+  }, [currentFilters]);
 
   // Valor do contexto
   const value: TransactionsContextValue = {
