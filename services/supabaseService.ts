@@ -3637,3 +3637,127 @@ export const upsertSmtpConfig = async (config: Omit<SmtpConfig, 'id' | 'created_
     return data;
   }
 };
+
+// ============================================
+// Cronograma Financeiro
+// ============================================
+
+export interface CronogramaItem {
+  id: string;
+  month: number;
+  year: number;
+  date_label: string;
+  area: string;
+  area_color: string;
+  deliverable: string;
+  action_description: string;
+  item_type: 'task' | 'meeting';
+  meeting_day: string | null;
+  meeting_time: string | null;
+  meeting_brand: string | null;
+  meeting_obs: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type CronogramaItemInsert = Omit<CronogramaItem, 'id' | 'created_at' | 'updated_at'>;
+
+export const getCronogramaItems = async (month: number, year: number): Promise<CronogramaItem[]> => {
+  const { data, error } = await supabase
+    .from('cronograma_items')
+    .select('*')
+    .eq('month', month)
+    .eq('year', year)
+    .eq('is_active', true)
+    .order('item_type', { ascending: true })
+    .order('sort_order', { ascending: true });
+  if (error) {
+    console.error('Erro ao carregar cronograma_items:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const insertCronogramaItem = async (item: CronogramaItemInsert): Promise<CronogramaItem | null> => {
+  const { data, error } = await supabase
+    .from('cronograma_items')
+    .insert(item)
+    .select('*')
+    .single();
+  if (error) {
+    console.error('Erro ao inserir cronograma_items:', error);
+    return null;
+  }
+  return data;
+};
+
+export const updateCronogramaItem = async (id: string, updates: Partial<CronogramaItem>): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase
+    .from('cronograma_items')
+    .update(updates)
+    .eq('id', id)
+    .select('id');
+  if (error) {
+    console.error('Erro ao atualizar cronograma_items:', error);
+    return { ok: false, error: error.message };
+  }
+  if (!data || data.length === 0) {
+    console.error('Update cronograma_items: 0 rows affected (RLS bloqueou)');
+    return { ok: false, error: 'Sem permissão para editar (RLS)' };
+  }
+  return { ok: true };
+};
+
+export const deleteCronogramaItem = async (id: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('cronograma_items')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao excluir cronograma_items:', error);
+    return false;
+  }
+  return true;
+};
+
+export const subscribeCronogramaItems = (onChange: () => void) => {
+  const channel = supabase
+    .channel('cronograma_items_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'cronograma_items' }, () => {
+      onChange();
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
+
+export const duplicateCronogramaMonth = async (
+  fromMonth: number, fromYear: number,
+  toMonth: number, toYear: number,
+  createdBy: string
+): Promise<{ ok: boolean; count: number; error?: string }> => {
+  const { data: sourceItems, error: fetchErr } = await supabase
+    .from('cronograma_items')
+    .select('*')
+    .eq('month', fromMonth)
+    .eq('year', fromYear)
+    .eq('is_active', true);
+  if (fetchErr) return { ok: false, count: 0, error: fetchErr.message };
+  if (!sourceItems || sourceItems.length === 0) return { ok: false, count: 0, error: 'Nenhum item no mês origem' };
+
+  const newItems = sourceItems.map(({ id, created_at, updated_at, ...rest }: any) => ({
+    ...rest,
+    month: toMonth,
+    year: toYear,
+    created_by: createdBy,
+  }));
+
+  const { error: insertErr } = await supabase
+    .from('cronograma_items')
+    .insert(newItems);
+  if (insertErr) return { ok: false, count: 0, error: insertErr.message };
+
+  return { ok: true, count: newItems.length };
+};

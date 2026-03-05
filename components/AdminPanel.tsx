@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2 } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2, Calendar, Clock, Copy } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
@@ -53,7 +53,25 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma'>('import');
+
+  // Estados para aba Cronograma
+  const [cronogramaItems, setCronogramaItems] = useState<supabaseService.CronogramaItem[]>([]);
+  const [cronogramaLoading, setCronogramaLoading] = useState(false);
+  const [cronogramaMonth, setCronogramaMonth] = useState(new Date().getMonth() + 1);
+  const [cronogramaYear, setCronogramaYear] = useState(new Date().getFullYear());
+  const [cronogramaMessage, setCronogramaMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [cronogramaEditing, setCronogramaEditing] = useState<supabaseService.CronogramaItem | null>(null);
+  const [cronogramaShowForm, setCronogramaShowForm] = useState(false);
+  const [cronogramaFormType, setCronogramaFormType] = useState<'task' | 'meeting'>('task');
+  const [cronogramaForm, setCronogramaForm] = useState({
+    date_label: '', area: '', area_color: '#6B7280', deliverable: '', action_description: '',
+    meeting_day: '', meeting_time: '', meeting_brand: '', meeting_obs: '', sort_order: 0,
+  });
+  const [cronogramaDupMonth, setCronogramaDupMonth] = useState(new Date().getMonth() + 1);
+  const [cronogramaDupYear, setCronogramaDupYear] = useState(new Date().getFullYear());
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [cronogramaFilterAreas, setCronogramaFilterAreas] = useState<string[]>([]);
 
   // Estados para aba PDD
   const [pddData, setPddData] = useState<supabaseService.SharePdd[]>([]);
@@ -179,6 +197,7 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
     if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
     if (activeTab === 'smtp' && !smtpConfigured && !smtpLoading) loadSmtpConfig();
+    if (activeTab === 'cronograma') loadCronogramaData();
   }, [activeTab]);
 
   // Realtime: sincroniza share_pdd e pdd_contas com banco
@@ -195,8 +214,160 @@ const AdminPanel: React.FC = () => {
     const unsub4 = supabaseService.subscribeTributosConfig(() => {
       supabaseService.getAllTributosConfig().then(setTribData);
     });
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+    const unsub5 = supabaseService.subscribeCronogramaItems(() => {
+      if (activeTab === 'cronograma') loadCronogramaData();
+    });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
   }, []);
+
+  // ---- Cronograma handlers ----
+  const DEFAULT_AREA_PRESETS = [
+    { name: 'CSC', color: '#EC4899' },
+    { name: 'CEO', color: '#3B82F6' },
+    { name: 'MARCAS', color: '#6B7280' },
+    { name: 'PLANFIN', color: '#10B981' },
+    { name: 'CONTABILIDADE', color: '#F59E0B' },
+    { name: 'FERIADO', color: '#1F2937' },
+    { name: 'CSC + MARCAS', color: '#8B5CF6' },
+  ];
+
+  const [customAreas, setCustomAreas] = useState<{ name: string; color: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('cronograma_custom_areas');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [showAreaManager, setShowAreaManager] = useState(false);
+  const [newAreaName, setNewAreaName] = useState('');
+  const [newAreaColor, setNewAreaColor] = useState('#6366F1');
+
+  const AREA_PRESETS = [...DEFAULT_AREA_PRESETS, ...customAreas];
+
+  const saveCustomAreas = (areas: { name: string; color: string }[]) => {
+    setCustomAreas(areas);
+    localStorage.setItem('cronograma_custom_areas', JSON.stringify(areas));
+  };
+
+  const handleAddCustomArea = () => {
+    const trimmed = newAreaName.trim().toUpperCase();
+    if (!trimmed) return;
+    if (AREA_PRESETS.some(a => a.name === trimmed)) return;
+    saveCustomAreas([...customAreas, { name: trimmed, color: newAreaColor }]);
+    setNewAreaName('');
+    setNewAreaColor('#6366F1');
+  };
+
+  const handleRemoveCustomArea = (name: string) => {
+    saveCustomAreas(customAreas.filter(a => a.name !== name));
+  };
+
+  const loadCronogramaData = async () => {
+    setCronogramaLoading(true);
+    try {
+      const data = await supabaseService.getCronogramaItems(cronogramaMonth, cronogramaYear);
+      setCronogramaItems(data);
+    } catch (err) {
+      console.error('Erro ao carregar cronograma:', err);
+    } finally {
+      setCronogramaLoading(false);
+    }
+  };
+
+  // Reload when month/year changes
+  useEffect(() => {
+    if (activeTab === 'cronograma') loadCronogramaData();
+  }, [cronogramaMonth, cronogramaYear]);
+
+  const resetCronogramaForm = () => {
+    setCronogramaForm({
+      date_label: '', area: '', area_color: '#6B7280', deliverable: '', action_description: '',
+      meeting_day: '', meeting_time: '', meeting_brand: '', meeting_obs: '', sort_order: 0,
+    });
+    setCronogramaFormType('task');
+    setCronogramaEditing(null);
+  };
+
+  const handleCronogramaEdit = (item: supabaseService.CronogramaItem) => {
+    setCronogramaEditing(item);
+    setCronogramaFormType(item.item_type);
+    setCronogramaForm({
+      date_label: item.date_label, area: item.area, area_color: item.area_color,
+      deliverable: item.deliverable, action_description: item.action_description,
+      meeting_day: item.meeting_day || '', meeting_time: item.meeting_time || '',
+      meeting_brand: item.meeting_brand || '', meeting_obs: item.meeting_obs || '',
+      sort_order: item.sort_order,
+    });
+    setCronogramaShowForm(true);
+  };
+
+  const handleCronogramaSave = async () => {
+    setCronogramaMessage(null);
+    const isMeeting = cronogramaFormType === 'meeting';
+
+    if (cronogramaEditing) {
+      // Update: só campos editáveis
+      const updates: Partial<supabaseService.CronogramaItem> = {
+        date_label: cronogramaForm.date_label, area: cronogramaForm.area,
+        area_color: cronogramaForm.area_color, deliverable: cronogramaForm.deliverable,
+        action_description: cronogramaForm.action_description, item_type: cronogramaFormType,
+        meeting_day: isMeeting ? cronogramaForm.meeting_day || null : null,
+        meeting_time: isMeeting ? cronogramaForm.meeting_time || null : null,
+        meeting_brand: isMeeting ? cronogramaForm.meeting_brand || null : null,
+        meeting_obs: isMeeting ? cronogramaForm.meeting_obs || null : null,
+        sort_order: cronogramaForm.sort_order,
+      };
+      const { ok, error } = await supabaseService.updateCronogramaItem(cronogramaEditing.id, updates);
+      if (!ok) { setCronogramaMessage({ type: 'error', text: error || 'Erro ao atualizar' }); return; }
+      setCronogramaMessage({ type: 'success', text: 'Item atualizado!' });
+    } else {
+      // Insert: payload completo
+      const payload: supabaseService.CronogramaItemInsert = {
+        month: cronogramaMonth, year: cronogramaYear,
+        date_label: cronogramaForm.date_label, area: cronogramaForm.area,
+        area_color: cronogramaForm.area_color, deliverable: cronogramaForm.deliverable,
+        action_description: cronogramaForm.action_description, item_type: cronogramaFormType,
+        meeting_day: isMeeting ? cronogramaForm.meeting_day || null : null,
+        meeting_time: isMeeting ? cronogramaForm.meeting_time || null : null,
+        meeting_brand: isMeeting ? cronogramaForm.meeting_brand || null : null,
+        meeting_obs: isMeeting ? cronogramaForm.meeting_obs || null : null,
+        sort_order: cronogramaForm.sort_order, is_active: true,
+        created_by: currentUser?.email || null,
+      };
+      const result = await supabaseService.insertCronogramaItem(payload);
+      if (!result) { setCronogramaMessage({ type: 'error', text: 'Erro ao criar item' }); return; }
+      setCronogramaMessage({ type: 'success', text: 'Item criado!' });
+    }
+    setCronogramaShowForm(false);
+    resetCronogramaForm();
+    loadCronogramaData();
+  };
+
+  const handleCronogramaDelete = async (id: string) => {
+    if (!confirm('Excluir este item do cronograma?')) return;
+    const ok = await supabaseService.deleteCronogramaItem(id);
+    if (ok) {
+      setCronogramaMessage({ type: 'success', text: 'Item excluído' });
+      loadCronogramaData();
+    } else {
+      setCronogramaMessage({ type: 'error', text: 'Erro ao excluir' });
+    }
+  };
+
+  const handleCronogramaDuplicate = async () => {
+    setCronogramaMessage(null);
+    const { ok, count, error } = await supabaseService.duplicateCronogramaMonth(
+      cronogramaMonth, cronogramaYear, cronogramaDupMonth, cronogramaDupYear,
+      currentUser?.email || ''
+    );
+    setShowDuplicateModal(false);
+    if (ok) {
+      setCronogramaMessage({ type: 'success', text: `${count} itens duplicados para ${cronogramaDupMonth}/${cronogramaDupYear}` });
+    } else {
+      setCronogramaMessage({ type: 'error', text: error || 'Erro ao duplicar' });
+    }
+  };
+
+  const MONTH_NAMES_SHORT = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
   // ---- De-Para Fornecedores handlers ----
   const loadDeparaData = async () => {
@@ -1629,6 +1800,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'smtp' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('cronograma')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'cronograma'
+              ? 'text-teal-700 bg-teal-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Calendar size={14} />
+            Cronograma
+          </div>
+          {activeTab === 'cronograma' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -4370,6 +4557,307 @@ const AdminPanel: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Aba: Cronograma Financeiro */}
+      {activeTab === 'cronograma' && (
+        <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-300 rounded-xl p-4 shadow">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <div className="bg-teal-100 p-2 rounded-lg">
+              <Calendar className="text-teal-600" size={20} />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <h2 className="text-base font-black text-teal-900">Cronograma Financeiro</h2>
+              <p className="text-xs text-teal-700">Gerencie tarefas e reuniões do fechamento mensal</p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={cronogramaMonth} onChange={e => setCronogramaMonth(+e.target.value)} className="border border-teal-300 rounded-lg px-2 py-1.5 text-sm font-bold bg-white">
+                {MONTH_NAMES_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </select>
+              <input type="number" value={cronogramaYear} onChange={e => setCronogramaYear(+e.target.value)} min={2020} max={2100} className="border border-teal-300 rounded-lg px-2 py-1.5 text-sm font-bold bg-white w-20" />
+              <button onClick={() => setShowDuplicateModal(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold text-xs transition-all">
+                <Copy size={14} /> Duplicar Mês
+              </button>
+              <button onClick={() => setShowAreaManager(!showAreaManager)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-bold text-xs transition-all">
+                <Tag size={14} /> Áreas
+              </button>
+              <button onClick={() => { resetCronogramaForm(); setCronogramaShowForm(true); }} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition-all">
+                <Plus size={14} /> Novo Item
+              </button>
+            </div>
+          </div>
+
+          {/* Gerenciador de Áreas */}
+          {showAreaManager && (
+            <div className="bg-white border border-gray-200 rounded-lg p-4 mb-3 shadow-sm">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-black text-gray-700">Gerenciar Áreas</h4>
+                <button onClick={() => setShowAreaManager(false)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+              </div>
+              {/* Áreas padrão */}
+              <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Padrão (fixas)</p>
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {DEFAULT_AREA_PRESETS.map(a => (
+                  <span key={a.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold" style={{ backgroundColor: a.color + '20', color: a.color, border: `1px solid ${a.color}40` }}>
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: a.color }} />
+                    {a.name}
+                  </span>
+                ))}
+              </div>
+              {/* Áreas customizadas */}
+              {customAreas.length > 0 && (
+                <>
+                  <p className="text-[11px] font-bold text-gray-400 uppercase mb-1.5">Customizadas</p>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {customAreas.map(a => (
+                      <span key={a.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold group" style={{ backgroundColor: a.color + '20', color: a.color, border: `1px solid ${a.color}40` }}>
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: a.color }} />
+                        {a.name}
+                        <button onClick={() => handleRemoveCustomArea(a.name)} className="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5 hover:text-red-600" title="Remover"><X size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
+              {/* Adicionar nova área */}
+              <div className="flex items-center gap-2">
+                <input value={newAreaName} onChange={e => setNewAreaName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddCustomArea()} placeholder="Nome da nova área" className="flex-1 border rounded-lg px-3 py-1.5 text-sm" />
+                <input type="color" value={newAreaColor} onChange={e => setNewAreaColor(e.target.value)} className="w-9 h-8 rounded-lg border cursor-pointer" />
+                <button onClick={handleAddCustomArea} disabled={!newAreaName.trim()} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-lg font-bold text-xs transition-all">
+                  <Plus size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Message */}
+          {cronogramaMessage && (
+            <div className={`p-2 rounded-lg flex items-center gap-2 mb-3 text-sm ${cronogramaMessage.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-red-100 text-red-800 border border-red-300'}`}>
+              {cronogramaMessage.type === 'success' ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
+              {cronogramaMessage.text}
+            </div>
+          )}
+
+          {/* Filtro por Área */}
+          {cronogramaItems.length > 0 && (
+            <div className="mb-3 flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-gray-500 uppercase">Filtrar:</span>
+              {(() => {
+                const uniqueAreas = new Map<string, string>();
+                cronogramaItems.forEach(i => { if (i.area && !uniqueAreas.has(i.area)) uniqueAreas.set(i.area, i.area_color); });
+                return Array.from(uniqueAreas.entries()).map(([name, color]) => {
+                  const isSelected = cronogramaFilterAreas.includes(name);
+                  return (
+                    <button key={name} onClick={() => setCronogramaFilterAreas(prev => prev.includes(name) ? prev.filter(a => a !== name) : [...prev, name])}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${isSelected ? 'ring-2 ring-offset-1 ring-teal-400 shadow-sm' : 'opacity-60 hover:opacity-100'}`}
+                      style={{ backgroundColor: color + '20', color: color, borderColor: color + '40' }}>
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                      {name}
+                    </button>
+                  );
+                });
+              })()}
+              {cronogramaFilterAreas.length > 0 && (
+                <button onClick={() => setCronogramaFilterAreas([])} className="text-[11px] text-gray-400 hover:text-gray-600 underline">Limpar</button>
+              )}
+            </div>
+          )}
+
+          {/* Loading */}
+          {cronogramaLoading && (
+            <div className="flex justify-center py-8"><Loader2 className="animate-spin text-teal-600" size={32} /></div>
+          )}
+
+          {!cronogramaLoading && (
+            <>
+              {/* Tarefas */}
+              {(() => { const tasks = cronogramaItems.filter(i => i.item_type === 'task' && (cronogramaFilterAreas.length === 0 || cronogramaFilterAreas.includes(i.area))); return tasks.length > 0 ? (
+                <div className="mb-5">
+                  <h3 className="text-sm font-black text-gray-700 uppercase mb-2 flex items-center gap-1.5"><CheckCircle size={14} className="text-teal-600" /> Tarefas / Entregas ({tasks.length})</h3>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-gray-100 border-b-2 border-gray-200">
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-12">Ord</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-20">Data</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-28">Área</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500">Entregável</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500">Ação</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-20">Ações</th>
+                      </tr></thead>
+                      <tbody>{tasks.map(t => (
+                        <tr key={t.id} className="border-b hover:bg-gray-50">
+                          <td className="px-3 py-2 text-xs text-gray-400 font-mono">{t.sort_order}</td>
+                          <td className="px-3 py-2 font-mono text-xs font-bold">{t.date_label}</td>
+                          <td className="px-3 py-2"><span className="inline-block px-2 py-0.5 rounded-full text-[11px] font-bold" style={{ backgroundColor: t.area_color + '20', color: t.area_color }}>{t.area}</span></td>
+                          <td className="px-3 py-2 text-gray-700">{t.deliverable}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs">{t.action_description}</td>
+                          <td className="px-3 py-2 flex gap-1">
+                            <button onClick={() => handleCronogramaEdit(t)} className="text-blue-600 hover:text-blue-800"><Pencil size={14} /></button>
+                            <button onClick={() => handleCronogramaDelete(t.id)} className="text-red-600 hover:text-red-800"><Trash2 size={14} /></button>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : <p className="text-sm text-gray-400 mb-4">Nenhuma tarefa para este mês.</p>; })()}
+
+              {/* Reuniões */}
+              {(() => { const meetings = cronogramaItems.filter(i => i.item_type === 'meeting' && (cronogramaFilterAreas.length === 0 || cronogramaFilterAreas.includes(i.area))); return meetings.length > 0 ? (
+                <div className="mb-4">
+                  <h3 className="text-sm font-black text-gray-700 uppercase mb-2 flex items-center gap-1.5"><Clock size={14} className="text-teal-600" /> Reuniões ({meetings.length})</h3>
+                  <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+                    <table className="w-full text-sm">
+                      <thead><tr className="bg-gray-100 border-b-2 border-gray-200">
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-12">Ord</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-16">Dia</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-16">Hora</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500">Marca</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500">Obs</th>
+                        <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-20">Ações</th>
+                      </tr></thead>
+                      <tbody>{meetings.map(m => (
+                        <tr key={m.id} className="border-b hover:bg-gray-50">
+                          <td className="px-3 py-2 text-xs text-gray-400 font-mono">{m.sort_order}</td>
+                          <td className="px-3 py-2 font-mono text-xs font-bold">{m.meeting_day || '-'}</td>
+                          <td className="px-3 py-2 text-xs">{m.meeting_time || '-'}</td>
+                          <td className="px-3 py-2 font-medium">{m.meeting_brand || '-'}</td>
+                          <td className="px-3 py-2 text-gray-600 text-xs">{m.meeting_obs || '-'}</td>
+                          <td className="px-3 py-2 flex gap-1">
+                            <button onClick={() => handleCronogramaEdit(m)} className="text-blue-600 hover:text-blue-800"><Pencil size={14} /></button>
+                            <button onClick={() => handleCronogramaDelete(m.id)} className="text-red-600 hover:text-red-800"><Trash2 size={14} /></button>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : <p className="text-sm text-gray-400 mb-2">Nenhuma reunião para este mês.</p>; })()}
+
+              {cronogramaItems.length === 0 && !cronogramaLoading && (
+                <div className="text-center py-8 text-gray-400">
+                  <Calendar size={40} className="mx-auto mb-2 opacity-30" />
+                  <p className="font-bold">Nenhum item cadastrado</p>
+                  <p className="text-xs">Clique em "Novo Item" para adicionar</p>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Form modal */}
+          {cronogramaShowForm && (
+            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40" onClick={() => { setCronogramaShowForm(false); resetCronogramaForm(); }}>
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-5" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-black text-gray-800">{cronogramaEditing ? 'Editar Item' : 'Novo Item'}</h3>
+                  <button onClick={() => { setCronogramaShowForm(false); resetCronogramaForm(); }} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+                </div>
+
+                {/* Type selector */}
+                <div className="flex gap-2 mb-4">
+                  <button onClick={() => setCronogramaFormType('task')} className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${cronogramaFormType === 'task' ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>Tarefa</button>
+                  <button onClick={() => setCronogramaFormType('meeting')} className={`flex-1 py-2 rounded-lg text-sm font-bold border transition-all ${cronogramaFormType === 'meeting' ? 'bg-teal-600 text-white border-teal-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>Reunião</button>
+                </div>
+
+                <div className="space-y-3">
+                  {cronogramaFormType === 'task' ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1">Data (ex: "11", "11-13", "Diário")</label>
+                          <input value={cronogramaForm.date_label} onChange={e => setCronogramaForm(f => ({ ...f, date_label: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1">Ordem</label>
+                          <input type="number" value={cronogramaForm.sort_order} onChange={e => setCronogramaForm(f => ({ ...f, sort_order: +e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Área</label>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {AREA_PRESETS.map(p => (
+                            <button key={p.name} onClick={() => setCronogramaForm(f => ({ ...f, area: p.name, area_color: p.color }))}
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all ${cronogramaForm.area === p.name ? 'ring-2 ring-offset-1 ring-teal-400' : ''}`}
+                              style={{ backgroundColor: p.color + '20', color: p.color, borderColor: p.color + '40' }}>
+                              {p.name}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <input value={cronogramaForm.area} onChange={e => setCronogramaForm(f => ({ ...f, area: e.target.value }))} placeholder="Ou digite..." className="flex-1 border rounded-lg px-3 py-2 text-sm" />
+                          <input type="color" value={cronogramaForm.area_color} onChange={e => setCronogramaForm(f => ({ ...f, area_color: e.target.value }))} className="w-10 h-9 rounded-lg border cursor-pointer" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Entregável</label>
+                        <input value={cronogramaForm.deliverable} onChange={e => setCronogramaForm(f => ({ ...f, deliverable: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Ação / Descrição</label>
+                        <textarea value={cronogramaForm.action_description} onChange={e => setCronogramaForm(f => ({ ...f, action_description: e.target.value }))} rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1">Dia</label>
+                          <input value={cronogramaForm.meeting_day} onChange={e => setCronogramaForm(f => ({ ...f, meeting_day: e.target.value }))} placeholder="ex: 15" className="w-full border rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1">Hora</label>
+                          <input value={cronogramaForm.meeting_time} onChange={e => setCronogramaForm(f => ({ ...f, meeting_time: e.target.value }))} placeholder="ex: 14:00" className="w-full border rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-1">Ordem</label>
+                          <input type="number" value={cronogramaForm.sort_order} onChange={e => setCronogramaForm(f => ({ ...f, sort_order: +e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Marca</label>
+                        <input value={cronogramaForm.meeting_brand} onChange={e => setCronogramaForm(f => ({ ...f, meeting_brand: e.target.value }))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1">Observação</label>
+                        <textarea value={cronogramaForm.meeting_obs} onChange={e => setCronogramaForm(f => ({ ...f, meeting_obs: e.target.value }))} rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none" />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <button onClick={() => { setCronogramaShowForm(false); resetCronogramaForm(); }} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                  <button onClick={handleCronogramaSave} className="px-4 py-2 text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-all">
+                    {cronogramaEditing ? 'Salvar' : 'Criar'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Duplicate modal */}
+          {showDuplicateModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowDuplicateModal(false)}>
+              <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+                <h3 className="font-black text-gray-800 mb-3">Duplicar Cronograma</h3>
+                <p className="text-sm text-gray-600 mb-3">
+                  Copiar itens de <strong>{MONTH_NAMES_SHORT[cronogramaMonth - 1]}/{cronogramaYear}</strong> para:
+                </p>
+                <div className="flex gap-2 mb-4">
+                  <select value={cronogramaDupMonth} onChange={e => setCronogramaDupMonth(+e.target.value)} className="border rounded-lg px-2 py-2 text-sm font-bold flex-1">
+                    {MONTH_NAMES_SHORT.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                  </select>
+                  <input type="number" value={cronogramaDupYear} onChange={e => setCronogramaDupYear(+e.target.value)} min={2020} max={2100} className="border rounded-lg px-2 py-2 text-sm font-bold w-20" />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button onClick={() => setShowDuplicateModal(false)} className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg">Cancelar</button>
+                  <button onClick={handleCronogramaDuplicate} className="px-4 py-2 text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-all">Duplicar</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
