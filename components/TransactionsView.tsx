@@ -2269,7 +2269,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
               <div className="bg-[#1B75BB] px-4 py-2.5 text-white flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <Eye size={15} className="shrink-0 opacity-80" />
-                  <h3 className="text-[11px] font-black uppercase tracking-tight truncate">{t.description}</h3>
+                  <h3 className="text-[11px] font-black uppercase tracking-tight truncate text-white">{t.description}</h3>
                 </div>
                 <button onClick={() => setDetailTransaction(null)} className="p-1 hover:bg-white/20 rounded-lg transition-colors shrink-0">
                   <X size={16} />
