@@ -2328,13 +2328,17 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                   {/* Coluna Direita — Classificação */}
                   <div>
                     <h4 className="text-[10px] font-black text-[#1B75BB] uppercase tracking-widest mb-2 flex items-center gap-2">
-                      <Tag size={12} /> Classificação
+                      <Building2 size={12} /> Unidade
                     </h4>
                     <DetailField icon={<Building2 size={14} />} label="Marca" value={t.marca || '-'} />
                     <DetailField icon={<Building2 size={14} />} label="Filial" value={t.filial} />
                     {t.nome_filial && t.nome_filial !== t.filial && (
                       <DetailField icon={<Building2 size={14} />} label="Nome Filial" value={t.nome_filial} />
                     )}
+
+                    <h4 className="text-[10px] font-black text-[#1B75BB] uppercase tracking-widest mt-4 mb-2 flex items-center gap-2">
+                      <Tag size={12} /> Tags / Classificação
+                    </h4>
                     <DetailField icon={<Tag size={14} />} label="Tag0" value={t.tag0 || '-'} />
                     <DetailField icon={<Tag size={14} />} label="Tag01 (Centro de Custo)" value={t.tag01 || '-'} />
                     <DetailField icon={<Tag size={14} />} label="Tag02 (Segmento)" value={t.tag02 || '-'} />
