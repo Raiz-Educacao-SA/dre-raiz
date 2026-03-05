@@ -2357,18 +2357,19 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                       <div className="space-y-3">
                         {detailChanges.map((ch) => {
                           let justification = '';
-                          let newFields: Record<string, string> = {};
+                          let changeRows: { label: string; from: string; to: string }[] = [];
                           try {
                             const parsed = JSON.parse(ch.newValue || '{}');
+                            const orig = ch.originalTransaction;
                             if (ch.type === 'RATEIO') {
                               justification = parsed.justification || '';
                             } else {
                               justification = parsed.justification || '';
-                              if (parsed.category) newFields['Conta'] = parsed.category;
-                              if (parsed.filial) newFields['Filial'] = parsed.filial;
-                              if (parsed.date) newFields['Data'] = formatDateToMMAAAA(parsed.date);
-                              if (parsed.marca) newFields['Marca'] = parsed.marca;
-                              if (parsed.recurring) newFields['Recorrência'] = parsed.recurring === 'Não' ? 'Único' : 'Recorrente';
+                              if (parsed.category) changeRows.push({ label: 'Conta', from: orig?.conta_contabil || orig?.category || '-', to: parsed.category });
+                              if (parsed.filial) changeRows.push({ label: 'Filial', from: orig?.filial || '-', to: parsed.filial });
+                              if (parsed.date) changeRows.push({ label: 'Data', from: formatDateToMMAAAA(orig?.date) || '-', to: formatDateToMMAAAA(parsed.date) });
+                              if (parsed.marca) changeRows.push({ label: 'Marca', from: orig?.marca || '-', to: parsed.marca });
+                              if (parsed.recurring) changeRows.push({ label: 'Recorrência', from: (orig?.recurring || 'Sim') === 'Sim' ? 'Recorrente' : 'Único', to: parsed.recurring === 'Não' ? 'Único' : 'Recorrente' });
                             }
                           } catch {}
 
@@ -2410,13 +2411,22 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                                 </div>
                               )}
 
-                              {/* Campos alterados */}
-                              {Object.keys(newFields).length > 0 && (
-                                <div className="flex flex-wrap gap-2 mt-1">
-                                  {Object.entries(newFields).map(([label, val]) => (
-                                    <span key={label} className="text-[9px] font-bold text-gray-500 bg-white/60 border border-gray-200 px-2 py-0.5 rounded">
-                                      {label}: <span className="text-[#F44C00] font-black">{val}</span>
-                                    </span>
+                              {/* Campos alterados — De → Para */}
+                              {changeRows.length > 0 && (
+                                <div className="bg-white/60 border border-gray-200 rounded-lg overflow-hidden mb-1">
+                                  <div className="grid grid-cols-[80px_1fr_20px_1fr] items-center gap-1 px-2.5 py-1.5 bg-gray-100/80 border-b border-gray-200">
+                                    <span className="text-[8px] font-black text-gray-400 uppercase">Campo</span>
+                                    <span className="text-[8px] font-black text-gray-400 uppercase">De</span>
+                                    <span />
+                                    <span className="text-[8px] font-black text-gray-400 uppercase">Para</span>
+                                  </div>
+                                  {changeRows.map((row) => (
+                                    <div key={row.label} className="grid grid-cols-[80px_1fr_20px_1fr] items-center gap-1 px-2.5 py-1.5 border-b border-gray-100 last:border-0">
+                                      <span className="text-[9px] font-black text-gray-500 uppercase">{row.label}</span>
+                                      <span className="text-[10px] font-bold text-gray-400 line-through truncate" title={row.from}>{row.from}</span>
+                                      <ArrowRight size={10} className="text-[#F44C00] mx-auto" />
+                                      <span className="text-[10px] font-black text-[#F44C00] truncate" title={row.to}>{row.to}</span>
+                                    </div>
                                   ))}
                                 </div>
                               )}
