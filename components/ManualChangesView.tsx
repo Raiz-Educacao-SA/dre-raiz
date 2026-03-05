@@ -3,7 +3,7 @@ import { ManualChange } from '../types';
 import {
   History, CheckCircle2, XCircle, ArrowRight, AlertCircle, GitFork,
   User, Clock, ChevronDown, ShieldCheck, FileText, Shield, Lock, FilterX, X,
-  CheckSquare, Square, Loader2,
+  CheckSquare, Square, Loader2, Search, Tag, Building2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
@@ -124,10 +124,18 @@ const DetailModal: React.FC<DetailModalProps> = ({ change, onClose, approveChang
             <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Lançamento Original</h4>
             <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-0">
               <DetailRow label="Descrição" value={orig.description} />
-              <DetailRow label="Filial" value={orig.filial} />
               <DetailRow label="Valor" value={`R$ ${orig.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
-              <DetailRow label="Conta" value={orig.category} />
               <DetailRow label="Data" value={formatDateToMMAAAA(orig.date)} />
+              <DetailRow label="Conta Contábil" value={orig.conta_contabil} />
+              <DetailRow label="Filial" value={orig.filial} />
+              <DetailRow label="Marca" value={orig.marca || '-'} />
+              <DetailRow label="Ticket" value={orig.ticket || '-'} />
+              <DetailRow label="Chave ID" value={orig.chave_id || '-'} />
+              <DetailRow label="Tag0" value={orig.tag0 || '-'} />
+              <DetailRow label="Tag01" value={orig.tag01 || '-'} />
+              <DetailRow label="Tag02" value={orig.tag02 || '-'} />
+              <DetailRow label="Vendor" value={orig.vendor || '-'} />
+              <DetailRow label="Recorrência" value={orig.recurring === 'Não' ? 'Único' : 'Recorrente'} />
             </div>
           </div>
 
@@ -316,14 +324,21 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
   const [filterType, setFilterType] = useState<string[]>([]);
   const [filterRequester, setFilterRequester] = useState<string[]>([]);
   const [filterApprover, setFilterApprover] = useState<string[]>([]);
+  const [filterMarca, setFilterMarca] = useState<string[]>([]);
+  const [filterFilial, setFilterFilial] = useState<string[]>([]);
+  const [filterTag0, setFilterTag0] = useState<string[]>([]);
   const [filterDateFrom, setFilterDateFrom] = useState<string>('');
   const [filterDateTo, setFilterDateTo] = useState<string>('');
+  const [searchText, setSearchText] = useState<string>('');
 
   // Extract unique values for filters
   const uniqueStatuses  = useMemo(() => Array.from(new Set(changes.map(c => c.status))).sort(), [changes]);
   const uniqueTypes     = useMemo(() => Array.from(new Set(changes.map(c => c.type))).sort(), [changes]);
   const uniqueRequesters = useMemo(() => Array.from(new Set(changes.map(c => c.requestedByName || c.requestedBy))).sort(), [changes]);
   const uniqueApprovers = useMemo(() => Array.from(new Set(changes.filter(c => c.approvedByName).map(c => c.approvedByName!))).sort(), [changes]);
+  const uniqueMarcas = useMemo(() => Array.from(new Set(changes.map(c => c.originalTransaction.marca).filter(Boolean) as string[])).sort(), [changes]);
+  const uniqueFiliais = useMemo(() => Array.from(new Set(changes.map(c => c.originalTransaction.filial).filter(Boolean) as string[])).sort(), [changes]);
+  const uniqueTag0s = useMemo(() => Array.from(new Set(changes.map(c => c.originalTransaction.tag0).filter(Boolean) as string[])).sort(), [changes]);
 
   // Filtrar mudanças
   const filteredChanges = useMemo(() => {
@@ -333,13 +348,27 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
     if (filterType.length > 0)      result = result.filter(c => filterType.includes(c.type));
     if (filterRequester.length > 0) result = result.filter(c => filterRequester.includes(c.requestedByName || c.requestedBy));
     if (filterApprover.length > 0)  result = result.filter(c => c.approvedByName && filterApprover.includes(c.approvedByName));
+    if (filterMarca.length > 0)     result = result.filter(c => c.originalTransaction.marca && filterMarca.includes(c.originalTransaction.marca));
+    if (filterFilial.length > 0)    result = result.filter(c => filterFilial.includes(c.originalTransaction.filial));
+    if (filterTag0.length > 0)      result = result.filter(c => c.originalTransaction.tag0 && filterTag0.includes(c.originalTransaction.tag0));
+    if (searchText.trim()) {
+      const term = searchText.trim().toLowerCase();
+      result = result.filter(c => {
+        const orig = c.originalTransaction;
+        return (orig.description?.toLowerCase().includes(term)) ||
+               (orig.ticket?.toLowerCase().includes(term)) ||
+               (orig.chave_id?.toLowerCase().includes(term)) ||
+               (orig.vendor?.toLowerCase().includes(term)) ||
+               (orig.conta_contabil?.toLowerCase().includes(term));
+      });
+    }
     if (filterDateFrom) result = result.filter(c => new Date(c.requestedAt) >= new Date(filterDateFrom));
     if (filterDateTo) {
       const end = new Date(filterDateTo); end.setHours(23, 59, 59, 999);
       result = result.filter(c => new Date(c.requestedAt) <= end);
     }
     return result;
-  }, [changes, canApprove, user, filterStatus, filterType, filterRequester, filterApprover, filterDateFrom, filterDateTo]);
+  }, [changes, canApprove, user, filterStatus, filterType, filterRequester, filterApprover, filterMarca, filterFilial, filterTag0, searchText, filterDateFrom, filterDateTo]);
 
   // Itens pendentes visíveis (elegíveis para seleção em massa)
   const pendingVisible = useMemo(() => filteredChanges.filter(c => c.status === 'Pendente'), [filteredChanges]);
@@ -386,8 +415,10 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
   const handleExportExcel = () => {
     const headers = [
       "ID", "Solicitante Nome", "Solicitante Email", "Data Solicitação",
-      "Tipo", "Status", "Transação ID", "Descrição Original", "Filial Original",
-      "Valor Original", "Nova Conta", "Nova Filial", "Nova Data",
+      "Tipo", "Status", "Transação ID", "Ticket", "Chave ID",
+      "Descrição Original", "Conta Contábil", "Filial Original", "Marca",
+      "Tag0", "Tag01", "Tag02", "Vendor", "Valor Original",
+      "Nova Conta", "Nova Filial", "Nova Data",
       "Nova Recorrência", "Justificativa", "Aprovador Nome", "Aprovador Email", "Data Aprovação"
     ];
 
@@ -408,8 +439,16 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
         "Tipo": change.type,
         "Status": change.status,
         "Transação ID": change.transactionId,
+        "Ticket": orig.ticket || "-",
+        "Chave ID": orig.chave_id || "-",
         "Descrição Original": orig.description,
+        "Conta Contábil": orig.conta_contabil || "-",
         "Filial Original": orig.filial,
+        "Marca": orig.marca || "-",
+        "Tag0": orig.tag0 || "-",
+        "Tag01": orig.tag01 || "-",
+        "Tag02": orig.tag02 || "-",
+        "Vendor": orig.vendor || "-",
         "Valor Original": orig.amount,
         "Nova Conta": newValueObj.category || "-",
         "Nova Filial": newValueObj.filial || "-",
@@ -493,7 +532,9 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
           <button
             onClick={() => {
               setFilterStatus([]); setFilterType([]); setFilterRequester([]);
-              setFilterApprover([]); setFilterDateFrom(''); setFilterDateTo('');
+              setFilterApprover([]); setFilterMarca([]); setFilterFilial([]);
+              setFilterTag0([]); setFilterDateFrom(''); setFilterDateTo('');
+              setSearchText('');
             }}
             className="flex items-center gap-2 px-3 py-2 bg-[#F44C00] hover:bg-[#d44200] text-white rounded-xl text-xs font-black uppercase tracking-wide transition-all shadow-sm active:scale-95"
           >
@@ -502,11 +543,33 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
           </button>
         </div>
 
+        {/* Busca texto */}
+        <div className="mb-3">
+          <div className="relative max-w-md">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Buscar por descrição, ticket, chave ID, vendor, conta..."
+              className="w-full pl-9 pr-3 py-2 text-xs font-medium border-2 border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:border-blue-300 focus:bg-white transition-colors"
+            />
+            {searchText && (
+              <button onClick={() => setSearchText('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <MultiSelectDropdown label="Status"     icon={<CheckCircle2 size={14} />} options={uniqueStatuses}   selected={filterStatus}    onChange={setFilterStatus}    color="amber"   />
           <MultiSelectDropdown label="Tipo"       icon={<GitFork size={14} />}      options={uniqueTypes}      selected={filterType}      onChange={setFilterType}      color="purple"  />
           <MultiSelectDropdown label="Solicitante" icon={<User size={14} />}        options={uniqueRequesters} selected={filterRequester} onChange={setFilterRequester} color="blue"    />
           <MultiSelectDropdown label="Aprovador"  icon={<ShieldCheck size={14} />}  options={uniqueApprovers}  selected={filterApprover}  onChange={setFilterApprover}  color="emerald" />
+          <MultiSelectDropdown label="Marca"      icon={<Building2 size={14} />}    options={uniqueMarcas}     selected={filterMarca}     onChange={setFilterMarca}     color="blue"    />
+          <MultiSelectDropdown label="Filial"     icon={<Building2 size={14} />}    options={uniqueFiliais}    selected={filterFilial}    onChange={setFilterFilial}    color="purple"  />
+          <MultiSelectDropdown label="Tag0"       icon={<Tag size={14} />}          options={uniqueTag0s}      selected={filterTag0}      onChange={setFilterTag0}      color="amber"   />
 
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border-2 border-gray-200 rounded-lg">
             <Clock size={14} className="text-gray-500" />
@@ -521,7 +584,8 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
         </div>
 
         {(filterStatus.length > 0 || filterType.length > 0 || filterRequester.length > 0 ||
-          filterApprover.length > 0 || filterDateFrom || filterDateTo) && (
+          filterApprover.length > 0 || filterMarca.length > 0 || filterFilial.length > 0 ||
+          filterTag0.length > 0 || filterDateFrom || filterDateTo || searchText.trim()) && (
           <div className="mt-3 pt-3 border-t border-gray-100">
             <p className="text-[10px] font-bold text-gray-500">
               Mostrando {filteredChanges.length} de {changes.length} registros
@@ -563,11 +627,11 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-xl overflow-hidden">
         <div className="overflow-x-auto max-h-[calc(100vh-320px)] overflow-y-auto">
-          <table className="w-full text-left min-w-[900px]">
+          <table className="w-full text-left min-w-[1400px]">
             <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur-sm border-b border-gray-200 text-[9px] font-black text-gray-400 uppercase tracking-widest">
               <tr className="h-9">
                 {canApprove && (
-                  <th className="px-3 w-[40px]">
+                  <th className="px-2 w-[36px]">
                     {pendingVisible.length > 0 && (
                       <button
                         onClick={toggleSelectAll}
@@ -583,20 +647,26 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                     )}
                   </th>
                 )}
-                <th className="px-3 w-[90px]">Data</th>
-                <th className="px-3 w-[130px]">Solicitante</th>
-                <th className="px-3 w-[70px]">Tipo</th>
-                <th className="px-3">Descrição</th>
-                <th className="px-3 w-[100px] text-right">Valor</th>
-                <th className="px-3 w-[90px]">Filial</th>
-                <th className="px-3 w-[80px] text-center">Status</th>
-                <th className="px-3 w-[100px] text-center">Ação</th>
+                <th className="px-2 w-[80px]">Data</th>
+                <th className="px-2 w-[110px]">Solicitante</th>
+                <th className="px-2 w-[60px]">Tipo</th>
+                <th className="px-2 w-[90px]">Ticket</th>
+                <th className="px-2 w-[120px]">Chave ID</th>
+                <th className="px-2 min-w-[160px]">Descrição</th>
+                <th className="px-2 w-[90px] text-right">Valor</th>
+                <th className="px-2 w-[100px]">Conta</th>
+                <th className="px-2 w-[80px]">Filial</th>
+                <th className="px-2 w-[80px]">Marca</th>
+                <th className="px-2 w-[100px]">Tag0</th>
+                <th className="px-2 w-[100px]">Vendor</th>
+                <th className="px-2 w-[70px] text-center">Status</th>
+                <th className="px-2 w-[90px] text-center">Ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filteredChanges.length === 0 ? (
                 <tr>
-                  <td colSpan={canApprove ? 9 : 8} className="px-8 py-16 text-center">
+                  <td colSpan={canApprove ? 15 : 14} className="px-8 py-16 text-center">
                     <div className="flex flex-col items-center gap-2 text-gray-300">
                       <AlertCircle size={28} />
                       <p className="font-black text-gray-400 uppercase tracking-widest text-[10px]">
@@ -624,7 +694,7 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                   >
                     {/* Checkbox de seleção (só para pendentes se canApprove) */}
                     {canApprove && (
-                      <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-2" onClick={(e) => e.stopPropagation()}>
                         {isPending && (
                           <button
                             onClick={() => toggleSelectOne(change.id)}
@@ -637,13 +707,13 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                         )}
                       </td>
                     )}
-                    <td className="px-3 text-[10px] text-gray-500 font-bold whitespace-nowrap">
+                    <td className="px-2 text-[10px] text-gray-500 font-bold whitespace-nowrap">
                       {new Date(change.requestedAt).toLocaleDateString('pt-BR')}
                     </td>
-                    <td className="px-3 text-[10px] font-bold text-gray-800 truncate max-w-[130px]">
+                    <td className="px-2 text-[10px] font-bold text-gray-800 truncate max-w-[110px]" title={change.requestedByName || change.requestedBy}>
                       {change.requestedByName || 'Usuário'}
                     </td>
-                    <td className="px-3">
+                    <td className="px-2">
                       <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase border ${
                         change.type === 'CONTA'    ? 'bg-blue-50 text-blue-600 border-blue-100' :
                         change.type === 'RATEIO'   ? 'bg-purple-50 text-purple-600 border-purple-100' :
@@ -653,16 +723,34 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                         {change.type === 'RATEIO' ? 'RATEIO' : 'AJUSTE'}
                       </span>
                     </td>
-                    <td className="px-3 text-[10px] font-medium text-gray-700 truncate max-w-[250px]" title={orig.description}>
+                    <td className="px-2 text-[10px] font-medium text-gray-600 truncate max-w-[90px]" title={orig.ticket || ''}>
+                      {orig.ticket || <span className="text-gray-300">-</span>}
+                    </td>
+                    <td className="px-2 text-[10px] font-mono font-medium text-gray-500 truncate max-w-[120px]" title={orig.chave_id || ''}>
+                      {orig.chave_id || <span className="text-gray-300">-</span>}
+                    </td>
+                    <td className="px-2 text-[10px] font-medium text-gray-700 truncate max-w-[200px]" title={orig.description}>
                       {orig.description}
                     </td>
-                    <td className="px-3 text-[10px] font-black text-gray-800 text-right whitespace-nowrap">
+                    <td className="px-2 text-[10px] font-black text-gray-800 text-right whitespace-nowrap">
                       R$ {orig.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="px-3 text-[10px] font-bold text-gray-600 truncate max-w-[90px]">
+                    <td className="px-2 text-[10px] font-mono font-medium text-gray-500 truncate max-w-[100px]" title={orig.conta_contabil || ''}>
+                      {orig.conta_contabil || <span className="text-gray-300">-</span>}
+                    </td>
+                    <td className="px-2 text-[10px] font-bold text-gray-600 truncate max-w-[80px]" title={orig.filial}>
                       {orig.filial}
                     </td>
-                    <td className="px-3 text-center">
+                    <td className="px-2 text-[10px] font-bold text-gray-600 truncate max-w-[80px]" title={orig.marca || ''}>
+                      {orig.marca || <span className="text-gray-300">-</span>}
+                    </td>
+                    <td className="px-2 text-[10px] font-medium text-gray-500 truncate max-w-[100px]" title={orig.tag0 || ''}>
+                      {orig.tag0 || <span className="text-gray-300">-</span>}
+                    </td>
+                    <td className="px-2 text-[10px] font-medium text-gray-500 truncate max-w-[100px]" title={orig.vendor || ''}>
+                      {orig.vendor || <span className="text-gray-300">-</span>}
+                    </td>
+                    <td className="px-2 text-center">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[8px] font-black uppercase border ${
                         change.status === 'Pendente' ? 'bg-amber-50 text-amber-600 border-amber-100' :
                         change.status === 'Aplicado' ? 'bg-emerald-600 text-white border-emerald-700' :
@@ -671,7 +759,7 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
                         {change.status}
                       </span>
                     </td>
-                    <td className="px-3 text-center">
+                    <td className="px-2 text-center">
                       {isPending && canApprove ? (
                         <div className="flex justify-center gap-1">
                           <button
