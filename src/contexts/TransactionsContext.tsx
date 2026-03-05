@@ -470,12 +470,12 @@ export const TransactionsProvider: React.FC<TransactionsProviderProps> = ({ chil
   }, [conflicts]);
 
   /**
-   * Sincroniza status das operações pendentes a cada 1 segundo
+   * Sincroniza status das operações pendentes a cada 10 segundos
    */
   useEffect(() => {
     const interval = setInterval(() => {
       updatePendingOperations();
-    }, 1000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [updatePendingOperations]);

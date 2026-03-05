@@ -310,7 +310,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     return saved ? JSON.parse(saved) : 'real';
   });
   // Paginação server-side
-  const PAGE_SIZE = 1000;
+  const PAGE_SIZE = 200;
   const [currentPageNumber, setCurrentPageNumber] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(0);

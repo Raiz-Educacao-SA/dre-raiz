@@ -127,8 +127,9 @@ const App: React.FC = () => {
   // Transações carregam em background sem bloquear a UI
   const isLoading = permissionsLoading;
 
-  // ⚡ Dashboard — carrega via getSomaTags (mesma fonte do DRE Gerencial)
+  // ⚡ Dashboard — LAZY LOAD: só carrega quando o usuário abre o Dashboard
   useEffect(() => {
+    if (currentView !== 'dashboard') return;
     if (permissionsLoading) return;
 
     // Chave única para o conjunto de permissões atual
@@ -159,7 +160,7 @@ const App: React.FC = () => {
         console.warn('⚠️ [Dashboard getSomaTags] Falhou:', err);
       })
       .finally(() => setIsLoadingDashboard(false));
-  }, [permissionsLoading, allowedMarcas, allowedFiliais, allowedTag01]);
+  }, [currentView, permissionsLoading, allowedMarcas, allowedFiliais, allowedTag01]);
 
   // ⚡ LAZY LOAD: Carregar transações apenas quando o usuário navegar para views que precisam
   // Views que precisam de transações: movements, kpis, forecasting, analysis
@@ -856,8 +857,8 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Indicador de Sincronização - Fase 2 */}
-            <TransactionsSyncUI />
+            {/* Indicador de Sincronização - apenas na guia Lançamentos */}
+            {currentView === 'movements' && <TransactionsSyncUI />}
 
             {/* Toggle Modo Executivo/Detalhado - DRE (estilo switch) */}
             {currentView === 'dre' && (

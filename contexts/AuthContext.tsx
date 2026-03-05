@@ -173,6 +173,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (firebaseUser) {
+        // Limpar operações stale do sync queue (sessões anteriores)
+        try { localStorage.removeItem('transactionsOperationQueue'); } catch {}
+
         // Restaura sessão Supabase para que RLS funcione (ex: reload de página)
         await refreshSupabaseSession(firebaseUser);
 
