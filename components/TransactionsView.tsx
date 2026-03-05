@@ -26,7 +26,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction, TransactionType, TransactionStatus, ManualChange, PaginationParams, ContaContabilOption } from '../types';
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
-import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0 } from '../services/supabaseService';
+import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0, getManualChangesByTransactionId } from '../services/supabaseService';
 import ContaContabilSelector from './ContaContabilSelector';
 import { toast } from 'sonner';
 // ExcelJS carregado sob demanda via dynamic import
@@ -228,6 +228,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [rateioTransaction, setRateioTransaction] = useState<Transaction | null>(null);
   const [detailTransaction, setDetailTransaction] = useState<Transaction | null>(null);
+  const [detailChanges, setDetailChanges] = useState<ManualChange[]>([]);
+  const [detailChangesLoading, setDetailChangesLoading] = useState(false);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'desc' });
 
   // ─── Visibilidade de colunas ────────────────────────────────────────────────
@@ -266,6 +268,17 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     () => COLUMN_DEFS.filter(c => colVisibility[c.key] !== false),
     [colVisibility]
   );
+
+  // ─── Carregar justificativas ao abrir detalhe de transação ajustada ──────────
+  useEffect(() => {
+    if (!detailTransaction) { setDetailChanges([]); return; }
+    const hasChange = ['Ajustado', 'Rateado', 'Pendente', 'Excluído'].includes(detailTransaction.status);
+    if (!hasChange) { setDetailChanges([]); return; }
+    setDetailChangesLoading(true);
+    getManualChangesByTransactionId(detailTransaction.id)
+      .then(setDetailChanges)
+      .finally(() => setDetailChangesLoading(false));
+  }, [detailTransaction]);
 
   // ─── Densidade ─────────────────────────────────────────────────────────────
   const [density, setDensity] = useState<Density>(() => {
@@ -2329,6 +2342,101 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     <DetailField icon={<Calculator size={14} />} label="Nat. Orçamentária" value={t.nat_orc || '-'} />
                   </div>
                 </div>
+
+                {/* Histórico de Alterações / Justificativas */}
+                {(detailChangesLoading || detailChanges.length > 0) && (
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <h4 className="text-[10px] font-black text-[#F44C00] uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <History size={12} /> Histórico de Alterações
+                    </h4>
+                    {detailChangesLoading ? (
+                      <div className="flex items-center gap-2 text-gray-400 text-xs py-3">
+                        <Loader2 size={14} className="animate-spin" /> Carregando justificativas...
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {detailChanges.map((ch) => {
+                          let justification = '';
+                          let newFields: Record<string, string> = {};
+                          try {
+                            const parsed = JSON.parse(ch.newValue || '{}');
+                            if (ch.type === 'RATEIO') {
+                              justification = parsed.justification || '';
+                            } else {
+                              justification = parsed.justification || '';
+                              if (parsed.category) newFields['Conta'] = parsed.category;
+                              if (parsed.filial) newFields['Filial'] = parsed.filial;
+                              if (parsed.date) newFields['Data'] = formatDateToMMAAAA(parsed.date);
+                              if (parsed.marca) newFields['Marca'] = parsed.marca;
+                              if (parsed.recurring) newFields['Recorrência'] = parsed.recurring === 'Não' ? 'Único' : 'Recorrente';
+                            }
+                          } catch {}
+
+                          const statusColor = ch.status === 'Pendente' ? 'amber' : ch.status === 'Aplicado' ? 'emerald' : 'rose';
+                          const statusBorder = { amber: 'border-l-amber-400 bg-amber-50/30', emerald: 'border-l-emerald-400 bg-emerald-50/30', rose: 'border-l-rose-400 bg-rose-50/30' }[statusColor];
+                          const statusBadge = { amber: 'bg-amber-100 text-amber-700', emerald: 'bg-emerald-100 text-emerald-700', rose: 'bg-rose-100 text-rose-700' }[statusColor];
+
+                          return (
+                            <div key={ch.id} className={`border-l-4 ${statusBorder} rounded-r-xl p-3`}>
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${statusBadge}`}>
+                                    {ch.status}
+                                  </span>
+                                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
+                                    ch.type === 'RATEIO' ? 'bg-purple-50 text-purple-600 border-purple-200' :
+                                    ch.type === 'EXCLUSAO' ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                                    'bg-blue-50 text-blue-600 border-blue-200'
+                                  }`}>
+                                    {ch.type === 'RATEIO' ? 'RATEIO' : ch.type === 'EXCLUSAO' ? 'EXCLUSÃO' : 'AJUSTE'}
+                                  </span>
+                                </div>
+                                <span className="text-[9px] text-gray-400 font-medium flex items-center gap-1">
+                                  <Clock size={9} /> {new Date(ch.requestedAt).toLocaleDateString('pt-BR')} {new Date(ch.requestedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+
+                              {/* Solicitante */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <User size={11} className="text-gray-400" />
+                                <span className="text-[10px] font-bold text-gray-700">{ch.requestedByName || ch.requestedBy}</span>
+                              </div>
+
+                              {/* Justificativa */}
+                              {justification && (
+                                <div className="bg-white/60 border border-gray-200 rounded-lg p-2.5 mb-2">
+                                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Justificativa</p>
+                                  <p className="text-xs text-gray-700 font-medium italic leading-relaxed">"{justification}"</p>
+                                </div>
+                              )}
+
+                              {/* Campos alterados */}
+                              {Object.keys(newFields).length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  {Object.entries(newFields).map(([label, val]) => (
+                                    <span key={label} className="text-[9px] font-bold text-gray-500 bg-white/60 border border-gray-200 px-2 py-0.5 rounded">
+                                      {label}: <span className="text-[#F44C00] font-black">{val}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Aprovador */}
+                              {ch.approvedByName && ch.approvedAt && (
+                                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200/50">
+                                  <CheckCircle2 size={11} className={ch.status === 'Aplicado' ? 'text-emerald-500' : 'text-rose-500'} />
+                                  <span className="text-[9px] text-gray-500">
+                                    {ch.status === 'Aplicado' ? 'Aprovado' : 'Reprovado'} por <strong className="text-gray-700">{ch.approvedByName}</strong> em {new Date(ch.approvedAt).toLocaleDateString('pt-BR')}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Metadados */}
                 <div className="mt-4 pt-3 border-t border-gray-200">

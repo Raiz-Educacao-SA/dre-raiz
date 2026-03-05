@@ -1617,6 +1617,20 @@ export const addManualChange = async (change: ManualChange): Promise<boolean> =>
   }
 };
 
+/** Busca manual_changes de uma transação específica (para exibir justificativas no detalhe) */
+export const getManualChangesByTransactionId = async (transactionId: string): Promise<ManualChange[]> => {
+  const { data, error } = await supabase
+    .from('manual_changes')
+    .select('*')
+    .eq('transaction_id', transactionId)
+    .order('requested_at', { ascending: false });
+  if (error) {
+    console.error('❌ Erro ao buscar manual_changes por transaction_id:', error);
+    return [];
+  }
+  return (data || []).map(dbToManualChange);
+};
+
 export const updateManualChange = async (id: string, updates: Partial<ManualChange>): Promise<boolean> => {
   const dbUpdates: any = {};
 
