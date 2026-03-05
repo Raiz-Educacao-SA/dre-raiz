@@ -2248,22 +2248,15 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         const statusBg = { amber: 'bg-amber-50 text-amber-700 border-amber-200', blue: 'bg-blue-50 text-blue-700 border-blue-200', purple: 'bg-purple-50 text-purple-700 border-purple-200', rose: 'bg-rose-50 text-rose-700 border-rose-200', gray: 'bg-gray-50 text-gray-500 border-gray-200' }[statusColor];
         const isRevenue = t.type === 'REVENUE';
 
-        const DetailField = ({ icon, label, value, mono, accent, copyable }: { icon: React.ReactNode; label: string; value: string; mono?: boolean; accent?: boolean; copyable?: boolean }) => (
-          <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0 group">
-            <div className="text-gray-400 mt-0.5 shrink-0">{icon}</div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{label}</p>
-              <p className={`text-xs font-bold leading-snug break-words ${mono ? 'font-mono' : ''} ${accent ? 'text-[#F44C00]' : 'text-gray-800'}`}>
-                {value || '-'}
-              </p>
-            </div>
+        const F = ({ label, value, mono, accent, copyable }: { label: string; value: string; mono?: boolean; accent?: boolean; copyable?: boolean }) => (
+          <div className="flex items-center justify-between py-[3px] border-b border-gray-100/80 last:border-0 group gap-2">
+            <span className="text-[8px] font-black text-gray-400 uppercase tracking-wide shrink-0 w-[90px]">{label}</span>
+            <span className={`text-[10px] font-bold text-right truncate flex-1 min-w-0 ${mono ? 'font-mono' : ''} ${accent ? 'text-[#F44C00]' : 'text-gray-800'}`} title={value || '-'}>
+              {value || '-'}
+            </span>
             {copyable && value && value !== '-' && (
-              <button
-                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(value); toast.success('Copiado!'); }}
-                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 p-1 transition-opacity shrink-0"
-                title="Copiar"
-              >
-                <Copy size={12} />
+              <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(value); toast.success('Copiado!'); }} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 transition-opacity shrink-0" title="Copiar">
+                <Copy size={9} />
               </button>
             )}
           </div>
@@ -2271,94 +2264,77 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
         return (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setDetailTransaction(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-              {/* Header */}
-              <div className="bg-[#1B75BB] px-6 py-4 text-white flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="bg-white/20 p-2 rounded-xl">
-                    <Eye size={20} />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-black uppercase tracking-tight truncate">Detalhes do Lançamento</h3>
-                    <p className="text-[10px] text-white/70 font-bold truncate">{t.description}</p>
-                  </div>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-3 max-h-[88vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+              {/* Header compacto */}
+              <div className="bg-[#1B75BB] px-4 py-2.5 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Eye size={15} className="shrink-0 opacity-80" />
+                  <h3 className="text-[11px] font-black uppercase tracking-tight truncate">{t.description}</h3>
                 </div>
-                <button onClick={() => setDetailTransaction(null)} className="p-2 hover:bg-white/20 rounded-xl transition-colors shrink-0">
-                  <X size={20} />
+                <button onClick={() => setDetailTransaction(null)} className="p-1 hover:bg-white/20 rounded-lg transition-colors shrink-0">
+                  <X size={16} />
                 </button>
               </div>
 
-              {/* Cards de destaque */}
-              <div className="grid grid-cols-3 gap-0 border-b border-gray-200">
-                <div className="px-5 py-4 bg-gray-50 border-r border-gray-200 text-center">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Valor</p>
-                  <p className={`text-lg font-black mt-1 ${isRevenue ? 'text-emerald-600' : 'text-gray-900'}`}>
+              {/* Faixa de destaque — Valor + Status + Data inline */}
+              <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200 gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[8px] font-black text-gray-400 uppercase">Valor</span>
+                  <span className={`text-sm font-black ${isRevenue ? 'text-emerald-600' : 'text-gray-900'}`}>
                     R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div className="px-5 py-4 bg-gray-50 border-r border-gray-200 text-center">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Status</p>
-                  <span className={`inline-flex px-3 py-1 mt-1.5 rounded text-[10px] font-black uppercase border ${statusBg}`}>
-                    {t.status}
                   </span>
                 </div>
-                <div className="px-5 py-4 bg-gray-50 text-center">
-                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Data</p>
-                  <p className="text-lg font-black text-gray-800 mt-1">{formatDateToMMAAAA(t.date)}</p>
+                <div className="flex items-center gap-3">
+                  <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase border ${statusBg}`}>{t.status}</span>
+                  <span className="text-[10px] font-black text-gray-600">{formatDateToMMAAAA(t.date)}</span>
+                  <span className="text-[8px] font-bold text-gray-400 uppercase">{t.scenario || 'Real'}</span>
                 </div>
               </div>
 
               {/* Body */}
-              <div className="flex-1 overflow-y-auto px-6 py-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              <div className="flex-1 overflow-y-auto px-4 py-2.5">
+                <div className="grid grid-cols-2 gap-x-5 gap-y-0">
                   {/* Coluna Esquerda — Identificação */}
                   <div>
-                    <h4 className="text-[10px] font-black text-[#1B75BB] uppercase tracking-widest mb-2 flex items-center gap-2">
-                      <Hash size={12} /> Identificação
-                    </h4>
-                    <DetailField icon={<FileText size={14} />} label="Descrição" value={t.description} />
-                    <DetailField icon={<Bookmark size={14} />} label="Ticket" value={t.ticket || '-'} copyable />
-                    <DetailField icon={<Hash size={14} />} label="Chave ID" value={t.chave_id || '-'} mono copyable />
-                    <DetailField icon={<CreditCard size={14} />} label="Conta Contábil" value={t.conta_contabil} mono accent copyable />
-                    <DetailField icon={<User size={14} />} label="Fornecedor (Vendor)" value={t.vendor || '-'} />
-                    <DetailField icon={<Repeat size={14} />} label="Recorrência" value={(t.recurring || 'Sim') === 'Sim' ? 'Recorrente' : 'Único'} />
-                    <DetailField icon={<ListOrdered size={14} />} label="Cenário" value={t.scenario || 'Real'} />
+                    <p className="text-[8px] font-black text-[#1B75BB] uppercase tracking-widest mb-1">Identificação</p>
+                    <F label="Ticket" value={t.ticket || '-'} copyable />
+                    <F label="Chave ID" value={t.chave_id || '-'} mono copyable />
+                    <F label="Conta" value={t.conta_contabil} mono accent copyable />
+                    <F label="Vendor" value={t.vendor || '-'} />
+                    <F label="Recorrência" value={(t.recurring || 'Sim') === 'Sim' ? 'Recorrente' : 'Único'} />
+
+                    <p className="text-[8px] font-black text-[#1B75BB] uppercase tracking-widest mt-2.5 mb-1">Tags</p>
+                    <F label="Tag0" value={t.tag0 || '-'} />
+                    <F label="Tag01" value={t.tag01 || '-'} />
+                    <F label="Tag02" value={t.tag02 || '-'} />
+                    <F label="Tag03" value={t.tag03 || '-'} />
+                    <F label="Nat. Orç." value={t.nat_orc || '-'} />
                   </div>
 
-                  {/* Coluna Direita — Classificação */}
+                  {/* Coluna Direita — Unidade + Metadados */}
                   <div>
-                    <h4 className="text-[10px] font-black text-[#1B75BB] uppercase tracking-widest mb-2 flex items-center gap-2">
-                      <Building2 size={12} /> Unidade
-                    </h4>
-                    <DetailField icon={<Building2 size={14} />} label="Marca" value={t.marca || '-'} />
-                    <DetailField icon={<Building2 size={14} />} label="Filial" value={t.filial} />
-                    {t.nome_filial && t.nome_filial !== t.filial && (
-                      <DetailField icon={<Building2 size={14} />} label="Nome Filial" value={t.nome_filial} />
-                    )}
+                    <p className="text-[8px] font-black text-[#1B75BB] uppercase tracking-widest mb-1">Unidade</p>
+                    <F label="Marca" value={t.marca || '-'} />
+                    <F label="Filial" value={t.filial} />
+                    {t.nome_filial && t.nome_filial !== t.filial && <F label="Nome Filial" value={t.nome_filial} />}
 
-                    <h4 className="text-[10px] font-black text-[#1B75BB] uppercase tracking-widest mt-4 mb-2 flex items-center gap-2">
-                      <Tag size={12} /> Tags / Classificação
-                    </h4>
-                    <DetailField icon={<Tag size={14} />} label="Tag0" value={t.tag0 || '-'} />
-                    <DetailField icon={<Tag size={14} />} label="Tag01 (Centro de Custo)" value={t.tag01 || '-'} />
-                    <DetailField icon={<Tag size={14} />} label="Tag02 (Segmento)" value={t.tag02 || '-'} />
-                    <DetailField icon={<Tag size={14} />} label="Tag03 (Projeto)" value={t.tag03 || '-'} />
-                    <DetailField icon={<Calculator size={14} />} label="Nat. Orçamentária" value={t.nat_orc || '-'} />
+                    <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest mt-2.5 mb-1">Metadados</p>
+                    <F label="ID" value={t.id} mono />
+                    {t.updated_at && <F label="Atualizado" value={new Date(t.updated_at).toLocaleString('pt-BR')} />}
+                    {t.justification && <F label="Justificativa" value={t.justification} />}
                   </div>
                 </div>
 
                 {/* Histórico de Alterações / Justificativas */}
                 {(detailChangesLoading || detailChanges.length > 0) && (
-                  <div className="mt-4 pt-3 border-t border-gray-200">
-                    <h4 className="text-[10px] font-black text-[#F44C00] uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <History size={12} /> Histórico de Alterações
-                    </h4>
+                  <div className="mt-2.5 pt-2 border-t border-gray-200">
+                    <p className="text-[8px] font-black text-[#F44C00] uppercase tracking-widest mb-1.5">Histórico de Alterações</p>
                     {detailChangesLoading ? (
-                      <div className="flex items-center gap-2 text-gray-400 text-xs py-3">
-                        <Loader2 size={14} className="animate-spin" /> Carregando justificativas...
+                      <div className="flex items-center gap-2 text-gray-400 text-[10px] py-2">
+                        <Loader2 size={12} className="animate-spin" /> Carregando...
                       </div>
                     ) : (
-                      <div className="space-y-3">
+                      <div className="space-y-2">
                         {detailChanges.map((ch) => {
                           let justification = '';
                           let changeRows: { label: string; from: string; to: string }[] = [];
@@ -2373,63 +2349,45 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                               if (parsed.filial) changeRows.push({ label: 'Filial', from: orig?.filial || '-', to: parsed.filial });
                               if (parsed.date) changeRows.push({ label: 'Data', from: formatDateToMMAAAA(orig?.date) || '-', to: formatDateToMMAAAA(parsed.date) });
                               if (parsed.marca) changeRows.push({ label: 'Marca', from: orig?.marca || '-', to: parsed.marca });
-                              if (parsed.recurring) changeRows.push({ label: 'Recorrência', from: (orig?.recurring || 'Sim') === 'Sim' ? 'Recorrente' : 'Único', to: parsed.recurring === 'Não' ? 'Único' : 'Recorrente' });
+                              if (parsed.recurring) changeRows.push({ label: 'Recorr.', from: (orig?.recurring || 'Sim') === 'Sim' ? 'Recorrente' : 'Único', to: parsed.recurring === 'Não' ? 'Único' : 'Recorrente' });
                             }
                           } catch {}
 
-                          const statusColor = ch.status === 'Pendente' ? 'amber' : ch.status === 'Aplicado' ? 'emerald' : 'rose';
-                          const statusBorder = { amber: 'border-l-amber-400 bg-amber-50/30', emerald: 'border-l-emerald-400 bg-emerald-50/30', rose: 'border-l-rose-400 bg-rose-50/30' }[statusColor];
-                          const statusBadge = { amber: 'bg-amber-100 text-amber-700', emerald: 'bg-emerald-100 text-emerald-700', rose: 'bg-rose-100 text-rose-700' }[statusColor];
+                          const sc = ch.status === 'Pendente' ? 'amber' : ch.status === 'Aplicado' ? 'emerald' : 'rose';
+                          const sBorder = { amber: 'border-l-amber-400 bg-amber-50/30', emerald: 'border-l-emerald-400 bg-emerald-50/30', rose: 'border-l-rose-400 bg-rose-50/30' }[sc];
+                          const sBadge = { amber: 'bg-amber-100 text-amber-700', emerald: 'bg-emerald-100 text-emerald-700', rose: 'bg-rose-100 text-rose-700' }[sc];
 
                           return (
-                            <div key={ch.id} className={`border-l-4 ${statusBorder} rounded-r-xl p-3`}>
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${statusBadge}`}>
-                                    {ch.status}
-                                  </span>
-                                  <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
-                                    ch.type === 'RATEIO' ? 'bg-purple-50 text-purple-600 border-purple-200' :
-                                    ch.type === 'EXCLUSAO' ? 'bg-rose-50 text-rose-600 border-rose-200' :
-                                    'bg-blue-50 text-blue-600 border-blue-200'
-                                  }`}>
-                                    {ch.type === 'RATEIO' ? 'RATEIO' : ch.type === 'EXCLUSAO' ? 'EXCLUSÃO' : 'AJUSTE'}
-                                  </span>
-                                </div>
-                                <span className="text-[9px] text-gray-400 font-medium flex items-center gap-1">
-                                  <Clock size={9} /> {new Date(ch.requestedAt).toLocaleDateString('pt-BR')} {new Date(ch.requestedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                                </span>
-                              </div>
-
-                              {/* Solicitante */}
-                              <div className="flex items-center gap-2 mb-2">
-                                <User size={11} className="text-gray-400" />
-                                <span className="text-[10px] font-bold text-gray-700">{ch.requestedByName || ch.requestedBy}</span>
+                            <div key={ch.id} className={`border-l-[3px] ${sBorder} rounded-r-lg px-2.5 py-1.5`}>
+                              {/* Linha 1: badges + solicitante + data */}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full ${sBadge}`}>{ch.status}</span>
+                                <span className={`text-[7px] font-black uppercase px-1 py-0.5 rounded border ${
+                                  ch.type === 'RATEIO' ? 'bg-purple-50 text-purple-600 border-purple-200' :
+                                  ch.type === 'EXCLUSAO' ? 'bg-rose-50 text-rose-600 border-rose-200' :
+                                  'bg-blue-50 text-blue-600 border-blue-200'
+                                }`}>{ch.type === 'RATEIO' ? 'RATEIO' : ch.type === 'EXCLUSAO' ? 'EXCLUSÃO' : 'AJUSTE'}</span>
+                                <span className="text-[9px] font-bold text-gray-600">{ch.requestedByName || ch.requestedBy}</span>
+                                <span className="text-[8px] text-gray-400 ml-auto">{new Date(ch.requestedAt).toLocaleDateString('pt-BR')} {new Date(ch.requestedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
 
                               {/* Justificativa */}
                               {justification && (
-                                <div className="bg-white/60 border border-gray-200 rounded-lg p-2.5 mb-2">
-                                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Justificativa</p>
-                                  <p className="text-xs text-gray-700 font-medium italic leading-relaxed">"{justification}"</p>
-                                </div>
+                                <p className="text-[10px] text-gray-700 italic mt-1 leading-snug pl-1 border-l-2 border-gray-300 ml-0.5">"{justification}"</p>
                               )}
 
-                              {/* Campos alterados — De → Para */}
+                              {/* Campos De → Para */}
                               {changeRows.length > 0 && (
-                                <div className="bg-white/60 border border-gray-200 rounded-lg overflow-hidden mb-1">
-                                  <div className="grid grid-cols-[80px_1fr_20px_1fr] items-center gap-1 px-2.5 py-1.5 bg-gray-100/80 border-b border-gray-200">
-                                    <span className="text-[8px] font-black text-gray-400 uppercase">Campo</span>
-                                    <span className="text-[8px] font-black text-gray-400 uppercase">De</span>
-                                    <span />
-                                    <span className="text-[8px] font-black text-gray-400 uppercase">Para</span>
+                                <div className="mt-1.5 rounded overflow-hidden border border-gray-200">
+                                  <div className="grid grid-cols-[60px_1fr_16px_1fr] items-center gap-0.5 px-2 py-1 bg-gray-100/80 border-b border-gray-200 text-[7px] font-black text-gray-400 uppercase">
+                                    <span>Campo</span><span>De</span><span /><span>Para</span>
                                   </div>
                                   {changeRows.map((row) => (
-                                    <div key={row.label} className="grid grid-cols-[80px_1fr_20px_1fr] items-center gap-1 px-2.5 py-1.5 border-b border-gray-100 last:border-0">
-                                      <span className="text-[9px] font-black text-gray-500 uppercase">{row.label}</span>
-                                      <span className="text-[10px] font-bold text-gray-400 line-through truncate" title={row.from}>{row.from}</span>
-                                      <ArrowRight size={10} className="text-[#F44C00] mx-auto" />
-                                      <span className="text-[10px] font-black text-[#F44C00] truncate" title={row.to}>{row.to}</span>
+                                    <div key={row.label} className="grid grid-cols-[60px_1fr_16px_1fr] items-center gap-0.5 px-2 py-1 border-b border-gray-50 last:border-0">
+                                      <span className="text-[8px] font-black text-gray-500 uppercase">{row.label}</span>
+                                      <span className="text-[9px] font-bold text-gray-400 line-through truncate" title={row.from}>{row.from}</span>
+                                      <ArrowRight size={8} className="text-[#F44C00] mx-auto" />
+                                      <span className="text-[9px] font-black text-[#F44C00] truncate" title={row.to}>{row.to}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -2437,11 +2395,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                               {/* Aprovador */}
                               {ch.approvedByName && ch.approvedAt && (
-                                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200/50">
-                                  <CheckCircle2 size={11} className={ch.status === 'Aplicado' ? 'text-emerald-500' : 'text-rose-500'} />
-                                  <span className="text-[9px] text-gray-500">
-                                    {ch.status === 'Aplicado' ? 'Aprovado' : 'Reprovado'} por <strong className="text-gray-700">{ch.approvedByName}</strong> em {new Date(ch.approvedAt).toLocaleDateString('pt-BR')}
-                                  </span>
+                                <div className="flex items-center gap-1.5 mt-1.5 text-[8px] text-gray-500">
+                                  <CheckCircle2 size={9} className={ch.status === 'Aplicado' ? 'text-emerald-500' : 'text-rose-500'} />
+                                  {ch.status === 'Aplicado' ? 'Aprovado' : 'Reprovado'} por <strong>{ch.approvedByName}</strong> em {new Date(ch.approvedAt).toLocaleDateString('pt-BR')}
                                 </div>
                               )}
                             </div>
@@ -2451,27 +2407,11 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     )}
                   </div>
                 )}
-
-                {/* Metadados */}
-                <div className="mt-4 pt-3 border-t border-gray-200">
-                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                    <Clock size={12} /> Metadados
-                  </h4>
-                  <div className="flex flex-wrap gap-4 text-[10px] text-gray-500">
-                    <span className="flex items-center gap-1.5"><Hash size={10} /> <strong>ID:</strong> <span className="font-mono text-[9px]">{t.id}</span></span>
-                    {t.updated_at && <span className="flex items-center gap-1.5"><Clock size={10} /> <strong>Atualizado:</strong> {new Date(t.updated_at).toLocaleString('pt-BR')}</span>}
-                    {t.justification && <span className="flex items-center gap-1.5"><FileText size={10} /> <strong>Justificativa:</strong> {t.justification}</span>}
-                  </div>
-                </div>
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between shrink-0">
-                <p className="text-[9px] text-gray-400 font-medium">Duplo clique na linha para abrir</p>
-                <button
-                  onClick={() => setDetailTransaction(null)}
-                  className="px-5 py-2 bg-[#1B75BB] text-white rounded-xl hover:bg-[#155a94] font-black text-xs uppercase transition-all active:scale-95"
-                >
+              <div className="px-4 py-1.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end shrink-0">
+                <button onClick={() => setDetailTransaction(null)} className="px-4 py-1.5 bg-[#1B75BB] text-white rounded-lg hover:bg-[#155a94] font-black text-[10px] uppercase transition-all active:scale-95">
                   Fechar
                 </button>
               </div>
