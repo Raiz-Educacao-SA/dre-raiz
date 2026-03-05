@@ -19,6 +19,7 @@ const SomaTagsView = React.lazy(() => import('./components/SomaTagsView'));
 const ExecutiveDashboard = React.lazy(() => import('./components/agentTeam/ExecutiveDashboard'));
 const HoldingDashboardPage = React.lazy(() => import('./components/holding/HoldingDashboardPage'));
 const AgentTeamView = React.lazy(() => import('./components/AgentTeamView'));
+const CronogramaPopup = React.lazy(() => import('./components/CronogramaPopup'));
 // VarianceJustificationsView agora é aba dentro de AnalysisView
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
@@ -102,6 +103,9 @@ const App: React.FC = () => {
   const [isSomaTagsExportOpen, setIsSomaTagsExportOpen] = useState(false);
   const [somaTagsPresentationMode, setSomaTagsPresentationMode] = useState<'executive' | 'detailed'>('detailed');
 
+  // Cronograma popup — aparece após login
+  const [showCronograma, setShowCronograma] = useState(false);
+
   // Usar transactions do Context em vez de estado local
   const transactions = contextTransactions;
   const [manualChanges, setManualChanges] = useState<ManualChange[]>([]);
@@ -165,7 +169,7 @@ const App: React.FC = () => {
   // ⚡ LAZY LOAD: Carregar transações apenas quando o usuário navegar para views que precisam
   // Views que precisam de transações: movements, kpis, forecasting, analysis
   // Dashboard usa getSomaTags RPC (já carrega separadamente acima)
-  const viewsNeedingTransactions = ['movements', 'kpis', 'forecasting', 'analysis'];
+  const viewsNeedingTransactions = ['kpis', 'forecasting', 'analysis'];
   const transactionsLoadedRef = React.useRef(false);
 
   const loadTransactionsIfNeeded = React.useCallback(() => {
@@ -677,6 +681,8 @@ const App: React.FC = () => {
 
   const handleBackToDRE = () => {
     setDrillDownFilters(null);
+    sessionStorage.removeItem('transactionsColFilters');
+    sessionStorage.removeItem('transactionsActiveTab');
     setDrillDownActiveTab(undefined);
     setCurrentView(drillDownOriginView);
   };
@@ -753,6 +759,27 @@ const App: React.FC = () => {
 
   const showGlobalFilters = currentView !== 'dre' && currentView !== 'movements' && currentView !== 'dashboard';
 
+  // Cronograma popup — mostra após login se não dispensado hoje
+  useEffect(() => {
+    if (!user || user.role === 'pending' || authLoading) return;
+    const now = new Date();
+    const todayKey = `cronograma_dismissed_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    if (localStorage.getItem(todayKey)) return;
+    setShowCronograma(true);
+    // Limpar chaves antigas (>7 dias)
+    try {
+      const prefix = 'cronograma_dismissed_';
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(prefix)) {
+          const dateStr = key.replace(prefix, '');
+          const d = new Date(dateStr);
+          if (now.getTime() - d.getTime() > 7 * 86400000) localStorage.removeItem(key);
+        }
+      }
+    } catch {}
+  }, [user, authLoading]);
+
   // Tela de loading - autenticação
   if (authLoading) {
     return (
@@ -789,6 +816,13 @@ const App: React.FC = () => {
           closeButton
           duration={4000}
         />
+
+        {/* Cronograma Popup — aparece no login */}
+        {showCronograma && (
+          <Suspense fallback={null}>
+            <CronogramaPopup onClose={() => setShowCronograma(false)} />
+          </Suspense>
+        )}
 
         {/* Sidebar: Desktop = fixa lateral; Mobile/Tablet = drawer overlay */}
         {isDesktop ? (
@@ -857,8 +891,8 @@ const App: React.FC = () => {
               </div>
             )}
 
-            {/* Indicador de Sincronização - apenas na guia Lançamentos */}
-            {currentView === 'movements' && <TransactionsSyncUI />}
+
+
 
             {/* Toggle Modo Executivo/Detalhado - DRE (estilo switch) */}
             {currentView === 'dre' && (

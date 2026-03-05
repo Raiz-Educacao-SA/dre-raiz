@@ -214,12 +214,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       });
       setContaContabilOptions(contaOpts.map(o => o.cod_conta));
 
-      // G6: Auto-load primeira página na abertura
-      if (!initialLoadDoneRef.current) {
-        initialLoadDoneRef.current = true;
-        // Dispara busca após filtros carregados (via trigger para garantir colFilters atuais)
-        setAutoSearchTrigger(prev => prev + 1);
-      }
     });
   }, []);
 
@@ -505,7 +499,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           formatted[key] = [];
         }
       });
-      setColFilters(prev => ({ ...prev, ...formatted }));
+      setColFilters({ ...initialFilters, ...formatted });
       setShowFilters(true);
       // Trigger auto-search: batched com setColFilters, garante que roda após atualização
       setAutoSearchTrigger(prev => prev + 1);
