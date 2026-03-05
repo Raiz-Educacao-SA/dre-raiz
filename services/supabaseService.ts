@@ -1183,6 +1183,7 @@ export const getFilteredTransactions = async (
     p_scenario: filters.scenario || null,
     p_marcas: filters.marca?.length ? filters.marca : null,
     p_nome_filiais: filters.nome_filial?.length ? filters.nome_filial : null,
+    p_tag0: filters.tag0?.length ? filters.tag0 : null,
     p_tags01: filters.tag01?.length ? filters.tag01 : null,
     p_tags02: filters.tag02?.length ? filters.tag02 : null,
     p_tags03: filters.tag03?.length ? filters.tag03 : null,

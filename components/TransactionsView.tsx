@@ -310,7 +310,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     return saved ? JSON.parse(saved) : 'real';
   });
   // Paginação server-side
-  const PAGE_SIZE = 200;
+  const PAGE_SIZE = 1000;
   const [currentPageNumber, setCurrentPageNumber] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -583,22 +583,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       'transactions';
 
     try {
-      // 🎯 Converter tag0 → tag01 (tag0 não existe na tabela, precisa resolver via tag0_map)
-      let resolvedTag01 = colFilters.tag01?.length > 0 ? [...colFilters.tag01] : [];
-      if (colFilters.tag0?.length > 0 && filterOptions.tag0Map.size > 0) {
-        const tag01sFromTag0: string[] = [];
-        filterOptions.tag0Map.forEach((tag0Value, tag01Key) => {
-          if (colFilters.tag0.includes(tag0Value)) {
-            // Buscar o tag01 original (não normalizado) nos tag01Options
-            const original = filterOptions.tag01Options.find(t => t.toLowerCase().trim() === tag01Key);
-            if (original) tag01sFromTag0.push(original);
-          }
-        });
-        // Merge: tag01 explícitos do usuário + tag01 derivados do tag0
-        resolvedTag01 = [...new Set([...resolvedTag01, ...tag01sFromTag0])];
-        console.log(`🏷️ tag0 [${colFilters.tag0.join(', ')}] → tag01 [${tag01sFromTag0.join(', ')}] (total: ${resolvedTag01.length})`);
-      }
-
+      // 🎯 tag0 agora é filtrado diretamente na RPC (p_tag0), sem conversão para tag01
       const filters: TransactionFilters = {
         monthFrom: colFilters.monthFrom || undefined,
         monthTo: colFilters.monthTo || undefined,
@@ -606,7 +591,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         scenario: activeTab === 'real' ? 'Real' : undefined,
         marca: colFilters.marca?.length > 0 ? colFilters.marca : undefined,
         nome_filial: colFilters.nome_filial?.length > 0 ? colFilters.nome_filial : undefined,
-        tag01: resolvedTag01.length > 0 ? resolvedTag01 : undefined,
+        tag0: colFilters.tag0?.length > 0 ? colFilters.tag0 : undefined,
+        tag01: colFilters.tag01?.length > 0 ? colFilters.tag01 : undefined,
         tag02: colFilters.tag02?.length > 0 ? colFilters.tag02 : undefined,
         tag03: colFilters.tag03?.length > 0 ? colFilters.tag03 : undefined,
         category: colFilters.category?.length > 0 ? colFilters.category : undefined,
@@ -735,28 +721,15 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       'transactions';
 
     try {
-      // 🎯 Converter tag0 → tag01 (tag0 não existe na tabela, precisa resolver via tag0_map)
-      let resolvedTag01All = colFilters.tag01?.length > 0 ? [...colFilters.tag01] : [];
-      if (colFilters.tag0?.length > 0 && filterOptions.tag0Map.size > 0) {
-        const tag01sFromTag0: string[] = [];
-        filterOptions.tag0Map.forEach((tag0Value, tag01Key) => {
-          if (colFilters.tag0.includes(tag0Value)) {
-            const original = filterOptions.tag01Options.find(t => t.toLowerCase().trim() === tag01Key);
-            if (original) tag01sFromTag0.push(original);
-          }
-        });
-        resolvedTag01All = [...new Set([...resolvedTag01All, ...tag01sFromTag0])];
-        console.log(`🏷️ [SearchAll] tag0 [${colFilters.tag0.join(', ')}] → tag01 [${tag01sFromTag0.join(', ')}] (total: ${resolvedTag01All.length})`);
-      }
-
-      // Passar TODOS os filtros para o servidor
+      // 🎯 tag0 agora é filtrado diretamente na RPC (p_tag0)
       const filters: TransactionFilters = {
         monthFrom: colFilters.monthFrom || undefined,
         monthTo: colFilters.monthTo || undefined,
         scenario: activeTab === 'real' ? 'Real' : undefined,
         marca: colFilters.marca && colFilters.marca.length > 0 ? colFilters.marca : undefined,
         nome_filial: colFilters.nome_filial && colFilters.nome_filial.length > 0 ? colFilters.nome_filial : undefined,
-        tag01: resolvedTag01All.length > 0 ? resolvedTag01All : undefined,
+        tag0: colFilters.tag0 && colFilters.tag0.length > 0 ? colFilters.tag0 : undefined,
+        tag01: colFilters.tag01 && colFilters.tag01.length > 0 ? colFilters.tag01 : undefined,
         tag02: colFilters.tag02 && colFilters.tag02.length > 0 ? colFilters.tag02 : undefined,
         tag03: colFilters.tag03 && colFilters.tag03.length > 0 ? colFilters.tag03 : undefined,
         category: colFilters.category && colFilters.category.length > 0 ? colFilters.category : undefined,
@@ -943,7 +916,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   }, [transactions, sortConfig, activeTab]);
 
   const totalAmount = useMemo(() => {
-    return filteredAndSorted.reduce((sum, t) => t.type === 'REVENUE' ? sum + t.amount : sum - t.amount, 0);
+    return filteredAndSorted.reduce((sum, t) => sum + t.amount, 0);
   }, [filteredAndSorted]);
 
 
@@ -1489,7 +1462,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                 <MultiSelectFilter id="tag01" label="Tag01" options={dynamicOptions.tag01s} selected={colFilters.tag01} active={isFilterActive('tag01')} isOpen={openDropdown === 'tag01'} onToggle={() => setOpenDropdown(openDropdown === 'tag01' ? null : 'tag01')} onClear={() => setColFilters(prev => ({...prev, tag01: []}))} onToggleItem={(val) => toggleMultiFilter('tag01', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, tag01: [...new Set([...prev.tag01, ...vals])]}))} />
                 <MultiSelectFilter id="tag02" label="Tag02" options={dynamicOptions.tag02s} selected={colFilters.tag02} active={isFilterActive('tag02')} isOpen={openDropdown === 'tag02'} onToggle={() => setOpenDropdown(openDropdown === 'tag02' ? null : 'tag02')} onClear={() => setColFilters(prev => ({...prev, tag02: []}))} onToggleItem={(val) => toggleMultiFilter('tag02', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, tag02: [...new Set([...prev.tag02, ...vals])]}))} />
                 <MultiSelectFilter id="tag03" label="Tag03" options={dynamicOptions.tag03s} selected={colFilters.tag03} active={isFilterActive('tag03')} isOpen={openDropdown === 'tag03'} onToggle={() => setOpenDropdown(openDropdown === 'tag03' ? null : 'tag03')} onClear={() => setColFilters(prev => ({...prev, tag03: []}))} onToggleItem={(val) => toggleMultiFilter('tag03', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, tag03: [...new Set([...prev.tag03, ...vals])]}))} />
-                <MultiSelectFilter id="category" label="Conta" options={dynamicOptions.categories} selected={colFilters.category} active={isFilterActive('category')} isOpen={openDropdown === 'category'} onToggle={() => setOpenDropdown(openDropdown === 'category' ? null : 'category')} onClear={() => setColFilters(prev => ({...prev, category: []}))} onToggleItem={(val) => toggleMultiFilter('category', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, category: [...new Set([...prev.category, ...vals])]}))} />
                 <MultiSelectFilter id="marca" label="Marca" options={dynamicOptions.marcas} selected={colFilters.marca} active={isFilterActive('marca')} isOpen={openDropdown === 'marca'} onToggle={() => setOpenDropdown(openDropdown === 'marca' ? null : 'marca')} onClear={() => setColFilters(prev => ({...prev, marca: []}))} onToggleItem={(val) => toggleMultiFilter('marca', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, marca: [...new Set([...prev.marca, ...vals])]}))} />
                 <MultiSelectFilter id="nome_filial" label="Unidade" options={dynamicOptions.filiais} selected={colFilters.nome_filial} active={isFilterActive('nome_filial')} isOpen={openDropdown === 'nome_filial'} onToggle={() => setOpenDropdown(openDropdown === 'nome_filial' ? null : 'nome_filial')} onClear={() => setColFilters(prev => ({...prev, nome_filial: []}))} onToggleItem={(val) => toggleMultiFilter('nome_filial', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, nome_filial: [...new Set([...prev.nome_filial, ...vals])]}))} />
               </div>
