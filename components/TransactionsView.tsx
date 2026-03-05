@@ -39,7 +39,8 @@ import {
   Trash2, Filter, Loader2,
   Split, CheckCircle2, Download, ListOrdered, Calculator, ArrowRight,
   ChevronDown, Check, Square, CheckSquare, TrendingUp, History,
-  TrendingDown, ArrowUpRight, ArrowDownRight, AlertCircle, Search, ArrowLeft, TableProperties, Eye
+  TrendingDown, ArrowUpRight, ArrowDownRight, AlertCircle, Search, ArrowLeft, TableProperties, Eye,
+  FileText, Clock, Building2, Tag, Hash, User, Repeat, Bookmark, CreditCard, Copy
 } from 'lucide-react';
 
 // ─── Visibilidade de colunas ──────────────────────────────────────────────────
@@ -226,6 +227,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [isSyncing, setIsSyncing] = useState(initialSyncing);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [rateioTransaction, setRateioTransaction] = useState<Transaction | null>(null);
+  const [detailTransaction, setDetailTransaction] = useState<Transaction | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'desc' });
 
   // ─── Visibilidade de colunas ────────────────────────────────────────────────
@@ -1808,7 +1810,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
               ) : filteredAndSorted.map((t) => (
                   <tr
                     key={t.id}
-                    className="hover:bg-blue-50/50 transition-colors border-b border-gray-50"
+                    onDoubleClick={() => setDetailTransaction(t)}
+                    className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 cursor-pointer"
+                    title="Duplo clique para ver detalhes"
                   >
                     <td className="w-8 px-2" onClick={e => e.stopPropagation()}>
                       <input
@@ -2223,6 +2227,136 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         currentValue={editForm.category}
         contas={contaContabilData}
       />
+
+      {/* --- MODAL DE DETALHES DO LANÇAMENTO --- */}
+      {detailTransaction && (() => {
+        const t = detailTransaction;
+        const statusColor = t.status === 'Pendente' ? 'amber' : t.status === 'Ajustado' ? 'blue' : t.status === 'Rateado' ? 'purple' : t.status === 'Excluído' ? 'rose' : 'gray';
+        const statusBg = { amber: 'bg-amber-50 text-amber-700 border-amber-200', blue: 'bg-blue-50 text-blue-700 border-blue-200', purple: 'bg-purple-50 text-purple-700 border-purple-200', rose: 'bg-rose-50 text-rose-700 border-rose-200', gray: 'bg-gray-50 text-gray-500 border-gray-200' }[statusColor];
+        const isRevenue = t.type === 'REVENUE';
+
+        const DetailField = ({ icon, label, value, mono, accent, copyable }: { icon: React.ReactNode; label: string; value: string; mono?: boolean; accent?: boolean; copyable?: boolean }) => (
+          <div className="flex items-start gap-3 py-2.5 border-b border-gray-100 last:border-0 group">
+            <div className="text-gray-400 mt-0.5 shrink-0">{icon}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">{label}</p>
+              <p className={`text-xs font-bold leading-snug break-words ${mono ? 'font-mono' : ''} ${accent ? 'text-[#F44C00]' : 'text-gray-800'}`}>
+                {value || '-'}
+              </p>
+            </div>
+            {copyable && value && value !== '-' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(value); toast.success('Copiado!'); }}
+                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600 p-1 transition-opacity shrink-0"
+                title="Copiar"
+              >
+                <Copy size={12} />
+              </button>
+            )}
+          </div>
+        );
+
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in" onClick={() => setDetailTransaction(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="bg-[#1B75BB] px-6 py-4 text-white flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="bg-white/20 p-2 rounded-xl">
+                    <Eye size={20} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black uppercase tracking-tight truncate">Detalhes do Lançamento</h3>
+                    <p className="text-[10px] text-white/70 font-bold truncate">{t.description}</p>
+                  </div>
+                </div>
+                <button onClick={() => setDetailTransaction(null)} className="p-2 hover:bg-white/20 rounded-xl transition-colors shrink-0">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Cards de destaque */}
+              <div className="grid grid-cols-3 gap-0 border-b border-gray-200">
+                <div className="px-5 py-4 bg-gray-50 border-r border-gray-200 text-center">
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Valor</p>
+                  <p className={`text-lg font-black mt-1 ${isRevenue ? 'text-emerald-600' : 'text-gray-900'}`}>
+                    R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="px-5 py-4 bg-gray-50 border-r border-gray-200 text-center">
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Status</p>
+                  <span className={`inline-flex px-3 py-1 mt-1.5 rounded text-[10px] font-black uppercase border ${statusBg}`}>
+                    {t.status}
+                  </span>
+                </div>
+                <div className="px-5 py-4 bg-gray-50 text-center">
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Data</p>
+                  <p className="text-lg font-black text-gray-800 mt-1">{formatDateToMMAAAA(t.date)}</p>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                  {/* Coluna Esquerda — Identificação */}
+                  <div>
+                    <h4 className="text-[10px] font-black text-[#1B75BB] uppercase tracking-widest mb-2 flex items-center gap-2">
+                      <Hash size={12} /> Identificação
+                    </h4>
+                    <DetailField icon={<FileText size={14} />} label="Descrição" value={t.description} />
+                    <DetailField icon={<Bookmark size={14} />} label="Ticket" value={t.ticket || '-'} copyable />
+                    <DetailField icon={<Hash size={14} />} label="Chave ID" value={t.chave_id || '-'} mono copyable />
+                    <DetailField icon={<CreditCard size={14} />} label="Conta Contábil" value={t.conta_contabil} mono accent copyable />
+                    <DetailField icon={<User size={14} />} label="Fornecedor (Vendor)" value={t.vendor || '-'} />
+                    <DetailField icon={<Repeat size={14} />} label="Recorrência" value={(t.recurring || 'Sim') === 'Sim' ? 'Recorrente' : 'Único'} />
+                    <DetailField icon={<ListOrdered size={14} />} label="Cenário" value={t.scenario || 'Real'} />
+                  </div>
+
+                  {/* Coluna Direita — Classificação */}
+                  <div>
+                    <h4 className="text-[10px] font-black text-[#1B75BB] uppercase tracking-widest mb-2 flex items-center gap-2">
+                      <Tag size={12} /> Classificação
+                    </h4>
+                    <DetailField icon={<Building2 size={14} />} label="Marca" value={t.marca || '-'} />
+                    <DetailField icon={<Building2 size={14} />} label="Filial" value={t.filial} />
+                    {t.nome_filial && t.nome_filial !== t.filial && (
+                      <DetailField icon={<Building2 size={14} />} label="Nome Filial" value={t.nome_filial} />
+                    )}
+                    <DetailField icon={<Tag size={14} />} label="Tag0" value={t.tag0 || '-'} />
+                    <DetailField icon={<Tag size={14} />} label="Tag01 (Centro de Custo)" value={t.tag01 || '-'} />
+                    <DetailField icon={<Tag size={14} />} label="Tag02 (Segmento)" value={t.tag02 || '-'} />
+                    <DetailField icon={<Tag size={14} />} label="Tag03 (Projeto)" value={t.tag03 || '-'} />
+                    <DetailField icon={<Calculator size={14} />} label="Nat. Orçamentária" value={t.nat_orc || '-'} />
+                  </div>
+                </div>
+
+                {/* Metadados */}
+                <div className="mt-4 pt-3 border-t border-gray-200">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                    <Clock size={12} /> Metadados
+                  </h4>
+                  <div className="flex flex-wrap gap-4 text-[10px] text-gray-500">
+                    <span className="flex items-center gap-1.5"><Hash size={10} /> <strong>ID:</strong> <span className="font-mono text-[9px]">{t.id}</span></span>
+                    {t.updated_at && <span className="flex items-center gap-1.5"><Clock size={10} /> <strong>Atualizado:</strong> {new Date(t.updated_at).toLocaleString('pt-BR')}</span>}
+                    {t.justification && <span className="flex items-center gap-1.5"><FileText size={10} /> <strong>Justificativa:</strong> {t.justification}</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between shrink-0">
+                <p className="text-[9px] text-gray-400 font-medium">Duplo clique na linha para abrir</p>
+                <button
+                  onClick={() => setDetailTransaction(null)}
+                  className="px-5 py-2 bg-[#1B75BB] text-white rounded-xl hover:bg-[#155a94] font-black text-xs uppercase transition-all active:scale-95"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
