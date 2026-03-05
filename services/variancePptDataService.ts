@@ -61,9 +61,9 @@ export function prepareVariancePptData(
   const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
   const monthShort = `${MONTH_SHORT[month - 1]}/${String(year).slice(2)}`;
 
-  // Index items by path
+  // Index items by path (5 segments: tag0|tag01|tag02|tag03|marca)
   const pathKey = (i: VarianceJustification) =>
-    `${i.tag0}|${i.tag01 || ''}|${i.tag02 || ''}|${i.tag03 || ''}`;
+    `${i.tag0}|${i.tag01 || ''}|${i.tag02 || ''}|${i.tag03 || ''}|${i.marca || ''}`;
 
   const orcMap = new Map<string, VarianceJustification>();
   const a1Map = new Map<string, VarianceJustification>();
@@ -81,10 +81,11 @@ export function prepareVariancePptData(
     tag01: string,
     tag02: string | null,
     tag03: string | null,
+    marca: string | null,
     allItems: VarianceJustification[],
     children: VariancePptNode[],
   ): VariancePptNode {
-    const pk = `${tag0}|${tag01 || ''}|${tag02 || ''}|${tag03 || ''}`;
+    const pk = `${tag0}|${tag01 || ''}|${tag02 || ''}|${tag03 || ''}|${marca || ''}`;
     const orcDirect = orcMap.get(pk) || null;
     const a1Direct = a1Map.get(pk) || null;
 
@@ -115,6 +116,7 @@ export function prepareVariancePptData(
       tag01,
       tag02,
       tag03,
+      marca,
       real: realVal,
       orcCompare,
       orcVarPct: orcDirect ? orcDirect.variance_pct : computeVarPct(realVal, orcCompare),
@@ -153,14 +155,26 @@ export function prepareVariancePptData(
       const tag02Children: VariancePptNode[] = [];
       for (const tag02 of tag02Set) {
         const tag02Items = tag01Items.filter(i => i.tag02 === tag02);
-        // tag02 = folha (sem tag03)
-        tag02Children.push(buildNode(2, tag02, tag0, tag01, tag02, null, tag02Items, []));
+
+        // Detect distinct marcas for this tag02
+        const marcasInTag02 = [...new Set(tag02Items.filter(i => i.marca && i.marca !== '').map(i => i.marca))].sort();
+
+        let marcaChildren: VariancePptNode[] = [];
+        if (marcasInTag02.length > 1) {
+          // Multiple marcas → create depth=3 children
+          for (const m of marcasInTag02) {
+            const marcaItems = tag02Items.filter(i => i.marca === m);
+            marcaChildren.push(buildNode(3, m, tag0, tag01, tag02, null, m, marcaItems, []));
+          }
+        }
+
+        tag02Children.push(buildNode(2, tag02, tag0, tag01, tag02, null, null, tag02Items, marcaChildren));
       }
 
-      tag01Nodes.push(buildNode(1, tag01, tag0, tag01, null, null, tag01Items, tag02Children));
+      tag01Nodes.push(buildNode(1, tag01, tag0, tag01, null, null, null, tag01Items, tag02Children));
     }
 
-    const tag0Node = buildNode(0, tag0, tag0, '', null, null, tag0Items, tag01Nodes);
+    const tag0Node = buildNode(0, tag0, tag0, '', null, null, null, tag0Items, tag01Nodes);
 
     // Clean label: remove numeric prefix (e.g. "01. RECEITA LÍQUIDA" → "RECEITA LÍQUIDA")
     const cleanLabel = tag0.replace(/^\d+\.\s*/, '');
@@ -214,13 +228,13 @@ function computeCalcRows(
   orcMap: Map<string, VarianceJustification>,
   a1Map: Map<string, VarianceJustification>,
 ): VariancePptCalcRow[] {
-  // Try to read from DB-stored calc rows first
-  const margemOrc = orcMap.get('MARGEM DE CONTRIBUIÇÃO|||');
-  const margemA1 = a1Map.get('MARGEM DE CONTRIBUIÇÃO|||');
-  const ebitdaSrOrc = orcMap.get('EBITDA (S/ RATEIO RAIZ CSC)|||');
-  const ebitdaSrA1 = a1Map.get('EBITDA (S/ RATEIO RAIZ CSC)|||');
-  const ebitdaTotalOrc = orcMap.get('EBITDA TOTAL|||');
-  const ebitdaTotalA1 = a1Map.get('EBITDA TOTAL|||');
+  // Try to read from DB-stored calc rows first (5-segment key: tag0|tag01|tag02|tag03|marca)
+  const margemOrc = orcMap.get('MARGEM DE CONTRIBUIÇÃO||||');
+  const margemA1 = a1Map.get('MARGEM DE CONTRIBUIÇÃO||||');
+  const ebitdaSrOrc = orcMap.get('EBITDA (S/ RATEIO RAIZ CSC)||||');
+  const ebitdaSrA1 = a1Map.get('EBITDA (S/ RATEIO RAIZ CSC)||||');
+  const ebitdaTotalOrc = orcMap.get('EBITDA TOTAL||||');
+  const ebitdaTotalA1 = a1Map.get('EBITDA TOTAL||||');
 
   if (margemOrc || ebitdaSrOrc || ebitdaTotalOrc) {
     // Use DB values

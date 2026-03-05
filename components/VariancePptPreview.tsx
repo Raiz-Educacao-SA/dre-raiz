@@ -432,8 +432,8 @@ function DetailSlide({ section, data }: { section: VariancePptSection; data: Var
     allRows.push({ depth: 0, label: t01.label, real: t01.real, orc: t01.orcCompare, varPct: t01.orcVarPct, justText: t01.orcAiSummary || '', status: t01.orcStatus });
     for (const t02 of t01.children) {
       allRows.push({ depth: 1, label: t02.label, real: t02.real, orc: t02.orcCompare, varPct: t02.orcVarPct, justText: t02.orcAiSummary || '', status: t02.orcStatus });
-      for (const t03 of t02.children) {
-        allRows.push({ depth: 2, label: t03.label, real: t03.real, orc: t03.orcCompare, varPct: t03.orcVarPct, justText: t03.orcJustification || t03.orcAiSummary || '', status: t03.orcStatus });
+      for (const marca of t02.children) {
+        allRows.push({ depth: 2, label: marca.label, real: marca.real, orc: marca.orcCompare, varPct: marca.orcVarPct, justText: marca.orcJustification || marca.orcAiSummary || '', status: marca.orcStatus });
       }
     }
   }
@@ -463,7 +463,8 @@ function DetailSlide({ section, data }: { section: VariancePptSection; data: Var
             {displayRows.map((row, idx) => {
               const indent = row.depth === 0 ? '' : row.depth === 1 ? '↳ ' : '\u00A0\u00A0\u00A0↳ ';
               const isBold = row.depth === 0;
-              const textColor = row.depth <= 1 ? hex(C.darkText) : hex(C.mutedText);
+              const isMarca = row.depth === 2;
+              const textColor = isMarca ? '#EA580C' : row.depth <= 1 ? hex(C.darkText) : hex(C.mutedText);
               const realColor = textColor;
               const fontSize = row.depth === 0 ? '11px' : row.depth === 1 ? '10px' : '9px';
               return (

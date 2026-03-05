@@ -13,12 +13,13 @@ export const VARIANCE_COLORS = {
 } as const;
 
 export interface VariancePptNode {
-  depth: number;            // 0=tag0, 1=tag01, 2=tag02, 3=tag03
+  depth: number;            // 0=tag0, 1=tag01, 2=tag02, 3=marca
   label: string;
   tag0: string;
   tag01: string;
   tag02: string | null;
   tag03: string | null;
+  marca: string | null;
   real: number;
   orcCompare: number;
   orcVarPct: number | null;

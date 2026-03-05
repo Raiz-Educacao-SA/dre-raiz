@@ -560,15 +560,15 @@ function addDetailSlide(pptx: PptxGenJS, section: VariancePptSection, data: Vari
         status: t02.orcStatus,
       });
 
-      for (const t03 of t02.children) {
+      for (const marca of t02.children) {
         allRows.push({
           depth: 2,
-          label: t03.label,
-          real: t03.real,
-          orc: t03.orcCompare,
-          varPct: t03.orcVarPct,
-          justText: t03.orcJustification || t03.orcAiSummary || '',
-          status: t03.orcStatus,
+          label: marca.label,
+          real: marca.real,
+          orc: marca.orcCompare,
+          varPct: marca.orcVarPct,
+          justText: marca.orcJustification || marca.orcAiSummary || '',
+          status: marca.orcStatus,
         });
       }
     }
@@ -599,7 +599,8 @@ function addDetailSlide(pptx: PptxGenJS, section: VariancePptSection, data: Vari
     const indent = row.depth === 0 ? '' : row.depth === 1 ? '↳ ' : '    ↳ ';
     const isBold = row.depth === 0;
     const fontSize = row.depth === 0 ? 7 : row.depth === 1 ? 6.5 : 6;
-    const textColor = row.depth === 0 ? C.darkText : row.depth === 1 ? C.darkText : C.mutedText;
+    const isMarca = row.depth === 2;
+    const textColor = isMarca ? 'EA580C' : row.depth === 0 ? C.darkText : row.depth === 1 ? C.darkText : C.mutedText;
     const dColor = deltaColor(row.varPct, section.invertDelta);
     const stDot = row.status ? `●  ` : '';
 
