@@ -324,9 +324,13 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   const [contaContabilData, setContaContabilData] = useState<ContaContabilOption[]>([]);
   const [rateioJustification, setRateioJustification] = useState('');
 
+  // Mês atual como padrão para evitar full-scan sem filtro de data
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const initialFilters = {
-    monthFrom: '',
-    monthTo: '',
+    monthFrom: currentMonth,
+    monthTo: currentMonth,
     marca: [] as string[],
     nome_filial: [] as string[],
     tag0: [] as string[],
