@@ -12,7 +12,7 @@ interface CronogramaPopupProps {
 
 const isDreCorte = (t: CronogramaItem) => {
   const text = `${t.deliverable} ${t.action_description}`.toLowerCase();
-  return text.includes('dre') || text.includes('corte') || text.includes('fechamento');
+  return text.includes('corte dre') || text.includes('corte') || text.includes('fechamento');
 };
 
 const isApresentacao = (t: CronogramaItem) => {
@@ -172,27 +172,24 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
     `}</style>
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={handleClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="bg-[#1B75BB] px-6 py-4 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <Calendar className="text-white/80" size={22} />
-            <div>
-              <h2 className="text-white font-black text-lg tracking-wide">CRONOGRAMA FINANCEIRO</h2>
-              <p className="text-blue-100 text-sm font-medium">{MONTH_NAMES[currentMonth - 1].toUpperCase()} / {currentYear}</p>
-            </div>
+        {/* Header — 1 linha compacta */}
+        <div className="bg-[#1B75BB] px-4 py-2 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <Calendar className="text-white/80" size={16} />
+            <h2 className="text-white font-black text-sm tracking-wide">CRONOGRAMA FINANCEIRO — {MONTH_NAMES[currentMonth - 1].toUpperCase()} / {currentYear}</h2>
           </div>
-          <button onClick={handleClose} className="text-white/70 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/10">
-            <X size={22} />
+          <button onClick={handleClose} className="text-white/70 hover:text-white transition-colors p-0.5 rounded hover:bg-white/10">
+            <X size={18} />
           </button>
         </div>
 
         {/* Scrollable body */}
-        <div className="overflow-y-auto flex-1 p-5 space-y-5">
+        <div className="overflow-y-auto flex-1 p-3 space-y-3">
           {/* Mini calendar + Legend side by side */}
-          <div className="flex gap-5 flex-wrap">
+          <div className="flex gap-4 flex-wrap">
             {/* Mini calendar com marcadores */}
             <div className="bg-gray-50 rounded-xl p-3 min-w-[220px]">
               <div className="grid grid-cols-7 gap-0.5 text-center">
@@ -247,16 +244,16 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
 
             {/* Legend */}
             {areas.length > 0 && (
-              <div className="flex-1 min-w-[200px]">
-                <p className="text-xs font-bold text-gray-500 uppercase mb-2">Legenda de Áreas</p>
-                <div className="flex flex-wrap gap-2">
+              <div className="flex-1 min-w-[180px]">
+                <p className="text-[10px] font-bold text-gray-400 uppercase mb-1">Áreas</p>
+                <div className="flex flex-wrap gap-1">
                   {areas.map(([name, color]) => (
                     <span
                       key={name}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
                       style={{ backgroundColor: color + '20', color: color, border: `1px solid ${color}40` }}
                     >
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
                       {name}
                     </span>
                   ))}
@@ -300,30 +297,27 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
           {/* Meetings table */}
           {meetings.length > 0 && (
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <Users size={16} className="text-[#1B75BB]" />
-                <h3 className="font-black text-sm text-gray-800 uppercase">Reuniões</h3>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Clock size={12} className="text-[#1B75BB]" />
+                <h3 className="font-black text-[11px] text-gray-600 uppercase">Reuniões ({meetings.length})</h3>
               </div>
               <div className="overflow-x-auto rounded-lg border border-gray-200">
-                <table className="w-full text-sm">
+                <table className="w-full">
                   <thead>
-                    <tr className="bg-gray-100">
-                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-16">Dia</th>
-                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500 w-16">Hora</th>
-                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500">Marca</th>
-                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-500">Obs</th>
+                    <tr className="bg-gray-50">
+                      <th className="px-2 py-1 text-left text-[10px] font-bold text-gray-400 w-10">Dia</th>
+                      <th className="px-2 py-1 text-left text-[10px] font-bold text-gray-400 w-12">Hora</th>
+                      <th className="px-2 py-1 text-left text-[10px] font-bold text-gray-400">Marca</th>
+                      <th className="px-2 py-1 text-left text-[10px] font-bold text-gray-400">Obs</th>
                     </tr>
                   </thead>
                   <tbody>
                     {meetings.map(m => (
-                      <tr key={m.id} className="border-t border-gray-100 hover:bg-blue-50/30">
-                        <td className="px-3 py-2 font-mono text-xs font-bold text-gray-700">{m.meeting_day || '-'}</td>
-                        <td className="px-3 py-2 text-xs text-gray-700 flex items-center gap-1">
-                          <Clock size={12} className="text-gray-400" />
-                          {m.meeting_time || '-'}
-                        </td>
-                        <td className="px-3 py-2 text-gray-700 font-medium">{m.meeting_brand || '-'}</td>
-                        <td className="px-3 py-2 text-gray-600 text-xs">{m.meeting_obs || '-'}</td>
+                      <tr key={m.id} className="border-t border-gray-50 hover:bg-blue-50/20">
+                        <td className="px-2 py-1 font-mono text-[11px] font-bold text-gray-600">{m.meeting_day || '-'}</td>
+                        <td className="px-2 py-1 text-[11px] text-gray-600">{m.meeting_time || '-'}</td>
+                        <td className="px-2 py-1 text-[11px] text-gray-700 font-medium">{m.meeting_brand || '-'}</td>
+                        <td className="px-2 py-1 text-[10px] text-gray-500">{m.meeting_obs || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -334,20 +328,12 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-gray-200 px-5 py-3 flex items-center justify-between bg-gray-50 shrink-0">
-          <label className="flex items-center gap-2 text-xs text-gray-500 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={dontShowToday}
-              onChange={e => setDontShowToday(e.target.checked)}
-              className="rounded border-gray-300"
-            />
+        <div className="border-t border-gray-100 px-3 py-1.5 flex items-center justify-between bg-gray-50 shrink-0">
+          <label className="flex items-center gap-1.5 text-[11px] text-gray-400 cursor-pointer select-none">
+            <input type="checkbox" checked={dontShowToday} onChange={e => setDontShowToday(e.target.checked)} className="rounded border-gray-300 w-3.5 h-3.5" />
             Não mostrar hoje
           </label>
-          <button
-            onClick={handleClose}
-            className="px-4 py-1.5 bg-[#1B75BB] text-white rounded-lg text-sm font-bold hover:bg-[#155a8a] transition-colors"
-          >
+          <button onClick={handleClose} className="px-3 py-1 bg-[#1B75BB] text-white rounded-lg text-[11px] font-bold hover:bg-[#155a8a] transition-colors">
             Entendi
           </button>
         </div>
