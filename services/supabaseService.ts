@@ -1176,7 +1176,7 @@ export const getFilteredTransactions = async (
   }
 
   // Construir parâmetros para a RPC
-  const buildRpcParams = (offset: number, limit: number) => ({
+  const buildRpcParams = (offset: number, limit: number, skipCount: boolean = false) => ({
     p_table_name: tableName,
     p_month_from: filters.monthFrom || null,
     p_month_to: filters.monthTo || null,
@@ -1197,6 +1197,7 @@ export const getFilteredTransactions = async (
     p_chave_id: filters.chave_id || null,
     p_offset: offset,
     p_limit: limit,
+    p_skip_count: skipCount,
   });
 
   try {
@@ -1217,9 +1218,12 @@ export const getFilteredTransactions = async (
       }
 
       const offset = (pageNumber - 1) * pageSize;
-      debug(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} via RPC...`);
+      // Primeira página: pular COUNT para carregar rápido (skip_count=true)
+      // Páginas 2+: já temos knownTotalCount, também pular COUNT
+      const skipCount = pageNumber === 1 && !knownTotalCount;
+      debug(`📥 Buscando registros ${offset + 1} a ${offset + pageSize} via RPC (skipCount=${skipCount})...`);
 
-      const { data, error } = await supabase.rpc('get_filtered_transactions_page', buildRpcParams(offset, pageSize));
+      const { data, error } = await supabase.rpc('get_filtered_transactions_page', buildRpcParams(offset, pageSize, skipCount));
 
       if (error) {
         console.error('❌ Erro ao buscar transações via RPC:', error);
@@ -1230,9 +1234,21 @@ export const getFilteredTransactions = async (
         return { data: [], totalCount: 0, currentPage: pageNumber, totalPages: 0, hasMore: false };
       }
 
-      // total_count vem em cada row (valor fixo)
-      const totalCount = knownTotalCount ?? (data[0]?.total_count || data.length);
-      debug(`📊 Total: ${totalCount} (${data.length} nesta página)`);
+      // total_count: -1 significa COUNT foi pulado (skip_count=true)
+      const serverCount = data[0]?.total_count;
+      let totalCount: number;
+      if (knownTotalCount) {
+        totalCount = knownTotalCount;
+      } else if (serverCount > 0) {
+        totalCount = serverCount;
+      } else if (data.length < pageSize) {
+        // Menos que uma página = sabemos o total exato
+        totalCount = offset + data.length;
+      } else {
+        // COUNT pulado e página cheia = há mais dados, estimar como "pelo menos"
+        totalCount = offset + data.length + 1; // +1 indica "há mais"
+      }
+      debug(`📊 Total: ${totalCount} (${data.length} nesta página, serverCount=${serverCount})`);
 
       const tag0Map = await getTag0Map();
       const enriched = data.map((db: any) => {
