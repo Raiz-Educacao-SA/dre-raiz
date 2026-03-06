@@ -648,10 +648,15 @@ function addMarcaSlide(
   const slide = pptx.addSlide();
   addHeaderBar(slide, `${section.label.toUpperCase()} POR MARCA`, data.monthShort, section.sectionColor);
 
-  const labels = entries.map(e => e.marca);
-  const realK = entries.map(e => Math.round(e.real / 1000));
-  const orcK = entries.map(e => Math.round(e.orcado / 1000));
-  const a1K = entries.map(e => Math.round(e.a1 / 1000));
+  // Filter out RZ brand
+  const filtered = entries.filter(e => e.marca !== 'RZ');
+  const totalReal = filtered.reduce((s, e) => s + e.real, 0);
+  const totalOrc = filtered.reduce((s, e) => s + e.orcado, 0);
+
+  const labels = filtered.map(e => e.marca);
+  const realK = filtered.map(e => Math.round(e.real / 1000));
+  const orcK = filtered.map(e => Math.round(e.orcado / 1000));
+  const a1K = filtered.map(e => Math.round(e.a1 / 1000));
 
   // Clustered bar chart — 3 series
   slide.addChart('bar' as any, [
@@ -675,9 +680,7 @@ function addMarcaSlide(
     legendFontSize: 8,
   });
 
-  // KPI cards bottom-right
-  const totalReal = entries.reduce((s, e) => s + e.real, 0);
-  const totalOrc = entries.reduce((s, e) => s + e.orcado, 0);
+  // KPI cards bottom-right (using filtered totals, without RZ)
   const deltaAbs = totalReal - totalOrc;
   const deltaPct = totalOrc !== 0 ? Math.round(((totalReal - totalOrc) / Math.abs(totalOrc)) * 1000) / 10 : null;
   const favorable = section.invertDelta ? (deltaPct !== null && deltaPct <= 0) : (deltaPct !== null && deltaPct >= 0);
