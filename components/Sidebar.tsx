@@ -7,7 +7,6 @@ import {
   LineChart,
   History,
   ReceiptText,
-  BarChart3,
   Brain,
   LogOut,
   User as UserIcon,
@@ -38,7 +37,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
     ...(isAdmin ? [
       { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
-      { id: 'kpis',          label: 'Indicadores e KPIs', icon: BarChart3 },
       { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
       { id: 'executive_dashboard', label: 'CEO Dashboard', icon: TrendingUp },
       { id: 'holding_dashboard', label: 'Holding', icon: Building2 },
