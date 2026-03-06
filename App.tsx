@@ -602,26 +602,33 @@ const App: React.FC = () => {
       ]);
     } else {
       // MULTI, CONTA, DATA, MARCA, FILIAL
-      const { justification: _j, categoryLabel, filial: filialValue, filial_code: filialCode, ...transactionData } = parsedValue;
-      const updatedData = {
-        ...transactionData,
-        // filial do editForm contém o nome_filial (ex: 'CGS - Barra') — atualiza a coluna nome_filial
-        nome_filial: filialValue || undefined,
-        // filial_code contém o código curto da filial — atualiza a coluna filial
-        filial: filialCode || undefined,
-        conta_contabil: transactionData.category || undefined,
+      const { justification: _j, categoryLabel, filial: filialValue, filial_code: filialCode, category, amount: _amt, ...restData } = parsedValue;
+      const updatedData: Record<string, any> = {
         status: 'Ajustado',
-        type: transactionData.category ? mapCategoryToType(transactionData.category) : undefined,
-        tag01: transactionData.tag01 || undefined,
-        tag02: transactionData.tag02 || undefined,
-        tag03: transactionData.tag03 || undefined,
-        nat_orc: transactionData.nat_orc || undefined,
       };
+      // Só incluir campos que realmente mudaram ou têm valor
+      if (filialValue) updatedData.nome_filial = filialValue;
+      if (filialCode) updatedData.filial = filialCode;
+      if (category) {
+        updatedData.conta_contabil = category;
+        updatedData.type = mapCategoryToType(category);
+      }
+      if (restData.date) updatedData.date = restData.date;
+      if (restData.marca) updatedData.marca = restData.marca;
+      if (restData.recurring) updatedData.recurring = restData.recurring;
+      if (restData.tag01) updatedData.tag01 = restData.tag01;
+      if (restData.tag02) updatedData.tag02 = restData.tag02;
+      if (restData.tag03) updatedData.tag03 = restData.tag03;
+      if (restData.nat_orc) updatedData.nat_orc = restData.nat_orc;
+
+      console.log('📋 _applyChange updatedData:', updatedData);
+
       // atualizar transação e registrar aprovação em paralelo
       const [updateSuccess] = await Promise.all([
         supabaseService.updateTransaction(change.transactionId, updatedData),
         supabaseService.updateManualChange(changeId, approvalMeta),
       ]);
+      console.log('📋 _applyChange updateSuccess:', updateSuccess);
       if (!updateSuccess) throw new Error('Falha ao atualizar transação no Supabase');
     }
 
@@ -646,7 +653,8 @@ const App: React.FC = () => {
     }
     try {
       await _applyChange(changeId);
-      refreshData(); // fire-and-forget: atualiza Lançamentos em background
+      // Delay antes do refresh para garantir que Supabase persistiu
+      setTimeout(() => refreshData(), 1000);
     } catch (error) {
       console.error('❌ Erro ao aprovar mudança:', error);
       alert('Erro ao aplicar mudança. Tente novamente.');
