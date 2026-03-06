@@ -595,17 +595,19 @@ const AdminPanel: React.FC = () => {
 
   const loadAvailableValues = async () => {
     try {
-      const transactions = await supabaseService.getAllTransactions();
+      // Usar RPC eficiente em vez de carregar todas as transactions (limite 1000)
+      const filterOpts = await supabaseService.getDREFilterOptions({});
+      const marcas = (filterOpts.marcas || []).sort();
+      const filiais = (filterOpts.nome_filiais || []).sort();
+      const tag01Values = (filterOpts.tags01 || []).sort();
 
-      const marcas = [...new Set(transactions.map(t => t.marca).filter(Boolean))].sort();
-      const filiais = [...new Set(transactions.map(t => t.nome_filial).filter(Boolean))].sort();
-      const categories = [...new Set(transactions.map(t => t.category).filter(Boolean))].sort();
-      const tag01Values = [...new Set(transactions.map(t => t.tag01).filter(Boolean))].sort() as string[];
-      const tags = [...new Set([
-        ...transactions.map(t => t.tag01).filter(Boolean),
-        ...transactions.map(t => t.tag02).filter(Boolean),
-        ...transactions.map(t => t.tag03).filter(Boolean)
-      ])].sort();
+      // Buscar categories e tags02/03 via getDistinctValues
+      const [categories, tag02s, tag03s] = await Promise.all([
+        supabaseService.getDistinctColumn('transactions', 'conta_contabil'),
+        supabaseService.getDistinctColumn('transactions', 'tag02'),
+        supabaseService.getDistinctColumn('transactions', 'tag03'),
+      ]);
+      const tags = [...new Set([...tag01Values, ...tag02s, ...tag03s])].sort();
 
       setAvailableValues({ marcas, filiais, categories, tags, tag01Values });
     } catch (error) {

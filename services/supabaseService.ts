@@ -949,6 +949,22 @@ export const getMarcasEFiliais = async (): Promise<{
   return { marcas: marcasUnicas, filiais: filiaisArray };
 };
 
+/**
+ * Busca valores distintos de uma coluna em uma tabela (para filtros)
+ */
+export const getDistinctColumn = async (table: string, column: string): Promise<string[]> => {
+  const { data, error } = await supabase
+    .from(table)
+    .select(column)
+    .not(column, 'is', null)
+    .limit(1000);
+  if (error) {
+    console.error(`Erro ao buscar distinct ${column} de ${table}:`, error);
+    return [];
+  }
+  return [...new Set((data || []).map((r: any) => r[column]).filter(Boolean))].sort() as string[];
+};
+
 // ========== TRANSACTIONS ==========
 
 export const getAllTransactions = async (monthsBack: number = 3): Promise<Transaction[]> => {
