@@ -1145,6 +1145,105 @@ export const invalidateTxPageCache = () => {
 // Colunas selecionadas (evita SELECT * — transfere só o necessário)
 const TX_SELECT_COLUMNS = 'id,date,description,conta_contabil,category,amount,type,scenario,status,filial,marca,tag0,tag01,tag02,tag03,recurring,ticket,vendor,nat_orc,chave_id,nome_filial,updated_at';
 
+// ── Exportação genérica de tabelas (select * com filtros + paginação) ──────
+// Mapeamento de colunas: coluna padrão → nome real na tabela
+const TABLE_COLUMN_MAP: Record<string, Record<string, string>> = {
+  transactions: {},
+  transactions_orcado: {},
+  transactions_ano_anterior: {},
+  dre_fabric: {
+    date: 'data',
+    marca: 'cia',
+    vendor: 'fornecedor_padrao',
+    category: 'conta',
+    description: 'complemento',
+    tag01: 'tag1',
+    tag02: 'tag2',
+    tag03: 'tag3',
+    chave_id: 'chave',
+    amount: 'valor',
+    nome_filial: 'nome_filial', // pode não existir
+  },
+};
+
+// Coluna de data para cada tabela
+const TABLE_DATE_COL: Record<string, string> = {
+  transactions: 'date',
+  transactions_orcado: 'date',
+  transactions_ano_anterior: 'date',
+  dre_fabric: 'data',
+};
+
+export type ExportableTable = 'transactions' | 'transactions_orcado' | 'transactions_ano_anterior' | 'dre_fabric';
+
+export interface ExportTableFilters {
+  year: string;
+  months?: string[];
+  marcas?: string[];
+  filiais?: string[];
+  tags01?: string[];
+  tags02?: string[];
+  tags03?: string[];
+}
+
+const PAGE_SIZE_EXPORT = 1000;
+
+export const exportTableData = async (
+  tableName: ExportableTable,
+  filters: ExportTableFilters
+): Promise<Record<string, unknown>[]> => {
+  const colMap = TABLE_COLUMN_MAP[tableName] || {};
+  const dateCol = TABLE_DATE_COL[tableName] || 'date';
+
+  // Calcular range de datas
+  const monthsArr = filters.months?.length ? [...filters.months].sort() : [];
+  const monthFrom = monthsArr.length > 0 ? `${filters.year}-${monthsArr[0]}-01` : `${filters.year}-01-01`;
+  const lastMonth = monthsArr.length > 0 ? monthsArr[monthsArr.length - 1] : '12';
+  const lastDay = new Date(parseInt(filters.year), parseInt(lastMonth), 0).getDate();
+  const monthTo = `${filters.year}-${lastMonth}-${String(lastDay).padStart(2, '0')}`;
+
+  const allRows: Record<string, unknown>[] = [];
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    let query = supabase
+      .from(tableName)
+      .select('*')
+      .gte(dateCol, monthFrom)
+      .lte(dateCol, monthTo)
+      .range(page * PAGE_SIZE_EXPORT, (page + 1) * PAGE_SIZE_EXPORT - 1);
+
+    // Filtros dimensionais
+    const marcaCol = colMap['marca'] || 'marca';
+    const filialCol = colMap['nome_filial'] || 'nome_filial';
+    const tag01Col = colMap['tag01'] || 'tag01';
+    const tag02Col = colMap['tag02'] || 'tag02';
+    const tag03Col = colMap['tag03'] || 'tag03';
+
+    if (filters.marcas?.length)  query = query.in(marcaCol, filters.marcas);
+    if (filters.filiais?.length) query = query.in(filialCol, filters.filiais);
+    if (filters.tags01?.length)  query = query.in(tag01Col, filters.tags01);
+    if (filters.tags02?.length)  query = query.in(tag02Col, filters.tags02);
+    if (filters.tags03?.length)  query = query.in(tag03Col, filters.tags03);
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Erro ao buscar ${tableName}: ${error.message}`);
+
+    if (data && data.length > 0) {
+      allRows.push(...data);
+    }
+
+    hasMore = (data?.length ?? 0) === PAGE_SIZE_EXPORT;
+    page++;
+
+    // Safety: max 200 pages (200k rows)
+    if (page > 200) break;
+  }
+
+  return allRows;
+};
+
 export const getFilteredTransactions = async (
   filters: TransactionFilters,
   pagination?: PaginationParams,

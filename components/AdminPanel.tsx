@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2, Calendar, Clock, Copy } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2, Calendar, Clock, Copy, Flag, Building2, Layers, CalendarDays, Hash } from 'lucide-react';
+import MultiSelectFilter from './MultiSelectFilter';
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import * as XLSX from 'xlsx';
@@ -53,7 +54,8 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'banco' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma'>('import');
+  const [dadosSubTab, setDadosSubTab] = useState<'importar' | 'exportar'>('importar');
 
   // Estados para aba Cronograma
   const [cronogramaItems, setCronogramaItems] = useState<supabaseService.CronogramaItem[]>([]);
@@ -129,7 +131,7 @@ const AdminPanel: React.FC = () => {
   const [smtpConfigured, setSmtpConfigured] = useState(false);
   const [smtpMessage, setSmtpMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
-  // Estados para aba Banco
+  // Estados para aba Banco / Exportar
   const [bancoYear, setBancoYear] = useState(String(new Date().getFullYear()));
   const [bancoMonths, setBancoMonths] = useState<string[]>([]);
   const [bancoMarcas, setBancoMarcas] = useState<string[]>([]);
@@ -141,6 +143,7 @@ const AdminPanel: React.FC = () => {
   const [bancoTag03Options, setBancoTag03Options] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [bancoMessage, setBancoMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+  const [bancoTable, setBancoTable] = useState<supabaseService.ExportableTable>('transactions');
 
   // Estados para aba Recorrência
   const [recFile, setRecFile] = useState<File | null>(null);
@@ -939,39 +942,33 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  const toggleBancoMulti = (
-    value: string,
-    current: string[],
-    setter: React.Dispatch<React.SetStateAction<string[]>>
-  ) => {
-    setter(current.includes(value) ? current.filter(v => v !== value) : [...current, value]);
-  };
-
   const showBancoMessage = (type: 'success' | 'error' | 'info', text: string) => {
     setBancoMessage({ type, text });
     setTimeout(() => setBancoMessage(null), 5000);
   };
 
+  const TABLE_LABELS: Record<supabaseService.ExportableTable, string> = {
+    transactions: 'Transações (Real)',
+    transactions_orcado: 'Orçado',
+    transactions_ano_anterior: 'Ano Anterior (A-1)',
+    dre_fabric: 'DRE Fabric',
+  };
+
   const handleExportBanco = async (format: 'xlsx' | 'csv') => {
     setIsExporting(true);
-    showBancoMessage('info', 'Buscando dados do banco...');
+    showBancoMessage('info', `Buscando dados de ${TABLE_LABELS[bancoTable]}...`);
     try {
-      const monthFrom = bancoMonths.length > 0 ? `${bancoYear}-${[...bancoMonths].sort()[0]}` : `${bancoYear}-01`;
-      const monthTo   = bancoMonths.length > 0 ? `${bancoYear}-${[...bancoMonths].sort().slice(-1)[0]}` : `${bancoYear}-12`;
-
-      const filters: supabaseService.TransactionFilters = {
-        scenario: 'Real',
-        monthFrom,
-        monthTo,
-        ...(bancoMarcas.length  > 0 && { marca:  bancoMarcas  }),
-        ...(bancoFiliais.length > 0 && { nome_filial: bancoFiliais }),
-        ...(bancoTags01.length  > 0 && { tag01:  bancoTags01  }),
-        ...(bancoTags02.length  > 0 && { tag02:  bancoTags02  }),
-        ...(bancoTags03.length  > 0 && { tag03:  bancoTags03  }),
+      const exportFilters: supabaseService.ExportTableFilters = {
+        year: bancoYear,
+        ...(bancoMonths.length  > 0 && { months:  bancoMonths  }),
+        ...(bancoMarcas.length  > 0 && { marcas:  bancoMarcas  }),
+        ...(bancoFiliais.length > 0 && { filiais: bancoFiliais }),
+        ...(bancoTags01.length  > 0 && { tags01:  bancoTags01  }),
+        ...(bancoTags02.length  > 0 && { tags02:  bancoTags02  }),
+        ...(bancoTags03.length  > 0 && { tags03:  bancoTags03  }),
       };
 
-      const result = await supabaseService.getFilteredTransactions(filters);
-      const rows = result.data;
+      const rows = await supabaseService.exportTableData(bancoTable, exportFilters);
 
       if (rows.length === 0) {
         showBancoMessage('error', 'Nenhum registro encontrado com os filtros aplicados.');
@@ -979,88 +976,53 @@ const AdminPanel: React.FC = () => {
         return;
       }
 
-      const exportData = rows.map(t => ({
-        'ID':             t.id ?? '',
-        'Cenário':        t.scenario ?? 'Real',
-        'Data':           t.date,
-        'Competência':    t.date?.substring(0, 7) ?? '',
-        'Conta Contábil': t.conta_contabil ?? '',
-        'Categoria':      t.category ?? '',
-        'Filial (código)':t.filial ?? '',
-        'Filial':         t.nome_filial ?? '',
-        'Marca':          t.marca ?? '',
-        'Fornecedor':     t.vendor ?? '',
-        'Descrição':      t.description ?? '',
-        'Valor':          t.amount ?? 0,
-        'Ticket':         t.ticket ?? '',
-        'Recorrente':     t.recurring ?? '',
-        'Status':         t.status ?? '',
-        'Tipo':           t.type ?? '',
-        'Tag0':           t.tag0 ?? '',
-        'Tag01':          t.tag01 ?? '',
-        'Tag02':          t.tag02 ?? '',
-        'Tag03':          t.tag03 ?? '',
-        'Nat. Orç.':      t.nat_orc ?? '',
-        'Chave ID':       t.chave_id ?? '',
-        'Justificativa':  t.justification ?? '',
-        'Atualizado em':  t.updated_at ?? '',
-      }));
+      // Exportar todas as colunas da tabela (dinâmico)
+      const allKeys = [...new Set(rows.flatMap(r => Object.keys(r)))];
+      const exportData = rows.map(row => {
+        const obj: Record<string, unknown> = {};
+        for (const key of allKeys) {
+          obj[key] = row[key] ?? '';
+        }
+        return obj;
+      });
+
+      const sheetName = TABLE_LABELS[bancoTable].substring(0, 31); // Excel limit
+      const filterLabel = [
+        bancoTable,
+        bancoYear,
+        bancoMonths.length ? bancoMonths.join('_') : 'todos',
+        bancoMarcas.length ? bancoMarcas.slice(0, 2).join('_') : '',
+      ].filter(Boolean).join('_');
 
       if (format === 'xlsx') {
         const ws = XLSX.utils.json_to_sheet(exportData);
-        ws['!cols'] = [
-          { wch: 38 }, // ID
-          { wch: 10 }, // Cenário
-          { wch: 12 }, // Data
-          { wch: 12 }, // Competência
-          { wch: 22 }, // Conta Contábil
-          { wch: 20 }, // Categoria
-          { wch: 14 }, // Filial (código)
-          { wch: 30 }, // Filial
-          { wch: 12 }, // Marca
-          { wch: 30 }, // Fornecedor
-          { wch: 40 }, // Descrição
-          { wch: 14 }, // Valor
-          { wch: 14 }, // Ticket
-          { wch: 12 }, // Recorrente
-          { wch: 12 }, // Status
-          { wch: 15 }, // Tipo
-          { wch: 20 }, // Tag0
-          { wch: 20 }, // Tag01
-          { wch: 20 }, // Tag02
-          { wch: 20 }, // Tag03
-          { wch: 14 }, // Nat. Orç.
-          { wch: 20 }, // Chave ID
-          { wch: 40 }, // Justificativa
-          { wch: 22 }, // Atualizado em
-        ];
+        // Auto-width: min 12, max 40
+        ws['!cols'] = allKeys.map(k => ({ wch: Math.min(40, Math.max(12, k.length + 4)) }));
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Transações');
-        const filterLabel = [
-          bancoYear,
-          bancoMonths.length ? bancoMonths.join('_') : 'todos_meses',
-          bancoMarcas.length ? bancoMarcas.slice(0, 2).join('_') : '',
-        ].filter(Boolean).join('_');
-        XLSX.writeFile(wb, `banco_${filterLabel}_${rows.length}reg.xlsx`);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        XLSX.writeFile(wb, `${filterLabel}_${rows.length}reg.xlsx`);
       } else {
-        const headers = Object.keys(exportData[0]).join(';');
+        const headers = allKeys.join(';');
         const csvRows = exportData.map(row =>
-          Object.values(row).map(v =>
-            typeof v === 'string' && (v.includes(';') || v.includes('"') || v.includes('\n'))
-              ? `"${v.replace(/"/g, '""')}"` : v
-          ).join(';')
+          allKeys.map(k => {
+            const v = row[k];
+            if (v == null) return '';
+            const s = String(v);
+            return (s.includes(';') || s.includes('"') || s.includes('\n'))
+              ? `"${s.replace(/"/g, '""')}"` : s;
+          }).join(';')
         );
         const csvContent = '\uFEFF' + [headers, ...csvRows].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `banco_${bancoYear}_${rows.length}reg.csv`;
+        a.download = `${filterLabel}_${rows.length}reg.csv`;
         a.click();
         URL.revokeObjectURL(url);
       }
 
-      showBancoMessage('success', `✅ ${rows.length} registros exportados com sucesso!`);
+      showBancoMessage('success', `${rows.length} registros de ${TABLE_LABELS[bancoTable]} exportados com sucesso!`);
     } catch (error: any) {
       showBancoMessage('error', `Erro ao exportar: ${error.message}`);
     } finally {
@@ -1668,7 +1630,7 @@ const AdminPanel: React.FC = () => {
         >
           <div className="flex items-center gap-1.5">
             <Database size={14} />
-            📊 Importação
+            Dados
           </div>
           {activeTab === 'import' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-green-600 rounded-t"></div>
@@ -1688,22 +1650,6 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'users' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-600 rounded-t"></div>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('banco')}
-          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
-            activeTab === 'banco'
-              ? 'text-blue-700 bg-blue-50'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          <div className="flex items-center gap-1.5">
-            <Database size={14} />
-            Banco
-          </div>
-          {activeTab === 'banco' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t"></div>
           )}
         </button>
         <button
@@ -1820,15 +1766,43 @@ const AdminPanel: React.FC = () => {
         </button>
       </div>
 
-      {/* Aba: Importação de Dados */}
+      {/* Aba: Dados (Importar / Exportar) */}
       {activeTab === 'import' && (
+        <>
+        {/* Sub-abas: Importar / Exportar */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setDadosSubTab('importar')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+              dadosSubTab === 'importar'
+                ? 'bg-green-600 text-white shadow'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Upload size={14} />
+            Importar
+          </button>
+          <button
+            onClick={() => setDadosSubTab('exportar')}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+              dadosSubTab === 'exportar'
+                ? 'bg-blue-600 text-white shadow'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            <Download size={14} />
+            Exportar
+          </button>
+        </div>
+
+        {dadosSubTab === 'importar' && (
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-300 rounded-xl p-4 shadow">
         <div className="flex items-center gap-3 mb-4">
           <div className="bg-green-100 p-2 rounded-lg">
             <Database className="text-green-600" size={20} />
           </div>
           <div className="flex-1">
-            <h2 className="text-base font-black text-green-900">📊 Importação de Dados em Massa</h2>
+            <h2 className="text-base font-black text-green-900">Importação de Dados em Massa</h2>
             <p className="text-xs text-green-700">Carregue transações via Excel/CSV</p>
           </div>
           <button
@@ -1989,6 +1963,221 @@ const AdminPanel: React.FC = () => {
           </p>
         </div>
         </div>
+        )}
+
+        {dadosSubTab === 'exportar' && (
+        <div className="bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-300 rounded-xl p-4 shadow">
+          {/* Header */}
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-blue-100 p-2 rounded-lg">
+              <Database className="text-blue-600" size={20} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-black text-blue-900">Exportar Dados do Banco</h2>
+              <p className="text-xs text-blue-700">Selecione a tabela e aplique filtros para exportar</p>
+            </div>
+            {/* Limpar todos os filtros */}
+            {(bancoMarcas.length > 0 || bancoFiliais.length > 0 || bancoTags01.length > 0 || bancoTags02.length > 0 || bancoTags03.length > 0 || bancoMonths.length > 0) && (
+              <button
+                onClick={() => { setBancoMonths([]); setBancoMarcas([]); setBancoFiliais([]); setBancoTags01([]); setBancoTags02([]); setBancoTags03([]); }}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-lg font-bold text-[10px] uppercase transition-all"
+              >
+                <X size={12} />
+                Limpar Filtros
+              </button>
+            )}
+          </div>
+
+          {/* Mensagem de feedback */}
+          {bancoMessage && (
+            <div className={`p-2 rounded-lg flex items-center gap-2 mb-3 ${
+              bancoMessage.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' :
+              bancoMessage.type === 'error'   ? 'bg-red-100 text-red-800 border border-red-300' :
+                                               'bg-blue-100 text-blue-800 border border-blue-300'
+            }`}>
+              {bancoMessage.type === 'success' ? <CheckCircle size={14} /> :
+               bancoMessage.type === 'error'   ? <AlertTriangle size={14} /> :
+               <FileSpreadsheet size={14} />}
+              <span className="font-bold text-xs">{bancoMessage.text}</span>
+            </div>
+          )}
+
+          {/* Seletor de Tabela */}
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-[9px] font-black text-gray-400 uppercase shrink-0">Tabela:</span>
+            {(
+              [
+                { value: 'transactions', label: 'Transações (Real)', color: 'blue' },
+                { value: 'transactions_orcado', label: 'Orçado', color: 'purple' },
+                { value: 'transactions_ano_anterior', label: 'Ano Anterior (A-1)', color: 'orange' },
+                { value: 'dre_fabric', label: 'DRE Fabric', color: 'blue' },
+              ] as const
+            ).map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setBancoTable(opt.value)}
+                className={`px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase transition-all border ${
+                  bancoTable === opt.value
+                    ? opt.color === 'blue'   ? 'bg-blue-600 text-white border-blue-600 shadow' :
+                      opt.color === 'purple' ? 'bg-purple-600 text-white border-purple-600 shadow' :
+                                               'bg-orange-500 text-white border-orange-500 shadow'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Barra de filtros — estilo DRE Gerencial */}
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm overflow-x-auto mb-4">
+
+            {/* Ano */}
+            <div className="flex items-center bg-white rounded-lg border-2 border-gray-100 shadow-sm gap-2 px-3 py-1.5 shrink-0">
+              <div className="rounded-lg p-1.5 bg-blue-50 text-[#1B75BB]">
+                <Calendar size={12} />
+              </div>
+              <div className="flex flex-col justify-center">
+                <span className="text-[7px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">Ano</span>
+                <select
+                  value={bancoYear}
+                  onChange={e => setBancoYear(e.target.value)}
+                  className="font-black text-[10px] uppercase tracking-tight text-gray-900 bg-transparent border-none outline-none cursor-pointer pr-1"
+                >
+                  {[2023, 2024, 2025, 2026, 2027].map(y => (
+                    <option key={y} value={String(y)}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Separador */}
+            <div className="h-5 w-px bg-blue-200 shrink-0" />
+
+            {/* Mês */}
+            <MultiSelectFilter
+              compact
+              label="Mês"
+              icon={<CalendarDays size={12} />}
+              options={['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']}
+              selected={bancoMonths.map(m => ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][parseInt(m)] || m)}
+              onChange={(labels) => {
+                const MONTH_MAP: Record<string, string> = { Jan:'01',Fev:'02',Mar:'03',Abr:'04',Mai:'05',Jun:'06',Jul:'07',Ago:'08',Set:'09',Out:'10',Nov:'11',Dez:'12' };
+                setBancoMonths(labels.map(l => MONTH_MAP[l] || l));
+              }}
+              colorScheme="blue"
+            />
+
+            {/* Marca */}
+            <MultiSelectFilter
+              compact
+              label="Marca"
+              icon={<Flag size={12} />}
+              options={availableValues.marcas}
+              selected={bancoMarcas}
+              onChange={setBancoMarcas}
+              colorScheme="orange"
+            />
+
+            {/* Filial */}
+            <MultiSelectFilter
+              compact
+              label="Filial"
+              icon={<Building2 size={12} />}
+              options={availableValues.filiais}
+              selected={bancoFiliais}
+              onChange={setBancoFiliais}
+              colorScheme="blue"
+            />
+
+            {/* Separador */}
+            <div className="h-5 w-px bg-blue-200 shrink-0" />
+
+            {/* Tag01 */}
+            <MultiSelectFilter
+              compact
+              label="Tag01"
+              icon={<Layers size={12} />}
+              options={availableValues.tag01Values}
+              selected={bancoTags01}
+              onChange={setBancoTags01}
+              colorScheme="purple"
+            />
+
+            {/* Tag02 */}
+            {bancoTag02Options.length > 0 && (
+              <MultiSelectFilter
+                compact
+                label="Tag02"
+                icon={<Hash size={12} />}
+                options={bancoTag02Options}
+                selected={bancoTags02}
+                onChange={setBancoTags02}
+                colorScheme="purple"
+              />
+            )}
+
+            {/* Tag03 */}
+            {bancoTag03Options.length > 0 && (
+              <MultiSelectFilter
+                compact
+                label="Tag03"
+                icon={<Tag size={12} />}
+                options={bancoTag03Options}
+                selected={bancoTags03}
+                onChange={setBancoTags03}
+                colorScheme="blue"
+              />
+            )}
+          </div>
+
+          {/* Resumo dos filtros ativos (badges) */}
+          {(bancoMarcas.length > 0 || bancoFiliais.length > 0 || bancoTags01.length > 0 || bancoTags02.length > 0 || bancoTags03.length > 0 || bancoMonths.length > 0) && (
+            <div className="flex flex-wrap items-center gap-1.5 mb-4">
+              <span className="text-[9px] font-black text-gray-400 uppercase">Filtros:</span>
+              <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Ano: {bancoYear}</span>
+              {bancoMonths.length > 0 && <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Meses: {bancoMonths.length}</span>}
+              {bancoMarcas.length > 0 && <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Marca: {bancoMarcas.length}</span>}
+              {bancoFiliais.length > 0 && <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Filial: {bancoFiliais.length}</span>}
+              {bancoTags01.length > 0 && <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Tag01: {bancoTags01.length}</span>}
+              {bancoTags02.length > 0 && <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Tag02: {bancoTags02.length}</span>}
+              {bancoTags03.length > 0 && <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Tag03: {bancoTags03.length}</span>}
+            </div>
+          )}
+
+          {/* Botões de exportação */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => handleExportBanco('xlsx')}
+              disabled={isExporting}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg font-bold text-xs uppercase transition-all shadow hover:shadow-md"
+            >
+              {isExporting ? (
+                <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+              ) : (
+                <FileSpreadsheet size={16} />
+              )}
+              Exportar Excel (.xlsx)
+            </button>
+            <button
+              onClick={() => handleExportBanco('csv')}
+              disabled={isExporting}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-300 text-white rounded-lg font-bold text-xs uppercase transition-all shadow hover:shadow-md"
+            >
+              {isExporting ? (
+                <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+              ) : (
+                <Download size={16} />
+              )}
+              Exportar CSV
+            </button>
+          </div>
+          <p className="text-[9px] text-blue-600 mt-2 text-center">
+            Sem filtros de meses: exporta o ano inteiro. Campos em branco exportam todos os valores.
+          </p>
+        </div>
+        )}
+        </>
       )}
 
       {/* Aba: Gerenciamento de Usuários */}
@@ -2481,270 +2670,6 @@ const AdminPanel: React.FC = () => {
         </ul>
       </div>
         </>
-      )}
-
-      {/* ── ABA: BANCO ── */}
-      {activeTab === 'banco' && (
-        <div className="bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-300 rounded-xl p-4 shadow">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-blue-100 p-2 rounded-lg">
-              <Database className="text-blue-600" size={20} />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-base font-black text-blue-900">🗄️ Exportar Dados do Banco</h2>
-              <p className="text-xs text-blue-700">Transações reais (cenário Real) com filtros aplicados</p>
-            </div>
-          </div>
-
-          {/* Mensagem de feedback */}
-          {bancoMessage && (
-            <div className={`p-2 rounded-lg flex items-center gap-2 mb-3 ${
-              bancoMessage.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' :
-              bancoMessage.type === 'error'   ? 'bg-red-100 text-red-800 border border-red-300' :
-                                               'bg-blue-100 text-blue-800 border border-blue-300'
-            }`}>
-              {bancoMessage.type === 'success' ? <CheckCircle size={14} /> :
-               bancoMessage.type === 'error'   ? <AlertTriangle size={14} /> :
-               <FileSpreadsheet size={14} />}
-              <span className="font-bold text-xs">{bancoMessage.text}</span>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* Coluna esquerda: Período e Dimensões */}
-            <div className="space-y-3">
-
-              {/* Ano */}
-              <div className="bg-white rounded-lg p-3 border border-blue-200">
-                <p className="font-bold text-[10px] text-blue-900 uppercase mb-2">Ano</p>
-                <select
-                  value={bancoYear}
-                  onChange={e => setBancoYear(e.target.value)}
-                  className="w-full px-2 py-1.5 border border-blue-200 rounded text-xs font-bold text-blue-900 focus:outline-none focus:border-blue-400"
-                >
-                  {[2023, 2024, 2025, 2026, 2027].map(y => (
-                    <option key={y} value={String(y)}>{y}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Meses */}
-              <div className="bg-white rounded-lg p-3 border border-blue-200">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-[10px] text-blue-900 uppercase">Meses</p>
-                  <button
-                    onClick={() => setBancoMonths([])}
-                    className="text-[9px] text-blue-500 hover:text-blue-700"
-                  >
-                    {bancoMonths.length === 0 ? 'Todos' : `${bancoMonths.length} sel. · Limpar`}
-                  </button>
-                </div>
-                <div className="grid grid-cols-4 gap-1">
-                  {[
-                    ['01','Jan'],['02','Fev'],['03','Mar'],['04','Abr'],
-                    ['05','Mai'],['06','Jun'],['07','Jul'],['08','Ago'],
-                    ['09','Set'],['10','Out'],['11','Nov'],['12','Dez'],
-                  ].map(([val, label]) => (
-                    <button
-                      key={val}
-                      onClick={() => toggleBancoMulti(val, bancoMonths, setBancoMonths)}
-                      className={`py-1 rounded text-[10px] font-bold border transition-all ${
-                        bancoMonths.includes(val)
-                          ? 'bg-blue-500 text-white border-blue-500'
-                          : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-blue-300'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Marca */}
-              <div className="bg-white rounded-lg p-3 border border-blue-200">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-[10px] text-blue-900 uppercase">Marca</p>
-                  {bancoMarcas.length > 0 && (
-                    <button onClick={() => setBancoMarcas([])} className="text-[9px] text-blue-500 hover:text-blue-700">
-                      {bancoMarcas.length} sel. · Limpar
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1 max-h-[120px] overflow-y-auto">
-                  {availableValues.marcas.map(m => (
-                    <label key={m} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={bancoMarcas.includes(m)}
-                        onChange={() => toggleBancoMulti(m, bancoMarcas, setBancoMarcas)}
-                        className="accent-blue-500"
-                      />
-                      <span className="text-[10px] text-gray-700">{m}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Filial */}
-              <div className="bg-white rounded-lg p-3 border border-blue-200">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-[10px] text-blue-900 uppercase">Filial</p>
-                  {bancoFiliais.length > 0 && (
-                    <button onClick={() => setBancoFiliais([])} className="text-[9px] text-blue-500 hover:text-blue-700">
-                      {bancoFiliais.length} sel. · Limpar
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1 max-h-[120px] overflow-y-auto">
-                  {availableValues.filiais.map(f => (
-                    <label key={f} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={bancoFiliais.includes(f)}
-                        onChange={() => toggleBancoMulti(f, bancoFiliais, setBancoFiliais)}
-                        className="accent-blue-500"
-                      />
-                      <span className="text-[10px] text-gray-700">{f}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Coluna direita: Tags e Botões */}
-            <div className="space-y-3">
-
-              {/* Tag01 */}
-              <div className="bg-white rounded-lg p-3 border border-blue-200">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-bold text-[10px] text-blue-900 uppercase">Tag 01</p>
-                  {bancoTags01.length > 0 && (
-                    <button onClick={() => setBancoTags01([])} className="text-[9px] text-blue-500 hover:text-blue-700">
-                      {bancoTags01.length} sel. · Limpar
-                    </button>
-                  )}
-                </div>
-                <div className="space-y-1 max-h-[120px] overflow-y-auto">
-                  {availableValues.tag01Values.map(t => (
-                    <label key={t} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={bancoTags01.includes(t)}
-                        onChange={() => toggleBancoMulti(t, bancoTags01, setBancoTags01)}
-                        className="accent-blue-500"
-                      />
-                      <span className="text-[10px] text-gray-700">{t}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Tag02 */}
-              {bancoTag02Options.length > 0 && (
-                <div className="bg-white rounded-lg p-3 border border-blue-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="font-bold text-[10px] text-blue-900 uppercase">Tag 02</p>
-                    {bancoTags02.length > 0 && (
-                      <button onClick={() => setBancoTags02([])} className="text-[9px] text-blue-500 hover:text-blue-700">
-                        {bancoTags02.length} sel. · Limpar
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-1 max-h-[100px] overflow-y-auto">
-                    {bancoTag02Options.map(t => (
-                      <label key={t} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={bancoTags02.includes(t)}
-                          onChange={() => toggleBancoMulti(t, bancoTags02, setBancoTags02)}
-                          className="accent-blue-500"
-                        />
-                        <span className="text-[10px] text-gray-700">{t}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Tag03 */}
-              {bancoTag03Options.length > 0 && (
-                <div className="bg-white rounded-lg p-3 border border-blue-200">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="font-bold text-[10px] text-blue-900 uppercase">Tag 03</p>
-                    {bancoTags03.length > 0 && (
-                      <button onClick={() => setBancoTags03([])} className="text-[9px] text-blue-500 hover:text-blue-700">
-                        {bancoTags03.length} sel. · Limpar
-                      </button>
-                    )}
-                  </div>
-                  <div className="space-y-1 max-h-[100px] overflow-y-auto">
-                    {bancoTag03Options.map(t => (
-                      <label key={t} className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={bancoTags03.includes(t)}
-                          onChange={() => toggleBancoMulti(t, bancoTags03, setBancoTags03)}
-                          className="accent-blue-500"
-                        />
-                        <span className="text-[10px] text-gray-700">{t}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Botões de exportação */}
-              <div className="bg-white rounded-lg p-3 border border-blue-200">
-                <p className="font-bold text-[10px] text-blue-900 uppercase mb-3">Exportar</p>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => handleExportBanco('xlsx')}
-                    disabled={isExporting}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg font-bold text-xs uppercase transition-all shadow hover:shadow-md"
-                  >
-                    {isExporting ? (
-                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                    ) : (
-                      <FileSpreadsheet size={14} />
-                    )}
-                    Exportar Excel (.xlsx)
-                  </button>
-                  <button
-                    onClick={() => handleExportBanco('csv')}
-                    disabled={isExporting}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-sky-500 hover:bg-sky-600 disabled:bg-sky-300 text-white rounded-lg font-bold text-xs uppercase transition-all shadow hover:shadow-md"
-                  >
-                    {isExporting ? (
-                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                    ) : (
-                      <Download size={14} />
-                    )}
-                    Exportar CSV
-                  </button>
-                </div>
-                <p className="text-[9px] text-blue-600 mt-2">
-                  ℹ️ Sem filtros de meses: exporta o ano inteiro. Campos em branco exportam todos os valores.
-                </p>
-              </div>
-
-              {/* Resumo dos filtros ativos */}
-              {(bancoMarcas.length > 0 || bancoFiliais.length > 0 || bancoTags01.length > 0 || bancoTags02.length > 0 || bancoTags03.length > 0 || bancoMonths.length > 0) && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
-                  <p className="font-bold text-[10px] text-blue-800 mb-1">Filtros ativos:</p>
-                  <div className="flex flex-wrap gap-1">
-                    <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px] font-bold">Ano: {bancoYear}</span>
-                    {bancoMonths.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Meses: {bancoMonths.length}</span>}
-                    {bancoMarcas.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Marca: {bancoMarcas.length}</span>}
-                    {bancoFiliais.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Filial: {bancoFiliais.length}</span>}
-                    {bancoTags01.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Tag01: {bancoTags01.length}</span>}
-                    {bancoTags02.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Tag02: {bancoTags02.length}</span>}
-                    {bancoTags03.length > 0 && <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded text-[9px]">Tag03: {bancoTags03.length}</span>}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Aba: Recorrência */}

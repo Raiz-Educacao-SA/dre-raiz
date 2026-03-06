@@ -10,14 +10,24 @@ interface CronogramaPopupProps {
   onClose: () => void;
 }
 
-const isDreCorte = (t: CronogramaItem) => {
-  const text = `${t.deliverable} ${t.action_description}`.toLowerCase();
-  return text.includes('corte dre') || text.includes('corte') || text.includes('fechamento');
+/** Extrai o primeiro dia numérico do date_label (ex: "11" → 11, "12-13" → 12) */
+const getFirstDay = (label: string): number | null => {
+  const trimmed = label.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'diário') return null;
+  const rangeMatch = trimmed.match(/^(\d{1,2})\s*[-–]\s*(\d{1,2})$/);
+  if (rangeMatch) return parseInt(rangeMatch[1]);
+  const day = parseInt(trimmed);
+  return (!isNaN(day) && day >= 1 && day <= 31) ? day : null;
 };
 
-const isApresentacao = (t: CronogramaItem) => {
-  const text = `${t.deliverable} ${t.action_description}`.toLowerCase();
-  return text.includes('apresentação') || text.includes('apresentacao') || text.includes('ppt');
+/** Extrai o último dia numérico do date_label (ex: "11" → 11, "12-13" → 13) */
+const getLastDay = (label: string): number | null => {
+  const trimmed = label.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'diário') return null;
+  const rangeMatch = trimmed.match(/^(\d{1,2})\s*[-–]\s*(\d{1,2})$/);
+  if (rangeMatch) return parseInt(rangeMatch[2]);
+  const day = parseInt(trimmed);
+  return (!isNaN(day) && day >= 1 && day <= 31) ? day : null;
 };
 
 const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
@@ -43,6 +53,29 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
   const tasks = useMemo(() => items.filter(i => i.item_type === 'task'), [items]);
   const meetings = useMemo(() => items.filter(i => i.item_type === 'meeting'), [items]);
 
+  // Próxima entrega: a task cujo último dia >= hoje, com menor primeiro dia >= hoje
+  // Se nenhuma entrega futura, pega a última do mês (ciclo visual)
+  const nextDeliveryId = useMemo(() => {
+    // Filtra tasks com data numérica (não "Diário")
+    const dated = tasks
+      .map(t => ({ id: t.id, first: getFirstDay(t.date_label), last: getLastDay(t.date_label) }))
+      .filter((d): d is { id: string; first: number; last: number } => d.first !== null && d.last !== null);
+
+    if (dated.length === 0) return null;
+
+    // Entregas cujo último dia ainda não passou (last >= today)
+    const upcoming = dated.filter(d => d.last >= today);
+
+    if (upcoming.length > 0) {
+      // Pega a mais próxima (menor first day)
+      upcoming.sort((a, b) => a.first - b.first);
+      return upcoming[0].id;
+    }
+
+    // Todas já passaram — não pulsar nenhuma (mês acabando)
+    return null;
+  }, [tasks, today]);
+
   // Unique areas for legend
   const areas = useMemo(() => {
     const map = new Map<string, string>();
@@ -52,26 +85,25 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
 
   // Map dia → itens para marcar no calendário
   const dayItemsMap = useMemo(() => {
-    const map = new Map<number, { label: string; color: string; isCorte: boolean; isApres: boolean }[]>();
+    const map = new Map<number, { label: string; color: string; isNext: boolean }[]>();
     tasks.forEach(t => {
       const label = t.date_label.trim();
       if (!label || label.toLowerCase() === 'diário') return;
-      const corte = isDreCorte(t);
-      const apres = isApresentacao(t);
-      const color = corte ? '#F97316' : apres ? '#3B82F6' : t.area_color;
+      const isNext = t.id === nextDeliveryId;
+      const color = isNext ? '#F97316' : t.area_color;
       const rangeMatch = label.match(/^(\d{1,2})\s*[-–]\s*(\d{1,2})$/);
       if (rangeMatch) {
         const from = parseInt(rangeMatch[1]);
         const to = parseInt(rangeMatch[2]);
         for (let d = from; d <= to; d++) {
           if (!map.has(d)) map.set(d, []);
-          map.get(d)!.push({ label: t.area, color, isCorte: corte, isApres: apres });
+          map.get(d)!.push({ label: t.area, color, isNext });
         }
       } else {
         const day = parseInt(label);
         if (!isNaN(day) && day >= 1 && day <= 31) {
           if (!map.has(day)) map.set(day, []);
-          map.get(day)!.push({ label: t.area, color, isCorte: corte, isApres: apres });
+          map.get(day)!.push({ label: t.area, color, isNext });
         }
       }
     });
@@ -80,11 +112,11 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
       const day = parseInt(m.meeting_day);
       if (!isNaN(day) && day >= 1 && day <= 31) {
         if (!map.has(day)) map.set(day, []);
-        map.get(day)!.push({ label: 'Reunião', color: '#3B82F6', isCorte: false, isApres: false });
+        map.get(day)!.push({ label: 'Reunião', color: '#3B82F6', isNext: false });
       }
     });
     return map;
-  }, [tasks, meetings]);
+  }, [tasks, meetings, nextDeliveryId]);
 
   // Mini calendar grid
   const calendarDays = useMemo(() => {
@@ -146,13 +178,6 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
       .cronograma-pulse-orange {
         animation: cronogramaPulse 1.8s ease-in-out infinite;
       }
-      @keyframes cronogramaPulseBlue {
-        0%, 100% { background-color: transparent; }
-        50% { background-color: rgba(59, 130, 246, 0.12); }
-      }
-      .cronograma-pulse-blue {
-        animation: cronogramaPulseBlue 1.8s ease-in-out infinite;
-      }
       .crono-day-tip { position: relative; }
       .crono-day-tip .crono-tip {
         visibility: hidden; opacity: 0;
@@ -199,8 +224,7 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
                 {calendarDays.map((day, i) => {
                   const dayItems = day ? dayItemsMap.get(day) : undefined;
                   const isToday = day === today;
-                  const hasCorte = dayItems?.some(d => d.isCorte);
-                  const hasApres = dayItems?.some(d => d.isApres);
+                  const hasNext = dayItems?.some(d => d.isNext);
                   const uniqueColors = dayItems ? [...new Set(dayItems.map(d => d.color))] : [];
                   const tooltipLines = day ? dayTooltipMap.get(day) : undefined;
                   return (
@@ -209,8 +233,7 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
                       className={`relative flex flex-col items-center py-0.5 rounded ${tooltipLines ? 'crono-day-tip' : ''} ${
                         day === null ? '' :
                         isToday ? 'bg-[#1B75BB] text-white font-black' :
-                        hasCorte ? 'bg-orange-50 border border-orange-300 cronograma-pulse-orange' :
-                        hasApres ? 'bg-blue-50 border border-blue-300 cronograma-pulse-blue' :
+                        hasNext ? 'bg-orange-50 border border-orange-300 cronograma-pulse-orange' :
                         dayItems ? 'bg-white shadow-sm border border-gray-100' :
                         'text-gray-600'
                       }`}
@@ -271,20 +294,20 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
               </div>
               <div className="space-y-px">
                 {tasks.map(t => {
-                  const isCorte = isDreCorte(t);
+                  const isNext = t.id === nextDeliveryId;
                   return (
                     <div key={t.id}
-                      className={`flex items-start gap-1.5 px-2 py-[3px] rounded text-[11px] ${isCorte ? 'cronograma-pulse-orange' : 'hover:bg-gray-50'}`}
-                      style={{ borderLeft: `3px solid ${isCorte ? '#F97316' : t.area_color}` }}>
+                      className={`flex items-start gap-1.5 px-2 py-[3px] rounded text-[11px] ${isNext ? 'cronograma-pulse-orange' : 'hover:bg-gray-50'}`}
+                      style={{ borderLeft: `3px solid ${isNext ? '#F97316' : t.area_color}` }}>
                       <span className="font-mono font-bold text-gray-500 w-9 shrink-0 text-right leading-[18px]">{t.date_label}</span>
                       <span className="font-bold shrink-0 px-1 py-px rounded text-[10px] leading-[18px]"
-                        style={{ backgroundColor: (isCorte ? '#F97316' : t.area_color) + '18', color: isCorte ? '#F97316' : t.area_color }}>
+                        style={{ backgroundColor: (isNext ? '#F97316' : t.area_color) + '18', color: isNext ? '#F97316' : t.area_color }}>
                         {t.area}
                       </span>
                       <span className="min-w-0">
-                        <span className={`${isCorte ? 'font-black text-orange-600' : 'text-gray-700'}`}>{t.deliverable}</span>
+                        <span className={`${isNext ? 'font-black text-orange-600' : 'text-gray-700'}`}>{t.deliverable}</span>
                         {t.action_description && (
-                          <span className={`block text-[10px] leading-tight ${isCorte ? 'text-orange-400' : 'text-gray-400'}`}>{t.action_description}</span>
+                          <span className={`block text-[10px] leading-tight ${isNext ? 'text-orange-400' : 'text-gray-400'}`}>{t.action_description}</span>
                         )}
                       </span>
                     </div>
