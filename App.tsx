@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
-import { DashboardEnhanced } from './components/DashboardEnhanced';
+import { CockpitDashboard } from './components/dashboard/CockpitDashboard';
 import LoginScreen from './components/LoginScreen';
 import PendingApprovalScreen from './components/PendingApprovalScreen';
 import LoadingSpinner from './components/LoadingSpinner';
@@ -9,7 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { Toaster } from 'sonner';
 
 // Lazy loading de views pesadas (carregam sob demanda)
-const KPIsView = React.lazy(() => import('./components/KPIsView'));
+// KPIsView removed — merged into CockpitDashboard
 const AnalysisView = React.lazy(() => import('./components/AnalysisView'));
 const ManualChangesView = React.lazy(() => import('./components/ManualChangesView'));
 const TransactionsView = React.lazy(() => import('./components/TransactionsView'));
@@ -169,7 +169,7 @@ const App: React.FC = () => {
   // ⚡ LAZY LOAD: Carregar transações apenas quando o usuário navegar para views que precisam
   // Views que precisam de transações: movements, kpis, forecasting, analysis
   // Dashboard usa getSomaTags RPC (já carrega separadamente acima)
-  const viewsNeedingTransactions = ['kpis', 'forecasting', 'analysis'];
+  const viewsNeedingTransactions = ['dashboard', 'forecasting', 'analysis'];
   const transactionsLoadedRef = React.useRef(false);
 
   const loadTransactionsIfNeeded = React.useCallback(() => {
@@ -190,7 +190,7 @@ const App: React.FC = () => {
     };
 
     if (allowedMarcas.length > 0) filters.marca = allowedMarcas;
-    if (allowedFiliais.length > 0) filters.filial = allowedFiliais;
+    if (allowedFiliais.length > 0) filters.nome_filial = allowedFiliais;
     if (allowedCategories.length > 0) filters.category = allowedCategories;
     if (allowedTag01.length > 0) filters.tag01 = allowedTag01;
     if (allowedTag02.length > 0) filters.tag02 = allowedTag02;
@@ -294,7 +294,7 @@ const App: React.FC = () => {
     if (selectedMarca.length > 0) {
       filtered = transactions.filter(t => selectedMarca.includes(t.marca || ''));
     }
-    const filiais = new Set(filtered.map(t => t.filial).filter(Boolean));
+    const filiais = new Set(filtered.map(t => t.nome_filial || t.filial).filter(Boolean));
     let branchesArray = Array.from(filiais).sort();
 
     // Se usuário tem permissões restritas, filtrar apenas filiais permitidas
@@ -694,7 +694,7 @@ const App: React.FC = () => {
     if (currentView === 'movements' || currentView === 'dre') return permissionFiltered;
     return permissionFiltered.filter(t => {
       const matchesMarca = selectedMarca.length === 0 || selectedMarca.includes(t.marca || '');
-      const matchesFilial = selectedFilial.length === 0 || selectedFilial.includes(t.filial || '');
+      const matchesFilial = selectedFilial.length === 0 || selectedFilial.includes(t.nome_filial || t.filial || '');
       return matchesMarca && matchesFilial;
     });
   }, [transactions, selectedMarca, selectedFilial, currentView, filterTransactions]);
@@ -1099,9 +1099,7 @@ const App: React.FC = () => {
             </div>
           )}
           {currentView === 'dashboard' && (
-            // ⚡ OPÇÃO D: Dashboard usa dados agregados do RPC (rápido).
-            // Fallback para filteredTransactions se RPC ainda não carregou.
-            <DashboardEnhanced
+            <CockpitDashboard
               kpis={kpis}
               somaRows={dashboardSomaRows}
               transactions={filteredTransactions}
@@ -1116,19 +1114,6 @@ const App: React.FC = () => {
               allowedCategories={allowedCategories}
               isLoading={isLoadingDashboard}
             />
-          )}
-          {currentView === 'kpis' && (
-            <ErrorBoundary fallbackMessage="Erro ao carregar KPIs">
-              <Suspense fallback={<LoadingSpinner message="Carregando KPIs..." />}>
-                <KPIsView
-                  kpis={kpis}
-                  transactions={filteredTransactions}
-                  allowedMarcas={allowedMarcas}
-                  allowedFiliais={allowedFiliais}
-                  allowedCategories={allowedCategories}
-                />
-              </Suspense>
-            </ErrorBoundary>
           )}
           {currentView === 'movements' && (
             <ErrorBoundary fallbackMessage="Erro ao carregar Lançamentos">
