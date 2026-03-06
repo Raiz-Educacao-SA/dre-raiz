@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 import { SchoolKPIs, Transaction } from '../../types';
 import { SomaTagsRow, getReceitaLiquidaDRE } from '../../services/supabaseService';
 import { useDashboardKpis } from '../../hooks/useDashboardKpis';
@@ -47,6 +48,20 @@ const SkeletonSection: React.FC = () => (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
       <SkeletonCard className="h-32" /><SkeletonCard className="h-32" /><SkeletonCard className="h-32" />
     </div>
+  </div>
+);
+
+const ErrorState: React.FC<{ onRetry?: () => void }> = ({ onRetry }) => (
+  <div className="bg-red-50 border-2 border-red-200 rounded-xl p-8 text-center">
+    <AlertCircle className="mx-auto text-red-400 mb-3" size={32} />
+    <p className="text-sm font-bold text-red-700 mb-1">Erro ao carregar dados do dashboard</p>
+    <p className="text-xs text-red-500 mb-4">Verifique sua conexão e tente novamente</p>
+    {onRetry && (
+      <button onClick={onRetry} className="px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-bold uppercase tracking-tight hover:bg-red-700 transition-all flex items-center gap-2 mx-auto">
+        <RefreshCw size={14} />
+        Tentar novamente
+      </button>
+    )}
   </div>
 );
 
@@ -145,6 +160,8 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
 
   // Show loading skeleton while data is loading
   const showSkeleton = isLoading && (!somaRows || somaRows.length === 0) && transactions.length === 0;
+  // Show error state when not loading and no data available
+  const showError = !isLoading && (!somaRows || somaRows.length === 0) && transactions.length === 0 && !showSkeleton;
 
   return (
     <div className="animate-in fade-in duration-500 pb-10">
@@ -169,6 +186,10 @@ export const CockpitDashboard: React.FC<CockpitDashboardProps> = ({
       {showSkeleton ? (
         <div className="mt-4">
           <SkeletonSection />
+        </div>
+      ) : showError ? (
+        <div className="mt-4">
+          <ErrorState onRetry={onRefresh} />
         </div>
       ) : (
         <div className="space-y-4 mt-4">

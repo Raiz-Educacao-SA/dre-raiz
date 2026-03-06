@@ -1,14 +1,12 @@
 import React, { useMemo } from 'react';
 import { ArrowUpRight, ArrowDownRight, TrendingUp, TrendingDown, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 
-// Helper function to format monetary values
+// Helper function to format monetary values consistently (pt-BR)
 const formatCurrency = (value: number): string => {
-  const absValue = Math.abs(value);
-  if (absValue >= 1000) {
-    return absValue.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  } else {
-    return absValue.toFixed(2).replace('.', ',');
-  }
+  return Math.abs(value).toLocaleString('pt-BR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
 };
 
 // ─── Traffic light helpers ──────────────────────────────────────────
@@ -56,8 +54,10 @@ export const HeroCard: React.FC<HeroCardProps> = ({ label, value, valueCompariso
   const percentChange = valueComparison !== 0 ? ((value - valueComparison) / Math.abs(valueComparison)) * 100 : 0;
   const comparisonLabel = comparisonMode === 'budget' ? 'Or' : 'A-1';
   const hasTrend = trendPercent != null && trendPercent !== 0 && !isNaN(trendPercent);
-  // Clamp progress bar to a meaningful range (log scale for extreme values)
-  const barWidth = Math.min(100, Math.max(5, Math.abs(percentChange)));
+  // Bullet chart: actual vs comparison as proportional bars
+  const maxVal = Math.max(Math.abs(value), Math.abs(valueComparison), 1);
+  const actualWidth = (Math.abs(value) / maxVal) * 100;
+  const targetWidth = (Math.abs(valueComparison) / maxVal) * 100;
 
   return (
     <div className={`${heroColorMaps[color].bg} rounded-xl p-4 text-white shadow-lg relative overflow-hidden`}>
@@ -78,11 +78,16 @@ export const HeroCard: React.FC<HeroCardProps> = ({ label, value, valueCompariso
         {valueComparison !== 0 && (
           <div className="mt-3">
             <div className="flex items-center justify-between text-[10px] font-bold mb-1 opacity-75">
-              <span>Real</span>
-              <span>vs {comparisonLabel} ({percentChange >= 0 ? '+' : ''}{percentChange.toFixed(1)}%)</span>
+              <span>Real vs {comparisonLabel}</span>
+              <span>{percentChange >= 0 ? '+' : ''}{percentChange.toFixed(1)}%</span>
             </div>
-            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-white/60 rounded-full transition-all" style={{ width: `${barWidth}%` }}></div>
+            <div className="relative h-2 bg-white/20 rounded-full overflow-hidden">
+              <div className="absolute h-full bg-white/40 rounded-full transition-all" style={{ width: `${targetWidth}%` }}></div>
+              <div className="absolute h-full bg-white/80 rounded-full transition-all" style={{ width: `${actualWidth}%` }}></div>
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-[9px] font-bold opacity-60">
+              <span className="flex items-center gap-1"><span className="w-2 h-1.5 bg-white/80 rounded-sm inline-block"></span>Real</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-1.5 bg-white/40 rounded-sm inline-block"></span>{comparisonLabel}</span>
             </div>
           </div>
         )}
@@ -97,6 +102,7 @@ export interface CompactKPICardProps {
   value: number;
   trendAbsolute?: number;
   isPercent?: boolean;
+  isPositiveGood?: boolean;
   color: 'blue' | 'orange' | 'amber' | 'teal' | 'purple' | 'emerald' | 'rose';
   icon?: React.ReactNode;
   comparisonMode: 'budget' | 'prevYear';
@@ -107,14 +113,14 @@ export interface CompactKPICardProps {
 const compactColorMaps: Record<string, string> = {
   blue: 'text-[#1B75BB] bg-blue-50',
   orange: 'text-[#F44C00] bg-orange-50',
-  amber: 'text-[#F44C00] bg-orange-50',
+  amber: 'text-amber-600 bg-amber-50',
   teal: 'text-[#7AC5BF] bg-teal-50',
   purple: 'text-purple-600 bg-purple-50',
-  emerald: 'text-[#7AC5BF] bg-teal-50',
+  emerald: 'text-emerald-600 bg-emerald-50',
   rose: 'text-rose-600 bg-rose-50'
 };
 
-export const CompactKPICard: React.FC<CompactKPICardProps> = ({ label, value, trendAbsolute, isPercent, color, icon, comparisonMode, tooltip, onDoubleClick }) => {
+export const CompactKPICard: React.FC<CompactKPICardProps> = ({ label, value, trendAbsolute, isPercent, isPositiveGood = false, color, icon, comparisonMode, tooltip, onDoubleClick }) => {
   const formattedValue = isPercent
     ? `${value.toFixed(1)}%`
     : `R$ ${formatCurrency(value)}`;
@@ -125,8 +131,14 @@ export const CompactKPICard: React.FC<CompactKPICardProps> = ({ label, value, tr
     return `R$ ${formatCurrency(Math.abs(trendAbsolute))}`;
   }, [trendAbsolute, isPercent]);
 
-  const isPositiveTrend = trendAbsolute != null && trendAbsolute < 0; // Negative change is good for costs
+  // Determine if the trend direction is favorable
+  const isFavorable = useMemo(() => {
+    if (trendAbsolute == null || trendAbsolute === 0) return true;
+    return isPositiveGood ? trendAbsolute >= 0 : trendAbsolute <= 0;
+  }, [trendAbsolute, isPositiveGood]);
+
   const comparisonLabel = comparisonMode === 'budget' ? 'Or' : 'A-1';
+  const trendUp = trendAbsolute != null && trendAbsolute > 0;
 
   return (
     <div
@@ -140,9 +152,9 @@ export const CompactKPICard: React.FC<CompactKPICardProps> = ({ label, value, tr
         </div>
         {formattedTrend && (
           <div className={`px-1.5 py-0.5 rounded text-[10px] font-black flex items-center gap-0.5 ${
-            isPositiveTrend ? 'bg-teal-50 text-[#7AC5BF]' : 'bg-orange-50 text-[#F44C00]'
+            isFavorable ? 'bg-teal-50 text-[#7AC5BF]' : 'bg-orange-50 text-[#F44C00]'
           }`}>
-            {isPositiveTrend ? <ArrowDownRight size={10} /> : <ArrowUpRight size={10} />}
+            {trendUp ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
             <span>{formattedTrend} vs {comparisonLabel}</span>
           </div>
         )}
@@ -207,7 +219,7 @@ export const HealthCard: React.FC<HealthCardProps> = ({ label, value, comparison
 
   return (
     <div
-      className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-lg transition-all group ${onClick ? 'cursor-pointer' : ''}`}
+      className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm transition-all group ${onClick ? 'cursor-pointer hover:shadow-lg hover:border-blue-200' : ''}`}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}

@@ -3,7 +3,7 @@ import { GraduationCap, Users, Target, Droplets, Zap, Box, PartyPopper, ChevronD
 import { HeroCard, CompactKPICard } from './KPICards';
 import { EnhancedKpis, KpiTrends } from '../../hooks/useDashboardKpis';
 
-const STORAGE_KEY = 'cockpit-section-operacional';
+const STORAGE_KEY = 'dre-raiz:cockpit:section-operacional';
 
 interface OperationalKPIsSectionProps {
   enhancedKpis: EnhancedKpis;

@@ -20,7 +20,7 @@ export const AiExecutiveSummary: React.FC<AiExecutiveSummaryProps> = ({
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(() => {
-    try { return localStorage.getItem('cockpit-section-ai') === 'true'; } catch { return false; }
+    try { return localStorage.getItem('dre-raiz:cockpit:section-ai') === 'true'; } catch { return false; }
   });
   const [isStale, setIsStale] = useState(false);
   const isGeneratingRef = useRef(false);
@@ -28,7 +28,7 @@ export const AiExecutiveSummary: React.FC<AiExecutiveSummaryProps> = ({
 
   // Persist collapse state
   useEffect(() => {
-    try { localStorage.setItem('cockpit-section-ai', String(isCollapsed)); } catch {}
+    try { localStorage.setItem('dre-raiz:cockpit:section-ai', String(isCollapsed)); } catch {}
   }, [isCollapsed]);
 
   // Detect filter changes to mark summary as stale

@@ -162,12 +162,14 @@ export const BranchPerformanceSection: React.FC<BranchPerformanceSectionProps> =
           </div>
         </div>
 
-        <div className="flex gap-2 mb-4 bg-gray-100 p-1 rounded-lg w-fit">
+        <div className="flex gap-2 mb-4 bg-gray-100 p-1 rounded-lg w-fit overflow-x-auto" role="tablist" aria-label="Métricas de desempenho">
           {metricTabs.map(tab => (
             <button
               key={tab.key}
+              role="tab"
+              aria-selected={branchMetric === tab.key}
               onClick={() => setBranchMetric(tab.key)}
-              className={`px-3 py-2 rounded-lg text-xs font-black uppercase tracking-tight transition-all ${
+              className={`px-3 py-2 rounded-lg text-xs font-black uppercase tracking-tight transition-all whitespace-nowrap ${
                 branchMetric === tab.key
                   ? `${tab.activeColor} text-white shadow-md`
                   : 'text-gray-600 hover:text-gray-900'
