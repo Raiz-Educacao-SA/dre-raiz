@@ -178,19 +178,31 @@ function buildEngagementEmail(params: {
 
 async function getSmtpConfig() {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  if (!supabaseUrl || !supabaseKey) return null;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+  if (!supabaseUrl || !supabaseKey) {
+    console.warn('getSmtpConfig: SUPABASE_URL ou KEY nao configurados');
+    return null;
+  }
   const supabase = createClient(supabaseUrl, supabaseKey);
-  const { data } = await supabase.from('smtp_config').select('*').eq('enabled', true).limit(1).single();
-  return data;
+  // Usa RPC SECURITY DEFINER para bypassar RLS
+  const { data, error } = await supabase.rpc('get_smtp_config_for_email');
+  if (error) {
+    console.warn('getSmtpConfig RPC error:', error.message);
+    return null;
+  }
+  // RPC retorna array, pegar primeiro
+  const config = Array.isArray(data) ? data[0] : data;
+  if (!config || !config.host) return null;
+  return config;
 }
 
 async function sendViaSmtp(config: any, to: string, subject: string, html: string) {
   const transporter = nodemailer.createTransport({
     host: config.host,
     port: config.port,
-    secure: config.use_tls,
+    secure: config.port === 465,
     auth: { user: config.username, pass: config.password_encrypted },
+    tls: config.use_tls ? { rejectUnauthorized: false } : undefined,
   });
   await transporter.sendMail({
     from: `${config.from_name} <${config.from_email}>`,

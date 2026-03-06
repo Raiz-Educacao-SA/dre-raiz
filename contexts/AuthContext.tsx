@@ -184,20 +184,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const userData = await fetchUserData(firebaseUser);
         setUser(userData);
 
-        // Iniciar sessao de engajamento
+        // Iniciar sessao de engajamento (fire-and-forget, nao bloqueia login)
         if (userData && userData.role !== 'pending') {
-          const dbUser = await supabaseService.getUserByEmail(userData.email);
-          if (dbUser) {
-            const sid = await supabaseService.createSession(dbUser.id, userData.email);
-            sessionIdRef.current = sid;
-            // Heartbeat a cada 5 minutos
-            if (heartbeatRef.current) clearInterval(heartbeatRef.current);
-            heartbeatRef.current = setInterval(() => {
-              if (sessionIdRef.current) {
-                supabaseService.updateSessionHeartbeat(sessionIdRef.current);
-              }
-            }, 5 * 60 * 1000);
-          }
+          supabaseService.getUserByEmail(userData.email).then(dbUser => {
+            if (!dbUser) return;
+            supabaseService.createSession(dbUser.id, userData.email).then(sid => {
+              sessionIdRef.current = sid;
+              // Heartbeat a cada 5 minutos
+              if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+              heartbeatRef.current = setInterval(() => {
+                if (sessionIdRef.current) {
+                  supabaseService.updateSessionHeartbeat(sessionIdRef.current);
+                }
+              }, 5 * 60 * 1000);
+            });
+          });
         }
 
         // Renovar token Supabase a cada 45 min (Firebase token expira em 60 min)
@@ -219,19 +220,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setLoading(false);
     });
 
-    // Encerrar sessao ao fechar aba/navegador
+    // Encerrar sessao ao fechar aba/navegador (via RPC keepalive)
     const handleBeforeUnload = () => {
       if (sessionIdRef.current) {
-        // fetch keepalive para garantir que a request sai mesmo ao fechar
-        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/user_sessions?id=eq.${sessionIdRef.current}`;
-        const body = JSON.stringify({ ended_at: new Date().toISOString(), last_heartbeat: new Date().toISOString() });
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/end_user_session`;
+        const body = JSON.stringify({ p_session_id: sessionIdRef.current });
         fetch(url, {
-          method: 'PATCH',
+          method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
             'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-            'Prefer': 'return=minimal',
           },
           body,
           keepalive: true,

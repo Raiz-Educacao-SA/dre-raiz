@@ -49,6 +49,65 @@ CREATE POLICY "user_own_sessions_select" ON user_sessions
 GRANT SELECT, INSERT, UPDATE ON user_sessions TO anon, authenticated;
 
 -- =============================================================
+-- RPCs SECURITY DEFINER para session tracking (bypassa RLS)
+-- =============================================================
+
+CREATE OR REPLACE FUNCTION create_user_session(p_user_id UUID, p_email TEXT)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_id UUID;
+BEGIN
+  INSERT INTO user_sessions (user_id, email)
+  VALUES (p_user_id, p_email)
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION update_session_heartbeat(p_session_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE user_sessions
+  SET last_heartbeat = now()
+  WHERE id = p_session_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION end_user_session(p_session_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE user_sessions
+  SET ended_at = now(), last_heartbeat = now()
+  WHERE id = p_session_id;
+END;
+$$;
+
+-- RPC para buscar config SMTP (SECURITY DEFINER bypassa RLS)
+CREATE OR REPLACE FUNCTION get_smtp_config_for_email()
+RETURNS TABLE (
+  host TEXT, port INTEGER, username TEXT, password_encrypted TEXT,
+  from_name TEXT, from_email TEXT, use_tls BOOLEAN
+)
+LANGUAGE sql STABLE
+SECURITY DEFINER
+AS $$
+  SELECT host, port, username, password_encrypted, from_name, from_email, use_tls
+  FROM smtp_config
+  WHERE enabled = true
+  ORDER BY updated_at DESC
+  LIMIT 1;
+$$;
+
+-- =============================================================
 -- RPC: get_engagement_stats
 -- Estatisticas agregadas de engajamento por usuario (admin only)
 -- =============================================================

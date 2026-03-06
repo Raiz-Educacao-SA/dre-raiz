@@ -306,7 +306,7 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
-        // Dev middleware for /api/send-engagement-email — proxy para email de engajamento
+        // Dev middleware for /api/send-engagement-email — mesmo padrao do send-welcome-email
         {
           name: 'send-engagement-email-middleware',
           configureServer(server) {
@@ -327,33 +327,37 @@ export default defineConfig(({ mode }) => {
               }
 
               const chunks: Buffer[] = [];
-              req.on('data', (c: Buffer) => chunks.push(c));
-              req.on('end', async () => {
-                try {
-                  const body = JSON.parse(Buffer.concat(chunks).toString());
-                  const apiKey = process.env.EMAIL_API_KEY || process.env.VITE_EMAIL_API_KEY || '';
-                  process.env.EMAIL_API_KEY = apiKey;
+              for await (const chunk of req) chunks.push(chunk as Buffer);
+              const body = JSON.parse(Buffer.concat(chunks).toString());
 
-                  const mod = await server.ssrLoadModule('./api/send-engagement-email.ts');
-                  const mockReq = { method: 'POST', body } as any;
-                  let sent = false;
-                  const mockRes = {
-                    status(code: number) {
-                      return {
-                        json(data: any) {
-                          if (!sent) { sent = true; res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); }
-                        }
-                      };
-                    }
-                  } as any;
-                  await mod.default(mockReq, mockRes);
-                  if (!sent) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'No response' })); }
-                } catch (err: any) {
-                  console.error('send-engagement-email dev error:', err.message);
+              try {
+                const apiKey = env.EMAIL_API_KEY || process.env.EMAIL_API_KEY || '';
+                process.env.EMAIL_API_KEY = apiKey;
+
+                const mod = await server.ssrLoadModule('./api/send-engagement-email.ts');
+
+                const mockReq = { method: 'POST', body } as any;
+                let mockResult: any = null;
+                const mockRes = {
+                  status: (code: number) => ({
+                    json: (data: any) => { mockResult = { code, data }; return mockRes; }
+                  }),
+                } as any;
+
+                await mod.default(mockReq, mockRes);
+
+                if (mockResult) {
+                  res.writeHead(mockResult.code || 200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify(mockResult.data));
+                } else {
                   res.writeHead(500, { 'Content-Type': 'application/json' });
-                  res.end(JSON.stringify({ error: err.message }));
+                  res.end(JSON.stringify({ error: 'Handler sem resposta' }));
                 }
-              });
+              } catch (err: any) {
+                console.error('send-engagement-email dev error:', err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
             });
           },
         },

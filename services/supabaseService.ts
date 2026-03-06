@@ -3905,39 +3905,36 @@ export interface WeeklyHistory {
   active_days: number;
 }
 
-/** Cria nova sessao ao fazer login */
+/** Cria nova sessao ao fazer login (via RPC SECURITY DEFINER) */
 export const createSession = async (userId: string, email: string): Promise<string | null> => {
-  const { data, error } = await supabase
-    .from('user_sessions')
-    .insert({ user_id: userId, email })
-    .select('id')
-    .single();
+  const { data, error } = await supabase.rpc('create_user_session', {
+    p_user_id: userId,
+    p_email: email,
+  });
 
   if (error) {
     console.error('Error creating session:', error);
     return null;
   }
-  return data.id;
+  return data as string;
 };
 
-/** Heartbeat — atualiza last_heartbeat da sessao ativa */
+/** Heartbeat — atualiza last_heartbeat da sessao ativa (via RPC) */
 export const updateSessionHeartbeat = async (sessionId: string) => {
-  const { error } = await supabase
-    .from('user_sessions')
-    .update({ last_heartbeat: new Date().toISOString() })
-    .eq('id', sessionId);
+  const { error } = await supabase.rpc('update_session_heartbeat', {
+    p_session_id: sessionId,
+  });
 
   if (error) {
     console.error('Error updating session heartbeat:', error);
   }
 };
 
-/** Encerra sessao (logout ou beforeunload) */
+/** Encerra sessao (logout ou beforeunload) (via RPC) */
 export const endSession = async (sessionId: string) => {
-  const { error } = await supabase
-    .from('user_sessions')
-    .update({ ended_at: new Date().toISOString(), last_heartbeat: new Date().toISOString() })
-    .eq('id', sessionId);
+  const { error } = await supabase.rpc('end_user_session', {
+    p_session_id: sessionId,
+  });
 
   if (error) {
     console.error('Error ending session:', error);
