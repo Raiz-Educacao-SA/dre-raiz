@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2, Calendar, Clock, Copy, Flag, Building2, Layers, CalendarDays, Hash } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2, Calendar, Clock, Copy, Flag, Building2, Layers, CalendarDays, Hash, Trophy } from 'lucide-react';
+import EngagementPanel from './EngagementPanel';
 import MultiSelectFilter from './MultiSelectFilter';
 import * as supabaseService from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
@@ -54,7 +55,7 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'engajamento'>('import');
   const [dadosSubTab, setDadosSubTab] = useState<'importar' | 'exportar'>('importar');
 
   // Estados para aba Cronograma
@@ -1759,6 +1760,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'cronograma' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('engajamento')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'engajamento'
+              ? 'text-blue-700 bg-blue-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Trophy size={14} />
+            Engajamento
+          </div>
+          {activeTab === 'engajamento' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -4780,6 +4797,22 @@ const AdminPanel: React.FC = () => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Aba: Engajamento */}
+      {activeTab === 'engajamento' && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-300 rounded-xl p-4 shadow">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-blue-100 p-2 rounded-lg">
+              <Trophy className="text-blue-600" size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-blue-900">Engajamento de Usuarios</h2>
+              <p className="text-xs text-blue-700">Acompanhe o uso da plataforma e engaje sua equipe</p>
+            </div>
+          </div>
+          <EngagementPanel />
         </div>
       )}
 

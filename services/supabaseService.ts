@@ -3876,3 +3876,92 @@ export const duplicateCronogramaMonth = async (
 
   return { ok: true, count: newItems.length };
 };
+
+// =============================================
+// SESSION TRACKING & ENGAGEMENT
+// =============================================
+
+export interface EngagementStat {
+  user_id: string;
+  email: string;
+  name: string;
+  photo_url: string | null;
+  role: string;
+  user_since: string;
+  last_login: string | null;
+  total_sessions_7d: number;
+  total_minutes_7d: number;
+  active_days_7d: number;
+  last_session_at: string | null;
+  days_since_last_access: number;
+}
+
+export interface WeeklyHistory {
+  user_id: string;
+  week_start: string;
+  week_label: string;
+  total_sessions: number;
+  total_minutes: number;
+  active_days: number;
+}
+
+/** Cria nova sessao ao fazer login */
+export const createSession = async (userId: string, email: string): Promise<string | null> => {
+  const { data, error } = await supabase
+    .from('user_sessions')
+    .insert({ user_id: userId, email })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('Error creating session:', error);
+    return null;
+  }
+  return data.id;
+};
+
+/** Heartbeat — atualiza last_heartbeat da sessao ativa */
+export const updateSessionHeartbeat = async (sessionId: string) => {
+  const { error } = await supabase
+    .from('user_sessions')
+    .update({ last_heartbeat: new Date().toISOString() })
+    .eq('id', sessionId);
+
+  if (error) {
+    console.error('Error updating session heartbeat:', error);
+  }
+};
+
+/** Encerra sessao (logout ou beforeunload) */
+export const endSession = async (sessionId: string) => {
+  const { error } = await supabase
+    .from('user_sessions')
+    .update({ ended_at: new Date().toISOString(), last_heartbeat: new Date().toISOString() })
+    .eq('id', sessionId);
+
+  if (error) {
+    console.error('Error ending session:', error);
+  }
+};
+
+/** Busca estatisticas de engajamento (admin only) via RPC */
+export const getEngagementStats = async (): Promise<EngagementStat[]> => {
+  const { data, error } = await supabase.rpc('get_engagement_stats');
+
+  if (error) {
+    console.error('Error fetching engagement stats:', error);
+    return [];
+  }
+  return (data || []) as EngagementStat[];
+};
+
+/** Busca historico semanal de engajamento (ultimas 5 semanas, admin only) */
+export const getEngagementWeeklyHistory = async (): Promise<WeeklyHistory[]> => {
+  const { data, error } = await supabase.rpc('get_engagement_weekly_history');
+
+  if (error) {
+    console.error('Error fetching weekly history:', error);
+    return [];
+  }
+  return (data || []) as WeeklyHistory[];
+};

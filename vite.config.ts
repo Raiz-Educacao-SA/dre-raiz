@@ -306,6 +306,57 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // Dev middleware for /api/send-engagement-email — proxy para email de engajamento
+        {
+          name: 'send-engagement-email-middleware',
+          configureServer(server) {
+            server.middlewares.use('/api/send-engagement-email', async (req: IncomingMessage, res: ServerResponse) => {
+              if (req.method === 'OPTIONS') {
+                res.writeHead(200, {
+                  'Access-Control-Allow-Origin': '*',
+                  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                  'Access-Control-Allow-Headers': 'Content-Type',
+                });
+                res.end();
+                return;
+              }
+              if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method not allowed' }));
+                return;
+              }
+
+              const chunks: Buffer[] = [];
+              req.on('data', (c: Buffer) => chunks.push(c));
+              req.on('end', async () => {
+                try {
+                  const body = JSON.parse(Buffer.concat(chunks).toString());
+                  const apiKey = process.env.EMAIL_API_KEY || process.env.VITE_EMAIL_API_KEY || '';
+                  process.env.EMAIL_API_KEY = apiKey;
+
+                  const mod = await server.ssrLoadModule('./api/send-engagement-email.ts');
+                  const mockReq = { method: 'POST', body } as any;
+                  let sent = false;
+                  const mockRes = {
+                    status(code: number) {
+                      return {
+                        json(data: any) {
+                          if (!sent) { sent = true; res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); }
+                        }
+                      };
+                    }
+                  } as any;
+                  await mod.default(mockReq, mockRes);
+                  if (!sent) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'No response' })); }
+                } catch (err: any) {
+                  console.error('send-engagement-email dev error:', err.message);
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: err.message }));
+                }
+              });
+            });
+          },
+        },
         // Dev middleware for /api/test-smtp — testa conexão SMTP
         {
           name: 'test-smtp-middleware',
