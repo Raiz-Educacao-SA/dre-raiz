@@ -3894,6 +3894,7 @@ export interface EngagementStat {
   active_days_7d: number;
   last_session_at: string | null;
   days_since_last_access: number;
+  last_engagement_email_at: string | null;
 }
 
 export interface WeeklyHistory {
@@ -3961,4 +3962,12 @@ export const getEngagementWeeklyHistory = async (): Promise<WeeklyHistory[]> => 
     return [];
   }
   return (data || []) as WeeklyHistory[];
+};
+
+/** Marca que email de engajamento foi enviado para o usuario */
+export const markEngagementEmailSent = async (userId: string) => {
+  const { error } = await supabase.rpc('mark_engagement_email_sent', { p_user_id: userId });
+  if (error) {
+    console.error('Error marking engagement email sent:', error);
+  }
 };

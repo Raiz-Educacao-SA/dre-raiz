@@ -1,13 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, TrendingUp, TrendingDown, AlertTriangle, Mail, Loader2, Users, Flame, Star, Eye, ArrowUpDown, Search, CheckCircle2, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Trophy, TrendingUp, TrendingDown, AlertTriangle, Mail, Loader2, Users, Flame, Star, Eye, ArrowUpDown, Search, CheckCircle2, XCircle, ChevronDown, ChevronUp, Send, Filter } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import type { EngagementStat, WeeklyHistory } from '../services/supabaseService';
 
-type SortField = 'name' | 'score' | 'level' | 'total_sessions_7d' | 'total_minutes_7d' | 'days_since_last_access' | 'active_days_7d';
+type SortField = 'name' | 'score' | 'level' | 'total_sessions_7d' | 'total_minutes_7d' | 'days_since_last_access' | 'active_days_7d' | 'last_engagement_email_at';
 type SortDir = 'asc' | 'desc';
 
-// Score semanal — thresholds ajustados para 7 dias
-// Minutos: max 150min (2.5h/semana), Sessoes: max 7 (1/dia), Dias ativos: max 5 (dias uteis)
 function calcWeeklyScore(minutes: number, sessions: number, activeDays: number): number {
   return Math.min(100, Math.round(
     (Math.min(minutes, 150) / 150) * 50 +
@@ -32,14 +30,6 @@ function getLevelColor(score: number): string {
   return 'bg-gray-300';
 }
 
-function getLevelDot(score: number): string {
-  if (score >= 75) return 'bg-amber-400';
-  if (score >= 50) return 'bg-green-400';
-  if (score >= 25) return 'bg-blue-400';
-  if (score > 0) return 'bg-orange-400';
-  return 'bg-gray-300';
-}
-
 function formatMinutes(mins: number): string {
   if (mins < 60) return `${mins}min`;
   const h = Math.floor(mins / 60);
@@ -50,7 +40,13 @@ function formatMinutes(mins: number): string {
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return 'Nunca';
   const d = new Date(dateStr);
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateShort(dateStr: string | null): string {
+  if (!dateStr) return '-';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
 function roleLabel(role: string): string {
@@ -63,6 +59,11 @@ function roleLabel(role: string): string {
   }
 }
 
+const ALL_ROLES = ['admin', 'manager', 'approver', 'viewer'];
+const ALL_LEVELS = ['Campea(o)', 'Engajado(a)', 'Moderado(a)', 'Iniciante', 'Inativo(a)'];
+
+type StatWithScore = EngagementStat & { score: number; trend: number; weeklyScores: number[] };
+
 const EngagementPanel: React.FC = () => {
   const [stats, setStats] = useState<EngagementStat[]>([]);
   const [weeklyHistory, setWeeklyHistory] = useState<WeeklyHistory[]>([]);
@@ -70,10 +71,16 @@ const EngagementPanel: React.FC = () => {
   const [sortField, setSortField] = useState<SortField>('total_minutes_7d');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [searchTerm, setSearchTerm] = useState('');
-  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
-  const [emailResult, setEmailResult] = useState<{ email: string; ok: boolean } | null>(null);
   const [filterLevel, setFilterLevel] = useState<string>('all');
+  const [filterRole, setFilterRole] = useState<string>('all');
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
+
+  // Selecao e envio em lote
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSending, setBulkSending] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState({ sent: 0, total: 0, errors: 0 });
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+  const [emailResults, setEmailResults] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadData();
@@ -90,7 +97,6 @@ const EngagementPanel: React.FC = () => {
     setLoading(false);
   };
 
-  // Historico por usuario: { user_id: WeeklyHistory[] }
   const historyByUser = useMemo(() => {
     const map: Record<string, WeeklyHistory[]> = {};
     for (const h of weeklyHistory) {
@@ -100,21 +106,16 @@ const EngagementPanel: React.FC = () => {
     return map;
   }, [weeklyHistory]);
 
-  // Weeks labels (do historico)
   const weekLabels = useMemo(() => {
     const labels = new Set<string>();
-    for (const h of weeklyHistory) {
-      labels.add(h.week_label);
-    }
+    for (const h of weeklyHistory) labels.add(h.week_label);
     return Array.from(labels);
   }, [weeklyHistory]);
 
-  // Stats com score
-  const statsWithScore = useMemo(() => {
+  const statsWithScore: StatWithScore[] = useMemo(() => {
     return stats.map(s => {
       const score = calcWeeklyScore(s.total_minutes_7d, s.total_sessions_7d, s.active_days_7d);
       const userHistory = historyByUser[s.user_id] || [];
-      // Tendencia: score da semana atual vs semana anterior
       const scores = userHistory.map(h => calcWeeklyScore(h.total_minutes, h.total_sessions, h.active_days));
       const trend = scores.length >= 2 ? scores[scores.length - 1] - scores[scores.length - 2] : 0;
       return { ...s, score, trend, weeklyScores: scores };
@@ -128,9 +129,11 @@ const EngagementPanel: React.FC = () => {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(s => s.name?.toLowerCase().includes(term) || s.email.toLowerCase().includes(term));
     }
-
     if (filterLevel !== 'all') {
       filtered = filtered.filter(s => getEngagementLevel(s.score).level === filterLevel);
+    }
+    if (filterRole !== 'all') {
+      filtered = filtered.filter(s => s.role === filterRole);
     }
 
     return [...filtered].sort((a, b) => {
@@ -139,17 +142,17 @@ const EngagementPanel: React.FC = () => {
         va = (a.name || '').toLowerCase();
         vb = (b.name || '').toLowerCase();
       } else if (sortField === 'score' || sortField === 'level') {
-        // Nivel e score ordenam pelo score numerico
-        va = a.score;
-        vb = b.score;
+        va = a.score; vb = b.score;
+      } else if (sortField === 'last_engagement_email_at') {
+        va = a.last_engagement_email_at || '';
+        vb = b.last_engagement_email_at || '';
       } else {
-        va = a[sortField];
-        vb = b[sortField];
+        va = a[sortField]; vb = b[sortField];
       }
       if (sortDir === 'asc') return va > vb ? 1 : va < vb ? -1 : 0;
       return va < vb ? 1 : va > vb ? -1 : 0;
     });
-  }, [statsWithScore, sortField, sortDir, searchTerm, filterLevel]);
+  }, [statsWithScore, sortField, sortDir, searchTerm, filterLevel, filterRole]);
 
   const summary = useMemo(() => {
     const levels = statsWithScore.map(s => ({ ...getEngagementLevel(s.score), score: s.score }));
@@ -165,43 +168,97 @@ const EngagementPanel: React.FC = () => {
   }, [statsWithScore]);
 
   const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+  };
+
+  // Toggle selecao individual
+  const toggleSelect = (userId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  // Selecionar/desselecionar todos visiveis
+  const toggleSelectAll = () => {
+    if (selectedIds.size === sortedStats.length) {
+      setSelectedIds(new Set());
     } else {
-      setSortField(field);
-      setSortDir('desc');
+      setSelectedIds(new Set(sortedStats.map(s => s.user_id)));
     }
   };
 
-  const handleSendReminder = async (stat: EngagementStat & { score: number }) => {
-    setSendingEmail(stat.email);
-    setEmailResult(null);
+  // Envio individual
+  const sendReminder = useCallback(async (stat: StatWithScore): Promise<boolean> => {
     try {
       const res = await fetch('/api/send-engagement-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: stat.name,
-          email: stat.email,
-          role: stat.role,
-          score: stat.score,
-          days_inactive: stat.days_since_last_access,
-          total_sessions: stat.total_sessions_7d,
-          total_minutes: stat.total_minutes_7d,
-          active_days: stat.active_days_7d,
+          name: stat.name, email: stat.email, role: stat.role, score: stat.score,
+          days_inactive: stat.days_since_last_access, total_sessions: stat.total_sessions_7d,
+          total_minutes: stat.total_minutes_7d, active_days: stat.active_days_7d,
         }),
       });
+      if (res.ok) {
+        // Marcar data do email no banco
+        await supabaseService.markEngagementEmailSent(stat.user_id);
+        return true;
+      }
       const data = await res.json();
-      setEmailResult({ email: stat.email, ok: res.ok });
-      if (!res.ok) console.error('Email error:', data);
+      console.error('Email error:', data);
+      return false;
     } catch (err) {
-      setEmailResult({ email: stat.email, ok: false });
       console.error('Email send error:', err);
-    } finally {
-      setSendingEmail(null);
-      setTimeout(() => setEmailResult(null), 5000);
+      return false;
     }
+  }, []);
+
+  // Envio individual (botao na linha)
+  const handleSendReminder = async (stat: StatWithScore) => {
+    setSendingEmail(stat.email);
+    const ok = await sendReminder(stat);
+    setEmailResults(prev => ({ ...prev, [stat.email]: ok }));
+    setSendingEmail(null);
+    if (ok) {
+      // Atualizar localmente a data do email
+      setStats(prev => prev.map(s => s.user_id === stat.user_id ? { ...s, last_engagement_email_at: new Date().toISOString() } : s));
+    }
+    setTimeout(() => setEmailResults(prev => { const n = { ...prev }; delete n[stat.email]; return n; }), 5000);
   };
+
+  // Envio em lote (sequencial para nao sobrecarregar SMTP)
+  const handleBulkSend = async () => {
+    const selected = sortedStats.filter(s => selectedIds.has(s.user_id));
+    if (selected.length === 0) return;
+
+    setBulkSending(true);
+    setBulkProgress({ sent: 0, total: selected.length, errors: 0 });
+    const results: Record<string, boolean> = {};
+
+    for (let i = 0; i < selected.length; i++) {
+      const stat = selected[i];
+      setSendingEmail(stat.email);
+      const ok = await sendReminder(stat);
+      results[stat.email] = ok;
+      setEmailResults(prev => ({ ...prev, [stat.email]: ok }));
+      if (ok) {
+        setStats(prev => prev.map(s => s.user_id === stat.user_id ? { ...s, last_engagement_email_at: new Date().toISOString() } : s));
+      }
+      setBulkProgress(prev => ({ ...prev, sent: i + 1, errors: prev.errors + (ok ? 0 : 1) }));
+      setSendingEmail(null);
+    }
+
+    setBulkSending(false);
+    setSelectedIds(new Set());
+    setTimeout(() => setEmailResults({}), 5000);
+  };
+
+  const hasActiveFilters = filterLevel !== 'all' || filterRole !== 'all' || searchTerm !== '';
+  const clearAllFilters = () => { setFilterLevel('all'); setFilterRole('all'); setSearchTerm(''); };
 
   const SortIcon = ({ field }: { field: SortField }) => (
     <ArrowUpDown size={12} className={`inline ml-1 ${sortField === field ? 'text-blue-600' : 'text-gray-300'}`} />
@@ -229,9 +286,10 @@ const EngagementPanel: React.FC = () => {
         <SummaryCard label="Score Medio" value={`${summary.avgScore}%`} icon={<TrendingUp size={18} />} color="purple" />
       </div>
 
-      {/* Search */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      {/* Filtros + Acoes */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Busca */}
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
@@ -241,11 +299,33 @@ const EngagementPanel: React.FC = () => {
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
           />
         </div>
-        {filterLevel !== 'all' && (
-          <button onClick={() => setFilterLevel('all')} className="text-xs text-blue-600 hover:text-blue-800 underline">
-            Limpar filtro
+
+        {/* Filtro por nivel */}
+        <select
+          value={filterLevel}
+          onChange={(e) => setFilterLevel(e.target.value)}
+          className="px-3 py-2 text-xs font-bold border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+        >
+          <option value="all">Todos os niveis</option>
+          {ALL_LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+
+        {/* Filtro por perfil */}
+        <select
+          value={filterRole}
+          onChange={(e) => setFilterRole(e.target.value)}
+          className="px-3 py-2 text-xs font-bold border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+        >
+          <option value="all">Todos os perfis</option>
+          {ALL_ROLES.map(r => <option key={r} value={r}>{roleLabel(r)}</option>)}
+        </select>
+
+        {hasActiveFilters && (
+          <button onClick={clearAllFilters} className="text-xs text-blue-600 hover:text-blue-800 underline">
+            Limpar filtros
           </button>
         )}
+
         <button
           onClick={loadData}
           disabled={loading}
@@ -254,49 +334,71 @@ const EngagementPanel: React.FC = () => {
           {loading ? <Loader2 size={14} className="animate-spin" /> : <TrendingUp size={14} />}
           Atualizar
         </button>
-        <span className="text-xs text-gray-400">{sortedStats.length} usuarios | Ranking semanal (7 dias)</span>
+
+        <span className="text-xs text-gray-400">{sortedStats.length} usuarios | Ranking semanal</span>
       </div>
+
+      {/* Barra de acoes em lote */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
+          <span className="text-sm font-bold text-blue-800">{selectedIds.size} selecionado(s)</span>
+          <button
+            onClick={handleBulkSend}
+            disabled={bulkSending}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:opacity-50"
+          >
+            {bulkSending ? (
+              <><Loader2 size={14} className="animate-spin" /> Enviando {bulkProgress.sent}/{bulkProgress.total}...</>
+            ) : (
+              <><Send size={14} /> Enviar lembrete para selecionados</>
+            )}
+          </button>
+          {bulkSending && bulkProgress.errors > 0 && (
+            <span className="text-xs text-red-600 font-bold">{bulkProgress.errors} erro(s)</span>
+          )}
+          <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-blue-600 hover:text-blue-800 underline">
+            Limpar selecao
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="overflow-x-auto border border-gray-200 rounded-xl">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="text-left px-4 py-3 font-semibold text-gray-600">
-                <button onClick={() => handleSort('name')} className="hover:text-gray-900">
-                  Usuario <SortIcon field="name" />
-                </button>
+              <th className="px-3 py-3 w-10">
+                <input
+                  type="checkbox"
+                  checked={sortedStats.length > 0 && selectedIds.size === sortedStats.length}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                />
+              </th>
+              <th className="text-left px-3 py-3 font-semibold text-gray-600">
+                <button onClick={() => handleSort('name')} className="hover:text-gray-900">Usuario <SortIcon field="name" /></button>
               </th>
               <th className="text-center px-3 py-3 font-semibold text-gray-600">
-                <button onClick={() => handleSort('level')} className="hover:text-gray-900">
-                  Nivel <SortIcon field="level" />
-                </button>
+                <button onClick={() => handleSort('level')} className="hover:text-gray-900">Nivel <SortIcon field="level" /></button>
               </th>
               <th className="text-center px-3 py-3 font-semibold text-gray-600">
-                <button onClick={() => handleSort('score')} className="hover:text-gray-900">
-                  Score <SortIcon field="score" />
-                </button>
+                <button onClick={() => handleSort('score')} className="hover:text-gray-900">Score <SortIcon field="score" /></button>
               </th>
-              <th className="text-center px-3 py-3 font-semibold text-gray-600 min-w-[140px]">Ultimas 5 Semanas</th>
+              <th className="text-center px-3 py-3 font-semibold text-gray-600 min-w-[140px]">Ultimas 5 Sem.</th>
               <th className="text-center px-3 py-3 font-semibold text-gray-600">
-                <button onClick={() => handleSort('total_sessions_7d')} className="hover:text-gray-900">
-                  Sessoes <SortIcon field="total_sessions_7d" />
-                </button>
+                <button onClick={() => handleSort('total_sessions_7d')} className="hover:text-gray-900">Sessoes <SortIcon field="total_sessions_7d" /></button>
               </th>
               <th className="text-center px-3 py-3 font-semibold text-gray-600">
-                <button onClick={() => handleSort('total_minutes_7d')} className="hover:text-gray-900">
-                  Tempo <SortIcon field="total_minutes_7d" />
-                </button>
+                <button onClick={() => handleSort('total_minutes_7d')} className="hover:text-gray-900">Tempo <SortIcon field="total_minutes_7d" /></button>
               </th>
               <th className="text-center px-3 py-3 font-semibold text-gray-600">
-                <button onClick={() => handleSort('active_days_7d')} className="hover:text-gray-900">
-                  Dias Ativos <SortIcon field="active_days_7d" />
-                </button>
+                <button onClick={() => handleSort('active_days_7d')} className="hover:text-gray-900">Dias <SortIcon field="active_days_7d" /></button>
               </th>
               <th className="text-center px-3 py-3 font-semibold text-gray-600">
-                <button onClick={() => handleSort('days_since_last_access')} className="hover:text-gray-900">
-                  Ult. Acesso <SortIcon field="days_since_last_access" />
-                </button>
+                <button onClick={() => handleSort('days_since_last_access')} className="hover:text-gray-900">Ult. Acesso <SortIcon field="days_since_last_access" /></button>
+              </th>
+              <th className="text-center px-3 py-3 font-semibold text-gray-600">
+                <button onClick={() => handleSort('last_engagement_email_at')} className="hover:text-gray-900">Ult. Email <SortIcon field="last_engagement_email_at" /></button>
               </th>
               <th className="text-center px-3 py-3 font-semibold text-gray-600">Acao</th>
             </tr>
@@ -306,14 +408,23 @@ const EngagementPanel: React.FC = () => {
               const eng = getEngagementLevel(stat.score);
               const isInactive = stat.days_since_last_access > 7;
               const isExpanded = expandedUser === stat.user_id;
+              const isSelected = selectedIds.has(stat.user_id);
               const userHist = historyByUser[stat.user_id] || [];
               return (
                 <React.Fragment key={stat.user_id}>
-                  <tr className={`border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer ${isInactive ? 'bg-red-50/30' : ''}`}
-                      onClick={() => setExpandedUser(isExpanded ? null : stat.user_id)}>
+                  <tr className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${isInactive ? 'bg-red-50/30' : ''} ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                    {/* Checkbox */}
+                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(stat.user_id)}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     {/* Usuario */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
+                    <td className="px-3 py-3 cursor-pointer" onClick={() => setExpandedUser(isExpanded ? null : stat.user_id)}>
+                      <div className="flex items-center gap-2.5">
                         {stat.photo_url ? (
                           <img src={stat.photo_url} alt="" className="w-8 h-8 rounded-full" />
                         ) : (
@@ -321,19 +432,19 @@ const EngagementPanel: React.FC = () => {
                             {(stat.name || stat.email)[0]?.toUpperCase()}
                           </div>
                         )}
-                        <div>
+                        <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-semibold text-gray-900 text-xs">{stat.name || stat.email.split('@')[0]}</span>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            <span className="font-semibold text-gray-900 text-xs truncate">{stat.name || stat.email.split('@')[0]}</span>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
                               stat.role === 'admin' ? 'bg-purple-100 text-purple-600' :
                               stat.role === 'manager' ? 'bg-blue-100 text-blue-600' :
                               stat.role === 'approver' ? 'bg-green-100 text-green-600' :
                               'bg-gray-100 text-gray-500'
                             }`}>{roleLabel(stat.role)}</span>
                           </div>
-                          <div className="text-[11px] text-gray-400">{stat.email}</div>
+                          <div className="text-[11px] text-gray-400 truncate">{stat.email}</div>
                         </div>
-                        {isExpanded ? <ChevronUp size={14} className="text-gray-400 ml-auto" /> : <ChevronDown size={14} className="text-gray-300 ml-auto" />}
+                        {isExpanded ? <ChevronUp size={14} className="text-gray-400 ml-auto shrink-0" /> : <ChevronDown size={14} className="text-gray-300 ml-auto shrink-0" />}
                       </div>
                     </td>
                     {/* Nivel */}
@@ -357,16 +468,14 @@ const EngagementPanel: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    {/* Ultimas 5 semanas — mini timeline */}
+                    {/* Ultimas 5 semanas */}
                     <td className="px-3 py-3">
                       <div className="flex items-end justify-center gap-1">
                         {stat.weeklyScores.map((ws, i) => (
                           <div key={i} className="flex flex-col items-center gap-0.5" title={`${weekLabels[i] || `S${i+1}`}: Score ${ws}`}>
                             <div className="w-5 bg-gray-100 rounded-sm overflow-hidden relative" style={{ height: '28px' }}>
-                              <div
-                                className={`absolute bottom-0 w-full rounded-sm transition-all ${getLevelColor(ws)}`}
-                                style={{ height: `${Math.max(ws > 0 ? 10 : 0, (ws / 100) * 28)}px` }}
-                              />
+                              <div className={`absolute bottom-0 w-full rounded-sm transition-all ${getLevelColor(ws)}`}
+                                style={{ height: `${Math.max(ws > 0 ? 10 : 0, (ws / 100) * 28)}px` }} />
                             </div>
                             <span className="text-[8px] text-gray-400 font-mono">{weekLabels[i] || ''}</span>
                           </div>
@@ -393,10 +502,20 @@ const EngagementPanel: React.FC = () => {
                          `${stat.days_since_last_access}d`}
                       </span>
                     </td>
+                    {/* Ultimo email */}
+                    <td className="px-3 py-3 text-center">
+                      {stat.last_engagement_email_at ? (
+                        <span className="text-xs text-gray-500" title={formatDate(stat.last_engagement_email_at)}>
+                          {formatDateShort(stat.last_engagement_email_at)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-300">-</span>
+                      )}
+                    </td>
                     {/* Acao */}
                     <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                      {emailResult?.email === stat.email ? (
-                        emailResult.ok ? (
+                      {emailResults[stat.email] !== undefined ? (
+                        emailResults[stat.email] ? (
                           <span className="inline-flex items-center gap-1 text-green-600 text-xs"><CheckCircle2 size={14} /> Enviado</span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-red-600 text-xs"><XCircle size={14} /> Erro</span>
@@ -404,28 +523,24 @@ const EngagementPanel: React.FC = () => {
                       ) : (
                         <button
                           onClick={() => handleSendReminder(stat)}
-                          disabled={sendingEmail === stat.email}
+                          disabled={sendingEmail === stat.email || bulkSending}
                           className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all ${
                             stat.days_since_last_access > 7
                               ? 'bg-red-100 text-red-700 hover:bg-red-200'
                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                          }`}
+                          } disabled:opacity-50`}
                           title="Enviar lembrete por email"
                         >
-                          {sendingEmail === stat.email ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            <Mail size={12} />
-                          )}
+                          {sendingEmail === stat.email ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
                           Lembrete
                         </button>
                       )}
                     </td>
                   </tr>
-                  {/* Linha expandida — detalhes semanais */}
+                  {/* Expandido */}
                   {isExpanded && userHist.length > 0 && (
                     <tr className="bg-gray-50/80">
-                      <td colSpan={9} className="px-6 py-3">
+                      <td colSpan={11} className="px-6 py-3">
                         <div className="flex items-start gap-6">
                           <div className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-1">Historico Semanal</div>
                           <div className="flex gap-3 flex-wrap">
