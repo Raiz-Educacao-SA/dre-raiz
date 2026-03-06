@@ -489,7 +489,7 @@ const App: React.FC = () => {
 
     const newChange: ManualChange = {
       ...change,
-      id: `chg-${Date.now()}`,
+      id: crypto.randomUUID(),
       originalTransaction: { ...original },
       status: 'Pendente',
       requestedAt: new Date().toISOString(),
