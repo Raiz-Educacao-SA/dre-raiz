@@ -520,41 +520,57 @@ function MarcaSlide({
   const deltaPct = totalOrc !== 0 ? Math.round(((totalReal - totalOrc) / Math.abs(totalOrc)) * 1000) / 10 : null;
   const favorable = section.invertDelta ? (deltaPct !== null && deltaPct <= 0) : (deltaPct !== null && deltaPct >= 0);
 
+  // Fixed pixel height for bars — avoids CSS percentage resolution issues
+  const BAR_AREA_H = 200;
+  const barPx = (v: number) => Math.max(Math.round((Math.abs(v) / maxVal) * BAR_AREA_H), 3);
+
   return (
     <SlideCard>
       <SlideHeader title={`${section.label.toUpperCase()} POR MARCA`} monthShort={data.monthShort} color={section.sectionColor} />
-      <div className="flex gap-4 p-4 h-[calc(100%-48px)]">
-        {/* Left: bar chart */}
-        <div className="flex-1 min-w-0 flex flex-col justify-end">
-          <div className="flex items-end gap-3 h-full px-2">
-            {entries.map((entry, idx) => {
-              const barH = (v: number) => `${Math.max((Math.abs(v) / maxVal) * 100, 2)}%`;
-              return (
-                <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full min-w-0">
-                  <div className="flex items-end gap-0.5 w-full justify-center" style={{ height: '80%' }}>
-                    {/* Real */}
-                    <div className="flex flex-col items-center gap-0.5 flex-1 max-w-6">
-                      <span className="text-[8px] font-bold" style={{ color: hex(section.sectionColor) }}>{fmtK(entry.real)}</span>
-                      <div className="w-full rounded-t" style={{ height: barH(entry.real), backgroundColor: hex(section.sectionColor), minHeight: 2 }} />
-                    </div>
-                    {/* Orcado */}
-                    <div className="flex flex-col items-center gap-0.5 flex-1 max-w-6">
-                      <span className="text-[8px] font-bold" style={{ color: hex(C.orcado) }}>{fmtK(entry.orcado)}</span>
-                      <div className="w-full rounded-t" style={{ height: barH(entry.orcado), backgroundColor: hex(C.orcado), minHeight: 2 }} />
-                    </div>
-                    {/* A-1 */}
-                    <div className="flex flex-col items-center gap-0.5 flex-1 max-w-6">
-                      <span className="text-[8px] font-bold" style={{ color: hex(C.teal) }}>{fmtK(entry.a1)}</span>
-                      <div className="w-full rounded-t" style={{ height: barH(entry.a1), backgroundColor: hex(C.teal), minHeight: 2 }} />
-                    </div>
+      <div className="flex flex-col p-4 h-[calc(100%-48px)]">
+        {/* Top: KPI strip */}
+        <div className="flex items-center gap-3 mb-3">
+          <KpiCard label="TOTAL REAL" value={`R$ ${fmtK(totalReal)} mil`} color={hex(section.sectionColor)} />
+          <KpiCard label="TOTAL ORCADO" value={`R$ ${fmtK(totalOrc)} mil`} color={hex(C.orcado)} />
+          <KpiCard
+            label={deltaAbs >= 0 ? 'ECONOMIA' : 'DESVIO'}
+            value={`${fmtPct(deltaPct)}`}
+            color={favorable ? hex(C.deltaPositivo) : hex(C.deltaNegativo)}
+          />
+          <div className="text-[9px] text-gray-500 ml-1">
+            {fmtK(Math.abs(deltaAbs))} mil
+          </div>
+        </div>
+
+        {/* Bar chart — full width, fixed pixel heights */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex items-end gap-3 px-2" style={{ height: BAR_AREA_H }}>
+            {entries.map((entry, idx) => (
+              <div key={idx} className="flex-1 flex flex-col items-center justify-end min-w-0" style={{ height: BAR_AREA_H }}>
+                <div className="flex items-end gap-0.5 w-full justify-center h-full">
+                  {/* Real */}
+                  <div className="flex flex-col items-center justify-end gap-0.5 flex-1 max-w-7 h-full">
+                    <span className="text-[8px] font-bold leading-none" style={{ color: hex(section.sectionColor) }}>{fmtK(entry.real)}</span>
+                    <div className="w-full rounded-t" style={{ height: barPx(entry.real), backgroundColor: hex(section.sectionColor) }} />
                   </div>
-                  <div className="text-[9px] font-bold text-gray-600 mt-1 truncate w-full text-center" title={entry.marca}>
-                    {entry.marca}
+                  {/* Orcado */}
+                  <div className="flex flex-col items-center justify-end gap-0.5 flex-1 max-w-7 h-full">
+                    <span className="text-[8px] font-bold leading-none" style={{ color: hex(C.orcado) }}>{fmtK(entry.orcado)}</span>
+                    <div className="w-full rounded-t" style={{ height: barPx(entry.orcado), backgroundColor: hex(C.orcado) }} />
+                  </div>
+                  {/* A-1 */}
+                  <div className="flex flex-col items-center justify-end gap-0.5 flex-1 max-w-7 h-full">
+                    <span className="text-[8px] font-bold leading-none" style={{ color: hex(C.teal) }}>{fmtK(entry.a1)}</span>
+                    <div className="w-full rounded-t" style={{ height: barPx(entry.a1), backgroundColor: hex(C.teal) }} />
                   </div>
                 </div>
-              );
-            })}
+                <div className="text-[9px] font-bold text-gray-600 mt-1 truncate w-full text-center" title={entry.marca}>
+                  {entry.marca}
+                </div>
+              </div>
+            ))}
           </div>
+
           {/* Legend */}
           <div className="flex items-center gap-4 justify-center mt-2 pt-2 border-t border-gray-100">
             <div className="flex items-center gap-1">
@@ -572,19 +588,12 @@ function MarcaSlide({
           </div>
         </div>
 
-        {/* Right: KPIs */}
-        <div className="w-48 shrink-0 flex flex-col gap-2">
-          <KpiCard label="TOTAL REAL" value={`R$ ${fmtK(totalReal)} mil`} color={hex(section.sectionColor)} />
-          <KpiCard label="TOTAL ORCADO" value={`R$ ${fmtK(totalOrc)} mil`} color={hex(C.orcado)} />
-          <KpiCard
-            label={deltaAbs >= 0 ? 'ECONOMIA' : 'DESVIO'}
-            value={`${fmtPct(deltaPct)}`}
-            color={favorable ? hex(C.deltaPositivo) : hex(C.deltaNegativo)}
-          />
-          <div className="text-[9px] text-gray-500 text-center mt-1">
-            {fmtK(Math.abs(deltaAbs))} mil
+        {/* Bottom: AI insight / responsible analysis (if available from section) */}
+        {(section.node.enrichedInsight || section.node.orcAiSummary) && (
+          <div className="mt-3">
+            <InsightsBox text={section.node.enrichedInsight || section.node.orcAiSummary || ''} />
           </div>
-        </div>
+        )}
       </div>
     </SlideCard>
   );
