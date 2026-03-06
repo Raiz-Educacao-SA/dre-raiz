@@ -55,8 +55,9 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'engajamento'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma'>('import');
   const [dadosSubTab, setDadosSubTab] = useState<'importar' | 'exportar'>('importar');
+  const [usersSubTab, setUsersSubTab] = useState<'cadastro' | 'engajamento'>('cadastro');
 
   // Estados para aba Cronograma
   const [cronogramaItems, setCronogramaItems] = useState<supabaseService.CronogramaItem[]>([]);
@@ -1762,22 +1763,6 @@ const AdminPanel: React.FC = () => {
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-t"></div>
           )}
         </button>
-        <button
-          onClick={() => setActiveTab('engajamento')}
-          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
-            activeTab === 'engajamento'
-              ? 'text-blue-700 bg-blue-50'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          <div className="flex items-center gap-1.5">
-            <Trophy size={14} />
-            Engajamento
-          </div>
-          {activeTab === 'engajamento' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t"></div>
-          )}
-        </button>
       </div>
 
       {/* Aba: Dados (Importar / Exportar) */}
@@ -2194,9 +2179,37 @@ const AdminPanel: React.FC = () => {
         </>
       )}
 
-      {/* Aba: Gerenciamento de Usuários */}
+      {/* Aba: Usuários (Cadastro + Engajamento) */}
       {activeTab === 'users' && (
         <>
+      {/* Sub-abas: Cadastro / Engajamento */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setUsersSubTab('cadastro')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+            usersSubTab === 'cadastro'
+              ? 'bg-purple-600 text-white shadow'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          <Users size={14} />
+          Cadastro
+        </button>
+        <button
+          onClick={() => setUsersSubTab('engajamento')}
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+            usersSubTab === 'engajamento'
+              ? 'bg-blue-600 text-white shadow'
+              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+        >
+          <Trophy size={14} />
+          Engajamento
+        </button>
+      </div>
+
+      {usersSubTab === 'cadastro' && (
+      <>
       {/* Estatísticas de Usuários */}
       <div className="grid grid-cols-6 gap-2 mb-4">
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-2">
@@ -2683,6 +2696,23 @@ const AdminPanel: React.FC = () => {
           <li><strong>Permissões:</strong> Limitam acesso a dados específicos</li>
         </ul>
       </div>
+      </>
+      )}
+
+      {usersSubTab === 'engajamento' && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-300 rounded-xl p-4 shadow">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="bg-blue-100 p-2 rounded-lg">
+              <Trophy className="text-blue-600" size={20} />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-blue-900">Engajamento de Usuarios</h2>
+              <p className="text-xs text-blue-700">Acompanhe o uso da plataforma e engaje sua equipe</p>
+            </div>
+          </div>
+          <EngagementPanel />
+        </div>
+      )}
         </>
       )}
 
@@ -4800,21 +4830,6 @@ const AdminPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Aba: Engajamento */}
-      {activeTab === 'engajamento' && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-300 rounded-xl p-4 shadow">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-blue-100 p-2 rounded-lg">
-              <Trophy className="text-blue-600" size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-blue-900">Engajamento de Usuarios</h2>
-              <p className="text-xs text-blue-700">Acompanhe o uso da plataforma e engaje sua equipe</p>
-            </div>
-          </div>
-          <EngagementPanel />
-        </div>
-      )}
 
     </div>
   );
