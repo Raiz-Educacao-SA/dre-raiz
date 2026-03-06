@@ -528,7 +528,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   // Sincroniza estado do formulário de edição
   useEffect(() => {
     if (editingTransaction) {
-      setEditForm({
+      const baseForm = {
         category: editingTransaction.conta_contabil || editingTransaction.category || '',
         categoryLabel: editingTransaction.conta_contabil || editingTransaction.category || '',
         date: editingTransaction.date,
@@ -543,7 +543,39 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         tag02: editingTransaction.tag02 || '',
         tag03: editingTransaction.tag03 || '',
         nat_orc: editingTransaction.nat_orc || ''
-      });
+      };
+
+      // Se Pendente, buscar manual_change anterior para pré-preencher
+      if (editingTransaction.status === 'Pendente') {
+        getManualChangesByTransactionId(editingTransaction.id).then(changes => {
+          const pending = changes.find(c => c.status === 'Pendente' || c.status === 'Aplicado');
+          if (pending?.newValue) {
+            try {
+              const prev = JSON.parse(pending.newValue);
+              setEditForm({
+                ...baseForm,
+                category: prev.category || baseForm.category,
+                categoryLabel: prev.categoryLabel || baseForm.categoryLabel,
+                date: prev.date || baseForm.date,
+                filial: prev.filial || baseForm.filial,
+                filial_code: prev.filial_code || baseForm.filial_code,
+                marca: prev.marca || baseForm.marca,
+                justification: pending.justification || prev.justification || '',
+                recurring: prev.recurring || baseForm.recurring,
+                chave_id: prev.chave_id || baseForm.chave_id,
+                tag01: prev.tag01 || baseForm.tag01,
+                tag02: prev.tag02 || baseForm.tag02,
+                tag03: prev.tag03 || baseForm.tag03,
+                nat_orc: prev.nat_orc || baseForm.nat_orc
+              });
+            } catch { setEditForm(baseForm); }
+          } else {
+            setEditForm(baseForm);
+          }
+        }).catch(() => setEditForm(baseForm));
+      } else {
+        setEditForm(baseForm);
+      }
     }
   }, [editingTransaction]);
 
