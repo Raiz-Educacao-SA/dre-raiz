@@ -363,9 +363,9 @@ const EngagementPanel: React.FC = () => {
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto border border-gray-200 rounded-xl">
+      <div className="overflow-auto border border-gray-200 rounded-xl" style={{ maxHeight: 'calc(100vh - 320px)' }}>
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="bg-gray-50 border-b border-gray-200">
               <th className="px-3 py-3 w-10">
                 <input
