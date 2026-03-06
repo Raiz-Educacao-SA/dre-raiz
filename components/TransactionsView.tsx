@@ -106,6 +106,7 @@ interface TransactionsViewProps {
   setHasSearchedTransactions: (value: boolean) => void;
   addTransaction: (t: Omit<Transaction, 'id' | 'status'>) => void;
   requestChange: (change: Omit<ManualChange, 'id' | 'status' | 'requestedAt' | 'requestedBy' | 'originalTransaction'>) => void;
+  revertPending?: (transactionId: string) => void;
   deleteTransaction: (id: string) => void;
   fetchFromCSV?: (imported: Transaction[]) => void;
   isSyncing?: boolean;
@@ -173,7 +174,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   allowedTag01,
   allowedTag02,
   allowedTag03,
-  userRole
+  userRole,
+  revertPending
 }) => {
   // Estado de busca
   const [isSearching, setIsSearching] = useState(false);
@@ -1948,15 +1950,35 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       {editingTransaction && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-0 md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white shadow-2xl w-full h-full md:h-[80vh] md:max-w-5xl flex flex-col overflow-hidden rounded-none">
-            <div className="bg-[#F44C00] p-3 md:p-4 text-white flex justify-between items-center shrink-0">
+            <div className={`${editingTransaction.status === 'Pendente' ? 'bg-orange-500' : 'bg-[#F44C00]'} p-3 md:p-4 text-white flex justify-between items-center shrink-0`}>
                <div className="flex items-center gap-2 min-w-0">
                  <Edit3 size={18} className="shrink-0" />
-                 <h3 className="text-xs md:text-sm font-black uppercase truncate">Solicitar Ajuste: {editingTransaction.ticket || 'AVULSO'}</h3>
+                 <h3 className="text-xs md:text-sm font-black uppercase truncate">
+                   {editingTransaction.status === 'Pendente' ? 'Re-editar Pendente' : 'Solicitar Ajuste'}: {editingTransaction.ticket || 'AVULSO'}
+                 </h3>
                </div>
                <button onClick={() => setEditingTransaction(null)} className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center hover:bg-white/10 rounded"><X size={20} /></button>
             </div>
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
               <div className="lg:w-1/3 bg-gray-50 p-4 lg:p-6 border-b lg:border-b-0 lg:border-r border-gray-100 overflow-y-auto space-y-4">
+                 {editingTransaction.status === 'Pendente' && (
+                   <div className="bg-orange-50 border border-orange-200 p-3 space-y-2">
+                     <p className="text-[9px] font-black text-orange-700 uppercase flex items-center gap-1">
+                       <span className="inline-block w-2 h-2 rounded-full bg-orange-500 animate-pulse" /> Transacao Pendente
+                     </p>
+                     <p className="text-[10px] text-orange-600">
+                       Esta transacao esta aguardando aprovacao. Voce pode re-editar e re-enviar, ou reverter para o status normal.
+                     </p>
+                     {revertPending && (
+                       <button
+                         onClick={() => { revertPending(editingTransaction.id); setEditingTransaction(null); }}
+                         className="w-full py-2 min-h-[36px] bg-white border border-orange-300 text-orange-700 font-black text-[9px] uppercase hover:bg-orange-50 transition-colors"
+                       >
+                         Reverter para Normal
+                       </button>
+                     )}
+                   </div>
+                 )}
                  <div className="bg-white p-4 border border-gray-100 shadow-sm space-y-2">
                     <p className="text-[8px] font-black text-gray-400 uppercase">Contexto do Lançamento</p>
                     <p className="text-[10px] font-bold text-gray-900 leading-tight">{editingTransaction.description}</p>
@@ -2050,7 +2072,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                  </div>
                  <div className="mt-6 md:mt-8 flex gap-3 md:gap-4">
                     <button onClick={() => setEditingTransaction(null)} className="flex-1 py-3 min-h-[44px] bg-gray-100 text-gray-500 font-black text-[10px] uppercase">Cancelar</button>
-                    <button onClick={handleSubmitAjuste} disabled={!editForm.justification.trim()} className="flex-[2] py-3 min-h-[44px] bg-[#F44C00] text-white font-black text-[10px] uppercase shadow-lg disabled:opacity-50">Enviar p/ Aprovação</button>
+                    <button onClick={handleSubmitAjuste} disabled={!editForm.justification.trim()} className={`flex-[2] py-3 min-h-[44px] text-white font-black text-[10px] uppercase shadow-lg disabled:opacity-50 ${editingTransaction.status === 'Pendente' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-[#F44C00]'}`}>
+                      {editingTransaction.status === 'Pendente' ? 'Re-enviar p/ Aprovacao' : 'Enviar p/ Aprovacao'}
+                    </button>
                  </div>
               </div>
             </div>

@@ -509,13 +509,26 @@ const App: React.FC = () => {
       hasNewValue: !!newChange.newValue
     });
 
+    // Se já estava Pendente, cancelar manual_changes anteriores
+    if (original.status === 'Pendente') {
+      const oldPending = manualChanges.filter(c => c.transactionId === change.transactionId && c.status === 'Pendente');
+      if (oldPending.length > 0) {
+        console.log('🔄 Cancelando', oldPending.length, 'manual_changes pendentes anteriores...');
+        await Promise.all(oldPending.map(c =>
+          supabaseService.updateManualChange(c.id, { status: 'Reprovado' as any })
+        ));
+      }
+    }
+
     // Salvar no Supabase
     console.log('🔄 Chamando addManualChange...');
     const successChange = await supabaseService.addManualChange(newChange);
     console.log('🔄 addManualChange retornou:', successChange);
 
     console.log('🔄 Chamando updateTransaction...');
-    const successUpdate = await supabaseService.updateTransaction(change.transactionId, { status: 'Pendente' });
+    const successUpdate = original.status === 'Pendente'
+      ? true  // já está Pendente, não precisa atualizar status
+      : await supabaseService.updateTransaction(change.transactionId, { status: 'Pendente' });
     console.log('🔄 updateTransaction retornou:', successUpdate);
 
     console.log('🔍 Verificando sucesso:', {
@@ -644,6 +657,38 @@ const App: React.FC = () => {
     } catch (error) {
       console.error('❌ Erro na aprovação em massa:', error);
       alert('Erro ao processar aprovações em massa. Verifique o console.');
+    }
+  };
+
+  const handleRevertPending = async (transactionId: string) => {
+    try {
+      // 1. Reverter status da transaction para Normal
+      await supabaseService.updateTransaction(transactionId, { status: 'Normal' });
+
+      // 2. Cancelar manual_changes pendentes desta transaction
+      const pendingChanges = manualChanges.filter(c => c.transactionId === transactionId && c.status === 'Pendente');
+      await Promise.all(pendingChanges.map(c =>
+        supabaseService.updateManualChange(c.id, {
+          status: 'Reprovado' as any,
+          approvedAt: new Date().toISOString(),
+          approvedBy: user?.email || 'unknown@raizeducacao.com.br',
+          approvedByName: user?.name || 'Usuário Desconhecido',
+        })
+      ));
+
+      // 3. Atualizar estado local
+      setSearchedTransactions(prev =>
+        prev.map(t => t.id === transactionId ? { ...t, status: 'Normal' } : t)
+      );
+      setManualChanges(prev =>
+        prev.map(c => c.transactionId === transactionId && c.status === 'Pendente'
+          ? { ...c, status: 'Reprovado' as any }
+          : c
+        )
+      );
+    } catch (error) {
+      console.error('Erro ao reverter pendente:', error);
+      alert('Erro ao reverter. Tente novamente.');
     }
   };
 
@@ -1141,6 +1186,7 @@ const App: React.FC = () => {
                   allowedTag02={allowedTag02}
                   allowedTag03={allowedTag03}
                   userRole={user?.role}
+                  revertPending={handleRevertPending}
                 />
               </Suspense>
             </ErrorBoundary>
