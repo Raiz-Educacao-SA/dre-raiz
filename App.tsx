@@ -629,6 +629,14 @@ const App: React.FC = () => {
     setManualChanges(prev => prev.map(c =>
       c.id === changeId ? { ...c, ...approvalMeta } : c
     ));
+
+    // Atualizar searchedTransactions para refletir o novo status
+    const newStatus = change.type === 'EXCLUSAO' ? 'Excluído' : change.type === 'RATEIO' ? 'Rateado' : 'Ajustado';
+    setSearchedTransactions(prev =>
+      change.type === 'EXCLUSAO' || change.type === 'RATEIO'
+        ? prev.filter(t => t.id !== change.transactionId)
+        : prev.map(t => t.id === change.transactionId ? { ...t, status: newStatus } : t)
+    );
   }, [manualChanges, user]);
 
   const handleApproveChange = async (changeId: string) => {
