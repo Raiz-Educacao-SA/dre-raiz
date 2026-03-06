@@ -2243,9 +2243,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         const isRevenue = t.type === 'REVENUE';
 
         const F = ({ label, value, mono, accent, copyable }: { label: string; value: string; mono?: boolean; accent?: boolean; copyable?: boolean }) => (
-          <div className="flex items-center justify-between py-[3px] border-b border-gray-100/80 last:border-0 group gap-2">
-            <span className="text-[8px] font-black text-gray-400 uppercase tracking-wide shrink-0 w-[90px]">{label}</span>
-            <span className={`text-[10px] font-bold text-right truncate flex-1 min-w-0 ${mono ? 'font-mono' : ''} ${accent ? 'text-[#F44C00]' : 'text-gray-800'}`} title={value || '-'}>
+          <div className="flex items-start justify-between py-[3px] border-b border-gray-100/80 last:border-0 group gap-2">
+            <span className="text-[8px] font-black text-gray-400 uppercase tracking-wide shrink-0 w-[90px] mt-[2px]">{label}</span>
+            <span className={`text-[10px] font-bold text-right break-words flex-1 min-w-0 ${mono ? 'font-mono' : ''} ${accent ? 'text-[#F44C00]' : 'text-gray-800'}`} title={value || '-'}>
               {value || '-'}
             </span>
             {copyable && value && value !== '-' && (
@@ -2263,7 +2263,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
               <div className="bg-[#1B75BB] px-4 py-2.5 text-white flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <Eye size={15} className="shrink-0 opacity-80" />
-                  <h3 className="text-[11px] font-black uppercase tracking-tight truncate text-white">{t.description}</h3>
+                  <h3 className="text-[11px] font-black uppercase tracking-tight break-words text-white">{t.description}</h3>
                 </div>
                 <button onClick={() => setDetailTransaction(null)} className="p-1 hover:bg-white/20 rounded-lg transition-colors shrink-0">
                   <X size={16} />
@@ -2379,9 +2379,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                                   {changeRows.map((row) => (
                                     <div key={row.label} className="grid grid-cols-[60px_1fr_16px_1fr] items-center gap-0.5 px-2 py-1 border-b border-gray-50 last:border-0">
                                       <span className="text-[8px] font-black text-gray-500 uppercase">{row.label}</span>
-                                      <span className="text-[9px] font-bold text-gray-400 line-through truncate" title={row.from}>{row.from}</span>
-                                      <ArrowRight size={8} className="text-[#F44C00] mx-auto" />
-                                      <span className="text-[9px] font-black text-[#F44C00] truncate" title={row.to}>{row.to}</span>
+                                      <span className="text-[9px] font-bold text-gray-400 line-through break-words" title={row.from}>{row.from}</span>
+                                      <ArrowRight size={8} className="text-[#F44C00] mx-auto shrink-0" />
+                                      <span className="text-[9px] font-black text-[#F44C00] break-words" title={row.to}>{row.to}</span>
                                     </div>
                                   ))}
                                 </div>
