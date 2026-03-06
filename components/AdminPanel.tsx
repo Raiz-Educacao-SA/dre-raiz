@@ -595,20 +595,15 @@ const AdminPanel: React.FC = () => {
 
   const loadAvailableValues = async () => {
     try {
-      // Usar RPC eficiente em vez de carregar todas as transactions (limite 1000)
-      const filterOpts = await supabaseService.getDREFilterOptions({});
-      const marcas = (filterOpts.marcas || []).sort();
-      const filiais = (filterOpts.nome_filiais || []).sort();
-      const tag01Values = (filterOpts.tags01 || []).sort();
-
-      // Buscar categories e tags02/03 via getDistinctValues
-      const [categories, tag02s, tag03s] = await Promise.all([
+      const [marcas, filiais, categories, tag01Values, tag02s, tag03s] = await Promise.all([
+        supabaseService.getDistinctColumn('transactions', 'marca'),
+        supabaseService.getDistinctColumn('transactions', 'nome_filial'),
         supabaseService.getDistinctColumn('transactions', 'conta_contabil'),
+        supabaseService.getDistinctColumn('transactions', 'tag01'),
         supabaseService.getDistinctColumn('transactions', 'tag02'),
         supabaseService.getDistinctColumn('transactions', 'tag03'),
       ]);
       const tags = [...new Set([...tag01Values, ...tag02s, ...tag03s])].sort();
-
       setAvailableValues({ marcas, filiais, categories, tags, tag01Values });
     } catch (error) {
       console.error('Erro ao carregar valores disponíveis:', error);
