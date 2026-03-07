@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Shield,
   TrendingUp,
@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   Building2,
   Zap,
+  Calendar,
 } from 'lucide-react';
 import type {
   ScoreResult,
@@ -604,11 +605,31 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
 // Main Component — Container with Tabs
 // --------------------------------------------
 
+const MONTH_OPTIONS = [
+  { value: '01', label: 'Jan' }, { value: '02', label: 'Fev' }, { value: '03', label: 'Mar' },
+  { value: '04', label: 'Abr' }, { value: '05', label: 'Mai' }, { value: '06', label: 'Jun' },
+  { value: '07', label: 'Jul' }, { value: '08', label: 'Ago' }, { value: '09', label: 'Set' },
+  { value: '10', label: 'Out' }, { value: '11', label: 'Nov' }, { value: '12', label: 'Dez' },
+];
+
 const ExecutiveDashboard: React.FC = () => {
+  const now = new Date();
+  const currentYear = now.getUTCFullYear().toString();
+  // Default: meses fechados (até mês anterior)
+  const defaultMonthTo = String(Math.max(1, now.getUTCMonth())).padStart(2, '0'); // getUTCMonth() = 0-based, so month=2(mar) → "02"(fev)
+
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [monthFrom, setMonthFrom] = useState('01');
+  const [monthTo, setMonthTo] = useState(defaultMonthTo);
+
+  // Refs para evitar stale closures no useCallback
+  const monthFromRef = useRef(monthFrom);
+  const monthToRef = useRef(monthTo);
+  useEffect(() => { monthFromRef.current = monthFrom; }, [monthFrom]);
+  useEffect(() => { monthToRef.current = monthTo; }, [monthTo]);
 
   // Simulation state (shared between Simulation and Decisions tabs)
   const [simResults, setSimResults] = useState<ScenarioSimulationResult[] | null>(null);
@@ -629,12 +650,12 @@ const ExecutiveDashboard: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const year = new Date().getUTCFullYear().toString();
+      const mFrom = `${currentYear}-${monthFromRef.current}`;
+      const mTo = `${currentYear}-${monthToRef.current}`;
 
-      // 1. Buscar dados DRE via Supabase (mesmo RPC que SomaTagsView usa)
       // Fetch DRE consolidado + marcas em paralelo
       const [dreSnapshot, marcasResult] = await Promise.all([
-        getSomaTags(`${year}-01`, `${year}-12`),
+        getSomaTags(mFrom, mTo),
         getMarcasEFiliais(),
       ]);
 
@@ -666,7 +687,7 @@ const ExecutiveDashboard: React.FC = () => {
       let portfolioCompanies: CompanyFinancialSnapshot[] = [];
       if (marcas.length > 1) {
         const marcaResults = await Promise.all(
-          marcas.map(m => getSomaTags(`${year}-01`, `${year}-12`, [m]))
+          marcas.map(m => getSomaTags(mFrom, mTo, [m]))
         );
         const rowsByMarca = new Map<string, SomaTagsRow[]>();
         marcas.forEach((m, i) => {
@@ -888,14 +909,33 @@ const ExecutiveDashboard: React.FC = () => {
             <p className="text-[10px] text-gray-400">Plataforma de Inteligência Estratégica</p>
           </div>
         </div>
-        <button
-          onClick={loadData}
-          disabled={loading}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-all"
-          title="Atualizar"
-        >
-          <RefreshCw size={16} className={`text-gray-400 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-2">
+          <Calendar size={14} className="text-gray-400" />
+          <select
+            value={monthFrom}
+            onChange={(e) => setMonthFrom(e.target.value)}
+            className="px-2 py-1.5 text-xs font-bold border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          >
+            {MONTH_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          <span className="text-xs text-gray-400">a</span>
+          <select
+            value={monthTo}
+            onChange={(e) => setMonthTo(e.target.value)}
+            className="px-2 py-1.5 text-xs font-bold border border-gray-200 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+          >
+            {MONTH_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          <span className="text-[10px] text-gray-400">{currentYear}</span>
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="ml-1 px-3 py-1.5 text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-all disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       {/* Tab Navigation */}
