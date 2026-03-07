@@ -1110,6 +1110,10 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
                 <th className="text-left px-3 py-2 font-semibold text-gray-600">Marca</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Score</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Receita</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">C.Var</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">C.Fix</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">SG&A</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Rateio</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">EBITDA</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">Margem</th>
                 <th className="text-right px-3 py-2 font-semibold text-gray-600">YoY</th>
@@ -1133,6 +1137,10 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-medium text-gray-900">{fmtBRL(c.receita_real)}</td>
+                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.custos_variaveis_real)}</td>
+                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.custos_fixos_real)}</td>
+                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.sga_real)}</td>
+                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.rateio_real)}</td>
                     <td className="px-3 py-2 text-right font-medium" style={{ color: c.ebitda >= 0 ? '#059669' : '#DC2626' }}>
                       {fmtBRL(c.ebitda)}
                     </td>
@@ -1155,6 +1163,10 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right text-gray-900">{fmtBRL(portfolio_consolidated.consolidated_revenue)}</td>
+                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.custos_variaveis_real, 0))}</td>
+                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.custos_fixos_real, 0))}</td>
+                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.sga_real, 0))}</td>
+                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.rateio_real, 0))}</td>
                   <td className="px-3 py-2 text-right" style={{ color: portfolio_consolidated.consolidated_ebitda >= 0 ? '#059669' : '#DC2626' }}>
                     {fmtBRL(portfolio_consolidated.consolidated_ebitda)}
                   </td>

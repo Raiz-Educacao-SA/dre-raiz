@@ -37,7 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
       { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
       { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
-      { id: 'executive_dashboard', label: 'CEO Dashboard', icon: TrendingUp },
+      { id: 'executive_dashboard', label: 'Painel Executivo', icon: TrendingUp },
       { id: 'agent_team', label: 'Equipe IA', icon: Brain },
       { id: 'admin', label: 'Admin', icon: Shield },
     ] : []),
