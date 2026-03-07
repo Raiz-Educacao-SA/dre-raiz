@@ -190,7 +190,7 @@ export async function executeStep(
 
     // 2g-bis. Verificar halt conditions (Bruna e Falcão podem bloquear)
     const haltCheck = shouldHaltPipeline(
-      step.agent_code as 'alex' | 'bruna' | 'carlos' | 'denilson' | 'edmundo' | 'falcao' | 'diretor' | 'ceo',
+      step.agent_code as 'alex' | 'bruna' | 'carlos' | 'denilson' | 'edmundo' | 'falcao' | 'executivo',
       validated as Record<string, unknown>,
     );
     if (haltCheck.halt) {

@@ -31,17 +31,12 @@ import type {
   ConsolidationOutput,
   Recommendation,
   PresentationSlide,
-  DirectorReviewOutput,
-  DirectorQuestion,
-  ExpectedDirectorAnswer,
+  ExecutiveReviewOutput,
+  ExecutiveQuestion,
+  ExecutiveAnswer,
   ExecutionOwnershipReview,
-  ExecutiveMaterialReadiness,
-  PreCEOReinforcement,
-  CEOReviewOutput,
-  CEOQuestion,
-  ExpectedAnswer,
-  WeaknessReport,
-  DecisionReadinessAssessment,
+  WeaknessExposure,
+  DecisionReadiness,
   ExecutiveRehearsalEntry,
 } from '../../types/agentTeam';
 
@@ -1752,7 +1747,7 @@ function ConsolidationView({ data }: { data: ConsolidationOutput }) {
 }
 
 // ============================================
-// CEO — Executive Challenge & Decision Readiness View
+// Executivo — Executive Review & Decision Readiness View
 // ============================================
 
 const PRIORITY_STYLES: Record<string, { bg: string; text: string }> = {
@@ -1774,66 +1769,67 @@ const READINESS_STYLES: Record<string, { bg: string; text: string; border: strin
   not_ready:             { bg: 'bg-red-50',    text: 'text-red-800',    border: 'border-red-300', label: 'Não Pronto' },
 };
 
-function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
-  const questions: DirectorQuestion[] = data.director_question_pack || [];
-  const answers: ExpectedDirectorAnswer[] = data.expected_director_answer_pack || [];
+function ExecutiveReviewView({ data }: { data: ExecutiveReviewOutput }) {
+  const questions: ExecutiveQuestion[] = data.executive_question_pack || [];
+  const answers: ExecutiveAnswer[] = data.expected_answer_pack || [];
   const ownership: ExecutionOwnershipReview | undefined = data.execution_ownership_review;
-  const readiness: ExecutiveMaterialReadiness | undefined = data.executive_material_readiness;
-  const reinforcement: PreCEOReinforcement | undefined = data.pre_ceo_reinforcement;
+  const weakness: WeaknessExposure | undefined = data.weakness_exposure;
+  const readiness: DecisionReadiness | undefined = data.decision_readiness;
+  const rehearsal: ExecutiveRehearsalEntry[] = data.executive_rehearsal || [];
 
-  const answerMap = new Map<string, ExpectedDirectorAnswer>();
+  const answerMap = new Map<string, ExecutiveAnswer>();
   answers.forEach(a => answerMap.set(a.linked_question_id, a));
 
   return (
     <div className="space-y-3">
-      {/* 1. Executive Material Readiness */}
+      {/* 1. Decision Readiness */}
       {readiness && (() => {
         const rs = READINESS_STYLES[readiness.readiness_level] || READINESS_STYLES.ready_with_adjustments;
         return (
           <Card>
             <div className="flex items-center justify-between">
-              <SectionTitle icon={<Target size={12} className="text-slate-600" />}>Prontidão para Comitê/Diretoria</SectionTitle>
+              <SectionTitle icon={<Target size={12} className="text-slate-700" />}>Prontidão para Reunião Executiva</SectionTitle>
               <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${rs.bg} ${rs.text} ${rs.border}`}>
                 {rs.label}
               </span>
             </div>
             <TextBlock text={readiness.readiness_rationale} />
-            {readiness.strengths_of_material.length > 0 && (
+            {readiness.what_is_ready.length > 0 && (
               <div className="mt-2">
-                <p className="text-[10px] font-medium text-green-600">Pontos fortes:</p>
-                <BulletList items={readiness.strengths_of_material} />
+                <p className="text-[10px] font-medium text-green-600">Pronto:</p>
+                <BulletList items={readiness.what_is_ready} />
               </div>
             )}
-            {readiness.weak_points_of_material.length > 0 && (
+            {readiness.what_is_not_ready.length > 0 && (
               <div className="mt-1">
-                <p className="text-[10px] font-medium text-red-600">Pontos fracos:</p>
-                <BulletList items={readiness.weak_points_of_material} />
+                <p className="text-[10px] font-medium text-red-600">Não está pronto:</p>
+                <BulletList items={readiness.what_is_not_ready} />
               </div>
             )}
-            {readiness.mandatory_adjustments_before_ceo.length > 0 && (
-              <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
-                <p className="text-[10px] font-bold text-amber-700 mb-1">Ajustes obrigatórios antes do CEO:</p>
-                <BulletList items={readiness.mandatory_adjustments_before_ceo} />
+            {readiness.mandatory_fixes_before_meeting.length > 0 && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                <p className="text-[10px] font-bold text-red-700 mb-1">Ajustes obrigatórios antes da reunião:</p>
+                <BulletList items={readiness.mandatory_fixes_before_meeting} />
               </div>
             )}
-            {readiness.recommendation_to_proceed_to_ceo && (
+            {readiness.final_recommendation && (
               <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded">
-                <p className="text-[10px] font-bold text-slate-700">Recomendação para seguir ao CEO:</p>
-                <TextBlock text={readiness.recommendation_to_proceed_to_ceo} />
+                <p className="text-[10px] font-bold text-slate-700">Recomendação final:</p>
+                <TextBlock text={readiness.final_recommendation} />
               </div>
             )}
           </Card>
         );
       })()}
 
-      {/* 2. Director Question Pack + Expected Answers */}
+      {/* 2. Executive Question Pack + Expected Answers */}
       {questions.length > 0 && (
         <Card>
-          <SectionTitle icon={<Users size={12} className="text-slate-600" />}>
-            Perguntas da Diretoria ({questions.length})
+          <SectionTitle icon={<Users size={12} className="text-slate-700" />}>
+            Perguntas Executivas ({questions.length})
           </SectionTitle>
           <div className="space-y-3">
-            {questions.map((q: DirectorQuestion, i: number) => {
+            {questions.map((q: ExecutiveQuestion, i: number) => {
               const ps = PRIORITY_STYLES[q.priority] || PRIORITY_STYLES.medium;
               const answer = answerMap.get(q.question_id);
               const ac = answer ? (CONFIDENCE_BADGE[answer.answer_confidence] || CONFIDENCE_BADGE.medium) : null;
@@ -1846,7 +1842,7 @@ function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
                     <span className="text-[9px] text-gray-400 shrink-0">{S(q.question_category)}</span>
                   </div>
                   <p className="text-xs font-medium text-gray-900 italic">"{S(q.question_text)}"</p>
-                  <p className="text-[10px] text-gray-500">{S(q.why_director_would_ask)}</p>
+                  <p className="text-[10px] text-gray-500">{S(q.why_executive_would_ask)}</p>
                   {q.linked_material_section && (
                     <p className="text-[9px] text-blue-500">Seção: {S(q.linked_material_section)}</p>
                   )}
@@ -1856,7 +1852,7 @@ function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
                         <span className="text-[9px] font-bold text-slate-600">RESPOSTA ESPERADA</span>
                         {ac && (
                           <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${ac.bg} ${ac.text}`}>
-                            {ac.label}
+                            Confiança: {ac.label}
                           </span>
                         )}
                       </div>
@@ -1871,11 +1867,11 @@ function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
                         {answer.owner && <span className="text-purple-700">Dono: {S(answer.owner)}</span>}
                         {answer.deadline && <span className="text-orange-700">Prazo: {S(answer.deadline)}</span>}
                       </div>
-                      {answer.associated_decision && (
-                        <p className="text-[10px] text-green-700">Decisão: {S(answer.associated_decision)}</p>
+                      {answer.associated_action && (
+                        <p className="text-[10px] text-green-700">Ação: {S(answer.associated_action)}</p>
                       )}
-                      {answer.answer_gap_note && (
-                        <p className="text-[10px] text-amber-600">Lacuna: {S(answer.answer_gap_note)}</p>
+                      {answer.answer_fragility_note && (
+                        <p className="text-[10px] text-amber-600">Ressalva: {S(answer.answer_fragility_note)}</p>
                       )}
                     </div>
                   )}
@@ -1922,175 +1918,10 @@ function DirectorReviewView({ data }: { data: DirectorReviewOutput }) {
               <BulletList items={ownership.missing_governance_items} />
             </div>
           )}
-          {ownership.required_execution_clarifications.length > 0 && (
-            <div className="mt-1">
-              <p className="text-[10px] font-medium text-blue-600">Esclarecimentos necessários:</p>
-              <BulletList items={ownership.required_execution_clarifications} />
-            </div>
-          )}
         </Card>
       )}
 
-      {/* 4. Pre-CEO Reinforcement Pack */}
-      {reinforcement && (
-        <Card>
-          <SectionTitle icon={<Shield size={12} className="text-amber-500" />}>Preparação para o CEO</SectionTitle>
-          <div className="grid grid-cols-2 gap-2">
-            {reinforcement.points_to_reinforce_before_ceo.length > 0 && (
-              <div>
-                <p className="text-[10px] font-medium text-blue-600">Reforçar:</p>
-                <BulletList items={reinforcement.points_to_reinforce_before_ceo} />
-              </div>
-            )}
-            {reinforcement.numbers_that_must_be_ready.length > 0 && (
-              <div>
-                <p className="text-[10px] font-medium text-green-600">Números prontos:</p>
-                <BulletList items={reinforcement.numbers_that_must_be_ready} />
-              </div>
-            )}
-            {reinforcement.fragile_arguments_to_strengthen.length > 0 && (
-              <div>
-                <p className="text-[10px] font-medium text-red-600">Argumentos frágeis:</p>
-                <BulletList items={reinforcement.fragile_arguments_to_strengthen} />
-              </div>
-            )}
-            {reinforcement.ownership_points_to_make_explicit.length > 0 && (
-              <div>
-                <p className="text-[10px] font-medium text-purple-600">Ownership a explicitar:</p>
-                <BulletList items={reinforcement.ownership_points_to_make_explicit} />
-              </div>
-            )}
-          </div>
-          {reinforcement.likely_escalation_topics.length > 0 && (
-            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
-              <p className="text-[10px] font-bold text-red-700 mb-1">Temas prováveis de escalação:</p>
-              <BulletList items={reinforcement.likely_escalation_topics} />
-            </div>
-          )}
-          {reinforcement.presentation_adjustments_recommended.length > 0 && (
-            <div className="mt-2">
-              <p className="text-[10px] font-medium text-amber-600">Ajustes na apresentação:</p>
-              <BulletList items={reinforcement.presentation_adjustments_recommended} />
-            </div>
-          )}
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function CEOReviewView({ data }: { data: CEOReviewOutput }) {
-  const questions: CEOQuestion[] = data.ceo_question_pack || [];
-  const answers: ExpectedAnswer[] = data.expected_answer_pack || [];
-  const weakness: WeaknessReport | undefined = data.weakness_exposure_report;
-  const readiness: DecisionReadinessAssessment | undefined = data.decision_readiness;
-  const rehearsal: ExecutiveRehearsalEntry[] = data.executive_rehearsal || [];
-
-  // Build answer lookup for Q&A pairing
-  const answerMap = new Map<string, ExpectedAnswer>();
-  answers.forEach(a => answerMap.set(a.linked_question_id, a));
-
-  return (
-    <div className="space-y-3">
-      {/* 1. Decision Readiness Assessment */}
-      {readiness && (() => {
-        const rs = READINESS_STYLES[readiness.readiness_level] || READINESS_STYLES.ready_with_adjustments;
-        return (
-          <Card>
-            <div className="flex items-center justify-between">
-              <SectionTitle icon={<Target size={12} className="text-slate-700" />}>Prontidão para Reunião</SectionTitle>
-              <span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${rs.bg} ${rs.text} ${rs.border}`}>
-                {rs.label}
-              </span>
-            </div>
-            <TextBlock text={readiness.readiness_rationale} />
-            {readiness.what_is_ready.length > 0 && (
-              <div className="mt-2">
-                <p className="text-[10px] font-medium text-green-600">Pronto:</p>
-                <BulletList items={readiness.what_is_ready} />
-              </div>
-            )}
-            {readiness.what_is_not_ready.length > 0 && (
-              <div className="mt-1">
-                <p className="text-[10px] font-medium text-red-600">Não está pronto:</p>
-                <BulletList items={readiness.what_is_not_ready} />
-              </div>
-            )}
-            {readiness.mandatory_fixes_before_meeting.length > 0 && (
-              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
-                <p className="text-[10px] font-bold text-red-700 mb-1">Ajustes obrigatórios antes da reunião:</p>
-                <BulletList items={readiness.mandatory_fixes_before_meeting} />
-              </div>
-            )}
-            {readiness.final_recommendation && (
-              <div className="mt-2 p-2 bg-slate-50 border border-slate-200 rounded">
-                <p className="text-[10px] font-bold text-slate-700">Recomendação final:</p>
-                <TextBlock text={readiness.final_recommendation} />
-              </div>
-            )}
-          </Card>
-        );
-      })()}
-
-      {/* 2. CEO Question Pack + Expected Answers */}
-      {questions.length > 0 && (
-        <Card>
-          <SectionTitle icon={<Users size={12} className="text-slate-700" />}>
-            Perguntas do CEO ({questions.length})
-          </SectionTitle>
-          <div className="space-y-3">
-            {questions.map((q: CEOQuestion, i: number) => {
-              const ps = PRIORITY_STYLES[q.priority] || PRIORITY_STYLES.medium;
-              const answer = answerMap.get(q.question_id);
-              const ac = answer ? (CONFIDENCE_BADGE[answer.answer_confidence] || CONFIDENCE_BADGE.medium) : null;
-              return (
-                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
-                  {/* Question */}
-                  <div className="flex items-start gap-2">
-                    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${ps.bg} ${ps.text}`}>
-                      {S(q.priority)}
-                    </span>
-                    <span className="text-[9px] text-gray-400 shrink-0">{S(q.question_category)}</span>
-                  </div>
-                  <p className="text-xs font-medium text-gray-900 italic">"{S(q.question_text)}"</p>
-                  <p className="text-[10px] text-gray-500">{S(q.why_ceo_would_ask)}</p>
-                  {q.linked_agent_output && (
-                    <p className="text-[9px] text-blue-500">Fonte: {S(q.linked_agent_output)}</p>
-                  )}
-                  {/* Answer */}
-                  {answer && (
-                    <div className="mt-1.5 pl-3 border-l-2 border-slate-300 space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-bold text-slate-600">RESPOSTA ESPERADA</span>
-                        {ac && (
-                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${ac.bg} ${ac.text}`}>
-                            Confiança: {ac.label}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-gray-800 font-medium">{S(answer.direct_answer)}</p>
-                      {answer.main_number && (
-                        <p className="text-[10px] text-blue-700 font-medium">Dado: {S(answer.main_number)}</p>
-                      )}
-                      {answer.justification && (
-                        <p className="text-[10px] text-gray-600">{S(answer.justification)}</p>
-                      )}
-                      {answer.associated_action && (
-                        <p className="text-[10px] text-green-700">Acao: {S(answer.associated_action)}</p>
-                      )}
-                      {answer.answer_fragility_note && (
-                        <p className="text-[10px] text-amber-600">Ressalva: {S(answer.answer_fragility_note)}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* 3. Weakness & Exposure Report */}
+      {/* 4. Weakness & Exposure */}
       {weakness && (
         <Card>
           <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Fragilidades e Exposições</SectionTitle>
@@ -2120,22 +1951,16 @@ function CEOReviewView({ data }: { data: CEOReviewOutput }) {
               </div>
             )}
           </div>
-          {weakness.likely_ceo_discomfort_points.length > 0 && (
+          {weakness.likely_discomfort_points.length > 0 && (
             <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
               <p className="text-[10px] font-bold text-red-700 mb-1">Pontos de desconforto provável:</p>
-              <BulletList items={weakness.likely_ceo_discomfort_points} />
-            </div>
-          )}
-          {weakness.points_requiring_reinforcement.length > 0 && (
-            <div className="mt-2">
-              <p className="text-[10px] font-medium text-blue-600">Requer reforço:</p>
-              <BulletList items={weakness.points_requiring_reinforcement} />
+              <BulletList items={weakness.likely_discomfort_points} />
             </div>
           )}
         </Card>
       )}
 
-      {/* 4. Executive Rehearsal Simulation */}
+      {/* 5. Executive Rehearsal */}
       {rehearsal.length > 0 && (
         <Card>
           <SectionTitle icon={<Presentation size={12} className="text-indigo-500" />}>Ensaio Executivo ({rehearsal.length})</SectionTitle>
@@ -2154,7 +1979,7 @@ function CEOReviewView({ data }: { data: CEOReviewOutput }) {
                   <p className="text-[10px] text-amber-700 italic">Follow-up: "{S(r.follow_up_question)}"</p>
                 )}
                 {r.best_reinforcement_point && (
-                  <p className="text-[10px] text-blue-600">Reforco: {S(r.best_reinforcement_point)}</p>
+                  <p className="text-[10px] text-blue-600">Reforço: {S(r.best_reinforcement_point)}</p>
                 )}
               </div>
             ))}
@@ -2190,10 +2015,8 @@ const OutputRenderer: React.FC<OutputRendererProps> = ({ step }) => {
     content = <RiskView data={output_data as RiskOutput} />;
   } else if (agent_code === 'alex' && step_type === 'consolidate') {
     content = <ConsolidationView data={output_data as ConsolidationOutput} />;
-  } else if (agent_code === 'diretor' && step_type === 'review') {
-    content = <DirectorReviewView data={output_data as DirectorReviewOutput} />;
-  } else if (agent_code === 'ceo' && step_type === 'review') {
-    content = <CEOReviewView data={output_data as CEOReviewOutput} />;
+  } else if (agent_code === 'executivo' && step_type === 'review') {
+    content = <ExecutiveReviewView data={output_data as ExecutiveReviewOutput} />;
   } else {
     // Fallback — render raw JSON
     content = (

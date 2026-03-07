@@ -132,18 +132,11 @@ export const CONFLICT_RULES: ConflictRule[] = [
     resolver: 'alex',
   },
   {
-    id: 'CONF_DIRETOR_MISSING_OWNERSHIP',
-    scenario: 'Diretor identifica ausência de dono, prazo ou governança no material',
-    agents_involved: ['diretor', 'alex'],
-    resolution: 'Material deve ser reforçado antes de seguir ao CEO. Diretor registra lacunas explícitas.',
-    resolver: 'diretor',
-  },
-  {
-    id: 'CONF_CEO_MATERIAL_NOT_READY',
-    scenario: 'CEO avalia que material não está pronto para reunião executiva',
-    agents_involved: ['ceo', 'alex'],
-    resolution: 'CEO registra fragilidades finais e ajustes obrigatórios. Material requer reforço antes da reunião.',
-    resolver: 'ceo',
+    id: 'CONF_EXECUTIVO_MISSING_OWNERSHIP',
+    scenario: 'Executivo identifica ausência de dono, prazo ou governança no material',
+    agents_involved: ['executivo', 'alex'],
+    resolution: 'Material deve ser reforçado. Executivo registra lacunas explícitas e ajustes obrigatórios.',
+    resolver: 'executivo',
   },
 ];
 

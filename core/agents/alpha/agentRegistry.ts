@@ -3,7 +3,7 @@
 // Registro central de todos os agentes da equipe
 // ============================================
 
-export type AgentCode = 'alex' | 'bruna' | 'carlos' | 'denilson' | 'edmundo' | 'falcao' | 'diretor' | 'ceo';
+export type AgentCode = 'alex' | 'bruna' | 'carlos' | 'denilson' | 'edmundo' | 'falcao' | 'executivo';
 
 export type StepType = 'plan' | 'execute' | 'consolidate' | 'review';
 
@@ -79,29 +79,19 @@ export const ALPHA_AGENT_REGISTRY: Record<AgentCode, AgentRegistryEntry> = {
     output_contract_name: 'FalcaoRiskOutput',
     ui_description: 'Avalia risco do plano, da curva e da operação escolar por marca. Classifica aceitável, mitigável e não negociável. Indica gatilhos de revisão, escalonamento e parada.',
   },
-  diretor: {
-    code: 'diretor',
-    display_name: 'Diretor',
-    role_title: 'Executive Committee Reviewer',
-    avatar_color: '#475569',
-    step_types: ['review'],
-    input_dependencies: ['alex', 'bruna', 'carlos', 'denilson', 'edmundo', 'falcao'],
-    output_contract_name: 'DirectorReviewOutput',
-    ui_description: 'Camada executiva intermediária. Revisa clareza, ownership, prazos, governança e prontidão do material antes do desafio final do CEO.',
-  },
-  ceo: {
-    code: 'ceo',
-    display_name: 'CEO',
-    role_title: 'Executive Challenger & Decision Readiness Reviewer',
+  executivo: {
+    code: 'executivo',
+    display_name: 'Executivo',
+    role_title: 'Executive Reviewer & Decision Readiness Challenger',
     avatar_color: '#1e293b',
     step_types: ['review'],
-    input_dependencies: ['alex', 'bruna', 'carlos', 'denilson', 'edmundo', 'falcao', 'diretor'],
-    output_contract_name: 'CEOReviewOutput',
-    ui_description: 'Revisor executivo final. Simula as perguntas críticas do CEO, testa a robustez do material, identifica fragilidades, prepara respostas defensáveis e avalia se o material está pronto para reunião.',
+    input_dependencies: ['alex', 'bruna', 'carlos', 'denilson', 'edmundo', 'falcao'],
+    output_contract_name: 'ExecutiveReviewOutput',
+    ui_description: 'Revisor executivo final. Simula perguntas de diretoria e CEO, testa robustez do material, cobra ownership e prazos, expõe fragilidades, prepara respostas defensáveis e avalia prontidão para reunião executiva.',
   },
 };
 
-export const ALPHA_AGENT_CODES: AgentCode[] = ['alex', 'bruna', 'carlos', 'denilson', 'edmundo', 'falcao', 'diretor', 'ceo'];
+export const ALPHA_AGENT_CODES: AgentCode[] = ['alex', 'bruna', 'carlos', 'denilson', 'edmundo', 'falcao', 'executivo'];
 
 export function getAgentEntry(code: AgentCode): AgentRegistryEntry {
   return ALPHA_AGENT_REGISTRY[code];

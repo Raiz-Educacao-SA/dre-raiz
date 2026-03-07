@@ -63,7 +63,7 @@ export interface AgentStep {
   step_order: number;
   status: StepStatus;
   input_data: Record<string, unknown> | null;
-  output_data: SupervisorPlanOutput | DataQualityOutput | PerformanceAnalysisOutput | OptimizationOutput | ForecastOutput | RiskOutput | ConsolidationOutput | DirectorReviewOutput | CEOReviewOutput | null;
+  output_data: SupervisorPlanOutput | DataQualityOutput | PerformanceAnalysisOutput | OptimizationOutput | ForecastOutput | RiskOutput | ConsolidationOutput | ExecutiveReviewOutput | null;
   raw_output: string | null;
   error_message: string | null;
   review_status: ReviewStatus;
@@ -760,42 +760,44 @@ export interface Recommendation {
 }
 
 // --------------------------------------------
-// Diretor — Executive Committee Reviewer
+// Executivo — Executive Reviewer & Decision Readiness Challenger
 // --------------------------------------------
 
-export type DirectorQuestionCategory =
-  | 'mensagem_principal'
-  | 'performance'
+export type ExecutiveQuestionCategory =
+  | 'resultado'
+  | 'orçamento'
+  | 'causa_real'
   | 'plano_de_acao'
   | 'ownership'
   | 'prazo'
-  | 'impacto'
+  | 'fechamento_do_ano'
+  | 'sacrificios'
   | 'risco'
+  | 'risco_escolar'
   | 'governanca'
-  | 'monitoramento'
-  | 'decisao';
+  | 'decisao_final';
 
-export type DirectorReadinessLevel = 'ready' | 'ready_with_adjustments' | 'not_ready';
+export type ReadinessLevel = 'ready' | 'ready_with_adjustments' | 'not_ready';
 
-export interface DirectorQuestion {
+export interface ExecutiveQuestion {
   question_id: string;
-  question_category: DirectorQuestionCategory;
+  question_category: ExecutiveQuestionCategory;
   question_text: string;
   priority: 'critical' | 'high' | 'medium' | 'low';
-  why_director_would_ask: string;
+  why_executive_would_ask: string;
   linked_material_section: string;
 }
 
-export interface ExpectedDirectorAnswer {
+export interface ExecutiveAnswer {
   linked_question_id: string;
   direct_answer: string;
   main_number: string;
   justification: string;
   owner: string;
   deadline: string;
-  associated_decision: string;
+  associated_action: string;
   answer_confidence: 'high' | 'medium' | 'low';
-  answer_gap_note: string;
+  answer_fragility_note: string;
 }
 
 export interface ExecutionOwnershipReview {
@@ -804,87 +806,17 @@ export interface ExecutionOwnershipReview {
   actions_without_metric: string[];
   vague_execution_points: string[];
   missing_governance_items: string[];
-  required_execution_clarifications: string[];
 }
 
-export interface ExecutiveMaterialReadiness {
-  readiness_level: DirectorReadinessLevel;
-  readiness_rationale: string;
-  strengths_of_material: string[];
-  weak_points_of_material: string[];
-  mandatory_adjustments_before_ceo: string[];
-  recommendation_to_proceed_to_ceo: string;
-}
-
-export interface PreCEOReinforcement {
-  points_to_reinforce_before_ceo: string[];
-  numbers_that_must_be_ready: string[];
-  fragile_arguments_to_strengthen: string[];
-  ownership_points_to_make_explicit: string[];
-  likely_escalation_topics: string[];
-  presentation_adjustments_recommended: string[];
-}
-
-export interface DirectorReviewOutput {
-  director_question_pack: DirectorQuestion[];
-  expected_director_answer_pack: ExpectedDirectorAnswer[];
-  execution_ownership_review: ExecutionOwnershipReview;
-  executive_material_readiness: ExecutiveMaterialReadiness;
-  pre_ceo_reinforcement: PreCEOReinforcement;
-}
-
-// --------------------------------------------
-// CEO — Executive Challenger & Decision Readiness Reviewer
-// --------------------------------------------
-
-export type QuestionCategory =
-  | 'resultado'
-  | 'orçamento'
-  | 'histórico'
-  | 'causa_real'
-  | 'plano_de_acao'
-  | 'fechamento_do_ano'
-  | 'sacrificios'
-  | 'risco'
-  | 'risco_escolar'
-  | 'governanca'
-  | 'decisao_final';
-
-export type QuestionPriority = 'critical' | 'high' | 'medium' | 'low';
-
-export type AnswerConfidence = 'high' | 'medium' | 'low';
-
-export type ReadinessLevel = 'ready' | 'ready_with_adjustments' | 'not_ready';
-
-export interface CEOQuestion {
-  question_id: string;
-  question_category: QuestionCategory;
-  question_text: string;
-  priority: QuestionPriority;
-  why_ceo_would_ask: string;
-  linked_agent_output: string;
-}
-
-export interface ExpectedAnswer {
-  linked_question_id: string;
-  direct_answer: string;
-  main_number: string;
-  justification: string;
-  associated_action: string;
-  answer_confidence: AnswerConfidence;
-  answer_fragility_note: string;
-}
-
-export interface WeaknessReport {
+export interface WeaknessExposure {
   weak_points: string[];
   unsupported_claims: string[];
   vague_sections: string[];
   missing_numbers: string[];
-  likely_ceo_discomfort_points: string[];
-  points_requiring_reinforcement: string[];
+  likely_discomfort_points: string[];
 }
 
-export interface DecisionReadinessAssessment {
+export interface DecisionReadiness {
   readiness_level: ReadinessLevel;
   readiness_rationale: string;
   what_is_ready: string[];
@@ -901,11 +833,12 @@ export interface ExecutiveRehearsalEntry {
   best_reinforcement_point: string;
 }
 
-export interface CEOReviewOutput {
-  ceo_question_pack: CEOQuestion[];
-  expected_answer_pack: ExpectedAnswer[];
-  weakness_exposure_report: WeaknessReport;
-  decision_readiness: DecisionReadinessAssessment;
+export interface ExecutiveReviewOutput {
+  executive_question_pack: ExecutiveQuestion[];
+  expected_answer_pack: ExecutiveAnswer[];
+  execution_ownership_review: ExecutionOwnershipReview;
+  weakness_exposure: WeaknessExposure;
+  decision_readiness: DecisionReadiness;
   executive_rehearsal: ExecutiveRehearsalEntry[];
 }
 

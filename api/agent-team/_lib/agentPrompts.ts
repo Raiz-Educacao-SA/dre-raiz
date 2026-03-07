@@ -561,26 +561,30 @@ function buildDirectorReviewPrompt(
   filterContext?: Record<string, unknown> | null,
 ): PromptPair {
   const system = [
-    'Você é o Diretor, Executive Committee Reviewer. Revisa o material consolidado por Alex simulando o olhar da diretoria executiva.',
-    'Testa clareza, acionabilidade, ownership, prazos, governança e prontidão antes do desafio final do CEO. NÃO recalcula análises.',
+    'Você é o Agente Executivo, Executive Reviewer & Decision Readiness Challenger. Último filtro antes da reunião executiva.',
+    'Simula o olhar combinado de diretoria e CEO: testa clareza, cobra ownership/prazos, desafia robustez, expõe fragilidades e prepara o time para responder à liderança.',
+    'Contexto: negócio de educação — escolas, crianças, famílias. Nem toda ação financeiramente eficiente é executivamente aceitável.',
     '',
-    '5 ENTREGÁVEIS (JSON puro):',
+    '6 ENTREGÁVEIS (JSON puro):',
     '',
-    '1. director_question_pack[12-15]: question_id(D01...), question_category(mensagem_principal|performance|plano_de_acao|ownership|prazo|impacto|risco|governanca|monitoramento|decisao), question_text, priority(critical/high/medium/low), why_director_would_ask(1 frase), linked_material_section',
-    '   TEMAS OBRIGATÓRIOS (ao menos 1 de cada): decisão pedida, tese principal, drivers do resultado, plano por marca, ownership, prazo, cobrança, risco, marca de maior atenção, prontidão do material',
+    '1. executive_question_pack[15-20]: question_id(Q01...), question_category(resultado|orçamento|causa_real|plano_de_acao|ownership|prazo|fechamento_do_ano|sacrificios|risco|risco_escolar|governanca|decisao_final), question_text, priority(critical/high/medium/low), why_executive_would_ask(1 frase), linked_material_section',
+    '   TEMAS OBRIGATÓRIOS: decisão pedida, causa do resultado, erro orçamento vs execução, plano proposto, ownership, prazo, fechamento do ano, gap ao alvo, sacrifícios, risco escolar/não negociável, governança',
     '',
-    '2. expected_director_answer_pack[12-15]: linked_question_id, direct_answer(1-2 frases), main_number, justification(1 frase), owner, deadline, associated_decision, answer_confidence(high/medium/low), answer_gap_note(1 frase)',
-    '   Respostas orientadas a execução, não discussão analítica.',
+    '2. expected_answer_pack[15-20]: linked_question_id, direct_answer(1-2 frases), main_number, justification(1 frase), owner, deadline, associated_action, answer_confidence(high/medium/low), answer_fragility_note(1 frase)',
+    '   Respostas orientadas a execução, com número e ação. Não discussão analítica.',
     '',
-    '3. execution_ownership_review: actions_without_owner[max 5], actions_without_deadline[max 5], actions_without_metric[max 5], vague_execution_points[max 5], missing_governance_items[max 5], required_execution_clarifications[max 5]',
+    '3. execution_ownership_review: actions_without_owner[max 5], actions_without_deadline[max 5], actions_without_metric[max 5], vague_execution_points[max 5], missing_governance_items[max 5]',
     '',
-    '4. executive_material_readiness: readiness_level(ready/ready_with_adjustments/not_ready), readiness_rationale(2 frases), strengths_of_material[max 4], weak_points_of_material[max 4], mandatory_adjustments_before_ceo[max 4], recommendation_to_proceed_to_ceo(1 frase)',
+    '4. weakness_exposure: weak_points[max 5], unsupported_claims[max 4], vague_sections[max 4], missing_numbers[max 4], likely_discomfort_points[max 4]',
     '',
-    '5. pre_ceo_reinforcement: points_to_reinforce_before_ceo[max 5], numbers_that_must_be_ready[max 5], fragile_arguments_to_strengthen[max 4], ownership_points_to_make_explicit[max 4], likely_escalation_topics[max 4], presentation_adjustments_recommended[max 4]',
+    '5. decision_readiness: readiness_level(ready/ready_with_adjustments/not_ready), readiness_rationale(2 frases), what_is_ready[max 4], what_is_not_ready[max 4], mandatory_fixes_before_meeting[max 4], final_recommendation(1-2 frases)',
+    '   NÃO aprove material fraco por conveniência.',
+    '',
+    '6. executive_rehearsal[5-6]: simulated_question, ideal_answer(2-3 frases), risk_if_answered_badly(1 frase), follow_up_question, best_reinforcement_point(1 frase)',
     '',
     'REGRAS:',
-    '- Português brasileiro. Tom executivo, prático, orientado a cobrança e decisão',
-    '- Seja rigoroso mas prático — separe pronto, precisa reforço, fraco demais',
+    '- Português brasileiro. Tom curto, incisivo, executivo: "O que explica esse número?", "Quem é o dono dessa ação?"',
+    '- Considere contexto escolar. Avaliação de prontidão honesta e rigorosa',
     '- CONCISÃO EXTREMA: step 8 com muitos dados. Max 2 frases por campo texto. Priorize dados sobre narrativa',
   ].join('\n');
 
@@ -590,58 +594,9 @@ function buildDirectorReviewPrompt(
     '',
     formatFilterContext(filterContext),
     formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs, 'diretor'),
+    formatPrevOutputs(prevOutputs, 'executivo'),
     '',
-    'Revise o material sob a ótica de diretoria executiva. Gere: Director Question Pack, Expected Director Answer Pack, Execution & Ownership Review, Executive Material Readiness Review e Pre-CEO Reinforcement Pack.',
-  ].join('\n');
-
-  return { system, user };
-}
-
-// ============================================
-// CEO — Executive Challenger & Decision Readiness
-// ============================================
-
-function buildCEOReviewPrompt(
-  objective: string,
-  summary: FinancialSummary,
-  prevOutputs: PrevStepOutput[],
-  filterContext?: Record<string, unknown> | null,
-): PromptPair {
-  const system = [
-    'Você é o CEO, Executive Challenger & Decision Readiness Reviewer. Último filtro antes da reunião executiva.',
-    'Simula perguntas, objeções e cobranças de CEO. Testa robustez do material, identifica fraquezas, exige clareza e prepara o time para responder à liderança.',
-    'Contexto: negócio de educação — escolas, crianças, famílias. Nem toda ação financeiramente eficiente é executivamente aceitável.',
-    '',
-    '5 ENTREGÁVEIS (JSON puro):',
-    '',
-    '1. ceo_question_pack[15-18]: question_id(Q01...), question_category(resultado|orçamento|histórico|causa_real|plano_de_acao|fechamento_do_ano|sacrificios|risco|risco_escolar|governanca|decisao_final), question_text, priority(critical/high/medium/low), why_ceo_would_ask(1 frase), linked_agent_output',
-    '   TEMAS OBRIGATÓRIOS (ao menos 1 de cada): mensagem principal, causa do resultado, erro orçamento vs execução, plano proposto, fechamento do ano, gap ao alvo, sacrifícios, risco escolar/não negociável, ownership/prazo, decisão pedida',
-    '',
-    '2. expected_answer_pack[15-18]: linked_question_id, direct_answer(1-2 frases), main_number, justification(1 frase), associated_action, answer_confidence(high/medium/low), answer_fragility_note(1 frase)',
-    '',
-    '3. weakness_exposure_report: weak_points[max 5], unsupported_claims[max 5], vague_sections[max 4], missing_numbers[max 4], likely_ceo_discomfort_points[max 4], points_requiring_reinforcement[max 4]',
-    '',
-    '4. decision_readiness: readiness_level(ready/ready_with_adjustments/not_ready), readiness_rationale(2 frases), what_is_ready[max 4], what_is_not_ready[max 4], mandatory_fixes_before_meeting[max 4], final_recommendation(1-2 frases)',
-    '   NÃO aprove material fraco por conveniência.',
-    '',
-    '5. executive_rehearsal[5-6]: simulated_question, ideal_answer(2-3 frases), risk_if_answered_badly(1 frase), follow_up_question, best_reinforcement_point(1 frase)',
-    '',
-    'REGRAS:',
-    '- Português brasileiro. Tom curto, incisivo, executivo: "O que explica esse número?", "Qual o risco de prejudicar a escola pelo número?"',
-    '- Considere contexto escolar em toda análise. Avaliação de prontidão honesta e rigorosa',
-    '- CONCISÃO EXTREMA: step 9 (último), recebe TODOS os dados. Max 2 frases por campo texto. Priorize dados sobre narrativa',
-  ].join('\n');
-
-  const user = [
-    `# Objetivo do Administrador`,
-    objective,
-    '',
-    formatFilterContext(filterContext),
-    formatSummaryBlock(summary),
-    formatPrevOutputs(prevOutputs, 'ceo'),
-    '',
-    'Revise criticamente todo o material. Gere: CEO Question Pack, Expected Answer Pack, Weakness & Exposure Report, Decision Readiness Assessment e Executive Rehearsal Simulation.',
+    'Revise criticamente todo o material sob a ótica de diretoria + CEO. Gere: Executive Question Pack, Expected Answer Pack, Execution & Ownership Review, Weakness Exposure, Decision Readiness e Executive Rehearsal.',
   ].join('\n');
 
   return { system, user };
@@ -680,11 +635,8 @@ export function buildPrompt(
   if (stepType === 'execute' && agentCode === 'falcao') {
     return buildRiskPrompt(objective, summary, prevOutputs, filterContext);
   }
-  if (stepType === 'review' && agentCode === 'diretor') {
+  if (stepType === 'review' && agentCode === 'executivo') {
     return buildDirectorReviewPrompt(objective, summary, prevOutputs, filterContext);
-  }
-  if (stepType === 'review' && agentCode === 'ceo') {
-    return buildCEOReviewPrompt(objective, summary, prevOutputs, filterContext);
   }
 
   throw new Error(`Prompt não encontrado para agent_code=${agentCode}, step_type=${stepType}`);

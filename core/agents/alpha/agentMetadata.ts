@@ -41,7 +41,7 @@ export function getAgentCardMetadata(code: AgentCode): AgentCardMetadata {
 }
 
 export function getAllAgentCards(): AgentCardMetadata[] {
-  const codes: AgentCode[] = ['alex', 'bruna', 'carlos', 'denilson', 'edmundo', 'falcao', 'diretor', 'ceo'];
+  const codes: AgentCode[] = ['alex', 'bruna', 'carlos', 'denilson', 'edmundo', 'falcao', 'executivo'];
   return codes.map(getAgentCardMetadata);
 }
 

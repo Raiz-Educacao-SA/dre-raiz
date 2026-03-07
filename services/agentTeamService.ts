@@ -656,7 +656,7 @@ async function callClaudeViaProxy(
   const model = isLightStep ? 'claude-haiku-4-5-20251001' : defaultModel;
   const isHeavyOutput = ['carlos'].includes(agentCode);
   const isMediumOutput = ['denilson', 'edmundo', 'falcao'].includes(agentCode);
-  const isReview = ['diretor', 'ceo'].includes(agentCode);
+  const isReview = ['executivo'].includes(agentCode);
   const maxTokens = isConsolidation ? 16384
     : isHeavyOutput ? 16384
     : isMediumOutput ? 12288

@@ -1187,33 +1187,33 @@ export function consolidationJsonSchema() {
 }
 
 // ============================================
-// Diretor — Executive Committee Reviewer Schema
+// Executivo — Executive Reviewer & Decision Readiness Challenger Schema
 // ============================================
 
-const DIRECTOR_QUESTION_CATEGORIES = [
-  'mensagem_principal', 'performance', 'plano_de_acao', 'ownership', 'prazo',
-  'impacto', 'risco', 'governanca', 'monitoramento', 'decisao',
+const EXECUTIVE_QUESTION_CATEGORIES = [
+  'resultado', 'orçamento', 'causa_real', 'plano_de_acao', 'ownership', 'prazo',
+  'fechamento_do_ano', 'sacrificios', 'risco', 'risco_escolar', 'governanca', 'decisao_final',
 ] as const;
 
-const DirectorQuestionSchema = z.object({
+const ExecutiveQuestionSchema = z.object({
   question_id: z.string(),
-  question_category: z.enum(DIRECTOR_QUESTION_CATEGORIES).default('plano_de_acao'),
+  question_category: z.enum(EXECUTIVE_QUESTION_CATEGORIES).default('resultado'),
   question_text: z.string(),
   priority: z.enum(['critical', 'high', 'medium', 'low']).default('high'),
-  why_director_would_ask: z.string().default(''),
+  why_executive_would_ask: z.string().default(''),
   linked_material_section: z.string().default(''),
 });
 
-const ExpectedDirectorAnswerSchema = z.object({
+const ExecutiveAnswerSchema = z.object({
   linked_question_id: z.string(),
   direct_answer: z.string(),
   main_number: z.string().default(''),
   justification: z.string().default(''),
   owner: z.string().default(''),
   deadline: z.string().default(''),
-  associated_decision: z.string().default(''),
+  associated_action: z.string().default(''),
   answer_confidence: z.enum(['high', 'medium', 'low']).default('medium'),
-  answer_gap_note: z.string().default(''),
+  answer_fragility_note: z.string().default(''),
 });
 
 const ExecutionOwnershipReviewSchema = z.object({
@@ -1222,163 +1222,18 @@ const ExecutionOwnershipReviewSchema = z.object({
   actions_without_metric: z.array(z.string()).default([]),
   vague_execution_points: z.array(z.string()).default([]),
   missing_governance_items: z.array(z.string()).default([]),
-  required_execution_clarifications: z.array(z.string()).default([]),
 });
 
-const ExecutiveMaterialReadinessSchema = z.object({
-  readiness_level: z.enum(['ready', 'ready_with_adjustments', 'not_ready']).default('ready_with_adjustments'),
-  readiness_rationale: z.string(),
-  strengths_of_material: z.array(z.string()).default([]),
-  weak_points_of_material: z.array(z.string()).default([]),
-  mandatory_adjustments_before_ceo: z.array(z.string()).default([]),
-  recommendation_to_proceed_to_ceo: z.string().default(''),
-});
-
-const PreCEOReinforcementSchema = z.object({
-  points_to_reinforce_before_ceo: z.array(z.string()).default([]),
-  numbers_that_must_be_ready: z.array(z.string()).default([]),
-  fragile_arguments_to_strengthen: z.array(z.string()).default([]),
-  ownership_points_to_make_explicit: z.array(z.string()).default([]),
-  likely_escalation_topics: z.array(z.string()).default([]),
-  presentation_adjustments_recommended: z.array(z.string()).default([]),
-});
-
-export const DirectorReviewOutputSchema = z.object({
-  director_question_pack: z.array(DirectorQuestionSchema).default([]),
-  expected_director_answer_pack: z.array(ExpectedDirectorAnswerSchema).default([]),
-  execution_ownership_review: ExecutionOwnershipReviewSchema,
-  executive_material_readiness: ExecutiveMaterialReadinessSchema,
-  pre_ceo_reinforcement: PreCEOReinforcementSchema,
-});
-
-export function directorReviewJsonSchema() {
-  const strArr = { type: 'array' as const, items: { type: 'string' as const } };
-  return {
-    type: 'object' as const,
-    additionalProperties: false,
-    properties: {
-      director_question_pack: {
-        type: 'array' as const,
-        items: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            question_id: { type: 'string' as const },
-            question_category: { type: 'string' as const, enum: [...DIRECTOR_QUESTION_CATEGORIES] },
-            question_text: { type: 'string' as const },
-            priority: { type: 'string' as const, enum: ['critical', 'high', 'medium', 'low'] },
-            why_director_would_ask: { type: 'string' as const },
-            linked_material_section: { type: 'string' as const },
-          },
-          required: ['question_id', 'question_category', 'question_text', 'priority', 'why_director_would_ask', 'linked_material_section'] as const,
-        },
-      },
-      expected_director_answer_pack: {
-        type: 'array' as const,
-        items: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            linked_question_id: { type: 'string' as const },
-            direct_answer: { type: 'string' as const },
-            main_number: { type: 'string' as const },
-            justification: { type: 'string' as const },
-            owner: { type: 'string' as const },
-            deadline: { type: 'string' as const },
-            associated_decision: { type: 'string' as const },
-            answer_confidence: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
-            answer_gap_note: { type: 'string' as const },
-          },
-          required: ['linked_question_id', 'direct_answer', 'main_number', 'justification', 'owner', 'deadline', 'associated_decision', 'answer_confidence', 'answer_gap_note'] as const,
-        },
-      },
-      execution_ownership_review: {
-        type: 'object' as const,
-        additionalProperties: false,
-        properties: {
-          actions_without_owner: strArr,
-          actions_without_deadline: strArr,
-          actions_without_metric: strArr,
-          vague_execution_points: strArr,
-          missing_governance_items: strArr,
-          required_execution_clarifications: strArr,
-        },
-        required: ['actions_without_owner', 'actions_without_deadline', 'actions_without_metric', 'vague_execution_points', 'missing_governance_items', 'required_execution_clarifications'] as const,
-      },
-      executive_material_readiness: {
-        type: 'object' as const,
-        additionalProperties: false,
-        properties: {
-          readiness_level: { type: 'string' as const, enum: ['ready', 'ready_with_adjustments', 'not_ready'] },
-          readiness_rationale: { type: 'string' as const },
-          strengths_of_material: strArr,
-          weak_points_of_material: strArr,
-          mandatory_adjustments_before_ceo: strArr,
-          recommendation_to_proceed_to_ceo: { type: 'string' as const },
-        },
-        required: ['readiness_level', 'readiness_rationale', 'strengths_of_material', 'weak_points_of_material', 'mandatory_adjustments_before_ceo', 'recommendation_to_proceed_to_ceo'] as const,
-      },
-      pre_ceo_reinforcement: {
-        type: 'object' as const,
-        additionalProperties: false,
-        properties: {
-          points_to_reinforce_before_ceo: strArr,
-          numbers_that_must_be_ready: strArr,
-          fragile_arguments_to_strengthen: strArr,
-          ownership_points_to_make_explicit: strArr,
-          likely_escalation_topics: strArr,
-          presentation_adjustments_recommended: strArr,
-        },
-        required: ['points_to_reinforce_before_ceo', 'numbers_that_must_be_ready', 'fragile_arguments_to_strengthen', 'ownership_points_to_make_explicit', 'likely_escalation_topics', 'presentation_adjustments_recommended'] as const,
-      },
-    },
-    required: ['director_question_pack', 'expected_director_answer_pack', 'execution_ownership_review', 'executive_material_readiness', 'pre_ceo_reinforcement'] as const,
-  };
-}
-
-// ============================================
-// CEO — Executive Challenger Schema
-// ============================================
-
-const QUESTION_CATEGORIES = [
-  'resultado', 'orçamento', 'histórico', 'causa_real', 'plano_de_acao',
-  'fechamento_do_ano', 'sacrificios', 'risco', 'risco_escolar', 'governanca', 'decisao_final',
-] as const;
-
-const QUESTION_PRIORITIES = ['critical', 'high', 'medium', 'low'] as const;
-const ANSWER_CONFIDENCES = ['high', 'medium', 'low'] as const;
-const READINESS_LEVELS = ['ready', 'ready_with_adjustments', 'not_ready'] as const;
-
-const CEOQuestionSchema = z.object({
-  question_id: z.string(),
-  question_category: z.enum(QUESTION_CATEGORIES).default('resultado'),
-  question_text: z.string(),
-  priority: z.enum(QUESTION_PRIORITIES).default('high'),
-  why_ceo_would_ask: z.string().default(''),
-  linked_agent_output: z.string().default(''),
-});
-
-const ExpectedAnswerSchema = z.object({
-  linked_question_id: z.string(),
-  direct_answer: z.string(),
-  main_number: z.string().default(''),
-  justification: z.string().default(''),
-  associated_action: z.string().default(''),
-  answer_confidence: z.enum(ANSWER_CONFIDENCES).default('medium'),
-  answer_fragility_note: z.string().default(''),
-});
-
-const WeaknessReportSchema = z.object({
+const WeaknessExposureSchema = z.object({
   weak_points: z.array(z.string()).default([]),
   unsupported_claims: z.array(z.string()).default([]),
   vague_sections: z.array(z.string()).default([]),
   missing_numbers: z.array(z.string()).default([]),
-  likely_ceo_discomfort_points: z.array(z.string()).default([]),
-  points_requiring_reinforcement: z.array(z.string()).default([]),
+  likely_discomfort_points: z.array(z.string()).default([]),
 });
 
 const DecisionReadinessSchema = z.object({
-  readiness_level: z.enum(READINESS_LEVELS).default('ready_with_adjustments'),
+  readiness_level: z.enum(['ready', 'ready_with_adjustments', 'not_ready']).default('ready_with_adjustments'),
   readiness_rationale: z.string(),
   what_is_ready: z.array(z.string()).default([]),
   what_is_not_ready: z.array(z.string()).default([]),
@@ -1394,33 +1249,35 @@ const ExecutiveRehearsalSchema = z.object({
   best_reinforcement_point: z.string().default(''),
 });
 
-export const CEOReviewOutputSchema = z.object({
-  ceo_question_pack: z.array(CEOQuestionSchema).default([]),
-  expected_answer_pack: z.array(ExpectedAnswerSchema).default([]),
-  weakness_exposure_report: WeaknessReportSchema,
+export const ExecutiveReviewOutputSchema = z.object({
+  executive_question_pack: z.array(ExecutiveQuestionSchema).default([]),
+  expected_answer_pack: z.array(ExecutiveAnswerSchema).default([]),
+  execution_ownership_review: ExecutionOwnershipReviewSchema,
+  weakness_exposure: WeaknessExposureSchema,
   decision_readiness: DecisionReadinessSchema,
   executive_rehearsal: z.array(ExecutiveRehearsalSchema).default([]),
 });
 
-export function ceoReviewJsonSchema() {
+export function executiveReviewJsonSchema() {
+  const strArr = { type: 'array' as const, items: { type: 'string' as const } };
   return {
     type: 'object' as const,
     additionalProperties: false,
     properties: {
-      ceo_question_pack: {
+      executive_question_pack: {
         type: 'array' as const,
         items: {
           type: 'object' as const,
           additionalProperties: false,
           properties: {
             question_id: { type: 'string' as const },
-            question_category: { type: 'string' as const, enum: [...QUESTION_CATEGORIES] },
+            question_category: { type: 'string' as const, enum: [...EXECUTIVE_QUESTION_CATEGORIES] },
             question_text: { type: 'string' as const },
-            priority: { type: 'string' as const, enum: [...QUESTION_PRIORITIES] },
-            why_ceo_would_ask: { type: 'string' as const },
-            linked_agent_output: { type: 'string' as const },
+            priority: { type: 'string' as const, enum: ['critical', 'high', 'medium', 'low'] },
+            why_executive_would_ask: { type: 'string' as const },
+            linked_material_section: { type: 'string' as const },
           },
-          required: ['question_id', 'question_category', 'question_text', 'priority', 'why_ceo_would_ask', 'linked_agent_output'] as const,
+          required: ['question_id', 'question_category', 'question_text', 'priority', 'why_executive_would_ask', 'linked_material_section'] as const,
         },
       },
       expected_answer_pack: {
@@ -1433,35 +1290,48 @@ export function ceoReviewJsonSchema() {
             direct_answer: { type: 'string' as const },
             main_number: { type: 'string' as const },
             justification: { type: 'string' as const },
+            owner: { type: 'string' as const },
+            deadline: { type: 'string' as const },
             associated_action: { type: 'string' as const },
-            answer_confidence: { type: 'string' as const, enum: [...ANSWER_CONFIDENCES] },
+            answer_confidence: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
             answer_fragility_note: { type: 'string' as const },
           },
-          required: ['linked_question_id', 'direct_answer', 'main_number', 'justification', 'associated_action', 'answer_confidence', 'answer_fragility_note'] as const,
+          required: ['linked_question_id', 'direct_answer', 'main_number', 'justification', 'owner', 'deadline', 'associated_action', 'answer_confidence', 'answer_fragility_note'] as const,
         },
       },
-      weakness_exposure_report: {
+      execution_ownership_review: {
         type: 'object' as const,
         additionalProperties: false,
         properties: {
-          weak_points: { type: 'array' as const, items: { type: 'string' as const } },
-          unsupported_claims: { type: 'array' as const, items: { type: 'string' as const } },
-          vague_sections: { type: 'array' as const, items: { type: 'string' as const } },
-          missing_numbers: { type: 'array' as const, items: { type: 'string' as const } },
-          likely_ceo_discomfort_points: { type: 'array' as const, items: { type: 'string' as const } },
-          points_requiring_reinforcement: { type: 'array' as const, items: { type: 'string' as const } },
+          actions_without_owner: strArr,
+          actions_without_deadline: strArr,
+          actions_without_metric: strArr,
+          vague_execution_points: strArr,
+          missing_governance_items: strArr,
         },
-        required: ['weak_points', 'unsupported_claims', 'vague_sections', 'missing_numbers', 'likely_ceo_discomfort_points', 'points_requiring_reinforcement'] as const,
+        required: ['actions_without_owner', 'actions_without_deadline', 'actions_without_metric', 'vague_execution_points', 'missing_governance_items'] as const,
+      },
+      weakness_exposure: {
+        type: 'object' as const,
+        additionalProperties: false,
+        properties: {
+          weak_points: strArr,
+          unsupported_claims: strArr,
+          vague_sections: strArr,
+          missing_numbers: strArr,
+          likely_discomfort_points: strArr,
+        },
+        required: ['weak_points', 'unsupported_claims', 'vague_sections', 'missing_numbers', 'likely_discomfort_points'] as const,
       },
       decision_readiness: {
         type: 'object' as const,
         additionalProperties: false,
         properties: {
-          readiness_level: { type: 'string' as const, enum: [...READINESS_LEVELS] },
+          readiness_level: { type: 'string' as const, enum: ['ready', 'ready_with_adjustments', 'not_ready'] },
           readiness_rationale: { type: 'string' as const },
-          what_is_ready: { type: 'array' as const, items: { type: 'string' as const } },
-          what_is_not_ready: { type: 'array' as const, items: { type: 'string' as const } },
-          mandatory_fixes_before_meeting: { type: 'array' as const, items: { type: 'string' as const } },
+          what_is_ready: strArr,
+          what_is_not_ready: strArr,
+          mandatory_fixes_before_meeting: strArr,
           final_recommendation: { type: 'string' as const },
         },
         required: ['readiness_level', 'readiness_rationale', 'what_is_ready', 'what_is_not_ready', 'mandatory_fixes_before_meeting', 'final_recommendation'] as const,
@@ -1482,7 +1352,7 @@ export function ceoReviewJsonSchema() {
         },
       },
     },
-    required: ['ceo_question_pack', 'expected_answer_pack', 'weakness_exposure_report', 'decision_readiness', 'executive_rehearsal'] as const,
+    required: ['executive_question_pack', 'expected_answer_pack', 'execution_ownership_review', 'weakness_exposure', 'decision_readiness', 'executive_rehearsal'] as const,
   };
 }
 
@@ -1498,8 +1368,7 @@ export function getZodSchemaForStep(stepType: string, agentCode: string) {
   if (stepType === 'execute' && agentCode === 'denilson') return OptimizationOutputSchema;
   if (stepType === 'execute' && agentCode === 'edmundo') return ForecastOutputSchema;
   if (stepType === 'execute' && agentCode === 'falcao') return RiskOutputSchema;
-  if (stepType === 'review' && agentCode === 'diretor') return DirectorReviewOutputSchema;
-  if (stepType === 'review' && agentCode === 'ceo') return CEOReviewOutputSchema;
+  if (stepType === 'review' && agentCode === 'executivo') return ExecutiveReviewOutputSchema;
   throw new Error(`Schema não encontrado para step_type=${stepType}, agent_code=${agentCode}`);
 }
 
@@ -1511,7 +1380,6 @@ export function getJsonSchemaForStep(stepType: string, agentCode: string) {
   if (stepType === 'execute' && agentCode === 'denilson') return optimizationJsonSchema();
   if (stepType === 'execute' && agentCode === 'edmundo') return forecastJsonSchema();
   if (stepType === 'execute' && agentCode === 'falcao') return riskJsonSchema();
-  if (stepType === 'review' && agentCode === 'diretor') return directorReviewJsonSchema();
-  if (stepType === 'review' && agentCode === 'ceo') return ceoReviewJsonSchema();
+  if (stepType === 'review' && agentCode === 'executivo') return executiveReviewJsonSchema();
   throw new Error(`JSON Schema não encontrado para step_type=${stepType}, agent_code=${agentCode}`);
 }
