@@ -59,6 +59,7 @@ import {
   safePct,
 } from '../../core/DecisionEngine';
 import { buildExecutiveSummary } from '../../executive/executiveSummaryBuilder';
+import MultiSelectFilter from '../MultiSelectFilter';
 import { buildPortfolioFromDRE } from '../../core/portfolioBridge';
 import { calculateConsolidatedFinancials, calculatePortfolioScore, calculateRiskDistribution } from '../../core/holdingEngine';
 import { recommendCapitalAllocation } from '../../core/capitalAllocationEngine';
@@ -624,12 +625,16 @@ const ExecutiveDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const [monthFrom, setMonthFrom] = useState('01');
   const [monthTo, setMonthTo] = useState(defaultMonthTo);
+  const [availableMarcas, setAvailableMarcas] = useState<string[]>([]);
+  const [selectedMarcas, setSelectedMarcas] = useState<string[]>([]);
 
   // Refs para evitar stale closures no useCallback
   const monthFromRef = useRef(monthFrom);
   const monthToRef = useRef(monthTo);
+  const selectedMarcasRef = useRef(selectedMarcas);
   useEffect(() => { monthFromRef.current = monthFrom; }, [monthFrom]);
   useEffect(() => { monthToRef.current = monthTo; }, [monthTo]);
+  useEffect(() => { selectedMarcasRef.current = selectedMarcas; }, [selectedMarcas]);
 
   // Simulation state (shared between Simulation and Decisions tabs)
   const [simResults, setSimResults] = useState<ScenarioSimulationResult[] | null>(null);
@@ -652,12 +657,18 @@ const ExecutiveDashboard: React.FC = () => {
     try {
       const mFrom = `${currentYear}-${monthFromRef.current}`;
       const mTo = `${currentYear}-${monthToRef.current}`;
+      const marcaFilter = selectedMarcasRef.current.length > 0 ? selectedMarcasRef.current : undefined;
 
       // Fetch DRE consolidado + marcas em paralelo
       const [dreSnapshot, marcasResult] = await Promise.all([
-        getSomaTags(mFrom, mTo),
+        getSomaTags(mFrom, mTo, marcaFilter),
         getMarcasEFiliais(),
       ]);
+
+      // Popular lista de marcas disponíveis (só na primeira vez)
+      if (availableMarcas.length === 0 && marcasResult.marcas.length > 0) {
+        setAvailableMarcas(marcasResult.marcas);
+      }
 
       if (!dreSnapshot || dreSnapshot.length === 0) {
         setData({
@@ -683,14 +694,14 @@ const ExecutiveDashboard: React.FC = () => {
       }
 
       // Fetch dados por marca em paralelo para portfolio
-      const marcas = marcasResult.marcas;
+      const marcasParaPortfolio = marcaFilter && marcaFilter.length > 0 ? marcaFilter : marcasResult.marcas;
       let portfolioCompanies: CompanyFinancialSnapshot[] = [];
-      if (marcas.length > 1) {
+      if (marcasParaPortfolio.length > 1) {
         const marcaResults = await Promise.all(
-          marcas.map(m => getSomaTags(mFrom, mTo, [m]))
+          marcasParaPortfolio.map(m => getSomaTags(mFrom, mTo, [m]))
         );
         const rowsByMarca = new Map<string, SomaTagsRow[]>();
-        marcas.forEach((m, i) => {
+        marcasParaPortfolio.forEach((m, i) => {
           if (marcaResults[i] && marcaResults[i].length > 0) {
             rowsByMarca.set(m, marcaResults[i]);
           }
@@ -909,7 +920,18 @@ const ExecutiveDashboard: React.FC = () => {
             <p className="text-[10px] text-gray-400">Plataforma de Inteligência Estratégica</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {availableMarcas.length > 0 && (
+            <MultiSelectFilter
+              label="Marca"
+              icon={<Building2 size={14} />}
+              options={availableMarcas}
+              selected={selectedMarcas}
+              onChange={setSelectedMarcas}
+              colorScheme="blue"
+              compact
+            />
+          )}
           <Calendar size={14} className="text-gray-400" />
           <select
             value={monthFrom}
