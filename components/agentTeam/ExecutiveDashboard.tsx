@@ -17,6 +17,7 @@ import {
   Building2,
   Zap,
   Calendar,
+  Tag,
 } from 'lucide-react';
 import type {
   ScoreResult,
@@ -48,7 +49,7 @@ import MacroMaturityPanel from './MacroMaturityPanel';
 import StrategicLab from './StrategicLab';
 import DecisionAnalysisPanel from './DecisionAnalysisPanel';
 // Client-side data fetching + pure engines
-import { getSomaTags } from '../../services/supabaseService';
+import { getSomaTags, getDistinctColumn, getTag02Options, getTag03Options, getTag02OptionsForTag01s, getTag03OptionsForTag02s, getTag03OptionsForTag01s } from '../../services/supabaseService';
 import { buildFinancialSummary } from '../../api/agent-team/_lib/buildFinancialSummary';
 import {
   runAnalysis,
@@ -628,13 +629,70 @@ const ExecutiveDashboard: React.FC = () => {
   const [availableMarcas, setAvailableMarcas] = useState<string[]>([]);
   const [selectedMarcas, setSelectedMarcas] = useState<string[]>([]);
 
+  // Tag filters
+  const [availableTag0s, setAvailableTag0s] = useState<string[]>([]);
+  const [availableTag01s, setAvailableTag01s] = useState<string[]>([]);
+  const [availableTag02s, setAvailableTag02s] = useState<string[]>([]);
+  const [availableTag03s, setAvailableTag03s] = useState<string[]>([]);
+  const [selectedTag0s, setSelectedTag0s] = useState<string[]>([]);
+  const [selectedTag01s, setSelectedTag01s] = useState<string[]>([]);
+  const [selectedTag02s, setSelectedTag02s] = useState<string[]>([]);
+  const [selectedTag03s, setSelectedTag03s] = useState<string[]>([]);
+
   // Refs para evitar stale closures no useCallback
   const monthFromRef = useRef(monthFrom);
   const monthToRef = useRef(monthTo);
   const selectedMarcasRef = useRef(selectedMarcas);
+  const selectedTag0sRef = useRef(selectedTag0s);
+  const selectedTag01sRef = useRef(selectedTag01s);
+  const selectedTag02sRef = useRef(selectedTag02s);
+  const selectedTag03sRef = useRef(selectedTag03s);
   useEffect(() => { monthFromRef.current = monthFrom; }, [monthFrom]);
   useEffect(() => { monthToRef.current = monthTo; }, [monthTo]);
   useEffect(() => { selectedMarcasRef.current = selectedMarcas; }, [selectedMarcas]);
+  useEffect(() => { selectedTag0sRef.current = selectedTag0s; }, [selectedTag0s]);
+  useEffect(() => { selectedTag01sRef.current = selectedTag01s; }, [selectedTag01s]);
+  useEffect(() => { selectedTag02sRef.current = selectedTag02s; }, [selectedTag02s]);
+  useEffect(() => { selectedTag03sRef.current = selectedTag03s; }, [selectedTag03s]);
+
+  // Load tag filter options on mount
+  useEffect(() => {
+    Promise.all([
+      getDistinctColumn('transactions', 'tag0'),
+      getDistinctColumn('transactions', 'tag01'),
+      getTag02Options(),
+      getTag03Options(),
+    ]).then(([t0, t01, t02, t03]) => {
+      setAvailableTag0s(t0);
+      setAvailableTag01s(t01);
+      setAvailableTag02s(t02);
+      setAvailableTag03s(t03);
+    });
+  }, []);
+
+  // Cascading: when tag01 changes, reload tag02 options
+  useEffect(() => {
+    if (selectedTag01s.length > 0) {
+      getTag02OptionsForTag01s(selectedTag01s).then(setAvailableTag02s);
+    } else {
+      getTag02Options().then(setAvailableTag02s);
+    }
+    setSelectedTag02s([]);
+    setSelectedTag03s([]);
+  }, [selectedTag01s]);
+
+  // Cascading: when tag02 changes, reload tag03 options
+  useEffect(() => {
+    if (selectedTag02s.length > 0) {
+      getTag03OptionsForTag02s(selectedTag02s).then(setAvailableTag03s);
+    } else if (selectedTag01s.length > 0) {
+      // Keep tag03 scoped to selected tag01s
+      getTag03OptionsForTag01s(selectedTag01s).then(setAvailableTag03s);
+    } else {
+      getTag03Options().then(setAvailableTag03s);
+    }
+    setSelectedTag03s([]);
+  }, [selectedTag02s]);
 
   // Simulation state (shared between Simulation and Decisions tabs)
   const [simResults, setSimResults] = useState<ScenarioSimulationResult[] | null>(null);
@@ -658,12 +716,22 @@ const ExecutiveDashboard: React.FC = () => {
       const mFrom = `${currentYear}-${monthFromRef.current}`;
       const mTo = `${currentYear}-${monthToRef.current}`;
       const marcaFilter = selectedMarcasRef.current.length > 0 ? selectedMarcasRef.current : undefined;
+      const tag01Filter = selectedTag01sRef.current.length > 0 ? selectedTag01sRef.current : undefined;
+      const tag02Filter = selectedTag02sRef.current.length > 0 ? selectedTag02sRef.current : undefined;
+      const tag03Filter = selectedTag03sRef.current.length > 0 ? selectedTag03sRef.current : undefined;
+      const tag0Filter = selectedTag0sRef.current;
 
       // Fetch DRE consolidado + marcas em paralelo
-      const [dreSnapshot, marcasResult] = await Promise.all([
-        getSomaTags(mFrom, mTo, marcaFilter),
+      const [dreSnapshotRaw, marcasResult] = await Promise.all([
+        getSomaTags(mFrom, mTo, marcaFilter, undefined, tag02Filter, tag01Filter, undefined, tag03Filter),
         getMarcasEFiliais(),
       ]);
+
+      // Filtrar por tag0 client-side (RPC não tem p_tag0)
+      const tag0Set = new Set(tag0Filter);
+      const dreSnapshot = tag0Filter.length > 0
+        ? dreSnapshotRaw.filter(r => tag0Set.has(r.tag0))
+        : dreSnapshotRaw;
 
       // Popular lista de marcas disponíveis (só na primeira vez)
       if (availableMarcas.length === 0 && marcasResult.marcas.length > 0) {
@@ -698,7 +766,7 @@ const ExecutiveDashboard: React.FC = () => {
       let portfolioCompanies: CompanyFinancialSnapshot[] = [];
       if (marcasParaPortfolio.length > 1) {
         const marcaResults = await Promise.all(
-          marcasParaPortfolio.map(m => getSomaTags(mFrom, mTo, [m]))
+          marcasParaPortfolio.map(m => getSomaTags(mFrom, mTo, [m], undefined, tag02Filter, tag01Filter, undefined, tag03Filter))
         );
         const rowsByMarca = new Map<string, SomaTagsRow[]>();
         marcasParaPortfolio.forEach((m, i) => {
@@ -959,6 +1027,62 @@ const ExecutiveDashboard: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Tag Filters — segunda linha */}
+      {(availableTag0s.length > 0 || availableTag01s.length > 0) && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <Tag size={14} className="text-gray-400" />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mr-1">Filtros de Tag</span>
+          {availableTag0s.length > 0 && (
+            <MultiSelectFilter
+              label="Tag0"
+              options={availableTag0s}
+              selected={selectedTag0s}
+              onChange={setSelectedTag0s}
+              colorScheme="purple"
+              compact
+            />
+          )}
+          {availableTag01s.length > 0 && (
+            <MultiSelectFilter
+              label="Tag01"
+              options={availableTag01s}
+              selected={selectedTag01s}
+              onChange={setSelectedTag01s}
+              colorScheme="blue"
+              compact
+            />
+          )}
+          {availableTag02s.length > 0 && (
+            <MultiSelectFilter
+              label="Tag02"
+              options={availableTag02s}
+              selected={selectedTag02s}
+              onChange={setSelectedTag02s}
+              colorScheme="orange"
+              compact
+            />
+          )}
+          {availableTag03s.length > 0 && (
+            <MultiSelectFilter
+              label="Tag03"
+              options={availableTag03s}
+              selected={selectedTag03s}
+              onChange={setSelectedTag03s}
+              colorScheme="purple"
+              compact
+            />
+          )}
+          {(selectedTag0s.length > 0 || selectedTag01s.length > 0 || selectedTag02s.length > 0 || selectedTag03s.length > 0) && (
+            <button
+              onClick={() => { setSelectedTag0s([]); setSelectedTag01s([]); setSelectedTag02s([]); setSelectedTag03s([]); }}
+              className="text-[10px] text-gray-400 hover:text-red-500 underline ml-1"
+            >
+              Limpar tags
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Tab Navigation */}
       <div className="flex items-center gap-1 mb-5 border-b border-gray-200 pb-px">
