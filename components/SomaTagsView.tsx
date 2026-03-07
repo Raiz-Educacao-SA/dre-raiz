@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { getSomaTags, invalidateSomaTagsCache, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator } from 'lucide-react';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator, ChevronsDown, ChevronsUp, GripVertical } from 'lucide-react';
 // ExcelJS carregado sob demanda em exportExcel() via dynamic import
 import type ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
@@ -761,6 +761,62 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       n.has(tag0) ? n.delete(tag0) : n.add(tag0);
       return n;
     });
+
+  const expandAllGroups = () => {
+    // 1. Abrir todos os tag0
+    setCollapsed(new Set());
+    // 2. Expandir todos os tag01 (drill-down)
+    if (drillDimensions.length > 0) {
+      const allTag01Keys: Record<string, boolean> = {};
+      for (const g of displayedGroups) {
+        for (const item of g.items) {
+          allTag01Keys[`${g.tag0}|${item.tag01}`] = true;
+        }
+      }
+      setExpandedTag01s(allTag01Keys);
+      // 3. Expandir todos os drill sub-níveis já carregados em cache
+      const allDrillKeys: Record<string, boolean> = {};
+      for (const cacheKey of Object.keys(dimensionCache)) {
+        const rows = dimensionCache[cacheKey];
+        if (!rows) continue;
+        for (const row of rows) {
+          if (!row.dimension_value) continue;
+          // cacheKey = "scenario|tag01|dim|filtersKey"
+          const parts = cacheKey.split('|');
+          const tag01 = parts[1];
+          const dim = parts[2];
+          const filtersKey = parts.slice(3).join('|');
+          const dk = `${tag01}|${dim}|${row.dimension_value}|${filtersKey}`;
+          allDrillKeys[dk] = true;
+        }
+      }
+      setExpandedDrillRows(prev => ({ ...prev, ...allDrillKeys }));
+    }
+  };
+  const collapseAllGroups = () => {
+    const all = new Set(displayedGroups.map(g => g.tag0));
+    setCollapsed(all);
+    setExpandedTag01s({});
+    setExpandedDrillRows({});
+  };
+
+  // ── Drag reorder columns ──
+  const dragColRef = useRef<string | null>(null);
+  const handleColDragStart = (el: string) => { dragColRef.current = el; };
+  const handleColDragOver = (e: React.DragEvent, targetEl: string) => {
+    e.preventDefault();
+    if (!dragColRef.current || dragColRef.current === targetEl) return;
+    setSelectionOrder(prev => {
+      const arr = [...prev];
+      const from = arr.indexOf(dragColRef.current!);
+      const to = arr.indexOf(targetEl);
+      if (from < 0 || to < 0) return prev;
+      arr.splice(from, 1);
+      arr.splice(to, 0, dragColRef.current!);
+      return arr;
+    });
+  };
+  const handleColDragEnd = () => { dragColRef.current = null; };
 
   // ── Exportar Excel ────────────────────────────────────────────────────────
   const exportExcel = useCallback(async () => {
@@ -1782,36 +1838,37 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         </div>
         <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
 
-        {/* Column pills */}
-        <button onClick={() => toggleElement('Real', showReal, setShowReal)}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showReal ? 'bg-blue-500 text-white border-blue-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-blue-300'}`}>
-          <span>Real</span>{showReal && <>{badge('Real')}<span className="ml-0.5 opacity-60">×</span></>}
-        </button>
-        <button onClick={() => toggleElement('Orçado', showOrcado, setShowOrcado)}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showOrcado ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-emerald-300'}`}>
-          <span>Orçado</span>{showOrcado && <>{badge('Orçado')}<span className="ml-0.5 opacity-60">×</span></>}
-        </button>
-        <button onClick={() => toggleElement('A1', showA1, setShowA1)}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showA1 ? 'bg-purple-500 text-white border-purple-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-purple-300'}`}>
-          <span>A-1</span>{showA1 && <>{badge('A1')}<span className="ml-0.5 opacity-60">×</span></>}
-        </button>
-        <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
-        <button onClick={() => toggleElement('DeltaPercOrcado', showDeltaPercOrcado, setShowDeltaPercOrcado)} title="Δ% vs Orçado"
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaPercOrcado ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-orange-300'}`}>
-          <span>Δ% Orç</span>{showDeltaPercOrcado && <>{badge('DeltaPercOrcado')}<span className="ml-0.5 opacity-60">×</span></>}
-        </button>
-        <button onClick={() => toggleElement('DeltaPercA1', showDeltaPercA1, setShowDeltaPercA1)} title="Δ% vs A-1"
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaPercA1 ? 'bg-orange-600 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-orange-400'}`}>
-          <span>Δ% A-1</span>{showDeltaPercA1 && <>{badge('DeltaPercA1')}<span className="ml-0.5 opacity-60">×</span></>}
-        </button>
-        <button onClick={() => toggleElement('DeltaAbsOrcado', showDeltaAbsOrcado, setShowDeltaAbsOrcado)} title="ΔR$ vs Orçado"
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaAbsOrcado ? 'bg-rose-500 text-white border-rose-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-rose-300'}`}>
-          <span>ΔR$ Orç</span>{showDeltaAbsOrcado && <>{badge('DeltaAbsOrcado')}<span className="ml-0.5 opacity-60">×</span></>}
-        </button>
-        <button onClick={() => toggleElement('DeltaAbsA1', showDeltaAbsA1, setShowDeltaAbsA1)} title="ΔR$ vs A-1"
-          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showDeltaAbsA1 ? 'bg-rose-600 text-white border-rose-600 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-rose-400'}`}>
-          <span>ΔR$ A-1</span>{showDeltaAbsA1 && <>{badge('DeltaAbsA1')}<span className="ml-0.5 opacity-60">×</span></>}
-        </button>
+        {/* Column pills — rendered in selectionOrder, draggable to reorder */}
+        {(() => {
+          const COL_META: Record<string, { label: string; show: boolean; set: (v: boolean) => void; on: string; off: string }> = {
+            Real:            { label: 'Real',    show: showReal,            set: setShowReal,            on: 'bg-blue-500 text-white border-blue-500 shadow-sm',    off: 'bg-white text-gray-400 border-gray-200 hover:border-blue-300' },
+            Orçado:          { label: 'Orçado',  show: showOrcado,          set: setShowOrcado,          on: 'bg-emerald-500 text-white border-emerald-500 shadow-sm', off: 'bg-white text-gray-400 border-gray-200 hover:border-emerald-300' },
+            A1:              { label: 'A-1',     show: showA1,              set: setShowA1,              on: 'bg-purple-500 text-white border-purple-500 shadow-sm', off: 'bg-white text-gray-400 border-gray-200 hover:border-purple-300' },
+            DeltaPercOrcado: { label: 'Δ% Orç',  show: showDeltaPercOrcado, set: setShowDeltaPercOrcado, on: 'bg-orange-500 text-white border-orange-500 shadow-sm', off: 'bg-white text-gray-400 border-gray-200 hover:border-orange-300' },
+            DeltaPercA1:     { label: 'Δ% A-1',  show: showDeltaPercA1,     set: setShowDeltaPercA1,     on: 'bg-orange-600 text-white border-orange-600 shadow-sm', off: 'bg-white text-gray-400 border-gray-200 hover:border-orange-400' },
+            DeltaAbsOrcado:  { label: 'ΔR$ Orç', show: showDeltaAbsOrcado,  set: setShowDeltaAbsOrcado,  on: 'bg-rose-500 text-white border-rose-500 shadow-sm',   off: 'bg-white text-gray-400 border-gray-200 hover:border-rose-300' },
+            DeltaAbsA1:      { label: 'ΔR$ A-1', show: showDeltaAbsA1,      set: setShowDeltaAbsA1,      on: 'bg-rose-600 text-white border-rose-600 shadow-sm',   off: 'bg-white text-gray-400 border-gray-200 hover:border-rose-400' },
+          };
+          // Render pills in selectionOrder (includes both active and inactive)
+          const allKeys = ['Real', 'Orçado', 'A1', 'DeltaPercOrcado', 'DeltaPercA1', 'DeltaAbsOrcado', 'DeltaAbsA1'];
+          const orderedKeys = [...selectionOrder, ...allKeys.filter(k => !selectionOrder.includes(k))];
+          return orderedKeys.map(key => {
+            const col = COL_META[key];
+            if (!col) return null;
+            return (
+              <button key={key}
+                draggable
+                onDragStart={() => handleColDragStart(key)}
+                onDragOver={(e) => handleColDragOver(e, key)}
+                onDragEnd={handleColDragEnd}
+                onClick={() => toggleElement(key, col.show, col.set)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 cursor-grab active:cursor-grabbing ${col.show ? col.on : col.off}`}>
+                <GripVertical size={8} className="opacity-40" />
+                <span>{col.label}</span>{col.show && <>{badge(key)}<span className="ml-0.5 opacity-60">×</span></>}
+              </button>
+            );
+          });
+        })()}
 
         <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
 
@@ -2222,6 +2279,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
               </button>
             </div>
           )}
+          {/* Expandir / Recolher Tudo */}
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-gray-50 border-b border-gray-200 shrink-0">
+            <button onClick={expandAllGroups}
+              className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-all">
+              <ChevronsDown size={11} /> Expandir Tudo
+            </button>
+            <button onClick={collapseAllGroups}
+              className="flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-orange-50 hover:border-orange-300 transition-all">
+              <ChevronsUp size={11} /> Recolher Tudo
+            </button>
+          </div>
           <div className={isTableFullscreen ? 'overflow-auto flex-1 dre-scrollbar' : 'contents'}>
           <table className="border-separate border-spacing-0 text-left table-auto min-w-full text-[12px]">
 
