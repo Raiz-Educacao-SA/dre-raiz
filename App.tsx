@@ -17,7 +17,7 @@ const ForecastingView = React.lazy(() => import('./components/ForecastingView'))
 const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 const SomaTagsView = React.lazy(() => import('./components/SomaTagsView'));
 const ExecutiveDashboard = React.lazy(() => import('./components/agentTeam/ExecutiveDashboard'));
-const HoldingDashboardPage = React.lazy(() => import('./components/holding/HoldingDashboardPage'));
+// HoldingDashboardPage removido — integrado ao CEO Dashboard como aba "Portfolio"
 const AgentTeamView = React.lazy(() => import('./components/AgentTeamView'));
 const CronogramaPopup = React.lazy(() => import('./components/CronogramaPopup'));
 // VarianceJustificationsView agora é aba dentro de AnalysisView
@@ -1263,13 +1263,6 @@ const App: React.FC = () => {
             <ErrorBoundary fallbackMessage="Erro ao carregar CEO Dashboard">
               <Suspense fallback={<LoadingSpinner message="Carregando dashboard executivo..." />}>
                 <ExecutiveDashboard />
-              </Suspense>
-            </ErrorBoundary>
-          )}
-          {currentView === 'holding_dashboard' && (
-            <ErrorBoundary fallbackMessage="Erro ao carregar Holding Dashboard">
-              <Suspense fallback={<LoadingSpinner message="Carregando inteligência multi-empresa..." />}>
-                <HoldingDashboardPage />
               </Suspense>
             </ErrorBoundary>
           )}

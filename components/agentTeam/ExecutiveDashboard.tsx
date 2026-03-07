@@ -14,6 +14,8 @@ import {
   FlaskConical,
   Lightbulb,
   LayoutDashboard,
+  Building2,
+  Zap,
 } from 'lucide-react';
 import type {
   ScoreResult,
@@ -56,6 +58,13 @@ import {
   safePct,
 } from '../../core/DecisionEngine';
 import { buildExecutiveSummary } from '../../executive/executiveSummaryBuilder';
+import { buildPortfolioFromDRE } from '../../core/portfolioBridge';
+import { calculateConsolidatedFinancials, calculatePortfolioScore, calculateRiskDistribution } from '../../core/holdingEngine';
+import { recommendCapitalAllocation } from '../../core/capitalAllocationEngine';
+import { runPortfolioStressTests, buildStressTestSummary } from '../../core/portfolioStressTest';
+import type { CompanyFinancialSnapshot, ConsolidatedFinancials, PortfolioScore, RiskDistribution, CapitalAllocationResult, PortfolioStressResult } from '../../core/holdingTypes';
+import { getMarcasEFiliais } from '../../services/supabaseService';
+import type { SomaTagsRow } from '../../services/supabaseService';
 import { generateMacroMaturityReport } from '../../core/macroMaturityEngine';
 
 // --------------------------------------------
@@ -74,9 +83,16 @@ interface DashboardData {
   macro_risk: MacroRiskIndex | null;
   macro_impact: MacroImpactResult | null;
   macro_maturity: MacroMaturityReport | null;
+  // Portfolio (dados reais por marca)
+  portfolio_companies: CompanyFinancialSnapshot[];
+  portfolio_consolidated: ConsolidatedFinancials | null;
+  portfolio_score: PortfolioScore | null;
+  portfolio_risk: RiskDistribution | null;
+  portfolio_allocation: CapitalAllocationResult | null;
+  portfolio_stress: PortfolioStressResult[];
 }
 
-type TabId = 'dashboard' | 'simulation' | 'decisions';
+type TabId = 'dashboard' | 'portfolio' | 'simulation' | 'decisions' | 'stress';
 
 interface TabDef {
   id: TabId;
@@ -86,8 +102,10 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-3.5 h-3.5" /> },
-  { id: 'simulation', label: 'Simulação', icon: <FlaskConical className="w-3.5 h-3.5" /> },
-  { id: 'decisions', label: 'Decisões', icon: <Lightbulb className="w-3.5 h-3.5" /> },
+  { id: 'portfolio', label: 'Portfolio', icon: <Building2 className="w-3.5 h-3.5" /> },
+  { id: 'simulation', label: 'Simulacao', icon: <FlaskConical className="w-3.5 h-3.5" /> },
+  { id: 'decisions', label: 'Decisoes', icon: <Lightbulb className="w-3.5 h-3.5" /> },
+  { id: 'stress', label: 'Stress Test', icon: <Zap className="w-3.5 h-3.5" /> },
 ];
 
 // --------------------------------------------
@@ -614,7 +632,12 @@ const ExecutiveDashboard: React.FC = () => {
       const year = new Date().getUTCFullYear().toString();
 
       // 1. Buscar dados DRE via Supabase (mesmo RPC que SomaTagsView usa)
-      const dreSnapshot = await getSomaTags(`${year}-01`, `${year}-12`);
+      // Fetch DRE consolidado + marcas em paralelo
+      const [dreSnapshot, marcasResult] = await Promise.all([
+        getSomaTags(`${year}-01`, `${year}-12`),
+        getMarcasEFiliais(),
+      ]);
+
       if (!dreSnapshot || dreSnapshot.length === 0) {
         setData({
           summary: null,
@@ -628,8 +651,30 @@ const ExecutiveDashboard: React.FC = () => {
           macro_risk: null,
           macro_impact: null,
           macro_maturity: null,
+          portfolio_companies: [],
+          portfolio_consolidated: null,
+          portfolio_score: null,
+          portfolio_risk: null,
+          portfolio_allocation: null,
+          portfolio_stress: [],
         });
         return;
+      }
+
+      // Fetch dados por marca em paralelo para portfolio
+      const marcas = marcasResult.marcas;
+      let portfolioCompanies: CompanyFinancialSnapshot[] = [];
+      if (marcas.length > 1) {
+        const marcaResults = await Promise.all(
+          marcas.map(m => getSomaTags(`${year}-01`, `${year}-12`, [m]))
+        );
+        const rowsByMarca = new Map<string, SomaTagsRow[]>();
+        marcas.forEach((m, i) => {
+          if (marcaResults[i] && marcaResults[i].length > 0) {
+            rowsByMarca.set(m, marcaResults[i]);
+          }
+        });
+        portfolioCompanies = buildPortfolioFromDRE(rowsByMarca);
       }
 
       // 2. Build financial summary (função pura)
@@ -699,6 +744,18 @@ const ExecutiveDashboard: React.FC = () => {
         macroMaturity = generateMacroMaturityReport(financials, DEFAULT_MACRO_ASSUMPTIONS, false);
       } catch { /* opcional */ }
 
+      // Portfolio engines (dados reais por marca)
+      const pConsolidated = portfolioCompanies.length > 0
+        ? calculateConsolidatedFinancials(portfolioCompanies) : null;
+      const pScore = portfolioCompanies.length > 0
+        ? calculatePortfolioScore(portfolioCompanies) : null;
+      const pRisk = portfolioCompanies.length > 0
+        ? calculateRiskDistribution(portfolioCompanies) : null;
+      const pAllocation = portfolioCompanies.length > 0
+        ? recommendCapitalAllocation(portfolioCompanies) : null;
+      const pStress = portfolioCompanies.length > 0
+        ? runPortfolioStressTests(portfolioCompanies) : [];
+
       setData({
         summary,
         financial_summary: financialSummary,
@@ -707,10 +764,16 @@ const ExecutiveDashboard: React.FC = () => {
         optimization: optimizationResult,
         alerts: analysis.alerts,
         trend_last_6_months: trend,
-        benchmark: null, // Benchmark requer tabela benchmark_aggregates (opcional)
-        macro_risk: null, // Requer tabela macro_indicators (opcional)
-        macro_impact: null, // Requer tabela macro_indicators (opcional)
+        benchmark: null,
+        macro_risk: null,
+        macro_impact: null,
         macro_maturity: macroMaturity,
+        portfolio_companies: portfolioCompanies,
+        portfolio_consolidated: pConsolidated,
+        portfolio_score: pScore,
+        portfolio_risk: pRisk,
+        portfolio_allocation: pAllocation,
+        portfolio_stress: pStress,
       });
     } catch (err: unknown) {
       console.error('❌ CEO Dashboard loadData error:', err);
@@ -874,6 +937,387 @@ const ExecutiveDashboard: React.FC = () => {
           loading={loading}
         />
       )}
+
+      {activeTab === 'portfolio' && (
+        <PortfolioContent data={data} />
+      )}
+
+      {activeTab === 'stress' && (
+        <StressTestContent data={data} />
+      )}
+    </div>
+  );
+};
+
+// --------------------------------------------
+// Portfolio Tab Content
+// --------------------------------------------
+
+function portfolioRiskColor(level: string): string {
+  switch (level) {
+    case 'very_low': return '#059669';
+    case 'low': return '#10B981';
+    case 'moderate': return '#D97706';
+    case 'high': return '#EA580C';
+    case 'critical': return '#DC2626';
+    default: return '#6B7280';
+  }
+}
+
+function portfolioRiskLabel(level: string): string {
+  switch (level) {
+    case 'very_low': return 'Muito Baixo';
+    case 'low': return 'Baixo';
+    case 'moderate': return 'Moderado';
+    case 'high': return 'Alto';
+    case 'critical': return 'Critico';
+    default: return level;
+  }
+}
+
+function portfolioClassLabel(c: string): string {
+  switch (c) {
+    case 'excellence': return 'Excelencia';
+    case 'strong': return 'Forte';
+    case 'moderate': return 'Moderado';
+    case 'weak': return 'Fraco';
+    case 'critical': return 'Critico';
+    default: return c;
+  }
+}
+
+const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
+  const { portfolio_companies, portfolio_consolidated, portfolio_score, portfolio_risk, portfolio_allocation } = data;
+
+  if (portfolio_companies.length === 0) {
+    return (
+      <div className="text-center py-12 text-sm text-gray-400">
+        Portfolio requer mais de uma marca para comparacao. Verifique os dados.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* KPIs consolidados */}
+      <div className="grid grid-cols-4 gap-3">
+        <KPICard
+          label="Score Portfolio"
+          value={`${portfolio_score?.score ?? 0}`}
+          subtitle={portfolioClassLabel(portfolio_score?.classification ?? '')}
+          icon={<Shield size={16} />}
+          color={scoreColor(portfolio_score?.score ?? 0)}
+          bg={scoreBg(portfolio_score?.score ?? 0)}
+        />
+        <KPICard
+          label="EBITDA Consolidado"
+          value={fmtBRL(portfolio_consolidated?.consolidated_ebitda ?? 0)}
+          subtitle={`${portfolio_companies.length} marcas`}
+          icon={<Activity size={16} />}
+          color={(portfolio_consolidated?.consolidated_ebitda ?? 0) >= 0 ? '#059669' : '#DC2626'}
+          bg={(portfolio_consolidated?.consolidated_ebitda ?? 0) >= 0 ? '#ECFDF5' : '#FEF2F2'}
+        />
+        <KPICard
+          label="Receita Total"
+          value={fmtBRL(portfolio_consolidated?.consolidated_revenue ?? 0)}
+          subtitle={`Margem: ${fmtPct(portfolio_consolidated?.consolidated_margin ?? 0)}`}
+          icon={<TrendingUp size={16} />}
+          color="#2563EB"
+          bg="#EFF6FF"
+        />
+        <KPICard
+          label="Risco Portfolio"
+          value={portfolioRiskLabel(portfolio_risk?.portfolio_risk_level ?? '')}
+          subtitle={`Score: ${portfolio_risk?.risk_score ?? 0}/100`}
+          icon={<AlertTriangle size={16} />}
+          color={portfolioRiskColor(portfolio_risk?.portfolio_risk_level ?? '')}
+          bg="#F9FAFB"
+        />
+      </div>
+
+      {/* Ranking de marcas */}
+      <div className="bg-white rounded-xl p-4 border border-gray-200">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
+          Ranking de Marcas
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-3 py-2 font-semibold text-gray-600">#</th>
+                <th className="text-left px-3 py-2 font-semibold text-gray-600">Marca</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Score</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Receita</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">EBITDA</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Margem</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">YoY</th>
+                <th className="text-right px-3 py-2 font-semibold text-gray-600">Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              {portfolio_companies.map((c, i) => {
+                const bd = portfolio_consolidated?.company_breakdown.find(b => b.organization_id === c.organization_id);
+                return (
+                  <tr key={c.organization_id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-2 font-bold text-gray-400">{i + 1}</td>
+                    <td className="px-3 py-2 font-bold text-gray-900">{c.display_name}</td>
+                    <td className="px-3 py-2 text-right">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                        style={{ backgroundColor: scoreBg(c.health_score), color: scoreColor(c.health_score) }}>
+                        {c.health_score}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right font-medium text-gray-900">{fmtBRL(c.receita_real)}</td>
+                    <td className="px-3 py-2 text-right font-medium" style={{ color: c.ebitda >= 0 ? '#059669' : '#DC2626' }}>
+                      {fmtBRL(c.ebitda)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-700">{fmtPct(c.margem_contribuicao_pct)}</td>
+                    <td className="px-3 py-2 text-right" style={{ color: c.growth_yoy >= 0 ? '#059669' : '#DC2626' }}>
+                      {c.growth_yoy >= 0 ? '+' : ''}{fmtPct(c.growth_yoy)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-500">{fmtPct(bd?.revenue_share ?? c.portfolio_weight)}</td>
+                  </tr>
+                );
+              })}
+              {portfolio_consolidated && (
+                <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2 text-gray-900">CONSOLIDADO</td>
+                  <td className="px-3 py-2 text-right">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{ backgroundColor: scoreBg(portfolio_score?.score ?? 0), color: scoreColor(portfolio_score?.score ?? 0) }}>
+                      {portfolio_score?.score ?? 0}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-900">{fmtBRL(portfolio_consolidated.consolidated_revenue)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: portfolio_consolidated.consolidated_ebitda >= 0 ? '#059669' : '#DC2626' }}>
+                    {fmtBRL(portfolio_consolidated.consolidated_ebitda)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-700">{fmtPct(portfolio_consolidated.consolidated_margin)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: portfolio_consolidated.consolidated_growth >= 0 ? '#059669' : '#DC2626' }}>
+                    {portfolio_consolidated.consolidated_growth >= 0 ? '+' : ''}{fmtPct(portfolio_consolidated.consolidated_growth)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-gray-500">100%</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Mapa de Risco + Alocacao de Capital */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Mapa de Risco */}
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
+            Mapa de Risco por Marca
+          </div>
+          <div className="space-y-2">
+            {portfolio_risk?.company_risks.map((cr) => (
+              <div key={cr.organization_id} className="flex items-center gap-3 p-2 rounded-lg bg-gray-50">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-900">{cr.display_name}</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: portfolioRiskColor(cr.risk_level) + '15', color: portfolioRiskColor(cr.risk_level) }}>
+                      {portfolioRiskLabel(cr.risk_level)}
+                    </span>
+                  </div>
+                  <div className="mt-1 w-full bg-gray-200 rounded-full h-1.5">
+                    <div className="h-1.5 rounded-full transition-all"
+                      style={{ width: `${cr.risk_score}%`, backgroundColor: portfolioRiskColor(cr.risk_level) }} />
+                  </div>
+                  {cr.risk_factors.length > 0 && (
+                    <div className="mt-1 text-[9px] text-gray-500">{cr.risk_factors.join(' | ')}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {portfolio_risk && portfolio_risk.alerts.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {portfolio_risk.alerts.map((a, i) => (
+                <div key={i} className="text-[10px] text-red-700 bg-red-50 px-2 py-1 rounded">{a}</div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Alocacao de Capital */}
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
+            Alocacao de Capital
+          </div>
+          {portfolio_allocation && (
+            <div className="space-y-3">
+              {portfolio_allocation.invest_more_in.length > 0 && (
+                <div>
+                  <div className="text-[9px] font-bold text-green-700 uppercase mb-1">Investir</div>
+                  {portfolio_allocation.invest_more_in.map((r) => (
+                    <div key={r.organization_id} className="flex items-center justify-between p-2 bg-green-50 rounded-lg mb-1">
+                      <div>
+                        <span className="text-xs font-bold text-green-900">{r.display_name}</span>
+                        <p className="text-[9px] text-green-700">{r.rationale}</p>
+                      </div>
+                      <div className="text-right text-[10px]">
+                        <div className="text-gray-500">Score: {r.current_score} &rarr; {r.expected_score}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {portfolio_allocation.optimize.length > 0 && (
+                <div>
+                  <div className="text-[9px] font-bold text-amber-700 uppercase mb-1">Otimizar</div>
+                  {portfolio_allocation.optimize.map((r) => (
+                    <div key={r.organization_id} className="flex items-center justify-between p-2 bg-amber-50 rounded-lg mb-1">
+                      <div>
+                        <span className="text-xs font-bold text-amber-900">{r.display_name}</span>
+                        <p className="text-[9px] text-amber-700">{r.rationale}</p>
+                      </div>
+                      <div className="text-right text-[10px]">
+                        <div className="text-gray-500">Score: {r.current_score} &rarr; {r.expected_score}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {portfolio_allocation.divest.length > 0 && (
+                <div>
+                  <div className="text-[9px] font-bold text-red-700 uppercase mb-1">Desinvestir</div>
+                  {portfolio_allocation.divest.map((r) => (
+                    <div key={r.organization_id} className="flex items-center justify-between p-2 bg-red-50 rounded-lg mb-1">
+                      <div>
+                        <span className="text-xs font-bold text-red-900">{r.display_name}</span>
+                        <p className="text-[9px] text-red-700">{r.rationale}</p>
+                      </div>
+                      <div className="text-right text-[10px]">
+                        <div className="text-gray-500">Score: {r.current_score}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="text-[10px] text-gray-500 border-t pt-2 mt-2">
+                {portfolio_allocation.summary}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Diversificacao */}
+      {portfolio_score?.diversification && (
+        <div className="bg-white rounded-xl p-4 border border-gray-200">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
+            Diversificacao do Portfolio
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-black text-gray-900">{portfolio_score.diversification.hhi_index}</div>
+              <div className="text-[10px] text-gray-500">HHI Index</div>
+              <div className="text-[9px] mt-1 px-2 py-0.5 rounded-full inline-block" style={{
+                backgroundColor: portfolio_score.diversification.concentration === 'low' ? '#ECFDF5' : portfolio_score.diversification.concentration === 'moderate' ? '#FFFBEB' : '#FEF2F2',
+                color: portfolio_score.diversification.concentration === 'low' ? '#059669' : portfolio_score.diversification.concentration === 'moderate' ? '#D97706' : '#DC2626',
+              }}>
+                {portfolio_score.diversification.concentration === 'low' ? 'Baixa concentracao' : portfolio_score.diversification.concentration === 'moderate' ? 'Moderada' : 'Alta concentracao'}
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-black text-gray-900">{portfolio_score.diversification.dominant_company}</div>
+              <div className="text-[10px] text-gray-500">Marca Dominante</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-black text-gray-900">{fmtPct(portfolio_score.diversification.dominant_share)}</div>
+              <div className="text-[10px] text-gray-500">Share Dominante</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --------------------------------------------
+// Stress Test Tab Content
+// --------------------------------------------
+
+const StressTestContent: React.FC<{ data: DashboardData }> = ({ data }) => {
+  const { portfolio_stress, portfolio_companies } = data;
+
+  if (portfolio_companies.length === 0 || portfolio_stress.length === 0) {
+    return (
+      <div className="text-center py-12 text-sm text-gray-400">
+        Stress Test requer mais de uma marca para simulacao. Verifique os dados.
+      </div>
+    );
+  }
+
+  const stressSummary = buildStressTestSummary(portfolio_stress);
+
+  return (
+    <div className="space-y-5">
+      {/* Resumo */}
+      <div className="bg-white rounded-xl p-4 border border-gray-200">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">
+          Resumo dos Testes de Estresse
+        </div>
+        <p className="text-xs text-gray-700">{stressSummary}</p>
+      </div>
+
+      {/* Cards de cenarios */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {portfolio_stress.map((s) => {
+          const survives = s.portfolio_survives;
+          return (
+            <div key={s.scenario_name} className={`rounded-xl p-4 border ${survives ? 'border-green-200 bg-green-50/30' : 'border-red-200 bg-red-50/30'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-xs font-bold text-gray-900">{s.scenario_name}</div>
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${survives ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {survives ? 'Sobrevive' : 'Nao sobrevive'}
+                </span>
+              </div>
+              <p className="text-[10px] text-gray-500 mb-3">{s.scenario_description}</p>
+
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <div className="bg-white rounded-lg p-2 text-center">
+                  <div className="text-[9px] text-gray-500">EBITDA Estressado</div>
+                  <div className="text-sm font-black" style={{ color: s.stressed_ebitda >= 0 ? '#059669' : '#DC2626' }}>
+                    {fmtBRL(s.stressed_ebitda)}
+                  </div>
+                  <div className="text-[9px]" style={{ color: s.ebitda_delta_pct <= 0 ? '#DC2626' : '#059669' }}>
+                    {s.ebitda_delta_pct > 0 ? '+' : ''}{fmtPct(s.ebitda_delta_pct)}
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg p-2 text-center">
+                  <div className="text-[9px] text-gray-500">Score Estressado</div>
+                  <div className="text-sm font-black" style={{ color: scoreColor(s.stressed_portfolio_score) }}>
+                    {s.stressed_portfolio_score}
+                  </div>
+                  <div className="text-[9px] text-gray-400">Mais vulneravel: {s.most_vulnerable}</div>
+                </div>
+              </div>
+
+              {/* Impacto por marca */}
+              <div className="space-y-1">
+                {s.company_impacts.map((ci) => (
+                  <div key={ci.organization_id} className="flex items-center justify-between text-[10px]">
+                    <span className="text-gray-700 font-medium">{ci.display_name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-400">{fmtBRL(ci.original_ebitda)}</span>
+                      <span className="text-gray-300">&rarr;</span>
+                      <span style={{ color: ci.stressed_ebitda >= 0 ? '#059669' : '#DC2626' }} className="font-bold">
+                        {fmtBRL(ci.stressed_ebitda)}
+                      </span>
+                      {!ci.survives && <span className="text-red-500 font-bold">!</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };

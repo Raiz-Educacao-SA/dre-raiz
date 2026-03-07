@@ -13,7 +13,6 @@ import {
   Shield,
   FileText,
   TrendingUp,
-  Building2,
 } from 'lucide-react';
 import { ViewType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -39,7 +38,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
       { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
       { id: 'executive_dashboard', label: 'CEO Dashboard', icon: TrendingUp },
-      { id: 'holding_dashboard', label: 'Holding', icon: Building2 },
       { id: 'agent_team', label: 'Equipe IA', icon: Brain },
       { id: 'admin', label: 'Admin', icon: Shield },
     ] : []),
