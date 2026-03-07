@@ -221,9 +221,11 @@ function classifyPortfolio(score: number): { classification: PortfolioClassifica
  * - Monopolista = 10000 (100²)
  */
 function calculateDiversification(companies: CompanyFinancialSnapshot[]): DiversificationMetrics {
-  const totalRevenueAbs = companies.reduce((s, c) => s + Math.abs(c.receita_real), 0) || 1;
+  // CSCs nao geram receita — excluir do calculo de diversificacao
+  const bizUnits = companies.filter(c => !c.is_csc);
+  const totalRevenueAbs = bizUnits.reduce((s, c) => s + Math.abs(c.receita_real), 0) || 1;
 
-  const shares = companies.map((c) => ({
+  const shares = bizUnits.map((c) => ({
     name: c.display_name,
     share: (Math.abs(c.receita_real) / totalRevenueAbs) * 100,
   }));
@@ -282,13 +284,16 @@ export function calculateRiskDistribution(
     };
   }
 
-  const totalRevenueAbs = companies.reduce((s, c) => s + Math.abs(c.receita_real), 0) || 1;
+  // Filtrar CSCs (Centro de Servicos Compartilhados) do risk analysis
+  // CSCs nao geram receita — 100% dos custos sao rateados, nao representam risco de negocio
+  const businessUnits = companies.filter(c => !c.is_csc);
+  const totalRevenueAbs = businessUnits.reduce((s, c) => s + Math.abs(c.receita_real), 0) || 1;
   const alerts: string[] = [];
   const companyRisks: CompanyRiskEntry[] = [];
 
   let weightedRisk = 0;
 
-  for (const c of companies) {
+  for (const c of businessUnits) {
     const { riskScore, riskLevel, factors } = assessCompanyRisk(c);
     const revShare = Math.abs(c.receita_real) / totalRevenueAbs;
 
@@ -305,7 +310,7 @@ export function calculateRiskDistribution(
 
     // Alertas de portfólio
     if (riskLevel === 'critical') {
-      alerts.push(`${c.display_name}: risco CRÍTICO (score ${c.health_score}, EBITDA ${c.ebitda < 0 ? 'negativo' : 'baixo'})`);
+      alerts.push(`${c.display_name}: risco CRITICO (score ${c.health_score}, EBITDA ${c.ebitda < 0 ? 'negativo' : 'baixo'})`);
     } else if (riskLevel === 'high' && revShare > 0.3) {
       alerts.push(`${c.display_name}: risco ALTO e representa ${round2(revShare * 100)}% da receita`);
     }

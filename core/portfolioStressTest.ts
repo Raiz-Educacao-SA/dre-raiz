@@ -209,10 +209,12 @@ export function runPortfolioStressTests(
     }));
   }
 
-  // Identificar a maior empresa por receita (para cenário "Perda de Unidade")
-  const largestOrg = companies.reduce((best, c) =>
-    Math.abs(c.receita_real) > Math.abs(best.receita_real) ? c : best,
-  );
+  // Identificar a maior unidade de negocio por receita (para cenario "Perda de Unidade")
+  // CSCs nao geram receita — excluir da selecao de "maior unidade"
+  const businessUnits = companies.filter(c => !c.is_csc);
+  const largestOrg = businessUnits.length > 0
+    ? businessUnits.reduce((best, c) => Math.abs(c.receita_real) > Math.abs(best.receita_real) ? c : best)
+    : companies[0];
 
   // EBITDA base do portfólio
   const baseEbitda = companies.reduce((s, c) => s + c.ebitda, 0);

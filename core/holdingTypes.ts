@@ -55,6 +55,10 @@ export interface CompanyFinancialSnapshot {
 
   // Headcount (opcional)
   headcount?: number;
+
+  // CSC (Centro de Servicos Compartilhados) — nao gera receita, 100% rateio
+  // Excluido de risk analysis e capital allocation (nao e unidade de negocio)
+  is_csc?: boolean;
 }
 
 // --------------------------------------------

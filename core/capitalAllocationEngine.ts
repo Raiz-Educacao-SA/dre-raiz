@@ -202,8 +202,22 @@ export function recommendCapitalAllocation(
     };
   }
 
+  // Filtrar CSCs — nao sao unidades de negocio, nao fazem sentido para alocacao de capital
+  const businessUnits = companies.filter(c => !c.is_csc);
+
+  if (businessUnits.length === 0) {
+    return {
+      invest_more_in: [],
+      optimize: [],
+      divest: [],
+      expected_portfolio_gain: 0,
+      risk_adjusted_return: 0,
+      summary: 'Nenhuma unidade de negocio no portfolio para analise.',
+    };
+  }
+
   // 1. Avaliar cada empresa
-  const assessments = companies.map((c) => assessCompany(c));
+  const assessments = businessUnits.map((c) => assessCompany(c));
 
   // 2. Categorizar e criar recomendações
   const invest: AllocationRecommendation[] = [];
@@ -246,7 +260,7 @@ export function recommendCapitalAllocation(
   divest.forEach((r, i) => { r.priority = i + 1; });
 
   // 4. Estimar ganho do portfólio
-  const { gain, riskAdjusted } = estimatePortfolioGain(assessments, companies);
+  const { gain, riskAdjusted } = estimatePortfolioGain(assessments, businessUnits);
 
   // 5. Resumo executivo
   const summary = buildAllocationSummary(invest, optimize, divest, gain, riskAdjusted);

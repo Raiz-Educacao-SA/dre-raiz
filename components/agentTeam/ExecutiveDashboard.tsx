@@ -1100,7 +1100,10 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
                 return (
                   <tr key={c.organization_id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-2 font-bold text-gray-400">{i + 1}</td>
-                    <td className="px-3 py-2 font-bold text-gray-900">{c.display_name}</td>
+                    <td className="px-3 py-2 font-bold text-gray-900">
+                      {c.display_name}
+                      {c.is_csc && <span className="ml-1.5 text-[9px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">CSC</span>}
+                    </td>
                     <td className="px-3 py-2 text-right">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
                         style={{ backgroundColor: scoreBg(c.health_score), color: scoreColor(c.health_score) }}>
