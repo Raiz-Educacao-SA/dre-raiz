@@ -169,7 +169,7 @@ const App: React.FC = () => {
   // ⚡ LAZY LOAD: Carregar transações apenas quando o usuário navegar para views que precisam
   // Views que precisam de transações: movements, kpis, forecasting, analysis
   // Dashboard usa getSomaTags RPC (já carrega separadamente acima)
-  const viewsNeedingTransactions = ['dashboard', 'forecasting', 'analysis'];
+  const viewsNeedingTransactions = ['dashboard', 'analysis'];
   const transactionsLoadedRef = React.useRef(false);
 
   const loadTransactionsIfNeeded = React.useCallback(() => {
@@ -1218,12 +1218,7 @@ const App: React.FC = () => {
           {currentView === 'forecasting' && (
             <ErrorBoundary fallbackMessage="Erro ao carregar Previsões">
               <Suspense fallback={<LoadingSpinner message="Carregando previsões..." />}>
-                <ForecastingView
-                  transactions={filteredTransactions}
-                  allowedMarcas={allowedMarcas}
-                  allowedFiliais={allowedFiliais}
-                  allowedCategories={allowedCategories}
-                />
+                <ForecastingView />
               </Suspense>
             </ErrorBoundary>
           )}

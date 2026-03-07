@@ -1,909 +1,742 @@
-import React, { useMemo, useState } from 'react';
-import { Transaction } from '../types';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Area, AreaChart, ComposedChart } from 'recharts';
-import { TrendingUp, Calendar, Target, Brain, AlertCircle, CheckCircle2, BarChart3, Activity, Zap, Info, ChevronDown, ChevronUp } from 'lucide-react';
-import { filterTransactionsByPermissions } from '../services/permissionsService';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { getSomaTags, SomaTagsRow } from '../services/supabaseService';
+import {
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, ReferenceLine, Cell,
+} from 'recharts';
+import {
+  TrendingUp, TrendingDown, Target, Brain, Activity, Loader2,
+  ChevronDown, ChevronRight, ArrowUpRight, ArrowDownRight, Minus,
+  RefreshCw, Calendar, BarChart3, Info,
+} from 'lucide-react';
+
+// ── Types ──
 
 interface ForecastingViewProps {
-  transactions: Transaction[];
-  // ✅ RLS: Permissões do usuário
+  transactions?: any[];
   allowedMarcas?: string[];
   allowedFiliais?: string[];
   allowedCategories?: string[];
 }
 
-type ForecastMethod = 'movingAverage' | 'linearTrend' | 'seasonal' | 'hybrid';
+type ForecastMethod = 'runRate' | 'budgetAdjusted' | 'linearTrend';
 
-const ForecastingView: React.FC<ForecastingViewProps> = ({ transactions }) => {
-  const [selectedMethod, setSelectedMethod] = useState<ForecastMethod>('hybrid');
-  const [forecastMonths, setForecastMonths] = useState<number>(6);
-  const [showConfidenceInterval, setShowConfidenceInterval] = useState<boolean>(true);
-  const [selectedMetric, setSelectedMetric] = useState<'revenue' | 'ebitda' | 'margin'>('ebitda');
+interface MonthRow {
+  month: string;        // 'YYYY-MM'
+  monthLabel: string;   // 'Jan', 'Fev'...
+  real: number;
+  orcado: number;
+  a1: number;
+  forecast: number;     // real if past, projected if future
+  isForecast: boolean;
+  upperBound: number;
+  lowerBound: number;
+}
 
-  // Alavancas de simulação
-  const [revenueIncrease, setRevenueIncrease] = useState<number>(0);
-  const [variableCostReduction, setVariableCostReduction] = useState<number>(0);
-  const [fixedCostReduction, setFixedCostReduction] = useState<number>(0);
-  const [sgaReduction, setSgaReduction] = useState<number>(0);
+interface Tag0Summary {
+  tag0: string;
+  realYtd: number;
+  orcadoYtd: number;
+  a1Ytd: number;
+  realFull: number;       // real ytd + forecast
+  orcadoFull: number;     // orcado 12 meses
+  a1Full: number;         // a1 12 meses
+  forecastClosing: number;
+  months: MonthRow[];
+  tag01Details: Tag01Detail[];
+}
 
-  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+interface Tag01Detail {
+  tag01: string;
+  realYtd: number;
+  orcadoYtd: number;
+  a1Ytd: number;
+  forecastClosing: number;
+  orcadoFull: number;
+  a1Full: number;
+}
 
-  // 🔒 RLS: Filtrar transações por permissões do usuário
-  const permissionFilteredTransactions = useMemo(() => {
-    console.log('🔒 ForecastingView: Aplicando permissões RLS nas transações...');
-    const filtered = filterTransactionsByPermissions(transactions);
-    console.log(`🔒 ForecastingView: ${transactions.length} → ${filtered.length} transações após RLS`);
-    return filtered;
-  }, [transactions]);
+// ── Constants ──
 
-  // Processar dados históricos reais
-  const historicalData = useMemo(() => {
-    const monthlyData = new Array(12).fill(0).map(() => ({
-      revenue: 0,
-      costs: 0,
-      ebitda: 0,
-      count: 0
-    }));
+const MONTH_LABELS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const DRE_PREFIXES = ['01.', '02.', '03.', '04.', '05.'];
 
-    // Agregar transações do cenário "Real"
-    permissionFilteredTransactions
-      .filter(t => t.scenario === 'Real')
-      .forEach(t => {
-        const monthIdx = parseInt(t.date.substring(5, 7), 10) - 1;
-        if (t.type === 'REVENUE') {
-          monthlyData[monthIdx].revenue += t.amount;
-        } else {
-          monthlyData[monthIdx].costs += t.amount;
+const METHOD_INFO: Record<ForecastMethod, { label: string; desc: string; color: string }> = {
+  runRate:        { label: 'Run Rate',         desc: 'Media dos ultimos 3 meses reais projetada para os meses restantes', color: 'orange' },
+  budgetAdjusted: { label: 'Orcado Ajustado', desc: 'Orcado futuro ajustado pelo % de realizacao YTD vs orcado', color: 'emerald' },
+  linearTrend:    { label: 'Tendencia Linear', desc: 'Regressao linear dos meses reais projetada para o restante', color: 'purple' },
+};
+
+// ── Helpers ──
+
+const fmt = (v: number) => Math.round(v).toLocaleString('pt-BR');
+const fmtK = (v: number) => {
+  const abs = Math.abs(v);
+  if (abs >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
+  return fmt(v);
+};
+const pct = (real: number, ref: number) =>
+  ref !== 0 ? ((real - ref) / Math.abs(ref) * 100).toFixed(1) + '%' : 'N/A';
+const deltaColor = (v: number, invert = false) => {
+  const positive = invert ? v < 0 : v > 0;
+  if (v === 0) return 'text-gray-400';
+  return positive ? 'text-emerald-600' : 'text-rose-600';
+};
+
+// ── Forecast math ──
+
+function linearRegression(values: number[]): { slope: number; intercept: number } {
+  const n = values.length;
+  if (n < 2) return { slope: 0, intercept: values[0] || 0 };
+  let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+  for (let i = 0; i < n; i++) {
+    sumX += i; sumY += values[i]; sumXY += i * values[i]; sumX2 += i * i;
+  }
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+  return { slope, intercept };
+}
+
+function stdDev(values: number[]): number {
+  if (values.length < 2) return 0;
+  const avg = values.reduce((s, v) => s + v, 0) / values.length;
+  const variance = values.reduce((s, v) => s + (v - avg) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
+function projectMonths(
+  realValues: number[],   // valores reais por mes (index 0=jan)
+  orcValues: number[],    // orcado por mes
+  lastRealIdx: number,    // indice do ultimo mes com dados reais
+  method: ForecastMethod,
+): { projected: number[]; upper: number[]; lower: number[] } {
+  const projected = [...realValues];
+  const upper = [...realValues];
+  const lower = [...realValues];
+
+  if (lastRealIdx < 0) return { projected, upper, lower };
+
+  const realSlice = realValues.slice(0, lastRealIdx + 1).filter(v => v !== 0);
+  const sd = stdDev(realSlice) * 1.96;
+
+  // Run Rate: media dos ultimos 3 meses
+  const runRateAvg = (() => {
+    const window = realSlice.slice(-3);
+    return window.length > 0 ? window.reduce((s, v) => s + v, 0) / window.length : 0;
+  })();
+
+  // Budget Adjusted: % realizacao YTD
+  const realYtd = realSlice.reduce((s, v) => s + v, 0);
+  const orcYtd = orcValues.slice(0, lastRealIdx + 1).reduce((s, v) => s + v, 0);
+  const realizationPct = orcYtd !== 0 ? realYtd / orcYtd : 1;
+
+  // Linear Trend
+  const reg = linearRegression(realSlice);
+
+  for (let i = lastRealIdx + 1; i < 12; i++) {
+    let val = 0;
+    switch (method) {
+      case 'runRate':
+        val = runRateAvg;
+        break;
+      case 'budgetAdjusted':
+        val = orcValues[i] * realizationPct;
+        break;
+      case 'linearTrend':
+        val = reg.intercept + reg.slope * i;
+        break;
+    }
+    projected[i] = val;
+    upper[i] = val + sd;
+    lower[i] = Math.min(val, val - sd); // allow negative for costs
+  }
+
+  return { projected, upper, lower };
+}
+
+// ── Component ──
+
+const ForecastingView: React.FC<ForecastingViewProps> = () => {
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
+  const [method, setMethod] = useState<ForecastMethod>('budgetAdjusted');
+  const [loading, setLoading] = useState(false);
+  const [somaData, setSomaData] = useState<SomaTagsRow[]>([]);
+  const [expandedTag0s, setExpandedTag0s] = useState<Set<string>>(new Set());
+  const [selectedTag0, setSelectedTag0] = useState<string | null>(null);
+
+  // ── Fetch data via get_soma_tags (12 meses do ano) ──
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getSomaTags(`${year}-01`, `${year}-12`, undefined, undefined, undefined, undefined, 'Sim');
+      setSomaData(data);
+    } catch (e) {
+      console.error('Erro ao buscar dados forecast:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [year]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Identify last month with real data ──
+  const lastRealMonth = useMemo(() => {
+    const realMonths = new Set<string>();
+    for (const r of somaData) {
+      if (r.scenario === 'Real' && r.total !== 0) realMonths.add(r.month);
+    }
+    let lastIdx = -1;
+    for (const m of realMonths) {
+      const idx = parseInt(m.slice(5, 7), 10) - 1;
+      if (idx > lastIdx) lastIdx = idx;
+    }
+    return lastIdx;
+  }, [somaData]);
+
+  // ── Build tag0 summaries ──
+  const tag0Summaries = useMemo((): Tag0Summary[] => {
+    if (somaData.length === 0) return [];
+
+    // Index: tag0 -> tag01 -> scenario -> month -> total
+    type DeepMap = Map<string, Map<string, Map<string, Map<string, number>>>>;
+    const idx: DeepMap = new Map();
+
+    for (const r of somaData) {
+      if (!DRE_PREFIXES.some(p => r.tag0.startsWith(p))) continue;
+      if (!idx.has(r.tag0)) idx.set(r.tag0, new Map());
+      const t0 = idx.get(r.tag0)!;
+      if (!t0.has(r.tag01)) t0.set(r.tag01, new Map());
+      const t1 = t0.get(r.tag01)!;
+      if (!t1.has(r.scenario)) t1.set(r.scenario, new Map());
+      const sc = t1.get(r.scenario)!;
+      sc.set(r.month, (sc.get(r.month) || 0) + r.total);
+    }
+
+    const allMonths = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+
+    const results: Tag0Summary[] = [];
+
+    for (const tag0 of [...idx.keys()].sort()) {
+      const tag01Map = idx.get(tag0)!;
+
+      // Aggregate tag0 level per scenario per month
+      const tag0ByScMonth = new Map<string, number[]>(); // scenario -> [12 months]
+      for (const sc of ['Real', 'Orcado', 'A-1']) {
+        tag0ByScMonth.set(sc, new Array(12).fill(0));
+      }
+
+      const tag01Details: Tag01Detail[] = [];
+
+      for (const [tag01, scMap] of tag01Map) {
+        if (!tag01) continue;
+        const t1Real = new Array(12).fill(0);
+        const t1Orc = new Array(12).fill(0);
+        const t1A1 = new Array(12).fill(0);
+
+        for (const [sc, mMap] of scMap) {
+          for (const [m, val] of mMap) {
+            const mi = parseInt(m.slice(5, 7), 10) - 1;
+            if (sc === 'Real') { t1Real[mi] += val; tag0ByScMonth.get('Real')![mi] += val; }
+            else if (sc === 'Orcado') { t1Orc[mi] += val; tag0ByScMonth.get('Orcado')![mi] += val; }
+            else if (sc === 'A-1') { t1A1[mi] += val; tag0ByScMonth.get('A-1')![mi] += val; }
+          }
         }
-        monthlyData[monthIdx].count++;
-      });
 
-    // Calcular EBITDA e margem
-    return monthlyData.map((data, idx) => {
-      const ebitda = data.revenue - data.costs;
-      const margin = data.revenue > 0 ? (ebitda / data.revenue) * 100 : 0;
+        const realYtd = t1Real.slice(0, lastRealMonth + 1).reduce((s, v) => s + v, 0);
+        const orcYtd = t1Orc.slice(0, lastRealMonth + 1).reduce((s, v) => s + v, 0);
+        const a1Ytd = t1A1.slice(0, lastRealMonth + 1).reduce((s, v) => s + v, 0);
+        const { projected } = projectMonths(t1Real, t1Orc, lastRealMonth, method);
+        const forecastClosing = projected.reduce((s, v) => s + v, 0);
+
+        tag01Details.push({
+          tag01, realYtd, orcadoYtd: orcYtd, a1Ytd: a1Ytd,
+          forecastClosing,
+          orcadoFull: t1Orc.reduce((s, v) => s + v, 0),
+          a1Full: t1A1.reduce((s, v) => s + v, 0),
+        });
+      }
+
+      // Sort tag01 by realYtd desc (absolute)
+      tag01Details.sort((a, b) => Math.abs(b.realYtd) - Math.abs(a.realYtd));
+
+      const realArr = tag0ByScMonth.get('Real')!;
+      const orcArr = tag0ByScMonth.get('Orcado')!;
+      const a1Arr = tag0ByScMonth.get('A-1')!;
+
+      const { projected, upper, lower } = projectMonths(realArr, orcArr, lastRealMonth, method);
+
+      const months: MonthRow[] = allMonths.map((m, i) => ({
+        month: m,
+        monthLabel: MONTH_LABELS[i],
+        real: realArr[i],
+        orcado: orcArr[i],
+        a1: a1Arr[i],
+        forecast: projected[i],
+        isForecast: i > lastRealMonth,
+        upperBound: upper[i],
+        lowerBound: lower[i],
+      }));
+
+      const realYtd = realArr.slice(0, lastRealMonth + 1).reduce((s, v) => s + v, 0);
+      const orcadoYtd = orcArr.slice(0, lastRealMonth + 1).reduce((s, v) => s + v, 0);
+      const a1Ytd = a1Arr.slice(0, lastRealMonth + 1).reduce((s, v) => s + v, 0);
+
+      results.push({
+        tag0,
+        realYtd,
+        orcadoYtd,
+        a1Ytd,
+        realFull: projected.reduce((s, v) => s + v, 0),
+        orcadoFull: orcArr.reduce((s, v) => s + v, 0),
+        a1Full: a1Arr.reduce((s, v) => s + v, 0),
+        forecastClosing: projected.reduce((s, v) => s + v, 0),
+        months,
+        tag01Details,
+      });
+    }
+
+    return results;
+  }, [somaData, lastRealMonth, method, year]);
+
+  // ── CalcRows (Margem, EBITDA) ──
+  const calcRows = useMemo(() => {
+    const byPrefix = new Map<string, Tag0Summary>();
+    for (const s of tag0Summaries) byPrefix.set(s.tag0.slice(0, 3), s);
+    const g = (p: string) => byPrefix.get(p);
+
+    const sum = (prefixes: string[], field: keyof Tag0Summary) =>
+      prefixes.reduce((s, p) => s + ((g(p) as any)?.[field] || 0), 0);
+
+    const sumMonths = (prefixes: string[]) => {
+      const result = new Array(12).fill(null).map((_, i) => ({
+        forecast: 0, real: 0, orcado: 0, a1: 0, upperBound: 0, lowerBound: 0,
+      }));
+      for (const p of prefixes) {
+        const t = g(p);
+        if (!t) continue;
+        for (let i = 0; i < 12; i++) {
+          result[i].forecast += t.months[i].forecast;
+          result[i].real += t.months[i].real;
+          result[i].orcado += t.months[i].orcado;
+          result[i].a1 += t.months[i].a1;
+          result[i].upperBound += t.months[i].upperBound;
+          result[i].lowerBound += t.months[i].lowerBound;
+        }
+      }
+      return result;
+    };
+
+    const margem = ['01.', '02.', '03.'];
+    const ebitda = ['01.', '02.', '03.', '04.'];
+    const ebitdaTotal = ['01.', '02.', '03.', '04.', '05.'];
+
+    const allMonths = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+
+    const buildCalc = (label: string, prefixes: string[]) => {
+      const mData = sumMonths(prefixes);
+      const months: MonthRow[] = allMonths.map((m, i) => ({
+        month: m, monthLabel: MONTH_LABELS[i],
+        real: mData[i].real, orcado: mData[i].orcado, a1: mData[i].a1,
+        forecast: mData[i].forecast, isForecast: i > lastRealMonth,
+        upperBound: mData[i].upperBound, lowerBound: mData[i].lowerBound,
+      }));
       return {
-        month: months[idx],
-        monthIdx: idx,
-        revenue: data.revenue,
-        costs: data.costs,
-        ebitda,
-        margin,
-        hasData: data.count > 0
-      };
-    });
-  }, [permissionFilteredTransactions]);
-
-  // Identificar último mês com dados
-  const lastDataMonth = useMemo(() => {
-    for (let i = historicalData.length - 1; i >= 0; i--) {
-      if (historicalData[i].hasData) return i;
-    }
-    return -1;
-  }, [historicalData]);
-
-  // Calcular previsões usando diferentes métodos
-  const forecastData = useMemo(() => {
-    if (lastDataMonth < 0) return [];
-
-    const dataPoints = historicalData.slice(0, lastDataMonth + 1);
-    const metric = selectedMetric === 'revenue' ? 'revenue' :
-                   selectedMetric === 'margin' ? 'margin' : 'ebitda';
-
-    // Método 1: Média Móvel (últimos 3 meses)
-    const calculateMovingAverage = () => {
-      const window = Math.min(3, dataPoints.length);
-      const recentData = dataPoints.slice(-window);
-      return recentData.reduce((sum, d) => sum + d[metric], 0) / window;
+        tag0: label,
+        realYtd: sum(prefixes, 'realYtd'),
+        orcadoYtd: sum(prefixes, 'orcadoYtd'),
+        a1Ytd: sum(prefixes, 'a1Ytd'),
+        realFull: sum(prefixes, 'realFull'),
+        orcadoFull: sum(prefixes, 'orcadoFull'),
+        a1Full: sum(prefixes, 'a1Full'),
+        forecastClosing: sum(prefixes, 'forecastClosing'),
+        months,
+        tag01Details: [],
+      } as Tag0Summary;
     };
 
-    // Método 2: Tendência Linear
-    const calculateLinearTrend = (monthsAhead: number) => {
-      const n = dataPoints.length;
-      const sumX = dataPoints.reduce((sum, _, idx) => sum + idx, 0);
-      const sumY = dataPoints.reduce((sum, d) => sum + d[metric], 0);
-      const sumXY = dataPoints.reduce((sum, d, idx) => sum + idx * d[metric], 0);
-      const sumX2 = dataPoints.reduce((sum, _, idx) => sum + idx * idx, 0);
-
-      const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-      const intercept = (sumY - slope * sumX) / n;
-
-      return intercept + slope * (n + monthsAhead);
+    return {
+      margem: buildCalc('MARGEM DE CONTRIBUICAO', margem),
+      ebitda: buildCalc('EBITDA (S/ RATEIO)', ebitda),
+      ebitdaTotal: buildCalc('EBITDA TOTAL', ebitdaTotal),
     };
+  }, [tag0Summaries, lastRealMonth, year]);
 
-    // Método 3: Análise de Sazonalidade
-    const calculateSeasonal = (targetMonth: number) => {
-      // Calcular índice de sazonalidade baseado em dados históricos
-      const avgOverall = dataPoints.reduce((sum, d) => sum + d[metric], 0) / dataPoints.length;
+  // ── Chart data for selected tag0 ──
+  const chartSource = useMemo(() => {
+    if (selectedTag0 === 'MARGEM') return calcRows.margem;
+    if (selectedTag0 === 'EBITDA') return calcRows.ebitda;
+    if (selectedTag0 === 'EBITDA_TOTAL') return calcRows.ebitdaTotal;
+    return tag0Summaries.find(s => s.tag0 === selectedTag0) || calcRows.ebitdaTotal;
+  }, [selectedTag0, tag0Summaries, calcRows]);
 
-      // Encontrar meses similares (mesmo mês em anos diferentes)
-      const similarMonths = dataPoints.filter((_, idx) =>
-        historicalData[idx].month === months[targetMonth % 12]
-      );
-
-      if (similarMonths.length > 0) {
-        const avgSimilar = similarMonths.reduce((sum, d) => sum + d[metric], 0) / similarMonths.length;
-        const seasonalIndex = avgOverall > 0 ? avgSimilar / avgOverall : 1;
-        return avgOverall * seasonalIndex;
-      }
-
-      return avgOverall;
-    };
-
-    // Método 4: Híbrido (combina todos os métodos)
-    const calculateHybrid = (monthsAhead: number, targetMonth: number) => {
-      const ma = calculateMovingAverage();
-      const lt = calculateLinearTrend(monthsAhead);
-      const seasonal = calculateSeasonal(targetMonth);
-
-      // Pesos: 30% MA, 40% LT, 30% Seasonal
-      return ma * 0.3 + lt * 0.4 + seasonal * 0.3;
-    };
-
-    // Calcular desvio padrão para intervalo de confiança
-    const stdDev = Math.sqrt(
-      dataPoints.reduce((sum, d) => {
-        const avg = dataPoints.reduce((s, d2) => s + d2[metric], 0) / dataPoints.length;
-        return sum + Math.pow(d[metric] - avg, 2);
-      }, 0) / dataPoints.length
-    );
-
-    // Gerar previsões
-    const forecasts = [];
-    for (let i = 1; i <= forecastMonths; i++) {
-      const targetMonthIdx = (lastDataMonth + i) % 12;
-      let forecast = 0;
-
-      switch (selectedMethod) {
-        case 'movingAverage':
-          forecast = calculateMovingAverage();
-          break;
-        case 'linearTrend':
-          forecast = calculateLinearTrend(i);
-          break;
-        case 'seasonal':
-          forecast = calculateSeasonal(lastDataMonth + i);
-          break;
-        case 'hybrid':
-          forecast = calculateHybrid(i, lastDataMonth + i);
-          break;
-      }
-
-      // Aplicar simulações apenas para EBITDA
-      if (selectedMetric === 'ebitda') {
-        // Buscar dados base do mês projetado para aplicar ajustes
-        const avgRevenue = dataPoints.reduce((sum, d) => sum + d.revenue, 0) / dataPoints.length;
-        const avgCosts = dataPoints.reduce((sum, d) => sum + d.costs, 0) / dataPoints.length;
-
-        // Estimar proporção de custos (aprox. 40% var, 35% fix, 25% sga)
-        const varCostRatio = 0.4;
-        const fixCostRatio = 0.35;
-        const sgaRatio = 0.25;
-
-        const estimatedRevenue = avgRevenue * (1 + revenueIncrease / 100);
-        const estimatedVarCost = (avgCosts * varCostRatio) * (1 - variableCostReduction / 100);
-        const estimatedFixCost = (avgCosts * fixCostRatio) * (1 - fixedCostReduction / 100);
-        const estimatedSga = (avgCosts * sgaRatio) * (1 - sgaReduction / 100);
-
-        forecast = estimatedRevenue - (estimatedVarCost + estimatedFixCost + estimatedSga);
-      } else if (selectedMetric === 'revenue') {
-        // Aplicar aumento de receita
-        forecast = forecast * (1 + revenueIncrease / 100);
-      }
-
-      // Intervalo de confiança (95%)
-      const confidenceMultiplier = 1.96;
-      const upperBound = forecast + (confidenceMultiplier * stdDev);
-      const lowerBound = Math.max(0, forecast - (confidenceMultiplier * stdDev));
-
-      forecasts.push({
-        month: months[targetMonthIdx],
-        monthIdx: targetMonthIdx,
-        forecast: Math.round(forecast),
-        upperBound: Math.round(upperBound),
-        lowerBound: Math.round(lowerBound),
-        isForecast: true
-      });
-    }
-
-    return forecasts;
-  }, [historicalData, lastDataMonth, selectedMethod, forecastMonths, selectedMetric, revenueIncrease, variableCostReduction, fixedCostReduction, sgaReduction]);
-
-  // Combinar dados históricos e previsões para o gráfico - LINHA ÚNICA CONECTADA
   const chartData = useMemo(() => {
-    const metric = selectedMetric === 'revenue' ? 'revenue' :
-                   selectedMetric === 'margin' ? 'margin' : 'ebitda';
-
-    // Dados históricos
-    const historicalChartData = historicalData.slice(0, lastDataMonth + 1).map((d, idx) => ({
-      name: d.month,
-      value: d[metric],
-      upperBound: null,
-      lowerBound: null,
-      isReal: true,
-      monthIndex: idx
+    return chartSource.months.map(m => ({
+      name: m.monthLabel,
+      real: m.isForecast ? null : m.real,
+      forecast: m.isForecast ? m.forecast : null,
+      orcado: m.orcado,
+      a1: m.a1,
+      upper: m.isForecast ? m.upperBound : null,
+      lower: m.isForecast ? m.lowerBound : null,
+      // Connection point: last real month also has forecast value
+      ...(m.month === `${year}-${String(lastRealMonth + 1).padStart(2, '0')}` ? { forecast: m.real } : {}),
     }));
+  }, [chartSource, year, lastRealMonth]);
 
-    // Dados de previsão
-    const forecastChartData = forecastData.map((f, idx) => ({
-      name: f.month,
-      value: f.forecast,
-      upperBound: showConfidenceInterval ? f.upperBound : null,
-      lowerBound: showConfidenceInterval ? f.lowerBound : null,
-      isReal: false,
-      monthIndex: lastDataMonth + 1 + idx
-    }));
+  // ── Accuracy (backtest last 2 realized months) ──
+  const accuracy = useMemo(() => {
+    if (lastRealMonth < 3) return null;
+    const src = calcRows.ebitdaTotal;
+    const testMonths = 2;
+    const start = lastRealMonth - testMonths + 1;
 
-    // Combinar com conexão
-    return [...historicalChartData, ...forecastChartData];
-  }, [historicalData, forecastData, lastDataMonth, selectedMetric, showConfidenceInterval]);
+    // Simulate forecast as if lastRealMonth was `start-1`
+    const realSlice = src.months.slice(0, start).map(m => m.real);
+    const orcSlice = src.months.map(m => m.orcado);
+    const { projected } = projectMonths(realSlice, orcSlice, start - 1, method);
 
-  // Calcular métricas de acurácia (usando últimos 3 meses como teste)
-  const accuracyMetrics = useMemo(() => {
-    if (lastDataMonth < 3) return null;
-
-    const metric = selectedMetric === 'revenue' ? 'revenue' :
-                   selectedMetric === 'margin' ? 'margin' : 'ebitda';
-
-    const testMonths = 3;
-    const trainData = historicalData.slice(0, lastDataMonth - testMonths + 1);
-    const testData = historicalData.slice(lastDataMonth - testMonths + 1, lastDataMonth + 1);
-
-    // Calcular previsões para os meses de teste
-    const predictions = testData.map((_, idx) => {
-      const avgRecent = trainData.slice(-3).reduce((sum, d) => sum + d[metric], 0) / Math.min(3, trainData.length);
-      return avgRecent;
-    });
-
-    // Calcular MAPE (Mean Absolute Percentage Error)
-    const mape = testData.reduce((sum, d, idx) => {
-      const actual = d[metric];
-      const predicted = predictions[idx];
-      return sum + (actual !== 0 ? Math.abs((actual - predicted) / actual) : 0);
-    }, 0) / testData.length * 100;
-
-    // Calcular RMSE (Root Mean Square Error)
-    const rmse = Math.sqrt(
-      testData.reduce((sum, d, idx) => {
-        return sum + Math.pow(d[metric] - predictions[idx], 2);
-      }, 0) / testData.length
-    );
-
-    return {
-      mape: mape.toFixed(1),
-      rmse: Math.round(rmse),
-      accuracy: (100 - mape).toFixed(1)
-    };
-  }, [historicalData, lastDataMonth, selectedMetric]);
-
-  // Calcular totais de EBITDA
-  const ebitdaTotals = useMemo(() => {
-    // EBITDA Orçado (do cenário "Orçado")
-    const budgetTransactions = permissionFilteredTransactions.filter(t => t.scenario === 'Orçado');
-    const budgetRevenue = budgetTransactions
-      .filter(t => t.type === 'REVENUE')
-      .reduce((sum, t) => sum + t.amount, 0);
-    const budgetCosts = budgetTransactions
-      .filter(t => t.type !== 'REVENUE')
-      .reduce((sum, t) => sum + t.amount, 0);
-    const budgetEbitda = budgetRevenue - budgetCosts;
-
-    // EBITDA Previsto (soma das previsões)
-    const forecastEbitda = forecastData.reduce((sum, f) => sum + f.forecast, 0);
-
-    // EBITDA Real acumulado
-    const realEbitda = historicalData
-      .slice(0, lastDataMonth + 1)
-      .reduce((sum, d) => sum + d.ebitda, 0);
-
-    // Total projetado (Real + Forecast)
-    const totalProjected = realEbitda + forecastEbitda;
-
-    return {
-      budget: budgetEbitda,
-      forecast: totalProjected,
-      real: realEbitda,
-      forecastOnly: forecastEbitda,
-      variance: totalProjected - budgetEbitda,
-      variancePercent: budgetEbitda !== 0 ? ((totalProjected - budgetEbitda) / budgetEbitda) * 100 : 0
-    };
-  }, [permissionFilteredTransactions, forecastData, historicalData, lastDataMonth]);
-
-  // Calcular insights e recomendações
-  const insights = useMemo(() => {
-    const metric = selectedMetric === 'revenue' ? 'revenue' :
-                   selectedMetric === 'margin' ? 'margin' : 'ebitda';
-
-    const recentData = historicalData.slice(Math.max(0, lastDataMonth - 2), lastDataMonth + 1);
-    const avgRecent = recentData.reduce((sum, d) => sum + d[metric], 0) / recentData.length;
-    const avgForecast = forecastData.reduce((sum, f) => sum + f.forecast, 0) / forecastData.length;
-
-    const growth = avgRecent > 0 ? ((avgForecast - avgRecent) / avgRecent) * 100 : 0;
-
-    const insights = [];
-
-    if (growth > 5) {
-      insights.push({
-        type: 'positive',
-        title: 'Tendência de Crescimento',
-        description: `Previsão indica crescimento de ${growth.toFixed(1)}% nos próximos meses.`
-      });
-    } else if (growth < -5) {
-      insights.push({
-        type: 'warning',
-        title: 'Tendência de Queda',
-        description: `Previsão indica queda de ${Math.abs(growth).toFixed(1)}% nos próximos meses.`
-      });
-    } else {
-      insights.push({
-        type: 'neutral',
-        title: 'Tendência Estável',
-        description: 'Previsão indica manutenção dos níveis atuais.'
-      });
+    let mapeSum = 0;
+    let rmseSum = 0;
+    let count = 0;
+    for (let i = start; i <= lastRealMonth; i++) {
+      const actual = src.months[i].real;
+      const pred = projected[i];
+      if (actual !== 0) {
+        mapeSum += Math.abs((actual - pred) / actual);
+        rmseSum += (actual - pred) ** 2;
+        count++;
+      }
     }
 
-    // Análise de sazonalidade
-    const hasSeasonality = historicalData.some((d, idx) => {
-      if (idx === 0 || !d.hasData) return false;
-      const prevMonth = historicalData[idx - 1];
-      if (!prevMonth.hasData) return false;
-      const variation = Math.abs((d[metric] - prevMonth[metric]) / prevMonth[metric]) * 100;
-      return variation > 20;
+    return count > 0 ? {
+      mape: ((mapeSum / count) * 100).toFixed(1),
+      rmse: Math.sqrt(rmseSum / count),
+    } : null;
+  }, [calcRows, lastRealMonth, method]);
+
+  // ── Toggle expand ──
+  const toggleTag0 = (tag0: string) => {
+    setExpandedTag0s(prev => {
+      const n = new Set(prev);
+      n.has(tag0) ? n.delete(tag0) : n.add(tag0);
+      return n;
     });
-
-    if (hasSeasonality) {
-      insights.push({
-        type: 'info',
-        title: 'Padrão Sazonal Detectado',
-        description: 'Dados mostram variações sazonais significativas.'
-      });
-    }
-
-    return insights;
-  }, [historicalData, forecastData, lastDataMonth, selectedMetric]);
-
-  const metricInfo = {
-    revenue: { label: 'Receita', format: (v: number) => `R$ ${(v / 1000).toFixed(0)}k`, color: '#1B75BB' },
-    ebitda: { label: 'EBITDA', format: (v: number) => `R$ ${(v / 1000).toFixed(0)}k`, color: '#7AC5BF' },
-    margin: { label: 'Margem %', format: (v: number) => `${v.toFixed(1)}%`, color: '#F44C00' }
   };
 
-  const currentMetric = metricInfo[selectedMetric];
+  // ── Render helpers ──
+  const renderKPI = (label: string, value: number, ref: number, refLabel: string, invert = false) => {
+    const delta = value - ref;
+    const deltaPct = ref !== 0 ? (delta / Math.abs(ref)) * 100 : 0;
+    const positive = invert ? delta < 0 : delta > 0;
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
+        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">{label}</div>
+        <div className="text-xl font-black text-gray-900 mt-1">{fmtK(value)}</div>
+        <div className={`flex items-center gap-1 mt-1 text-[10px] font-bold ${positive ? 'text-emerald-600' : 'text-rose-600'}`}>
+          {positive ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+          {deltaPct.toFixed(1)}% vs {refLabel}
+        </div>
+      </div>
+    );
+  };
+
+  const isCost = (tag0: string) => tag0.startsWith('02.') || tag0.startsWith('03.') || tag0.startsWith('04.') || tag0.startsWith('05.');
+
+  // ── RENDER ──
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64 gap-2 text-gray-500">
+        <Loader2 className="animate-spin" size={18} />
+        <span className="text-sm">Carregando dados do DRE...</span>
+      </div>
+    );
+  }
+
+  const ebt = calcRows.ebitdaTotal;
 
   return (
-    <div className="space-y-4 animate-in fade-in duration-500 pb-10">
-      {/* Header Compacto */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-gradient-to-br from-[#1B75BB] to-[#4AC8F4] rounded-lg">
-              <Brain size={20} className="text-white" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black text-gray-900">Forecasting Avançado</h2>
-              <p className="text-xs text-gray-500 font-medium">
-                Previsões baseadas em dados reais com múltiplos métodos estatísticos
-              </p>
-            </div>
-          </div>
+    <div className="space-y-4 p-2">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
+            <TrendingUp size={20} className="text-orange-500" />
+            Forecast de Fechamento {year}
+          </h2>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            Real ate {lastRealMonth >= 0 ? MONTH_LABELS[lastRealMonth] : '—'} + projecao {lastRealMonth < 11 ? `${MONTH_LABELS[lastRealMonth + 1]}–Dez` : '(completo)'}
+          </p>
         </div>
-
-        {/* Controles */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {/* Métrica */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1 block">
-              Métrica
-            </label>
-            <select
-              value={selectedMetric}
-              onChange={(e) => setSelectedMetric(e.target.value as any)}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold bg-white focus:border-[#1B75BB] focus:ring-1 focus:ring-[#1B75BB]/20 outline-none"
-            >
-              <option value="revenue">Receita</option>
-              <option value="ebitda">EBITDA</option>
-              <option value="margin">Margem %</option>
-            </select>
-          </div>
-
-          {/* Método */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1 block">
-              Método de Previsão
-            </label>
-            <select
-              value={selectedMethod}
-              onChange={(e) => setSelectedMethod(e.target.value as ForecastMethod)}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold bg-white focus:border-[#1B75BB] focus:ring-1 focus:ring-[#1B75BB]/20 outline-none"
-            >
-              <option value="hybrid">Híbrido</option>
-              <option value="movingAverage">Média Móvel</option>
-              <option value="linearTrend">Tendência Linear</option>
-              <option value="seasonal">Sazonal</option>
-            </select>
-          </div>
-
-          {/* Período */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1 block">
-              Meses a Prever
-            </label>
-            <select
-              value={forecastMonths}
-              onChange={(e) => setForecastMonths(Number(e.target.value))}
-              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold bg-white focus:border-[#1B75BB] focus:ring-1 focus:ring-[#1B75BB]/20 outline-none"
-            >
-              <option value="3">3 meses</option>
-              <option value="6">6 meses</option>
-              <option value="9">9 meses</option>
-              <option value="12">12 meses</option>
-            </select>
-          </div>
-
-          {/* Intervalo de Confiança */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide mb-1 block">
-              IC 95%
-            </label>
-            <button
-              onClick={() => setShowConfidenceInterval(!showConfidenceInterval)}
-              className={`w-full px-2 py-1.5 border-2 rounded-lg text-xs font-bold transition-all ${
-                showConfidenceInterval
-                  ? 'bg-[#1B75BB] text-white border-[#1B75BB]'
-                  : 'bg-white text-gray-600 border-gray-200 hover:border-[#1B75BB]'
-              }`}
-            >
-              {showConfidenceInterval ? 'Ativado' : 'Desativado'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Card de Comparação EBITDA */}
-      <div className="bg-gradient-to-br from-[#1B75BB] to-[#4AC8F4] p-5 rounded-xl shadow-lg text-white">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <p className="text-[10px] font-black text-white/70 uppercase tracking-wider mb-1">EBITDA Orçado (Anual)</p>
-            <p className="text-3xl font-black mb-1">R$ {(ebitdaTotals.budget / 1000).toFixed(0)}k</p>
-            <p className="text-xs text-white/80 font-medium">Meta estabelecida no orçamento</p>
-          </div>
-
-          <div className="w-px h-16 bg-white/20 mx-4"></div>
-
-          <div className="flex-1">
-            <p className="text-[10px] font-black text-white/70 uppercase tracking-wider mb-1">EBITDA Previsto (Real + Forecast)</p>
-            <p className="text-3xl font-black mb-1">R$ {(ebitdaTotals.forecast / 1000).toFixed(0)}k</p>
-            <p className="text-xs text-white/80 font-medium">
-              Real: R$ {(ebitdaTotals.real / 1000).toFixed(0)}k + Prev: R$ {(ebitdaTotals.forecastOnly / 1000).toFixed(0)}k
-            </p>
-          </div>
-
-          <div className="w-px h-16 bg-white/20 mx-4"></div>
-
-          <div className="flex-1">
-            <p className="text-[10px] font-black text-white/70 uppercase tracking-wider mb-1">Variação vs Orçado</p>
-            <p className={`text-3xl font-black mb-1 ${ebitdaTotals.variance >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-              {ebitdaTotals.variance >= 0 ? '+' : ''}{(ebitdaTotals.variance / 1000).toFixed(0)}k
-            </p>
-            <p className={`text-xs font-bold ${ebitdaTotals.variance >= 0 ? 'text-emerald-200' : 'text-rose-200'}`}>
-              {ebitdaTotals.variance >= 0 ? '↗' : '↘'} {ebitdaTotals.variancePercent.toFixed(1)}% vs orçamento
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Simulação de Cenários */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Target size={16} className="text-[#F44C00]" />
-            <h3 className="text-sm font-black text-gray-900">Simulador de Cenários</h3>
-          </div>
-          <button
-            onClick={() => {
-              setRevenueIncrease(0);
-              setVariableCostReduction(0);
-              setFixedCostReduction(0);
-              setSgaReduction(0);
-            }}
-            className="px-3 py-1 text-[10px] font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all"
-          >
-            Resetar
+        <div className="flex items-center gap-2">
+          <select value={year} onChange={e => setYear(e.target.value)}
+            className="text-xs border rounded-lg px-2 py-1.5 font-bold">
+            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <button onClick={fetchData} className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors" title="Atualizar">
+            <RefreshCw size={13} className="text-gray-500" />
           </button>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Aumento de Receita */}
-          <div className="p-3 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] font-black text-blue-900 uppercase tracking-wide flex items-center gap-1">
-                <TrendingUp size={12} />
-                Receita
-              </label>
-              <span className="text-base font-black text-blue-600">{revenueIncrease}%</span>
-            </div>
-            <input
-              type="range"
-              min="-20"
-              max="20"
-              step="1"
-              value={revenueIncrease}
-              onChange={(e) => setRevenueIncrease(Number(e.target.value))}
-              className="w-full h-1.5 bg-blue-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-            />
-            <div className="flex justify-between text-[9px] font-bold text-blue-700 mt-1">
-              <span>-20%</span>
-              <span>+20%</span>
-            </div>
-          </div>
-
-          {/* Redução de Custos Variáveis */}
-          <div className="p-3 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg border border-emerald-200">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] font-black text-emerald-900 uppercase tracking-wide flex items-center gap-1">
-                <Activity size={12} />
-                Custos Var
-              </label>
-              <span className="text-base font-black text-emerald-600">-{variableCostReduction}%</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="30"
-              step="1"
-              value={variableCostReduction}
-              onChange={(e) => setVariableCostReduction(Number(e.target.value))}
-              className="w-full h-1.5 bg-emerald-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
-            />
-            <div className="flex justify-between text-[9px] font-bold text-emerald-700 mt-1">
-              <span>0%</span>
-              <span>-30%</span>
-            </div>
-          </div>
-
-          {/* Redução de Custos Fixos */}
-          <div className="p-3 bg-gradient-to-br from-amber-50 to-amber-100 rounded-lg border border-amber-200">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] font-black text-amber-900 uppercase tracking-wide flex items-center gap-1">
-                <Zap size={12} />
-                Custos Fix
-              </label>
-              <span className="text-base font-black text-amber-600">-{fixedCostReduction}%</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="25"
-              step="1"
-              value={fixedCostReduction}
-              onChange={(e) => setFixedCostReduction(Number(e.target.value))}
-              className="w-full h-1.5 bg-amber-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
-            />
-            <div className="flex justify-between text-[9px] font-bold text-amber-700 mt-1">
-              <span>0%</span>
-              <span>-25%</span>
-            </div>
-          </div>
-
-          {/* Redução de SG&A */}
-          <div className="p-3 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border border-purple-200">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] font-black text-purple-900 uppercase tracking-wide flex items-center gap-1">
-                <BarChart3 size={12} />
-                SG&A
-              </label>
-              <span className="text-base font-black text-purple-600">-{sgaReduction}%</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="25"
-              step="1"
-              value={sgaReduction}
-              onChange={(e) => setSgaReduction(Number(e.target.value))}
-              className="w-full h-1.5 bg-purple-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
-            />
-            <div className="flex justify-between text-[9px] font-bold text-purple-700 mt-1">
-              <span>0%</span>
-              <span>-25%</span>
-            </div>
-          </div>
+      {/* Method selector */}
+      <div className="flex items-center gap-2 bg-gradient-to-r from-slate-50 to-orange-50 rounded-xl border border-orange-100 px-3 py-2">
+        <Brain size={14} className="text-orange-500 shrink-0" />
+        <span className="text-[9px] font-black text-gray-600 uppercase shrink-0">Metodo</span>
+        <div className="h-4 w-px bg-orange-200 shrink-0" />
+        {(Object.entries(METHOD_INFO) as [ForecastMethod, typeof METHOD_INFO['runRate']][]).map(([key, info]) => (
+          <button key={key} onClick={() => setMethod(key)}
+            className={`px-3 py-1 rounded-lg text-[10px] font-black transition-all border ${
+              method === key
+                ? `bg-${info.color}-500 text-white border-${info.color}-500 shadow-sm`
+                : `bg-white text-gray-500 border-gray-200 hover:border-${info.color}-300`
+            }`}
+            style={method === key ? { backgroundColor: info.color === 'orange' ? '#f97316' : info.color === 'emerald' ? '#10b981' : '#8b5cf6', color: 'white', borderColor: 'transparent' } : {}}>
+            {info.label}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <div className="flex items-center gap-1 text-[9px] text-gray-400">
+          <Info size={10} />
+          <span>{METHOD_INFO[method].desc}</span>
         </div>
+      </div>
 
-        {/* Resumo do Impacto - Compacto */}
-        {(revenueIncrease !== 0 || variableCostReduction !== 0 || fixedCostReduction !== 0 || sgaReduction !== 0) && (
-          <div className="mt-3 p-2 bg-gradient-to-r from-[#1B75BB] to-[#4AC8F4] rounded-lg text-white">
-            <p className="text-[9px] font-black uppercase tracking-wide mb-1">Simulações Ativas:</p>
-            <div className="flex flex-wrap gap-2 text-[10px]">
-              {revenueIncrease !== 0 && (
-                <span className="px-2 py-0.5 bg-white/20 rounded font-bold">
-                  Receita: {revenueIncrease > 0 ? '+' : ''}{revenueIncrease}%
-                </span>
-              )}
-              {variableCostReduction !== 0 && (
-                <span className="px-2 py-0.5 bg-white/20 rounded font-bold">
-                  Var: -{variableCostReduction}%
-                </span>
-              )}
-              {fixedCostReduction !== 0 && (
-                <span className="px-2 py-0.5 bg-white/20 rounded font-bold">
-                  Fix: -{fixedCostReduction}%
-                </span>
-              )}
-              {sgaReduction !== 0 && (
-                <span className="px-2 py-0.5 bg-white/20 rounded font-bold">
-                  SG&A: -{sgaReduction}%
-                </span>
-              )}
+      {/* KPI Cards */}
+      <div className="grid grid-cols-5 gap-2">
+        {renderKPI('Forecast Fechamento', ebt.forecastClosing, ebt.orcadoFull, 'Orcado')}
+        {renderKPI('Real YTD', ebt.realYtd, ebt.orcadoYtd, 'Orc YTD')}
+        {renderKPI('Orcado Anual', ebt.orcadoFull, ebt.a1Full, 'A-1')}
+        <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
+          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Realizacao YTD</div>
+          <div className="text-xl font-black text-gray-900 mt-1">
+            {ebt.orcadoYtd !== 0 ? ((ebt.realYtd / ebt.orcadoYtd) * 100).toFixed(1) + '%' : 'N/A'}
+          </div>
+          <div className="text-[10px] text-gray-400 mt-1">Real / Orcado acumulado</div>
+        </div>
+        {accuracy && (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Precisao (MAPE)</div>
+            <div className={`text-xl font-black mt-1 ${Number(accuracy.mape) < 10 ? 'text-emerald-600' : Number(accuracy.mape) < 20 ? 'text-amber-600' : 'text-rose-600'}`}>
+              {accuracy.mape}%
             </div>
+            <div className="text-[10px] text-gray-400 mt-1">Backtest ultimos 2 meses</div>
           </div>
         )}
       </div>
 
-      {/* Métricas de Acurácia - Compacto */}
-      {accuracyMetrics && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="bg-gradient-to-br from-emerald-50 to-emerald-100 p-3 rounded-lg border border-emerald-200">
-            <div className="flex items-center gap-1.5 mb-1">
-              <CheckCircle2 size={14} className="text-emerald-600" />
-              <span className="text-[10px] font-bold text-emerald-900 uppercase tracking-wide">
-                Acurácia
-              </span>
-            </div>
-            <p className="text-2xl font-black text-emerald-600">{accuracyMetrics.accuracy}%</p>
-            <p className="text-[9px] text-emerald-700 font-medium mt-0.5">
-              Últimos 3 meses
-            </p>
-          </div>
-
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-3 rounded-lg border border-blue-200">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Activity size={14} className="text-blue-600" />
-              <span className="text-[10px] font-bold text-blue-900 uppercase tracking-wide">
-                MAPE
-              </span>
-            </div>
-            <p className="text-2xl font-black text-blue-600">{accuracyMetrics.mape}%</p>
-            <p className="text-[9px] text-blue-700 font-medium mt-0.5">
-              Erro % Médio
-            </p>
-          </div>
-
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-3 rounded-lg border border-purple-200">
-            <div className="flex items-center gap-1.5 mb-1">
-              <BarChart3 size={14} className="text-purple-600" />
-              <span className="text-[10px] font-bold text-purple-900 uppercase tracking-wide">
-                RMSE
-              </span>
-            </div>
-            <p className="text-2xl font-black text-purple-600">
-              {currentMetric.format(accuracyMetrics.rmse)}
-            </p>
-            <p className="text-[9px] text-purple-700 font-medium mt-0.5">
-              Erro Quadrático
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Gráfico Principal - Compacto */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+      {/* Chart */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-black text-gray-900 flex items-center gap-2">
-            <TrendingUp size={16} className="text-[#1B75BB]" />
-            Previsão de {currentMetric.label}
-          </h3>
-          <div className="flex items-center gap-4 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-12 h-1 bg-gradient-to-r from-[#1B75BB] to-[#F44C00] rounded"></div>
-              <span className="font-bold text-gray-600">Real → Previsão</span>
-            </div>
-            {showConfidenceInterval && (
-              <div className="flex items-center gap-2">
-                <div className="w-12 h-1 bg-gray-300 rounded"></div>
-                <span className="font-bold text-gray-600">IC 95%</span>
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            <BarChart3 size={14} className="text-gray-400" />
+            <span className="text-xs font-black text-gray-700">
+              {chartSource.tag0 || 'EBITDA TOTAL'} — Mensal {year}
+            </span>
           </div>
-        </div>
-
-        <div className="h-[350px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData}>
-              <defs>
-                {/* Gradiente de cor de azul para laranja */}
-                <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="#1B75BB" />
-                  <stop offset={`${((lastDataMonth + 1) / chartData.length) * 100}%`} stopColor="#1B75BB" />
-                  <stop offset={`${((lastDataMonth + 1) / chartData.length) * 100}%`} stopColor="#F44C00" />
-                  <stop offset="100%" stopColor="#F44C00" />
-                </linearGradient>
-              </defs>
-
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 11, fontWeight: 'bold', fill: '#666' }}
-                axisLine={{ stroke: '#e0e0e0' }}
-              />
-              <YAxis
-                tick={{ fontSize: 11, fontWeight: 'bold', fill: '#666' }}
-                axisLine={{ stroke: '#e0e0e0' }}
-                tickFormatter={currentMetric.format}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: 'white',
-                  border: '2px solid #e0e0e0',
-                  borderRadius: '12px',
-                  padding: '12px'
-                }}
-                formatter={(value: any) => [currentMetric.format(value), '']}
-                labelStyle={{ fontWeight: 'bold', marginBottom: '8px' }}
-              />
-
-              {/* Área de confiança */}
-              {showConfidenceInterval && (
-                <>
-                  <Area
-                    type="monotone"
-                    dataKey="upperBound"
-                    stroke="none"
-                    fill="#fecaca"
-                    fillOpacity={0.2}
-                    name="IC Superior"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="lowerBound"
-                    stroke="none"
-                    fill="#fecaca"
-                    fillOpacity={0.2}
-                    name="IC Inferior"
-                  />
-                </>
-              )}
-
-              {/* Linha única conectada com gradiente de cor */}
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="url(#lineGradient)"
-                strokeWidth={4}
-                dot={(props: any) => {
-                  const { cx, cy, payload } = props;
-                  const isTransition = payload.monthIndex === lastDataMonth;
-                  return (
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={isTransition ? 7 : 5}
-                      fill={payload.isReal ? '#1B75BB' : '#F44C00'}
-                      stroke="white"
-                      strokeWidth={2}
-                    />
-                  );
-                }}
-                name="Valor"
-                connectNulls={false}
-              />
-
-              {/* Linha separadora */}
-              {lastDataMonth >= 0 && (
-                <ReferenceLine
-                  x={months[lastDataMonth]}
-                  stroke="#94a3b8"
-                  strokeWidth={2}
-                  strokeDasharray="3 3"
-                  label={{
-                    value: 'Último Dado Real',
-                    position: 'top',
-                    fill: '#94a3b8',
-                    fontSize: 10,
-                    fontWeight: 'bold'
-                  }}
-                />
-              )}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Insights e Recomendações - Compacto */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Insights */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-          <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 mb-3">
-            <Zap size={16} className="text-[#F44C00]" />
-            Insights Automáticos
-          </h3>
-          <div className="space-y-2">
-            {insights.map((insight, idx) => (
-              <div
-                key={idx}
-                className={`p-3 rounded-lg border ${
-                  insight.type === 'positive'
-                    ? 'bg-emerald-50 border-emerald-200'
-                    : insight.type === 'warning'
-                    ? 'bg-amber-50 border-amber-200'
-                    : 'bg-blue-50 border-blue-200'
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  {insight.type === 'positive' ? (
-                    <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0 mt-0.5" />
-                  ) : insight.type === 'warning' ? (
-                    <AlertCircle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                  ) : (
-                    <Info size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
-                  )}
-                  <div>
-                    <h4 className="font-black text-xs text-gray-900 mb-0.5">{insight.title}</h4>
-                    <p className="text-[10px] text-gray-600 font-medium">{insight.description}</p>
-                  </div>
-                </div>
-              </div>
+          <div className="flex items-center gap-1">
+            {[
+              { key: null, label: 'EBITDA Total' },
+              { key: 'MARGEM', label: 'Margem' },
+              { key: 'EBITDA', label: 'EBITDA s/Rat' },
+              ...tag0Summaries.map(s => ({ key: s.tag0, label: s.tag0.slice(4) })),
+            ].map(opt => (
+              <button key={opt.key || 'ebt'} onClick={() => setSelectedTag0(opt.key === selectedTag0 ? null : opt.key)}
+                className={`px-2 py-0.5 text-[8px] font-bold rounded-full border transition-all ${
+                  (opt.key || 'EBITDA_TOTAL') === (selectedTag0 || 'EBITDA_TOTAL')
+                    ? 'bg-slate-800 text-white border-slate-800'
+                    : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'
+                }`}>
+                {opt.label}
+              </button>
             ))}
           </div>
         </div>
+        <ResponsiveContainer width="100%" height={280}>
+          <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f1f1" />
+            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 700 }} />
+            <YAxis tick={{ fontSize: 9 }} tickFormatter={v => fmtK(v)} width={60} />
+            <Tooltip
+              formatter={(v: any) => fmt(v)}
+              labelStyle={{ fontWeight: 800 }}
+              contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e5e7eb' }}
+            />
+            <Legend wrapperStyle={{ fontSize: 10, fontWeight: 700 }} />
+            <ReferenceLine x={lastRealMonth >= 0 ? MONTH_LABELS[lastRealMonth] : undefined}
+              stroke="#f97316" strokeWidth={2} strokeDasharray="4 4" label={{ value: 'Corte', fill: '#f97316', fontSize: 9, fontWeight: 800 }} />
+            <Bar dataKey="real" name="Real" fill="#3b82f6" radius={[3, 3, 0, 0]} barSize={20} />
+            <Bar dataKey="forecast" name="Forecast" radius={[3, 3, 0, 0]} barSize={20}>
+              {chartData.map((_, i) => <Cell key={i} fill="#fb923c" fillOpacity={0.7} />)}
+            </Bar>
+            <Line dataKey="orcado" name="Orcado" stroke="#10b981" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+            <Line dataKey="a1" name="A-1" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="3 3" dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
 
-        {/* Tabela de Previsões - Compacto */}
-        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-          <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 mb-3">
-            <Calendar size={16} className="text-[#1B75BB]" />
-            Previsões Detalhadas
-          </h3>
-          <div className="space-y-1.5 max-h-[250px] overflow-y-auto">
-            {forecastData.map((forecast, idx) => (
-              <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                <span className="font-black text-xs text-gray-900">{forecast.month}</span>
-                <div className="text-right">
-                  <p className="font-black text-xs text-[#F44C00]">
-                    {currentMetric.format(forecast.forecast)}
-                  </p>
-                  {showConfidenceInterval && (
-                    <p className="text-[9px] text-gray-500 font-medium">
-                      {currentMetric.format(forecast.lowerBound)} - {currentMetric.format(forecast.upperBound)}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+      {/* DRE Forecast Table */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="text-[11px] w-full border-collapse">
+            <thead>
+              <tr className="bg-gradient-to-r from-slate-800 to-slate-700 text-white">
+                <th className="px-3 py-2 text-left font-black text-[9px] uppercase tracking-wider w-[250px] sticky left-0 z-10 bg-slate-800">Conta</th>
+                <th className="px-2 py-2 text-right font-black text-[9px] uppercase w-[90px]">Real YTD</th>
+                <th className="px-2 py-2 text-right font-black text-[9px] uppercase w-[90px] bg-orange-600/30">Forecast</th>
+                <th className="px-2 py-2 text-right font-black text-[9px] uppercase w-[90px]">Orcado</th>
+                <th className="px-2 py-2 text-right font-black text-[9px] uppercase w-[70px]">F vs O</th>
+                <th className="px-2 py-2 text-right font-black text-[9px] uppercase w-[90px]">A-1</th>
+                <th className="px-2 py-2 text-right font-black text-[9px] uppercase w-[70px]">F vs A-1</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tag0Summaries.map(s => {
+                const isOpen = expandedTag0s.has(s.tag0);
+                const costInvert = isCost(s.tag0);
+                const fvO = s.forecastClosing - s.orcadoFull;
+                const fvA1 = s.forecastClosing - s.a1Full;
+                return (
+                  <React.Fragment key={s.tag0}>
+                    <tr className="bg-[#152e55] text-white hover:bg-[#1e3d6e] transition-colors cursor-pointer"
+                      onClick={() => toggleTag0(s.tag0)}>
+                      <td className="px-3 py-1.5 font-black text-[10px] uppercase sticky left-0 z-10 bg-[#152e55]">
+                        <div className="flex items-center gap-1">
+                          {isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                          {s.tag0}
+                        </div>
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono font-black">{fmt(s.realYtd)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-black bg-orange-500/20 text-orange-200">{fmt(s.forecastClosing)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold">{fmt(s.orcadoFull)}</td>
+                      <td className={`px-2 py-1.5 text-right font-mono font-bold text-[10px] ${fvO === 0 ? 'text-white/40' : (costInvert ? fvO < 0 : fvO > 0) ? 'text-lime-300' : 'text-red-300'}`}>
+                        {pct(s.forecastClosing, s.orcadoFull)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold">{fmt(s.a1Full)}</td>
+                      <td className={`px-2 py-1.5 text-right font-mono font-bold text-[10px] ${fvA1 === 0 ? 'text-white/40' : (costInvert ? fvA1 < 0 : fvA1 > 0) ? 'text-lime-300' : 'text-red-300'}`}>
+                        {pct(s.forecastClosing, s.a1Full)}
+                      </td>
+                    </tr>
+                    {isOpen && s.tag01Details.map(d => {
+                      const dfvO = d.forecastClosing - d.orcadoFull;
+                      const dfvA1 = d.forecastClosing - d.a1Full;
+                      return (
+                        <tr key={d.tag01} className="bg-gray-50 border-b border-gray-100 hover:bg-yellow-50 transition-colors">
+                          <td className="px-3 py-1 pl-8 font-bold text-gray-800 sticky left-0 z-10 bg-gray-50">{d.tag01}</td>
+                          <td className="px-2 py-1 text-right font-mono">{fmt(d.realYtd)}</td>
+                          <td className="px-2 py-1 text-right font-mono font-bold text-orange-600 bg-orange-50">{fmt(d.forecastClosing)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-gray-600">{fmt(d.orcadoFull)}</td>
+                          <td className={`px-2 py-1 text-right font-mono text-[10px] font-bold ${deltaColor(dfvO, costInvert)}`}>{pct(d.forecastClosing, d.orcadoFull)}</td>
+                          <td className="px-2 py-1 text-right font-mono text-gray-600">{fmt(d.a1Full)}</td>
+                          <td className={`px-2 py-1 text-right font-mono text-[10px] font-bold ${deltaColor(dfvA1, costInvert)}`}>{pct(d.forecastClosing, d.a1Full)}</td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })}
+
+              {/* Calc Rows */}
+              {[calcRows.margem, calcRows.ebitda, calcRows.ebitdaTotal].map(cr => {
+                const fvO = cr.forecastClosing - cr.orcadoFull;
+                const fvA1 = cr.forecastClosing - cr.a1Full;
+                const isTotal = cr.tag0 === 'EBITDA TOTAL';
+                return (
+                  <tr key={cr.tag0} className={isTotal
+                    ? 'bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white border-t-2 border-yellow-400'
+                    : 'bg-[#F44C00] text-white'}>
+                    <td className={`px-3 py-1.5 font-black text-[10px] uppercase sticky left-0 z-10 ${isTotal ? 'bg-slate-800' : 'bg-[#F44C00]'}`}>{cr.tag0}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-black">{fmt(cr.realYtd)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-black bg-white/10">{fmt(cr.forecastClosing)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold">{fmt(cr.orcadoFull)}</td>
+                    <td className={`px-2 py-1.5 text-right font-mono font-bold text-[10px] ${fvO > 0 ? 'text-lime-300' : fvO < 0 ? 'text-red-200' : 'text-white/40'}`}>{pct(cr.forecastClosing, cr.orcadoFull)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold">{fmt(cr.a1Full)}</td>
+                    <td className={`px-2 py-1.5 text-right font-mono font-bold text-[10px] ${fvA1 > 0 ? 'text-lime-300' : fvA1 < 0 ? 'text-red-200' : 'text-white/40'}`}>{pct(cr.forecastClosing, cr.a1Full)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Informações sobre Métodos - Compacto */}
-      <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-3 rounded-xl border border-gray-200">
-        <h3 className="text-xs font-black text-gray-900 mb-2 flex items-center gap-1.5">
-          <Info size={14} className="text-[#1B75BB]" />
-          Sobre os Métodos de Previsão
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-[10px]">
-          <div>
-            <h4 className="font-black text-gray-900 mb-0.5">Híbrido</h4>
-            <p className="text-gray-600 font-medium">
-              Combina 3 métodos (30% MA + 40% LT + 30% Sazonal) para maior precisão.
-            </p>
-          </div>
-          <div>
-            <h4 className="font-black text-gray-900 mb-0.5">Média Móvel</h4>
-            <p className="text-gray-600 font-medium">
-              Média dos últimos 3 meses. Simples e estável.
-            </p>
-          </div>
-          <div>
-            <h4 className="font-black text-gray-900 mb-0.5">Tendência Linear</h4>
-            <p className="text-gray-600 font-medium">
-              Linha de tendência histórica. Identifica crescimento/queda.
-            </p>
-          </div>
-          <div>
-            <h4 className="font-black text-gray-900 mb-0.5">Análise Sazonal</h4>
-            <p className="text-gray-600 font-medium">
-              Identifica padrões repetitivos e aplica sazonalidade.
-            </p>
-          </div>
+      {/* Insights */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-indigo-100 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Activity size={14} className="text-indigo-500" />
+          <span className="text-xs font-black text-gray-700 uppercase">Insights Automaticos</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {/* Forecast vs Budget */}
+          {(() => {
+            const delta = ebt.forecastClosing - ebt.orcadoFull;
+            const deltaPct = ebt.orcadoFull !== 0 ? (delta / Math.abs(ebt.orcadoFull)) * 100 : 0;
+            const above = deltaPct > 0;
+            return (
+              <div className={`p-3 rounded-lg border ${above ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
+                <div className="flex items-center gap-1 mb-1">
+                  {above ? <TrendingUp size={12} className="text-emerald-600" /> : <TrendingDown size={12} className="text-rose-600" />}
+                  <span className={`text-[10px] font-black ${above ? 'text-emerald-700' : 'text-rose-700'}`}>
+                    Forecast {above ? 'ACIMA' : 'ABAIXO'} do Orcado
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-600">
+                  EBITDA Total projetado de <strong>{fmtK(ebt.forecastClosing)}</strong> vs orcado de <strong>{fmtK(ebt.orcadoFull)}</strong> ({deltaPct > 0 ? '+' : ''}{deltaPct.toFixed(1)}%).
+                  {Math.abs(deltaPct) > 10
+                    ? ' Desvio significativo — requer atencao.'
+                    : ' Dentro da faixa esperada.'}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* Realization rate */}
+          {(() => {
+            const rate = ebt.orcadoYtd !== 0 ? (ebt.realYtd / ebt.orcadoYtd) * 100 : 100;
+            const good = rate >= 95;
+            return (
+              <div className={`p-3 rounded-lg border ${good ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                <div className="flex items-center gap-1 mb-1">
+                  <Target size={12} className={good ? 'text-emerald-600' : 'text-amber-600'} />
+                  <span className={`text-[10px] font-black ${good ? 'text-emerald-700' : 'text-amber-700'}`}>
+                    Realizacao YTD: {rate.toFixed(1)}%
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-600">
+                  {good
+                    ? `Execucao orcamentaria saudavel. Real acumulado de ${fmtK(ebt.realYtd)} vs orcado de ${fmtK(ebt.orcadoYtd)}.`
+                    : `Execucao orcamentaria abaixo do esperado. Gap de ${fmtK(ebt.orcadoYtd - ebt.realYtd)} no acumulado.`}
+                </p>
+              </div>
+            );
+          })()}
+
+          {/* Top deviations */}
+          {(() => {
+            const deviations = tag0Summaries
+              .filter(s => s.orcadoFull !== 0)
+              .map(s => ({ tag0: s.tag0, pct: ((s.forecastClosing - s.orcadoFull) / Math.abs(s.orcadoFull)) * 100 }))
+              .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+            const worst = deviations[0];
+            return worst ? (
+              <div className="p-3 rounded-lg border bg-orange-50 border-orange-200 col-span-2">
+                <div className="flex items-center gap-1 mb-1">
+                  <Calendar size={12} className="text-orange-600" />
+                  <span className="text-[10px] font-black text-orange-700">Maiores Desvios Projetados</span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {deviations.slice(0, 5).map(d => (
+                    <span key={d.tag0} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                      d.pct > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                    }`}>
+                      {d.tag0.slice(0, 15)} {d.pct > 0 ? '+' : ''}{d.pct.toFixed(1)}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null;
+          })()}
         </div>
       </div>
     </div>
