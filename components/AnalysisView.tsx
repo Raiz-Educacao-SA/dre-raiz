@@ -166,7 +166,7 @@ export default function AnalysisView() {
 
       // Step 2: Transform to PPT structure
       const { prepareVariancePptData } = await import('../services/variancePptDataService');
-      const data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
+      const data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas.join(', ') : null);
 
       // Step 3: Marca breakdown (parallel with AI) — ambos com fallback silencioso
       const [, breakdown] = await Promise.all([
@@ -220,7 +220,7 @@ export default function AnalysisView() {
           return;
         }
         const { prepareVariancePptData } = await import('../services/variancePptDataService');
-        data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas[0] : null);
+        data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas.join(', ') : null);
 
         const [, breakdown] = await Promise.all([
           (async () => {

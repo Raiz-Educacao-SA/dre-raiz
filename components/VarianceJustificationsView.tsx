@@ -20,6 +20,8 @@ import {
   Filter,
   ChevronsDown,
   ChevronsUp,
+  Wand2,
+  BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -37,7 +39,7 @@ import {
   VarianceJustification,
   VarianceThreshold,
 } from '../services/supabaseService';
-import { generateVarianceSummary, VarianceSummaryItem } from '../services/anthropicService';
+import { generateVarianceSummary, VarianceSummaryItem, aiAnalyzeVariance, aiImproveText, aiGenerateActionPlan, aiImproveActionPlan } from '../services/anthropicService';
 import { toast } from 'sonner';
 import MultiSelectFilter from './MultiSelectFilter';
 
@@ -139,6 +141,7 @@ const VarianceJustificationsView: React.FC = () => {
   const [justifyText, setJustifyText] = useState('');
   const [justifyPlan, setJustifyPlan] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [aiLoading, setAiLoading] = useState<'analyze' | 'improve' | 'plan-generate' | 'plan-improve' | null>(null);
 
   // Review modal
   const [reviewItem, setReviewItem] = useState<VarianceJustification | null>(null);
@@ -151,6 +154,10 @@ const VarianceJustificationsView: React.FC = () => {
   // Thresholds config
   const [showThresholds, setShowThresholds] = useState(false);
   const [thresholds, setThresholds] = useState<VarianceThreshold[]>([]);
+  const [generationDepth, setGenerationDepth] = useState<1 | 2 | 3>(() => {
+    const saved = localStorage.getItem('variance_generation_depth');
+    return (saved === '1' || saved === '3') ? Number(saved) as 1 | 3 : 2;
+  });
 
   // Available marcas
   const [availableMarcas, setAvailableMarcas] = useState<string[]>([]);
@@ -674,9 +681,25 @@ const VarianceJustificationsView: React.FC = () => {
         const tag01A1 = a1Map.get(`${tag0}|${tag01}||`) || null;
         const tag02Set = new Set(tag01All.filter(i => i.tag02).map(i => i.tag02!));
 
-        rows.push(buildRow(1, tag01Key, tag01, tag0, tag01, null, null, tag02Set.size > 0, tag01Level, tag01Orc, tag01A1));
+        // Marcas diretamente sob tag01 (quando depth=1, tag02 é null mas marca existe)
+        const directMarcaSet = new Set(tag01All.filter(i => !i.tag02 && i.marca).map(i => i.marca!));
+        const hasAnyChildren = tag02Set.size > 0 || directMarcaSet.size > 0;
 
-        if (!expandedNodes.has(tag01Key) || tag02Set.size === 0) continue;
+        rows.push(buildRow(1, tag01Key, tag01, tag0, tag01, null, null, hasAnyChildren, tag01Level, tag01Orc, tag01A1));
+
+        if (!expandedNodes.has(tag01Key) || !hasAnyChildren) continue;
+
+        // Marcas diretas sob tag01 (depth=1: sem tag02)
+        if (directMarcaSet.size > 0 && tag02Set.size === 0) {
+          for (const marcaName of [...directMarcaSet].sort()) {
+            const marcaItems = tag01All.filter(i => !i.tag02 && i.marca === marcaName);
+            const marcaOrc = marcaItems.find(i => i.comparison_type === 'orcado') || null;
+            const marcaA1 = marcaItems.find(i => i.comparison_type === 'a1') || null;
+
+            rows.push(buildRow(2, `marca-${tag0}|${tag01}|${marcaName}`, marcaName, tag0, tag01, null, null, false, marcaItems, marcaOrc, marcaA1, marcaName));
+          }
+          continue;
+        }
 
         for (const tag02 of [...tag02Set].sort()) {
           const tag02All = tag01All.filter(i => i.tag02 === tag02);
@@ -745,7 +768,7 @@ const VarianceJustificationsView: React.FC = () => {
 
       // Aplicar aos rows (zerar se marca não tem dados naquele nível)
       for (const row of rows) {
-        if (row.depth === 3) continue; // marcas já têm valores corretos
+        if (row.depth === 3 || (row.depth === 2 && row.marca)) continue; // marcas já têm valores corretos
         let agg: MarcaAgg | undefined;
         if (row.depth === 0) agg = marcaByTag0.get(row.tag0);
         else if (row.depth === 1) agg = marcaByTag01.get(`${row.tag0}|${row.tag01}`);
@@ -830,7 +853,7 @@ const VarianceJustificationsView: React.FC = () => {
     }
     setGenerating(true);
     try {
-      const result = await generateVarianceItems(yearMonth, filterMarcas.length > 0 ? filterMarcas[0] : undefined);
+      const result = await generateVarianceItems(yearMonth, filterMarcas.length > 0 ? filterMarcas[0] : undefined, generationDepth);
       if (result.error) {
         toast.error(`Erro: ${result.error}`);
       } else {
@@ -918,6 +941,109 @@ const VarianceJustificationsView: React.FC = () => {
       toast.error('Erro ao enviar justificativa');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ── AI helpers for justification modal ──
+
+  const handleAiAnalyze = async () => {
+    if (!justifyItem) return;
+    setAiLoading('analyze');
+    try {
+      const result = await aiAnalyzeVariance({
+        tag0: justifyItem.tag0,
+        tag01: justifyItem.tag01,
+        tag02: justifyItem.tag02,
+        marca: justifyItem.marca,
+        real: justifyItem.real_value,
+        compare: justifyItem.compare_value,
+        variancePct: justifyItem.variance_pct,
+        comparisonType: justifyItem.comparison_type as 'orcado' | 'a1',
+      });
+      setJustifyText(result);
+      toast.success('Análise gerada pela IA');
+    } catch {
+      toast.error('Erro ao gerar análise com IA');
+    } finally {
+      setAiLoading(null);
+    }
+  };
+
+  const handleAiImprove = async () => {
+    if (!justifyItem || justifyText.trim().length < 10) {
+      toast.error('Escreva pelo menos 10 caracteres para a IA melhorar');
+      return;
+    }
+    setAiLoading('improve');
+    try {
+      const result = await aiImproveText(justifyText.trim(), {
+        tag0: justifyItem.tag0,
+        tag01: justifyItem.tag01,
+        tag02: justifyItem.tag02,
+        marca: justifyItem.marca,
+        real: justifyItem.real_value,
+        compare: justifyItem.compare_value,
+        variancePct: justifyItem.variance_pct,
+        comparisonType: justifyItem.comparison_type as 'orcado' | 'a1',
+      });
+      setJustifyText(result);
+      toast.success('Texto melhorado pela IA');
+    } catch {
+      toast.error('Erro ao melhorar texto com IA');
+    } finally {
+      setAiLoading(null);
+    }
+  };
+
+  const handleAiPlanGenerate = async () => {
+    if (!justifyItem || justifyText.trim().length < 20) {
+      toast.error('Preencha a justificativa antes de gerar o plano de ação');
+      return;
+    }
+    setAiLoading('plan-generate');
+    try {
+      const result = await aiGenerateActionPlan(justifyText.trim(), {
+        tag0: justifyItem.tag0,
+        tag01: justifyItem.tag01,
+        tag02: justifyItem.tag02,
+        marca: justifyItem.marca,
+        real: justifyItem.real_value,
+        compare: justifyItem.compare_value,
+        variancePct: justifyItem.variance_pct,
+        comparisonType: justifyItem.comparison_type as 'orcado' | 'a1',
+      });
+      setJustifyPlan(result);
+      toast.success('Plano de ação gerado pela IA');
+    } catch {
+      toast.error('Erro ao gerar plano de ação com IA');
+    } finally {
+      setAiLoading(null);
+    }
+  };
+
+  const handleAiPlanImprove = async () => {
+    if (!justifyItem || justifyPlan.trim().length < 10) {
+      toast.error('Escreva pelo menos 10 caracteres para a IA melhorar');
+      return;
+    }
+    setAiLoading('plan-improve');
+    try {
+      const result = await aiImproveActionPlan(justifyPlan.trim(), justifyText.trim(), {
+        tag0: justifyItem.tag0,
+        tag01: justifyItem.tag01,
+        tag02: justifyItem.tag02,
+        marca: justifyItem.marca,
+        real: justifyItem.real_value,
+        compare: justifyItem.compare_value,
+        variancePct: justifyItem.variance_pct,
+        comparisonType: justifyItem.comparison_type as 'orcado' | 'a1',
+      });
+      setJustifyPlan(result);
+      toast.success('Plano de ação melhorado pela IA');
+    } catch {
+      toast.error('Erro ao melhorar plano de ação com IA');
+    } finally {
+      setAiLoading(null);
     }
   };
 
@@ -1044,11 +1170,20 @@ const VarianceJustificationsView: React.FC = () => {
       );
       if (tag01Items.length > 0) await generateSynthesis('tag0', dbItem, tag01Items);
     } else if (row.depth === 1) {
-      const tag02Items = items.filter(
+      // Filhos podem ser tag02 items OU marcas diretas (depth=1 sem tag02)
+      let childItems = items.filter(
         i => i.tag0 === row.tag0 && i.tag01 === row.tag01 &&
              i.tag02 !== null && i.comparison_type === compType
       );
-      if (tag02Items.length > 0) await generateSynthesis('tag01', dbItem, tag02Items);
+      // Se não há tag02, buscar marcas diretas sob tag01
+      if (childItems.length === 0) {
+        childItems = items.filter(
+          i => i.tag0 === row.tag0 && i.tag01 === row.tag01 &&
+               i.tag02 === null && i.marca && i.marca !== '' &&
+               i.comparison_type === compType
+        );
+      }
+      if (childItems.length > 0) await generateSynthesis('tag01', dbItem, childItems);
     }
   };
 
@@ -1224,6 +1359,8 @@ const VarianceJustificationsView: React.FC = () => {
       ? 'bg-[#152e55] text-white border-b border-[#1e3d6e]'
       : row.depth === 1
       ? 'bg-blue-50 border-b border-blue-100'
+      : row.depth === 2 && row.marca
+      ? 'bg-orange-50/40 border-b border-orange-100/50'
       : row.depth === 2
       ? 'bg-gray-50 border-b border-gray-100'
       : row.depth === 3
@@ -1235,6 +1372,7 @@ const VarianceJustificationsView: React.FC = () => {
       : row.depth === 0
       ? 'font-black text-[11px] uppercase tracking-tight'
       : row.depth === 1 ? 'font-bold text-[11px]'
+      : row.depth === 2 && row.marca ? 'font-medium text-[10px]'
       : row.depth === 2 ? 'font-semibold text-[11px]'
       : row.depth === 3 ? 'font-medium text-[10px]'
       : 'text-[11px]';
@@ -1285,8 +1423,8 @@ const VarianceJustificationsView: React.FC = () => {
             )}
             {!isCalcRow && row.depth === 0 && <span className="text-amber-400 text-[9px] mr-0.5">◆</span>}
             {!isCalcRow && row.depth === 1 && <span className="text-blue-400 text-[9px] mr-0.5">◇</span>}
-            {!isCalcRow && row.depth === 2 && <span className="text-[9px] text-gray-300 flex-shrink-0">{row.tag0.slice(0, 3)}</span>}
-            {!isCalcRow && row.depth === 3 && <Building2 size={9} className="text-orange-400 flex-shrink-0" />}
+            {!isCalcRow && row.depth === 2 && !row.marca && <span className="text-[9px] text-gray-300 flex-shrink-0">{row.tag0.slice(0, 3)}</span>}
+            {!isCalcRow && ((row.depth === 2 && row.marca) || row.depth === 3) && <Building2 size={9} className="text-orange-400 flex-shrink-0" />}
             <span className="truncate" title={row.label}>{row.label}</span>
           </div>
         </td>
@@ -1466,9 +1604,14 @@ const VarianceJustificationsView: React.FC = () => {
           )}
         </div>
 
-        {/* Thresholds config (collapsible) */}
+        {/* Config panel (collapsible) */}
         {showThresholds && isAdminOrManager && (
-          <ThresholdsPanel thresholds={thresholds} setThresholds={setThresholds} />
+          <ThresholdsPanel
+            thresholds={thresholds}
+            setThresholds={setThresholds}
+            generationDepth={generationDepth}
+            onDepthChange={(d: 1 | 2 | 3) => { setGenerationDepth(d); localStorage.setItem('variance_generation_depth', String(d)); }}
+          />
         )}
       </div>
 
@@ -1755,7 +1898,9 @@ const VarianceJustificationsView: React.FC = () => {
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-5">
               <h3 className="text-sm font-black uppercase tracking-tight mb-3" style={{ color: 'var(--color-primary-500)' }}>
-                {justifyItem.status === 'justified' || justifyItem.status === 'approved' ? 'Justificativa' : 'Justificar Desvio'}
+                {justifyItem.status === 'approved'
+                  ? (isAdmin ? 'Editar Justificativa (Admin)' : 'Justificativa')
+                  : justifyItem.status === 'justified' ? 'Justificativa' : 'Justificar Desvio'}
               </h3>
 
               {/* Context */}
@@ -1811,9 +1956,33 @@ const VarianceJustificationsView: React.FC = () => {
                     rows={4}
                     className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-colors"
                     placeholder="Explique o motivo do desvio (mínimo 20 caracteres)..."
-                    disabled={justifyItem.status === 'approved'}
+                    disabled={justifyItem.status === 'approved' && !isAdmin}
                   />
-                  <span className="text-[9px] text-gray-400">{justifyText.length} caracteres (mín. 20)</span>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-[9px] text-gray-400 flex-1">{justifyText.length} caracteres (mín. 20)</span>
+                    {(justifyItem.status !== 'approved' || isAdmin) && (
+                      <>
+                        <button
+                          onClick={handleAiAnalyze}
+                          disabled={!!aiLoading}
+                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-sm"
+                          title="IA gera uma justificativa a partir dos dados do desvio"
+                        >
+                          {aiLoading === 'analyze' ? <Loader2 size={11} className="animate-spin" /> : <BrainCircuit size={11} />}
+                          Analisar com IA
+                        </button>
+                        <button
+                          onClick={handleAiImprove}
+                          disabled={!!aiLoading || justifyText.trim().length < 10}
+                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 text-white hover:from-blue-600 hover:to-cyan-700 disabled:opacity-50 transition-all shadow-sm"
+                          title="IA melhora o texto que você escreveu"
+                        >
+                          {aiLoading === 'improve' ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                          Melhorar com IA
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
@@ -1825,8 +1994,31 @@ const VarianceJustificationsView: React.FC = () => {
                     rows={2}
                     className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-colors"
                     placeholder="Ações planejadas para corrigir o desvio..."
-                    disabled={justifyItem.status === 'approved'}
+                    disabled={justifyItem.status === 'approved' && !isAdmin}
                   />
+                  {(justifyItem.status !== 'approved' || isAdmin) && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <span className="text-[9px] text-gray-400 flex-1">{justifyPlan.length} caracteres</span>
+                      <button
+                        onClick={handleAiPlanGenerate}
+                        disabled={!!aiLoading || justifyText.trim().length < 20}
+                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-sm"
+                        title={justifyText.trim().length < 20 ? 'Preencha a justificativa primeiro (mín. 20 caracteres)' : 'IA gera plano de ação com base na justificativa'}
+                      >
+                        {aiLoading === 'plan-generate' ? <Loader2 size={11} className="animate-spin" /> : <BrainCircuit size={11} />}
+                        Gerar com IA
+                      </button>
+                      <button
+                        onClick={handleAiPlanImprove}
+                        disabled={!!aiLoading || justifyPlan.trim().length < 10}
+                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 text-white hover:from-blue-600 hover:to-cyan-700 disabled:opacity-50 transition-all shadow-sm"
+                        title="IA melhora o plano de ação que você escreveu"
+                      >
+                        {aiLoading === 'plan-improve' ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
+                        Melhorar com IA
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1836,9 +2028,9 @@ const VarianceJustificationsView: React.FC = () => {
                   onClick={() => { setJustifyItem(null); setJustifyText(''); setJustifyPlan(''); }}
                   className="px-4 py-2 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
                 >
-                  {justifyItem.status === 'approved' ? 'Fechar' : 'Cancelar'}
+                  {justifyItem.status === 'approved' && !isAdmin ? 'Fechar' : 'Cancelar'}
                 </button>
-                {justifyItem.status !== 'approved' && (
+                {(justifyItem.status !== 'approved' || isAdmin) && (
                   <button
                     onClick={handleJustifySubmit}
                     disabled={submitting || justifyText.trim().length < 20}
@@ -1846,7 +2038,7 @@ const VarianceJustificationsView: React.FC = () => {
                     style={{ backgroundColor: 'var(--color-primary-500)' }}
                   >
                     {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                    Enviar Justificativa
+                    {justifyItem.status === 'approved' && isAdmin ? 'Salvar Edição' : 'Enviar Justificativa'}
                   </button>
                 )}
               </div>
@@ -1901,10 +2093,18 @@ const VarianceJustificationsView: React.FC = () => {
 
 // ── Thresholds Panel (small admin config) ──
 
+const DEPTH_OPTIONS: { value: 1 | 2 | 3; label: string; desc: string }[] = [
+  { value: 1, label: 'tag01', desc: 'Centro de Custo + Marca' },
+  { value: 2, label: 'tag02', desc: 'Segmento + Marca' },
+  { value: 3, label: 'tag03', desc: 'Projeto + Marca' },
+];
+
 const ThresholdsPanel: React.FC<{
   thresholds: VarianceThreshold[];
   setThresholds: React.Dispatch<React.SetStateAction<VarianceThreshold[]>>;
-}> = ({ thresholds, setThresholds }) => {
+  generationDepth: 1 | 2 | 3;
+  onDepthChange: (d: 1 | 2 | 3) => void;
+}> = ({ thresholds, setThresholds, generationDepth, onDepthChange }) => {
   const [loading, setLoading] = useState(false);
   const [newMarca, setNewMarca] = useState('');
   const [newTag0, setNewTag0] = useState('');
@@ -1946,14 +2146,50 @@ const ThresholdsPanel: React.FC<{
   };
 
   return (
-    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-      <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-2 flex items-center gap-1">
-        <Settings size={12} />
-        Configuração de Limites (Thresholds)
-      </h4>
-      <p className="text-[10px] text-gray-400 mb-2">
-        Defina valores mínimos para gerar cobranças. Se 0, todos os desvios são incluídos.
-      </p>
+    <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
+      {/* Depth toggle */}
+      <div>
+        <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-1.5 flex items-center gap-1">
+          <Settings size={12} />
+          Nível de Geração
+        </h4>
+        <p className="text-[10px] text-gray-400 mb-2">
+          Até que nível de detalhe gerar justificativas ao clicar em "Gerar Desvios".
+        </p>
+        <div className="flex gap-2">
+          {DEPTH_OPTIONS.map(opt => {
+            const active = generationDepth === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onDepthChange(opt.value)}
+                className={`flex-1 px-3 py-2 rounded-lg border-2 text-center transition-all ${
+                  active
+                    ? 'border-indigo-500 bg-indigo-50 shadow-sm'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className={`text-xs font-black ${active ? 'text-indigo-600' : 'text-gray-500'}`}>
+                  {opt.label}
+                </div>
+                <div className={`text-[9px] mt-0.5 ${active ? 'text-indigo-400' : 'text-gray-400'}`}>
+                  {opt.desc}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Thresholds */}
+      <div>
+        <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-1.5">
+          Limites de Variação (Thresholds)
+        </h4>
+        <p className="text-[10px] text-gray-400 mb-2">
+          Valores mínimos para gerar cobranças. Se 0, todos os desvios são incluídos.
+        </p>
+      </div>
 
       {loading ? (
         <Loader2 size={14} className="animate-spin text-gray-400" />

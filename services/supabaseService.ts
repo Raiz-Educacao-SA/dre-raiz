@@ -3081,11 +3081,13 @@ export async function fetchLiveDreForPpt(
  */
 export const generateVarianceItems = async (
   yearMonth: string,
-  marca?: string
+  marca?: string,
+  depth: 1 | 2 | 3 = 2,
 ): Promise<{ created: number; updated: number; version: number; snapshot_at?: string; error?: string; diagnostics?: string }> => {
   try {
     const snapshotAt = new Date().toISOString();
-    debug(`📊 Gerando desvios para ${yearMonth}, marca=${marca || 'todas'} — snapshot_at=${snapshotAt}`);
+    const depthLabels: Record<number, string> = { 1: 'tag01+marca', 2: 'tag02+marca', 3: 'tag03+marca' };
+    debug(`📊 Gerando desvios para ${yearMonth}, marca=${marca || 'todas'}, depth=${depth} (${depthLabels[depth]}) — snapshot_at=${snapshotAt}`);
 
     // 1. FONTE PRINCIPAL — get_soma_tags RPC (mesma fonte do DRE Gerencial)
     // Retorna {tag0, tag01, scenario, month, total} — EXATAMENTE o que o DRE mostra
@@ -3128,9 +3130,11 @@ export const generateVarianceItems = async (
 
     debug(`📊 get_soma_tags: ${allAggData.length} linhas DRE para ${yearMonth}`);
 
-    // 1.5 DETALHE tag02+marca — RPC get_variance_snapshot
-    // Consulta MESMAS tabelas-fonte (transactions, transactions_orcado, transactions_ano_anterior)
-    // com mesmos filtros que get_soma_tags, agrupando por (tag0, tag01, tag02, marca)
+    // 1.5 DETALHE via get_variance_snapshot — SEMPRE buscar para obter marcas
+    // O get_soma_tags não retorna coluna marca, então usamos o snapshot para:
+    // - depth=1: agregar por (tag0, tag01, marca) — ignora tag02
+    // - depth=2: agregar por (tag0, tag01, tag02, marca) — padrão
+    // - depth=3: agregar por (tag0, tag01, tag02, tag03, marca) — máximo
     const PAGE_SIZE = 1000;
     let snapOffset = 0;
     let snapMore = true;
@@ -3152,16 +3156,30 @@ export const generateVarianceItems = async (
         snapMore = false;
       } else {
         for (const r of snapPage) {
-          if (!isDrePrefix(r.tag0) || !r.tag02) continue;
-          allAggData.push({
-            tag0: r.tag0,
-            tag01: r.tag01,
-            tag02: r.tag02,
-            tag03: null,
-            scenario: r.scenario,
-            total_amount: r.total,
-            marca: r.marca || '',
-          });
+          if (!isDrePrefix(r.tag0)) continue;
+          if (depth === 1) {
+            // depth=1: só marca, sem tag02 → agregar como tag0+tag01+marca
+            allAggData.push({
+              tag0: r.tag0,
+              tag01: r.tag01,
+              tag02: null,
+              tag03: null,
+              scenario: r.scenario,
+              total_amount: r.total,
+              marca: r.marca || '',
+            });
+          } else if (r.tag02) {
+            // depth>=2: incluir tag02+marca
+            allAggData.push({
+              tag0: r.tag0,
+              tag01: r.tag01,
+              tag02: r.tag02,
+              tag03: null,
+              scenario: r.scenario,
+              total_amount: r.total,
+              marca: r.marca || '',
+            });
+          }
         }
         snapMore = snapPage.length === PAGE_SIZE;
         snapOffset += PAGE_SIZE;
@@ -3230,6 +3248,43 @@ export const generateVarianceItems = async (
       }
     }
 
+    // 4.5 Buscar thresholds ativos para filtrar desvios insignificantes
+    const { data: thresholdsData } = await supabase
+      .from('variance_thresholds')
+      .select('*')
+      .eq('active', true);
+    const activeThresholds = (thresholdsData || []) as VarianceThreshold[];
+    debug(`📊 ${activeThresholds.length} thresholds ativos`);
+
+    // Helper: verifica se o desvio excede os limites configurados
+    // Retorna true se NÃO há threshold ou se excede (deve gerar justificativa)
+    const exceedsThreshold = (tag0: string, marcaVal: string, varAbsVal: number, varPctVal: number | null): boolean => {
+      if (activeThresholds.length === 0) return true; // sem thresholds = gerar tudo
+
+      // Encontrar threshold mais específico: por marca+tag0 > por tag0 > global (null/null)
+      let best: VarianceThreshold | null = null;
+      for (const t of activeThresholds) {
+        const matchMarca = !t.marca || t.marca === marcaVal;
+        const matchTag0 = !t.tag0 || tag0.startsWith(t.tag0);
+        if (!matchMarca || !matchTag0) continue;
+        // Mais específico ganha (mais campos preenchidos)
+        const specificity = (t.marca ? 2 : 0) + (t.tag0 ? 1 : 0);
+        const bestSpec = best ? ((best.marca ? 2 : 0) + (best.tag0 ? 1 : 0)) : -1;
+        if (specificity > bestSpec) best = t;
+      }
+
+      if (!best) return true; // sem threshold aplicável = gerar
+
+      const absExceeds = best.min_abs_value > 0 && Math.abs(varAbsVal) >= best.min_abs_value;
+      const pctExceeds = best.min_pct_value > 0 && varPctVal !== null && Math.abs(varPctVal) >= best.min_pct_value;
+
+      // Se ambos configurados, basta exceder UM deles (OR)
+      if (best.min_abs_value > 0 && best.min_pct_value > 0) return absExceeds || pctExceeds;
+      if (best.min_abs_value > 0) return absExceeds;
+      if (best.min_pct_value > 0) return pctExceeds;
+      return true; // threshold sem valores = gerar tudo
+    };
+
     // 5. Agregar dados por chave
     const aggMap = new Map<string, number>();
     for (const row of allAggData) {
@@ -3265,6 +3320,13 @@ export const generateVarianceItems = async (
         if (realVal === 0 && compareVal === 0) return;
         const varAbs = realVal - compareVal;
         const varPct = compareVal !== 0 ? Math.round(((realVal - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
+
+        // Aplicar threshold apenas a itens folha (marca ou tag02) — pais (tag0/tag01) sempre são gerados
+        // EXCEÇÃO: real > 0 sem orçado (compareVal === 0) SEMPRE gera justificativa — gasto sem orçamento
+        const isLeaf = !!(comboMarca && comboMarca !== '' && (tag02 || depth === 1));
+        const realSemOrcado = compType === 'orcado' && realVal !== 0 && compareVal === 0;
+        if (isLeaf && !realSemOrcado && !exceedsThreshold(tag0, comboMarca, varAbs, varPct)) return;
+
         const existKey = `${comboMarca || marca || ''}||${tag0}|${tag01 || ''}|${tag02 || ''}|${tag03 || ''}|${compType}`;
         const existing = existingMap.get(existKey);
 
@@ -3610,6 +3672,71 @@ export const deleteVarianceThreshold = async (id: number): Promise<boolean> => {
     return false;
   }
   return true;
+};
+
+// ── Variance Depth Config ──
+
+export interface VarianceDepthConfig {
+  id: number;
+  tag0: string | null;
+  tag01: string;
+  depth: number;       // 1=tag01, 2=tag02, 3=marca
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const getVarianceDepthConfigs = async (): Promise<VarianceDepthConfig[]> => {
+  const { data, error } = await supabase
+    .from('variance_depth_config')
+    .select('*')
+    .order('tag01');
+  if (error) {
+    console.error('Erro ao buscar variance_depth_config:', error);
+    return [];
+  }
+  return (data || []) as VarianceDepthConfig[];
+};
+
+export const upsertVarianceDepthConfig = async (
+  row: { tag0: string | null; tag01: string; depth: number; active: boolean }
+): Promise<{ ok: boolean; error?: string }> => {
+  const { error } = await supabase
+    .from('variance_depth_config')
+    .upsert(
+      { tag0: row.tag0 || null, tag01: row.tag01, depth: row.depth, active: row.active },
+      { onConflict: 'tag0,tag01' }
+    );
+  if (error) {
+    console.error('Erro ao salvar variance_depth_config:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+};
+
+export const deleteVarianceDepthConfig = async (id: number): Promise<boolean> => {
+  const { error } = await supabase
+    .from('variance_depth_config')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao excluir variance_depth_config:', error);
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Retorna mapa tag01 → depth para uso na geração de desvios.
+ * Se tag01 não estiver configurado, usa defaultDepth (2 = tag02).
+ */
+export const getDepthMap = async (): Promise<Map<string, number>> => {
+  const configs = await getVarianceDepthConfigs();
+  const map = new Map<string, number>();
+  for (const c of configs) {
+    if (c.active) map.set(c.tag01, c.depth);
+  }
+  return map;
 };
 
 /**

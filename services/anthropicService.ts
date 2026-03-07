@@ -790,6 +790,189 @@ export const generateVarianceSummary = async (
   }
 };
 
+// ── AI helpers for justification modal ────────────────────────────────
+
+export interface VarianceContext {
+  tag0: string;
+  tag01: string;
+  tag02?: string | null;
+  marca?: string | null;
+  real: number;
+  compare: number;
+  variancePct: number | null;
+  comparisonType: 'orcado' | 'a1';
+}
+
+/**
+ * aiAnalyzeVariance — IA gera uma justificativa a partir dos dados do desvio
+ */
+export const aiAnalyzeVariance = async (ctx: VarianceContext): Promise<string> => {
+  const fmtVal = (v: number) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const fmtP = (v: number | null) => v !== null ? `${v > 0 ? '+' : ''}${v.toFixed(1)}%` : 'N/D';
+  const compLabel = ctx.comparisonType === 'orcado' ? 'Orçado' : 'Ano Anterior';
+
+  const systemPrompt = 'Você é um analista financeiro sênior da Raiz Educação. Gere uma justificativa profissional e objetiva para um desvio orçamentário. REGRAS DE FORMATO: escreva exatamente 2-3 frases, entre 150 e 250 caracteres no total. Seja direto, sem introduções. Use linguagem executiva e mencione causas prováveis.';
+  const userPrompt = `Gere uma justificativa concisa (2-3 frases, máximo 250 caracteres) para o seguinte desvio:\n\n- Grupo: ${ctx.tag0}\n- Centro de Custo: ${ctx.tag01}${ctx.tag02 ? `\n- Segmento: ${ctx.tag02}` : ''}${ctx.marca ? `\n- Marca: ${ctx.marca}` : ''}\n- Real: ${fmtVal(ctx.real)}\n- ${compLabel}: ${fmtVal(ctx.compare)}\n- Variação: ${fmtP(ctx.variancePct)}\n\nResponda APENAS com a justificativa, sem prefácios ou aspas.`;
+
+  try {
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.6,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      if (isCreditError(response.status, errBody)) {
+        return callGroqFallback(systemPrompt, userPrompt, 200, 0.6);
+      }
+      throw new Error(`IA indisponível (${response.status})`);
+    }
+
+    const data = await response.json();
+    let text = data.content?.[0]?.text?.trim();
+    if (!text) throw new Error('Resposta vazia da IA');
+    // Remove aspas se a IA envolver o texto nelas
+    if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
+    return text;
+  } catch (error) {
+    console.error('Erro em aiAnalyzeVariance:', error);
+    throw error;
+  }
+};
+
+/**
+ * aiImproveText — IA melhora o texto de justificativa escrito pelo usuário
+ */
+export const aiImproveText = async (originalText: string, ctx: VarianceContext): Promise<string> => {
+  const fmtVal = (v: number) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const compLabel = ctx.comparisonType === 'orcado' ? 'Orçado' : 'Ano Anterior';
+
+  const systemPrompt = 'Você é um editor financeiro sênior da Raiz Educação. Melhore textos de justificativas de desvios orçamentários: torne mais claro, profissional e objetivo. REGRAS DE FORMATO: o resultado deve ter 2-3 frases, entre 150 e 250 caracteres. Mantenha o conteúdo original, melhore apenas redação e clareza. Responda APENAS com o texto melhorado, sem prefácios ou aspas.';
+  const userPrompt = `Melhore o texto abaixo (resultado: 2-3 frases, máximo 250 caracteres).\n\nContexto:\n- ${ctx.tag0} › ${ctx.tag01}${ctx.tag02 ? ` › ${ctx.tag02}` : ''}${ctx.marca ? ` (${ctx.marca})` : ''}\n- Real: ${fmtVal(ctx.real)} vs ${compLabel}: ${fmtVal(ctx.compare)}\n\nTexto original:\n"${originalText}"\n\nTexto melhorado:`;
+
+  try {
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.4,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      if (isCreditError(response.status, errBody)) {
+        return callGroqFallback(systemPrompt, userPrompt, 200, 0.4);
+      }
+      throw new Error(`IA indisponível (${response.status})`);
+    }
+
+    const data = await response.json();
+    let text = data.content?.[0]?.text?.trim();
+    if (!text) throw new Error('Resposta vazia da IA');
+    if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
+    return text;
+  } catch (error) {
+    console.error('Erro em aiImproveText:', error);
+    throw error;
+  }
+};
+
+/**
+ * aiGenerateActionPlan — IA gera plano de ação baseado na justificativa existente
+ */
+export const aiGenerateActionPlan = async (justification: string, ctx: VarianceContext): Promise<string> => {
+  const fmtVal = (v: number) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const compLabel = ctx.comparisonType === 'orcado' ? 'Orçado' : 'Ano Anterior';
+
+  const systemPrompt = 'Você é um analista financeiro sênior da Raiz Educação. Com base na justificativa de um desvio orçamentário, proponha um plano de ação concreto e executável. REGRAS DE FORMATO: escreva 2-3 ações objetivas em uma única frase cada, separadas por ponto. Total entre 150 e 250 caracteres. Sem introduções, sem numeração, sem bullet points. Apenas as ações diretas.';
+  const userPrompt = `Proponha um plano de ação (2-3 ações, máximo 250 caracteres) para o desvio abaixo.\n\nContexto:\n- ${ctx.tag0} › ${ctx.tag01}${ctx.tag02 ? ` › ${ctx.tag02}` : ''}${ctx.marca ? ` (${ctx.marca})` : ''}\n- Real: ${fmtVal(ctx.real)} vs ${compLabel}: ${fmtVal(ctx.compare)}\n\nJustificativa do desvio:\n"${justification}"\n\nPlano de ação:`;
+
+  try {
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.5,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      if (isCreditError(response.status, errBody)) {
+        return callGroqFallback(systemPrompt, userPrompt, 200, 0.5);
+      }
+      throw new Error(`IA indisponível (${response.status})`);
+    }
+
+    const data = await response.json();
+    let text = data.content?.[0]?.text?.trim();
+    if (!text) throw new Error('Resposta vazia da IA');
+    if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
+    return text;
+  } catch (error) {
+    console.error('Erro em aiGenerateActionPlan:', error);
+    throw error;
+  }
+};
+
+/**
+ * aiImproveActionPlan — IA melhora o plano de ação existente com base na justificativa
+ */
+export const aiImproveActionPlan = async (actionPlan: string, justification: string, ctx: VarianceContext): Promise<string> => {
+  const fmtVal = (v: number) => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
+  const compLabel = ctx.comparisonType === 'orcado' ? 'Orçado' : 'Ano Anterior';
+
+  const systemPrompt = 'Você é um editor financeiro sênior da Raiz Educação. Melhore planos de ação para desvios orçamentários: torne mais concreto, executável e objetivo. REGRAS DE FORMATO: resultado com 2-3 ações, entre 150 e 250 caracteres. Mantenha a intenção original. Responda APENAS com o plano melhorado, sem prefácios ou aspas.';
+  const userPrompt = `Melhore o plano de ação abaixo (resultado: 2-3 ações, máximo 250 caracteres).\n\nContexto:\n- ${ctx.tag0} › ${ctx.tag01}${ctx.tag02 ? ` › ${ctx.tag02}` : ''}${ctx.marca ? ` (${ctx.marca})` : ''}\n- Real: ${fmtVal(ctx.real)} vs ${compLabel}: ${fmtVal(ctx.compare)}\n\nJustificativa do desvio:\n"${justification}"\n\nPlano de ação original:\n"${actionPlan}"\n\nPlano de ação melhorado:`;
+
+  try {
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }],
+        temperature: 0.4,
+      }),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      if (isCreditError(response.status, errBody)) {
+        return callGroqFallback(systemPrompt, userPrompt, 200, 0.4);
+      }
+      throw new Error(`IA indisponível (${response.status})`);
+    }
+
+    const data = await response.json();
+    let text = data.content?.[0]?.text?.trim();
+    if (!text) throw new Error('Resposta vazia da IA');
+    if (text.startsWith('"') && text.endsWith('"')) text = text.slice(1, -1);
+    return text;
+  } catch (error) {
+    console.error('Erro em aiImproveActionPlan:', error);
+    throw error;
+  }
+};
+
 function getFallbackInsights(kpis: SchoolKPIs): IAInsight[] {
   return [
     {
