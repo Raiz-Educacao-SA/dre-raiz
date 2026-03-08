@@ -82,6 +82,11 @@ CREATE TRIGGER trg_set_nome_filial
   BEFORE INSERT OR UPDATE OF marca, filial ON transactions_ano_anterior
   FOR EACH ROW EXECUTE FUNCTION trg_auto_nome_filial();
 
+DROP TRIGGER IF EXISTS trg_set_nome_filial ON transactions_manual;
+CREATE TRIGGER trg_set_nome_filial
+  BEFORE INSERT OR UPDATE OF marca, filial ON transactions_manual
+  FOR EACH ROW EXECUTE FUNCTION trg_auto_nome_filial();
+
 -- 4. Refresh dre_agg para refletir as correcoes
 REFRESH MATERIALIZED VIEW dre_agg;
 

@@ -77,6 +77,13 @@ BEGIN
     AND f.filial = t.filial
     AND t.nome_filial IS DISTINCT FROM (t.marca || ' - ' || f.nomefilial);
 
+  UPDATE transactions_manual t
+  SET nome_filial = t.marca || ' - ' || f.nomefilial
+  FROM filial f
+  WHERE f.nomemarca = t.marca
+    AND f.filial = t.filial
+    AND t.nome_filial IS DISTINCT FROM (t.marca || ' - ' || f.nomefilial);
+
   REFRESH MATERIALIZED VIEW dre_agg;
 END;
 $$;
@@ -117,6 +124,11 @@ CREATE TRIGGER trg_set_nome_filial
 
 CREATE TRIGGER trg_set_nome_filial
   BEFORE INSERT OR UPDATE OF marca, filial ON transactions_ano_anterior
+  FOR EACH ROW EXECUTE FUNCTION trg_lookup_nome_filial();
+
+DROP TRIGGER IF EXISTS trg_set_nome_filial ON transactions_manual;
+CREATE TRIGGER trg_set_nome_filial
+  BEFORE INSERT OR UPDATE OF marca, filial ON transactions_manual
   FOR EACH ROW EXECUTE FUNCTION trg_lookup_nome_filial();
 
 -- ================================================

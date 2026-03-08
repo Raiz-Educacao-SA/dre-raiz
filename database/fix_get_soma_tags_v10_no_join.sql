@@ -28,7 +28,7 @@ RETURNS TABLE(tag0 text, tag01 text, scenario text, month text, total numeric)
 LANGUAGE sql STABLE SECURITY DEFINER
 AS $$
 
-  -- 1. Real (transactions) — usa t.tag0 direto (trigger trg_auto_tag0)
+  -- 1a. Real (transactions) — usa t.tag0 direto (trigger trg_auto_tag0)
   SELECT
     COALESCE(t.tag0, 'Sem Classificação')    AS tag0,
     COALESCE(t.tag01, 'Sem Subclassificação') AS tag01,
@@ -36,6 +36,31 @@ AS $$
     to_char(t.date::date, 'YYYY-MM')          AS month,
     SUM(t.amount)                             AS total
   FROM transactions t
+  WHERE
+    (t.scenario IS NULL OR t.scenario = 'Real')
+    AND (p_month_from   IS NULL OR t.date >= p_month_from || '-01')
+    AND (p_month_to     IS NULL OR t.date <= p_month_to   || '-31')
+    AND (p_marcas       IS NULL OR t.marca       = ANY(p_marcas))
+    AND (p_nome_filiais IS NULL OR t.nome_filial = ANY(p_nome_filiais))
+    AND (p_tags02       IS NULL OR t.tag02       = ANY(p_tags02))
+    AND (p_tags01       IS NULL OR t.tag01       = ANY(p_tags01))
+    AND (p_recurring    IS NULL OR COALESCE(t.recurring, 'Sim') = p_recurring)
+    AND (p_tags03       IS NULL OR t.tag03       = ANY(p_tags03))
+  GROUP BY
+    COALESCE(t.tag0, 'Sem Classificação'),
+    COALESCE(t.tag01, 'Sem Subclassificação'),
+    to_char(t.date::date, 'YYYY-MM')
+
+  UNION ALL
+
+  -- 1b. Real (transactions_manual) — lançamentos manuais
+  SELECT
+    COALESCE(t.tag0, 'Sem Classificação')    AS tag0,
+    COALESCE(t.tag01, 'Sem Subclassificação') AS tag01,
+    'Real'                                    AS scenario,
+    to_char(t.date::date, 'YYYY-MM')          AS month,
+    SUM(t.amount)                             AS total
+  FROM transactions_manual t
   WHERE
     (t.scenario IS NULL OR t.scenario = 'Real')
     AND (p_month_from   IS NULL OR t.date >= p_month_from || '-01')

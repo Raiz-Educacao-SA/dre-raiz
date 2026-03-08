@@ -66,10 +66,19 @@ DECLARE
   v_total bigint;
 BEGIN
   -- Montar query dinâmica baseada na tabela
-  v_sql := format(
-    'SELECT id::text, date::text, description, conta_contabil, category, amount, type, scenario, status, filial, marca, tag0, tag01, tag02, tag03, recurring, ticket, vendor, nat_orc, chave_id, nome_filial, updated_at FROM %I WHERE true',
-    p_table_name
-  );
+  -- Quando p_table_name = 'transactions', empilha com transactions_manual (UNION ALL)
+  IF p_table_name = 'transactions' THEN
+    v_sql := 'SELECT id::text, date::text, description, conta_contabil, category, amount::numeric, type, scenario, status, filial, marca, tag0, tag01, tag02, tag03, recurring, ticket, vendor, nat_orc, chave_id, nome_filial, updated_at FROM ('
+      || 'SELECT id::text, date::text, description::text, conta_contabil::text, category::text, amount::numeric, type::text, scenario::text, status::text, filial::text, marca::text, tag0::text, tag01::text, tag02::text, tag03::text, recurring::text, ticket::text, vendor::text, nat_orc::text, chave_id::text, nome_filial::text, updated_at::timestamptz FROM transactions'
+      || ' UNION ALL '
+      || 'SELECT id::text, date::text, description::text, conta_contabil::text, category::text, amount::numeric, type::text, scenario::text, status::text, filial::text, marca::text, tag0::text, tag01::text, tag02::text, tag03::text, recurring::text, ticket::text, vendor::text, nat_orc::text, chave_id::text, nome_filial::text, updated_at::timestamptz FROM transactions_manual'
+      || ') AS _combined WHERE true';
+  ELSE
+    v_sql := format(
+      'SELECT id::text, date::text, description, conta_contabil, category, amount, type, scenario, status, filial, marca, tag0, tag01, tag02, tag03, recurring, ticket, vendor, nat_orc, chave_id, nome_filial, updated_at FROM %I WHERE true',
+      p_table_name
+    );
+  END IF;
 
   -- Filtros de data
   IF p_month_from IS NOT NULL THEN

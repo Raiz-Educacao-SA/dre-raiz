@@ -485,7 +485,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       tag03s: tag3Options,
       categories: getOptions('category'),
       recurrings: ['Sim', 'Não'],
-      statuses: ['Normal', 'Pendente', 'Ajustado', 'Rateado', 'Excluído']
+      statuses: ['Normal', 'Pendente', 'Ajustado', 'Rateado', 'Excluído', 'Manual']
     };
   }, [filterOptions.marcas, filteredFilialLabels, tag0Options, tag1Options, tag2Options, tag3Options, transactions]);
 
@@ -1905,6 +1905,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                               t.status === 'Ajustado' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                               t.status === 'Rateado' ? 'bg-purple-50 text-purple-600 border-purple-200' :
                               t.status === 'Excluído' ? 'bg-red-50 text-red-600 border-red-200' :
+                              t.status === 'Manual' ? 'bg-teal-50 text-teal-600 border-teal-200' :
                               'bg-gray-50 text-gray-400 border-gray-200'
                             }`}>
                               {t.status}
@@ -2294,8 +2295,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       {/* --- MODAL DE DETALHES DO LANÇAMENTO --- */}
       {detailTransaction && (() => {
         const t = detailTransaction;
-        const statusColor = t.status === 'Pendente' ? 'amber' : t.status === 'Ajustado' ? 'blue' : t.status === 'Rateado' ? 'purple' : t.status === 'Excluído' ? 'rose' : 'gray';
-        const statusBg = { amber: 'bg-amber-50 text-amber-700 border-amber-200', blue: 'bg-blue-50 text-blue-700 border-blue-200', purple: 'bg-purple-50 text-purple-700 border-purple-200', rose: 'bg-rose-50 text-rose-700 border-rose-200', gray: 'bg-gray-50 text-gray-500 border-gray-200' }[statusColor];
+        const statusColor = t.status === 'Pendente' ? 'amber' : t.status === 'Ajustado' ? 'blue' : t.status === 'Rateado' ? 'purple' : t.status === 'Excluído' ? 'rose' : t.status === 'Manual' ? 'teal' : 'gray';
+        const statusBg = { amber: 'bg-amber-50 text-amber-700 border-amber-200', blue: 'bg-blue-50 text-blue-700 border-blue-200', purple: 'bg-purple-50 text-purple-700 border-purple-200', rose: 'bg-rose-50 text-rose-700 border-rose-200', teal: 'bg-teal-50 text-teal-700 border-teal-200', gray: 'bg-gray-50 text-gray-500 border-gray-200' }[statusColor];
         const isRevenue = t.type === 'REVENUE';
 
         const F = ({ label, value, mono, accent, copyable }: { label: string; value: string; mono?: boolean; accent?: boolean; copyable?: boolean }) => (

@@ -18,6 +18,16 @@ BEGIN
     FROM tags tg
     WHERE tg.cod_conta = NEW.conta_contabil
     LIMIT 1;
+
+    -- Também popular tag0 via tag0_map (evita problema de ordem de triggers)
+    IF NEW.tag01 IS NOT NULL THEN
+      NEW.tag0 := (
+        SELECT tm.tag0
+        FROM tag0_map tm
+        WHERE LOWER(TRIM(tm.tag1_norm)) = LOWER(TRIM(NEW.tag01))
+        LIMIT 1
+      );
+    END IF;
   END IF;
   RETURN NEW;
 END;
@@ -43,6 +53,12 @@ CREATE TRIGGER trg_auto_tags_from_conta
   BEFORE INSERT OR UPDATE OF conta_contabil ON transactions_ano_anterior
   FOR EACH ROW EXECUTE FUNCTION fn_auto_populate_tags_from_conta();
 
+-- Trigger em transactions_manual (Lançamentos Manuais)
+DROP TRIGGER IF EXISTS trg_auto_tags_from_conta ON transactions_manual;
+CREATE TRIGGER trg_auto_tags_from_conta
+  BEFORE INSERT OR UPDATE OF conta_contabil ON transactions_manual
+  FOR EACH ROW EXECUTE FUNCTION fn_auto_populate_tags_from_conta();
+
 -- ============================================
 -- PARTE 2: Função de backfill — atualiza existentes
 -- ============================================
@@ -57,6 +73,7 @@ DECLARE
   v_real INT := 0;
   v_orcado INT := 0;
   v_ant INT := 0;
+  v_manual INT := 0;
 BEGIN
   -- transactions (Real)
   UPDATE transactions AS tr
@@ -70,6 +87,19 @@ BEGIN
       OR tr.tag02 IS DISTINCT FROM tg.tag2
       OR tr.tag03 IS DISTINCT FROM tg.tag3);
   GET DIAGNOSTICS v_real = ROW_COUNT;
+
+  -- transactions_manual (Lançamentos Manuais)
+  UPDATE transactions_manual AS tr
+  SET tag01 = tg.tag1,
+      tag02 = tg.tag2,
+      tag03 = tg.tag3
+  FROM tags tg
+  WHERE tr.conta_contabil = tg.cod_conta
+    AND tr.conta_contabil IS NOT NULL
+    AND (tr.tag01 IS DISTINCT FROM tg.tag1
+      OR tr.tag02 IS DISTINCT FROM tg.tag2
+      OR tr.tag03 IS DISTINCT FROM tg.tag3);
+  GET DIAGNOSTICS v_manual = ROW_COUNT;
 
   -- transactions_orcado (Orçado)
   UPDATE transactions_orcado AS tr
@@ -100,9 +130,10 @@ BEGIN
   RETURN jsonb_build_object(
     'status', 'ok',
     'real', v_real,
+    'manual', v_manual,
     'orcado', v_orcado,
     'ano_anterior', v_ant,
-    'total', v_real + v_orcado + v_ant,
+    'total', v_real + v_manual + v_orcado + v_ant,
     'executado_em', NOW()
   );
 END;

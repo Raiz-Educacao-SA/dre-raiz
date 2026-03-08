@@ -1,51 +1,24 @@
 -- ═══════════════════════════════════════════════════════════════════
--- fix_dre_agg_restore.sql
--- SQL ATIVO: dre_agg + get_soma_tags + get_dre_dimension + filter_options
--- OTIMIZADO: usa t.tag0 direto (sem JOIN tag0_map — trigger mantém a coluna)
+-- add_transactions_manual_to_rpcs.sql
+-- Atualiza RPCs e dre_agg para empilhar transactions_manual no Real.
 --
--- Para restaurar: EXECUTAR no Supabase SQL Editor
+-- IMPORTANTE: Executar DEPOIS de create_transactions_manual.sql
+-- IMPORTANTE: SET statement_timeout = 0 obrigatório para dre_agg
+--
+-- EXECUTAR no Supabase SQL Editor
 -- ═══════════════════════════════════════════════════════════════════
 
 SET statement_timeout = 0;
 
 -- ══════════════════════════════════
--- PARTE 1: Normalizar dados existentes (one-time, idempotente)
--- ══════════════════════════════════
-
-UPDATE transactions SET recurring = 'Sim'
-WHERE recurring IS NOT NULL AND LOWER(TRIM(recurring)) = 'sim' AND recurring != 'Sim';
-
-UPDATE transactions SET recurring = 'Não'
-WHERE recurring IS NOT NULL
-  AND LOWER(TRANSLATE(TRIM(recurring), 'ãÃ', 'aA')) IN ('nao', 'nAo')
-  AND recurring != 'Não';
-
-UPDATE transactions_orcado SET recurring = 'Sim'
-WHERE recurring IS NOT NULL AND LOWER(TRIM(recurring)) = 'sim' AND recurring != 'Sim';
-
-UPDATE transactions_orcado SET recurring = 'Não'
-WHERE recurring IS NOT NULL
-  AND LOWER(TRANSLATE(TRIM(recurring), 'ãÃ', 'aA')) IN ('nao', 'nAo')
-  AND recurring != 'Não';
-
-UPDATE transactions_ano_anterior SET recurring = 'Sim'
-WHERE recurring IS NOT NULL AND LOWER(TRIM(recurring)) = 'sim' AND recurring != 'Sim';
-
-UPDATE transactions_ano_anterior SET recurring = 'Não'
-WHERE recurring IS NOT NULL
-  AND LOWER(TRANSLATE(TRIM(recurring), 'ãÃ', 'aA')) IN ('nao', 'nAo')
-  AND recurring != 'Não';
-
--- ══════════════════════════════════
--- PARTE 2: Recriar dre_agg — SEM JOIN tag0_map (usa t.tag0 direto)
--- tag0 é mantido por trigger trg_auto_tag0 em cada tabela
+-- PARTE 1: Recriar dre_agg com transactions_manual
 -- ══════════════════════════════════
 
 DROP MATERIALIZED VIEW IF EXISTS dre_agg;
 
 CREATE MATERIALIZED VIEW dre_agg AS
 
-  -- BLOCO 1: Real
+  -- BLOCO 1: Real (transactions)
   SELECT
     COALESCE(t.tag0, 'Sem Classificação')    AS tag0,
     COALESCE(t.tag01, 'Sem Subclassificação') AS tag01,
@@ -66,7 +39,7 @@ CREATE MATERIALIZED VIEW dre_agg AS
 
   UNION ALL
 
-  -- BLOCO 1b: Real (transactions_manual — lançamentos manuais)
+  -- BLOCO 1b: Real (transactions_manual) — lançamentos manuais
   SELECT
     COALESCE(t.tag0, 'Sem Classificação')    AS tag0,
     COALESCE(t.tag01, 'Sem Subclassificação') AS tag01,
@@ -135,7 +108,7 @@ CREATE INDEX ON dre_agg (conta_contabil, scenario, year_month);
 CREATE INDEX ON dre_agg (recurring);
 
 -- ══════════════════════════════════
--- PARTE 3: get_dre_dimension (usa dre_agg)
+-- PARTE 2: get_dre_dimension (usa dre_agg — já inclui manual)
 -- ══════════════════════════════════
 
 DROP FUNCTION IF EXISTS public.get_dre_dimension(text,text,text[],text,text,text[],text[],text[],text[],text[],text,text);
@@ -194,7 +167,7 @@ GRANT EXECUTE ON FUNCTION public.get_dre_dimension(text,text,text[],text,text,te
 GRANT EXECUTE ON FUNCTION public.get_dre_dimension(text,text,text[],text,text,text[],text[],text[],text[],text[],text,text) TO anon;
 
 -- ══════════════════════════════════
--- PARTE 4: get_dre_filter_options (usa dre_agg)
+-- PARTE 3: get_dre_filter_options (usa dre_agg — já inclui manual)
 -- ══════════════════════════════════
 
 DROP FUNCTION IF EXISTS get_dre_filter_options(text, text);
@@ -248,7 +221,7 @@ GRANT EXECUTE ON FUNCTION get_dre_filter_options(text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_dre_filter_options(text, text) TO anon;
 
 -- ══════════════════════════════════
--- PARTE 5: get_soma_tags — SEM JOIN tag0_map (usa t.tag0 direto)
+-- PARTE 4: get_soma_tags — empilha transactions_manual no Real
 -- ══════════════════════════════════
 
 DROP FUNCTION IF EXISTS get_soma_tags(text, text, text[], text[], text[], text[], text);
@@ -293,7 +266,7 @@ AS $$
 
   UNION ALL
 
-  -- 1b. Real (transactions_manual — lançamentos manuais)
+  -- 1b. Real (transactions_manual) — lançamentos manuais
   SELECT
     COALESCE(t.tag0, 'Sem Classificação')    AS tag0,
     COALESCE(t.tag01, 'Sem Subclassificação') AS tag01,
@@ -370,5 +343,96 @@ $$;
 
 GRANT EXECUTE ON FUNCTION get_soma_tags(text, text, text[], text[], text[], text[], text, text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_soma_tags(text, text, text[], text[], text[], text[], text, text[]) TO anon;
+
+-- ══════════════════════════════════
+-- PARTE 5: get_variance_snapshot — empilha transactions_manual no Real
+-- ══════════════════════════════════
+
+DROP FUNCTION IF EXISTS get_variance_snapshot(text, text[], text);
+
+CREATE OR REPLACE FUNCTION get_variance_snapshot(
+  p_year_month text,
+  p_marcas     text[] DEFAULT NULL,
+  p_recurring  text   DEFAULT 'Sim'
+)
+RETURNS TABLE(
+  tag0   text,
+  tag01  text,
+  tag02  text,
+  marca  text,
+  scenario text,
+  total  numeric
+)
+LANGUAGE sql STABLE SECURITY DEFINER
+AS $$
+
+  -- 1a. Real (transactions)
+  SELECT
+    COALESCE(t.tag0, 'Sem Classificação'),
+    COALESCE(t.tag01, 'Sem Subclassificação'),
+    t.tag02,
+    t.marca,
+    'Real'::text,
+    SUM(t.amount)
+  FROM transactions t
+  WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
+    AND to_char(t.date::date, 'YYYY-MM') = p_year_month
+    AND (p_marcas    IS NULL OR t.marca = ANY(p_marcas))
+    AND (p_recurring IS NULL OR INITCAP(COALESCE(t.recurring, 'Sim')) = INITCAP(p_recurring))
+  GROUP BY 1, 2, 3, 4
+
+  UNION ALL
+
+  -- 1b. Real (transactions_manual) — lançamentos manuais
+  SELECT
+    COALESCE(t.tag0, 'Sem Classificação'),
+    COALESCE(t.tag01, 'Sem Subclassificação'),
+    t.tag02,
+    t.marca,
+    'Real'::text,
+    SUM(t.amount)
+  FROM transactions_manual t
+  WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
+    AND to_char(t.date::date, 'YYYY-MM') = p_year_month
+    AND (p_marcas    IS NULL OR t.marca = ANY(p_marcas))
+    AND (p_recurring IS NULL OR INITCAP(COALESCE(t.recurring, 'Sim')) = INITCAP(p_recurring))
+  GROUP BY 1, 2, 3, 4
+
+  UNION ALL
+
+  -- 2. Orçado (transactions_orcado)
+  SELECT
+    COALESCE(t.tag0, 'Sem Classificação'),
+    COALESCE(t.tag01, 'Sem Subclassificação'),
+    t.tag02,
+    t.marca,
+    'Orçado'::text,
+    SUM(t.amount)
+  FROM transactions_orcado t
+  WHERE to_char(t.date::date, 'YYYY-MM') = p_year_month
+    AND (p_marcas    IS NULL OR t.marca = ANY(p_marcas))
+    AND (p_recurring IS NULL OR INITCAP(COALESCE(t.recurring, 'Sim')) = INITCAP(p_recurring))
+  GROUP BY 1, 2, 3, 4
+
+  UNION ALL
+
+  -- 3. A-1 (transactions_ano_anterior, +1 year)
+  SELECT
+    COALESCE(t.tag0, 'Sem Classificação'),
+    COALESCE(t.tag01, 'Sem Subclassificação'),
+    t.tag02,
+    t.marca,
+    'A-1'::text,
+    SUM(t.amount)
+  FROM transactions_ano_anterior t
+  WHERE to_char((t.date::date) + interval '1 year', 'YYYY-MM') = p_year_month
+    AND (p_marcas    IS NULL OR t.marca = ANY(p_marcas))
+    AND (p_recurring IS NULL OR INITCAP(COALESCE(t.recurring, 'Sim')) = INITCAP(p_recurring))
+  GROUP BY 1, 2, 3, 4
+
+$$;
+
+GRANT EXECUTE ON FUNCTION get_variance_snapshot(text, text[], text) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_variance_snapshot(text, text[], text) TO anon;
 
 RESET statement_timeout;

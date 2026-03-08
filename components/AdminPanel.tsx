@@ -1343,71 +1343,180 @@ const AdminPanel: React.FC = () => {
     }
   };
 
-  // Baixar template Excel
-  const handleDownloadTemplate = () => {
-    const template = [
-      {
-        'Cenário': 'Real',
-        'Data': '2026-01-15',
-        'C.Custo': 'MARKETING',
-        'Segmento': 'DIGITAL',
-        'Projeto': 'CAMPANHA-2026',
-        'Conta': 'Salários',
-        'Marca': 'SAP',
-        'Unidade': 'Matriz - São Paulo',
-        'Ticket': '',
-        'Fornecedor': 'FORNECEDOR EXEMPLO LTDA',
-        'Descrição': 'Exemplo de lançamento',
-        'Valor': 1500.50,
-        'Recorrente': 'Sim',
-        'Status': 'Normal',
-        'Tipo': 'FIXED_COST'
-      },
-      {
-        'Cenário': 'Orçamento',
-        'Data': '2026-02-01',
-        'C.Custo': 'VENDAS',
-        'Segmento': 'B2B',
-        'Projeto': 'EXPANSAO',
-        'Conta': 'Receita de Serviços',
-        'Marca': 'KOGUT',
-        'Unidade': 'Filial - Rio de Janeiro',
-        'Ticket': '123456',
-        'Fornecedor': '',
-        'Descrição': 'Receita prevista',
-        'Valor': 50000,
-        'Recorrente': 'Não',
-        'Status': 'Normal',
-        'Tipo': 'REVENUE'
-      }
+  // Baixar template Excel para importação manual (transactions_manual)
+  const handleDownloadTemplate = async () => {
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'DRE Raiz';
+    const ws = wb.addWorksheet('Carga Manual', { views: [{ state: 'frozen', ySplit: 2 }] });
+
+    // Definição das colunas: header, width, obrigatório
+    const cols: { header: string; key: string; width: number; required: boolean }[] = [
+      { header: 'Data',            key: 'data',            width: 14, required: true },
+      { header: 'Marca',           key: 'marca',           width: 12, required: true },
+      { header: 'Unidade',         key: 'unidade',         width: 14, required: true },
+      { header: 'Conta Contábil',  key: 'conta_contabil',  width: 22, required: true },
+      { header: 'Valor',           key: 'valor',           width: 16, required: true },
+      { header: 'Descrição',       key: 'descricao',       width: 40, required: true },
+      { header: 'Fornecedor',      key: 'fornecedor',      width: 30, required: true },
+      { header: 'C.Custo',         key: 'ccusto',          width: 16, required: false },
+      { header: 'Segmento',        key: 'segmento',        width: 16, required: false },
+      { header: 'Projeto',         key: 'projeto',         width: 18, required: false },
+      { header: 'Recorrente',      key: 'recorrente',      width: 14, required: false },
+      { header: 'Tipo',            key: 'tipo',            width: 16, required: false },
+      { header: 'Nat Orc',         key: 'nat_orc',         width: 14, required: false },
+      { header: 'Ticket',          key: 'ticket',          width: 12, required: false },
     ];
 
-    const ws = XLSX.utils.json_to_sheet(template);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    ws.columns = cols.map(c => ({ header: c.header, key: c.key, width: c.width }));
 
-    // Ajustar largura das colunas
-    const colWidths = [
-      { wch: 12 }, // Cenário
-      { wch: 12 }, // Data
-      { wch: 15 }, // C.Custo
-      { wch: 15 }, // Segmento
-      { wch: 18 }, // Projeto
-      { wch: 25 }, // Conta
-      { wch: 10 }, // Marca
-      { wch: 30 }, // Unidade
-      { wch: 10 }, // Ticket
-      { wch: 30 }, // Fornecedor
-      { wch: 40 }, // Descrição
-      { wch: 12 }, // Valor
-      { wch: 12 }, // Recorrente
-      { wch: 12 }, // Status
-      { wch: 15 }  // Tipo
+    // ── Cores (padrão Raiz) ──
+    const ORANGE_DARK  = 'FFD97706'; // header obrigatório
+    const ORANGE_LIGHT = 'FFFEF3C7'; // fundo obrigatório (dados)
+    const GRAY_DARK    = 'FF6B7280'; // header opcional
+    const GRAY_LIGHT   = 'FFF9FAFB'; // fundo opcional (dados)
+    const WHITE        = 'FFFFFFFF';
+    const BLACK        = 'FF1F2937';
+    const BORDER_COLOR = 'FFE5E7EB';
+    const TEAL_DARK    = 'FF0D9488'; // legenda "Manual"
+    const TEAL_LIGHT   = 'FFF0FDFA';
+
+    const thinBorder = { style: 'thin' as const, color: { argb: BORDER_COLOR } };
+    const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+
+    // ── Linha 1: Título ──
+    ws.spliceRows(1, 0, []);
+    const titleCell = ws.getCell('A1');
+    titleCell.value = 'MODELO DE CARGA MANUAL — DRE RAIZ';
+    titleCell.font = { bold: true, size: 13, color: { argb: WHITE } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    titleCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    ws.mergeCells(1, 1, 1, cols.length);
+    ws.getRow(1).height = 32;
+    // Preencher fundo do merge inteiro
+    for (let c = 2; c <= cols.length; c++) {
+      const mc = ws.getCell(1, c);
+      mc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    }
+
+    // ── Linha 2: Headers (já adicionados pelo ws.columns, agora estão na row 2) ──
+    const headerRow = ws.getRow(2);
+    headerRow.height = 28;
+    cols.forEach((col, i) => {
+      const cell = headerRow.getCell(i + 1);
+      const isReq = col.required;
+      cell.font = { bold: true, size: 10, color: { argb: WHITE } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isReq ? ORANGE_DARK : GRAY_DARK } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+      cell.border = allBorders;
+    });
+
+    // ── Linhas de exemplo (3 e 4) ──
+    const examples = [
+      { data: '2026-03-01', marca: 'CGS', unidade: 'BOT', conta_contabil: '4.1.1.01.01.01', valor: 1500.50, descricao: 'Exemplo de lançamento manual', fornecedor: 'FORNECEDOR EXEMPLO LTDA', ccusto: '', segmento: '', projeto: '', recorrente: 'Sim', tipo: 'FIXED_COST', nat_orc: '', ticket: '' },
+      { data: '2026-03-01', marca: 'CGS', unidade: 'GUA', conta_contabil: '4.2.1.13.01.03', valor: -2500, descricao: 'Provisão PDD manual', fornecedor: 'Planejamento Financeiro', ccusto: '', segmento: '', projeto: '', recorrente: 'Sim', tipo: 'SGA', nat_orc: '', ticket: '' },
     ];
-    ws['!cols'] = colWidths;
+    examples.forEach(ex => {
+      const row = ws.addRow(ex);
+      row.height = 22;
+      cols.forEach((col, i) => {
+        const cell = row.getCell(i + 1);
+        cell.font = { size: 10, color: { argb: BLACK }, italic: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.required ? ORANGE_LIGHT : GRAY_LIGHT } };
+        cell.alignment = { horizontal: i === 4 ? 'right' : 'left', vertical: 'middle' };
+        cell.border = allBorders;
+        if (col.key === 'valor') cell.numFmt = '#,##0.00';
+      });
+    });
 
-    XLSX.writeFile(wb, `Template_Importacao_DRE_RAIZ_${new Date().toISOString().split('T')[0]}.xlsx`);
-    showImportMessage('success', 'Template baixado com sucesso!');
+    // ── Linhas em branco para preenchimento (5 a 104) ──
+    for (let r = 0; r < 100; r++) {
+      const row = ws.addRow({});
+      row.height = 20;
+      cols.forEach((col, i) => {
+        const cell = row.getCell(i + 1);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: col.required ? 'FFFFFBEB' : WHITE } };
+        cell.border = allBorders;
+        cell.font = { size: 10, color: { argb: BLACK } };
+        if (col.key === 'valor') cell.numFmt = '#,##0.00';
+        if (col.key === 'data') cell.numFmt = 'YYYY-MM-DD';
+      });
+    }
+
+    // ── Aba "Legenda" ──
+    const lg = wb.addWorksheet('Legenda');
+    lg.columns = [{ width: 22 }, { width: 14 }, { width: 60 }, { width: 30 }];
+
+    const lgTitle = lg.addRow(['LEGENDA DO MODELO DE CARGA MANUAL']);
+    lgTitle.getCell(1).font = { bold: true, size: 13, color: { argb: WHITE } };
+    lgTitle.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    lgTitle.height = 32;
+    lg.mergeCells(1, 1, 1, 4);
+    for (let c = 2; c <= 4; c++) lg.getCell(1, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+
+    const lgHeader = lg.addRow(['Coluna', 'Obrigatório', 'Descrição', 'Exemplo']);
+    lgHeader.eachCell(cell => {
+      cell.font = { bold: true, size: 10, color: { argb: WHITE } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GRAY_DARK } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = allBorders;
+    });
+    lgHeader.height = 24;
+
+    const legendRows: [string, string, string, string][] = [
+      ['Data',            'SIM', 'Data do lançamento no formato YYYY-MM-DD',          '2026-03-01'],
+      ['Marca',           'SIM', 'Sigla da marca (deve existir no sistema)',           'CGS, SAP, PHYTUS'],
+      ['Unidade',         'SIM', 'Código da filial (trigger gera nome_filial)',        'BOT, GUA, SPA'],
+      ['Conta Contábil',  'SIM', 'Código contábil (trigger preenche tag01/02/03/tag0)','4.1.1.01.01.01'],
+      ['Valor',           'SIM', 'Positivo ou negativo. Usar ponto decimal',           '1500.50 ou -2500'],
+      ['Descrição',       'SIM', 'Texto descritivo do lançamento',                     'Provisão PDD'],
+      ['Fornecedor',      'SIM', 'Nome do fornecedor ou origem',                       'FORNECEDOR LTDA'],
+      ['C.Custo',         'NÃO', 'Centro de custo (tag01). Se vazio, trigger preenche','MARKETING'],
+      ['Segmento',        'NÃO', 'Segmento (tag02). Se vazio, trigger preenche',       'DIGITAL'],
+      ['Projeto',         'NÃO', 'Projeto (tag03). Se vazio, trigger preenche',        'CAMPANHA-2026'],
+      ['Recorrente',      'NÃO', 'Sim ou Não (default: Sim)',                          'Sim'],
+      ['Tipo',            'NÃO', 'REVENUE, FIXED_COST, VARIABLE_COST, SGA, RATEIO',   'FIXED_COST'],
+      ['Nat Orc',         'NÃO', 'Natureza orçamentária',                              ''],
+      ['Ticket',          'NÃO', 'Número do ticket/chamado',                           '123456'],
+    ];
+    legendRows.forEach(([colName, req, desc, ex]) => {
+      const row = lg.addRow([colName, req, desc, ex]);
+      row.height = 22;
+      const isReq = req === 'SIM';
+      row.eachCell((cell, colNumber) => {
+        cell.font = { size: 10, color: { argb: BLACK }, bold: colNumber === 1 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isReq ? ORANGE_LIGHT : GRAY_LIGHT } };
+        cell.alignment = { horizontal: colNumber === 2 ? 'center' : 'left', vertical: 'middle', wrapText: true };
+        cell.border = allBorders;
+      });
+    });
+
+    // Linha de status Manual
+    lg.addRow([]);
+    const manualRow = lg.addRow(['Status: Manual']);
+    manualRow.getCell(1).font = { bold: true, size: 10, color: { argb: TEAL_DARK } };
+    manualRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL_LIGHT } };
+    manualRow.getCell(1).border = allBorders;
+    lg.mergeCells(manualRow.number, 1, manualRow.number, 4);
+    for (let c = 2; c <= 4; c++) {
+      lg.getCell(manualRow.number, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TEAL_LIGHT } };
+      lg.getCell(manualRow.number, c).border = allBorders;
+    }
+    const noteRow = lg.addRow(['Todos os lançamentos importados recebem status "Manual" e cenário "Real" automaticamente. tag0, tag01, tag02, tag03 e nome_filial são preenchidos por triggers do banco.']);
+    noteRow.getCell(1).font = { size: 9, color: { argb: GRAY_DARK }, italic: true };
+    lg.mergeCells(noteRow.number, 1, noteRow.number, 4);
+
+    // ── Download ──
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Modelo_Carga_Manual_DRE_RAIZ_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showImportMessage('success', 'Modelo baixado com sucesso!');
   };
 
   // Ler arquivo Excel/CSV
@@ -1424,7 +1533,26 @@ const AdminPanel: React.FC = () => {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
+
+        // Detectar se a primeira linha é título (modelo formatado com header na row 2)
+        // Tenta ler normalmente; se não encontra colunas conhecidas, pula row 1
+        let data = XLSX.utils.sheet_to_json(ws) as any[];
+        if (data.length > 0) {
+          const firstKeys = Object.keys(data[0]);
+          const knownCols = ['Data', 'Marca', 'Unidade', 'Valor', 'Conta Contábil', 'Descrição', 'Fornecedor'];
+          const hasKnownCol = knownCols.some(k => firstKeys.includes(k));
+          if (!hasKnownCol) {
+            // Primeira linha é título — re-ler a partir da row 2 (index 1)
+            data = XLSX.utils.sheet_to_json(ws, { range: 1 }) as any[];
+          }
+        }
+
+        // Filtrar linhas vazias (linhas pré-formatadas do template sem dados)
+        data = data.filter((row: any) => {
+          const val = row['Valor'] || row['Amount'] || row['amount'];
+          const dt = row['Data'] || row['date'];
+          return val !== undefined && val !== '' && val !== null && dt;
+        });
 
         if (data.length === 0) {
           showImportMessage('error', 'Arquivo vazio! Adicione dados no Excel.');
@@ -1432,24 +1560,33 @@ const AdminPanel: React.FC = () => {
         }
 
         // Mapear colunas do Excel para Transaction
-        const mappedData = data.map((row: any, index: number) => ({
-          id: `IMP-${Date.now()}-${index}`,
-          scenario: row['Cenário'] || row['Cenario'] || row['scenario'] || 'Real',
-          date: row['Data'] || row['date'] || new Date().toISOString().split('T')[0],
-          tag01: row['C.Custo'] || row['C Custo'] || row['tag01'] || '',
-          tag02: row['Segmento'] || row['Segment'] || row['tag02'] || '',
-          tag03: row['Projeto'] || row['Project'] || row['tag03'] || '',
-          category: row['Conta'] || row['Category'] || row['category'] || 'Outros',
-          marca: row['Marca'] || row['Brand'] || row['brand'] || row['marca'] || 'SAP',
-          filial: row['Unidade'] || row['Branch'] || row['branch'] || row['filial'] || 'Matriz',
-          ticket: row['Ticket'] || row['ticket'] || '',
-          vendor: row['Fornecedor'] || row['Vendor'] || row['vendor'] || '',
-          description: row['Descrição'] || row['Descricao'] || row['Description'] || row['description'] || '',
-          amount: parseFloat(String(row['Valor'] || row['Amount'] || row['amount'] || 0).replace(',', '.')),
-          recurring: row['Recorrente'] || row['Recurring'] || row['recurring'] || 'Sim',
-          status: row['Status'] || row['status'] || 'Normal',
-          type: row['Tipo'] || row['Type'] || row['type'] || 'FIXED_COST'
-        }));
+        const batchTs = Date.now();
+        const mappedData = data.map((row: any, index: number) => {
+          const dt = row['Data'] || row['date'] || new Date().toISOString().split('T')[0];
+          const marca = row['Marca'] || row['Brand'] || row['marca'] || '';
+          const filial = row['Unidade'] || row['Filial'] || row['Branch'] || row['filial'] || '';
+          const yearMonth = String(dt).substring(0, 7); // YYYY-MM
+          return {
+            id: `MAN-${batchTs}-${index}`,
+            chave_id: `MAN_${yearMonth}_${marca}_${filial}_${String(index + 1).padStart(4, '0')}`,
+            scenario: 'Real',
+            date: dt,
+            conta_contabil: row['Conta Contábil'] || row['Conta Contabil'] || row['conta_contabil'] || row['Conta'] || '',
+            tag01: row['C.Custo'] || row['C Custo'] || row['tag01'] || '',
+            tag02: row['Segmento'] || row['Segment'] || row['tag02'] || '',
+            tag03: row['Projeto'] || row['Project'] || row['tag03'] || '',
+            marca,
+            filial,
+            ticket: row['Ticket'] || row['ticket'] || '',
+            vendor: row['Fornecedor'] || row['Vendor'] || row['vendor'] || '',
+            nat_orc: row['Nat Orc'] || row['nat_orc'] || row['Natureza'] || '',
+            description: row['Descrição'] || row['Descricao'] || row['Description'] || row['description'] || '',
+            amount: parseFloat(String(row['Valor'] || row['Amount'] || row['amount'] || 0).replace(',', '.')),
+            recurring: row['Recorrente'] || row['Recurring'] || row['recurring'] || 'Sim',
+            status: 'Manual',
+            type: row['Tipo'] || row['Type'] || row['type'] || 'FIXED_COST'
+          };
+        });
 
         setImportPreview(mappedData);
         showImportMessage('info', `${mappedData.length} registros carregados. Revise e clique em "Importar".`);
@@ -1485,7 +1622,7 @@ const AdminPanel: React.FC = () => {
         const end = start + batchSize;
         const batch = importPreview.slice(start, end);
 
-        await supabaseService.bulkAddTransactions(batch as Transaction[]);
+        await supabaseService.bulkAddTransactionsManual(batch as Transaction[]);
 
         const progress = ((i + 1) / totalBatches) * 100;
         setImportProgress(progress);

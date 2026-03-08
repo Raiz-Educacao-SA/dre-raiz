@@ -1553,6 +1553,31 @@ export const bulkAddTransactions = async (transactions: Omit<Transaction, 'id'>[
   return data.map(dbToTransaction);
 };
 
+// Inserção em massa na tabela transactions_manual (lançamentos manuais via Admin)
+export const bulkAddTransactionsManual = async (transactions: Omit<Transaction, 'id'>[]): Promise<Transaction[]> => {
+  const { data, error } = await supabase
+    .from('transactions_manual')
+    .insert(transactions.map(t => {
+      const db = transactionToDb(t as Transaction);
+      // Forçar scenario = 'Real' e status = 'Manual' para lançamentos manuais
+      db.scenario = 'Real';
+      db.status = 'Manual';
+      return db;
+    }))
+    .select();
+
+  if (error) {
+    console.error('Error bulk adding transactions_manual:', error);
+    throw new Error(error.message);
+  }
+
+  if (!data) {
+    throw new Error('No data returned from bulk insert');
+  }
+
+  return data.map(dbToTransaction);
+};
+
 // Atualização em massa da coluna recurring por chave_id
 export const bulkUpdateRecurring = async (
   items: { chave_id: string; recurring: string }[]
