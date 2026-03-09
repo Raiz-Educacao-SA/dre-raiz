@@ -106,13 +106,15 @@ BEGIN
 
   WITH
   -- 1. Receita bruta por filial/mês (contas definidas em pdd_contas, recurring='Sim')
+  --    Empilha transactions + transactions_manual, respeitando override_contabil
   receita_base AS (
+    -- 1a. transactions (contábil) — exclui linhas com override ativo
     SELECT
       LEFT(t.date::text, 7)                           AS ym,
       t.filial,
-      COALESCE(MAX(t.nome_filial), MAX(t.filial))     AS nome_filial,
-      MAX(t.marca)                                    AS marca,
-      SUM(t.amount)                                   AS receita_bruta
+      t.nome_filial,
+      t.marca,
+      t.amount
     FROM transactions t
     INNER JOIN pdd_contas pc
       ON t.tag0  = pc.tag0
@@ -121,8 +123,43 @@ BEGIN
       AND COALESCE(t.recurring, 'Sim') = 'Sim'
       AND t.filial IS NOT NULL
       AND COALESCE(t.chave_id, '') NOT LIKE 'PDD_REAL_%'
+      AND NOT EXISTS (
+        SELECT 1 FROM override_contabil oc
+        WHERE oc.ativo = true
+          AND oc.tag01 = COALESCE(t.tag01, 'Sem Subclassificação')
+          AND (oc.marca  IS NULL OR oc.marca  = t.marca)
+          AND (oc.filial IS NULL OR oc.filial = t.nome_filial)
+          AND (oc.mes_de  IS NULL OR LEFT(t.date::text, 7) >= oc.mes_de)
+          AND (oc.mes_ate IS NULL OR LEFT(t.date::text, 7) <= oc.mes_ate)
+      )
+
+    UNION ALL
+
+    -- 1b. transactions_manual — sempre incluso (é a substituição)
+    SELECT
+      LEFT(t.date::text, 7)                           AS ym,
+      t.filial,
+      t.nome_filial,
+      t.marca,
+      t.amount
+    FROM transactions_manual t
+    INNER JOIN pdd_contas pc
+      ON t.tag0  = pc.tag0
+     AND t.tag01 = pc.tag01
+    WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
+      AND COALESCE(t.recurring, 'Sim') = 'Sim'
+      AND t.filial IS NOT NULL
+  ),
+  receita_agg AS (
+    SELECT
+      ym,
+      filial,
+      COALESCE(MAX(nome_filial), MAX(filial))     AS nome_filial,
+      MAX(marca)                                  AS marca,
+      SUM(amount)                                 AS receita_bruta
+    FROM receita_base
     GROUP BY 1, 2
-    HAVING SUM(t.amount) <> 0
+    HAVING SUM(amount) <> 0
   ),
   -- 2. Aplica share_pdd por marca
   calculo AS (
@@ -134,7 +171,7 @@ BEGIN
       rb.receita_bruta,
       sp.valor                                          AS share_pdd_pct,
       ROUND(rb.receita_bruta * sp.valor / 100 * -1, 2)  AS valor_pdd
-    FROM receita_base rb
+    FROM receita_agg rb
     INNER JOIN share_pdd sp ON sp.marca = rb.marca
   )
   -- 3. UPSERT no log de auditoria
