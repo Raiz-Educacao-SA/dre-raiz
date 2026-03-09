@@ -55,7 +55,7 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'override'>('import');
   const [dadosSubTab, setDadosSubTab] = useState<'importar' | 'exportar'>('importar');
   const [usersSubTab, setUsersSubTab] = useState<'cadastro' | 'engajamento'>('cadastro');
 
@@ -114,6 +114,16 @@ const AdminPanel: React.FC = () => {
   const [tribFile, setTribFile] = useState<File | null>(null);
   const [tribImportPreview, setTribImportPreview] = useState<{ marca: string; filial: string; tipo_receita: string; pis_cofins: number; iss: number; paa: number }[]>([]);
   const [tribImporting, setTribImporting] = useState(false);
+
+  // Estados para aba Override Contábil
+  const [overrideData, setOverrideData] = useState<supabaseService.OverrideContabil[]>([]);
+  const [overrideLoading, setOverrideLoading] = useState(false);
+  const [overrideShowForm, setOverrideShowForm] = useState(false);
+  const [overrideSaving, setOverrideSaving] = useState(false);
+  const [overrideMessage, setOverrideMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [overrideForm, setOverrideForm] = useState({
+    tag01: '', marca: '', filial: '', mes_de: '', mes_ate: '', motivo: '',
+  });
 
   // Estado para busca de usuários
   const [userSearch, setUserSearch] = useState('');
@@ -203,6 +213,7 @@ const AdminPanel: React.FC = () => {
     if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
     if (activeTab === 'smtp' && !smtpConfigured && !smtpLoading) loadSmtpConfig();
     if (activeTab === 'cronograma') loadCronogramaData();
+    if (activeTab === 'override' && overrideData.length === 0) loadOverrideData();
   }, [activeTab]);
 
   // Realtime: sincroniza share_pdd e pdd_contas com banco
@@ -222,8 +233,62 @@ const AdminPanel: React.FC = () => {
     const unsub5 = supabaseService.subscribeCronogramaItems(() => {
       if (activeTab === 'cronograma') loadCronogramaData();
     });
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
+    const unsub6 = supabaseService.subscribeOverrideContabil(() => {
+      supabaseService.getOverrideContabil().then(setOverrideData);
+    });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); };
   }, []);
+
+  // ---- Override Contábil handlers ----
+  const loadOverrideData = async () => {
+    setOverrideLoading(true);
+    const data = await supabaseService.getOverrideContabil();
+    setOverrideData(data);
+    setOverrideLoading(false);
+  };
+
+  const handleOverrideAdd = async () => {
+    if (!overrideForm.tag01.trim()) {
+      setOverrideMessage({ type: 'error', text: 'Tag01 é obrigatório.' });
+      return;
+    }
+    setOverrideSaving(true);
+    const result = await supabaseService.insertOverrideContabil({
+      tag01: overrideForm.tag01.trim(),
+      marca: overrideForm.marca.trim() || null,
+      filial: overrideForm.filial.trim() || null,
+      mes_de: overrideForm.mes_de || null,
+      mes_ate: overrideForm.mes_ate || null,
+      motivo: overrideForm.motivo.trim(),
+      ativo: true,
+      created_by: currentUser?.email || null,
+    });
+    setOverrideSaving(false);
+    if (result) {
+      setOverrideMessage({ type: 'success', text: 'Override criado com sucesso.' });
+      setOverrideForm({ tag01: '', marca: '', filial: '', mes_de: '', mes_ate: '', motivo: '' });
+      setOverrideShowForm(false);
+      loadOverrideData();
+    } else {
+      setOverrideMessage({ type: 'error', text: 'Erro ao criar override. Verifique permissões.' });
+    }
+  };
+
+  const handleOverrideToggle = async (id: number, ativo: boolean) => {
+    const res = await supabaseService.updateOverrideContabil(id, { ativo: !ativo });
+    if (res.ok) loadOverrideData();
+    else setOverrideMessage({ type: 'error', text: res.error || 'Erro ao atualizar.' });
+  };
+
+  const handleOverrideDelete = async (id: number) => {
+    const ok = await supabaseService.deleteOverrideContabil(id);
+    if (ok) {
+      setOverrideMessage({ type: 'success', text: 'Override removido.' });
+      loadOverrideData();
+    } else {
+      setOverrideMessage({ type: 'error', text: 'Erro ao remover.' });
+    }
+  };
 
   // ---- Cronograma handlers ----
   const DEFAULT_AREA_PRESETS = [
@@ -1898,6 +1963,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'cronograma' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('override')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'override'
+              ? 'text-red-700 bg-red-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Layers size={14} />
+            Override
+          </div>
+          {activeTab === 'override' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -4967,6 +5048,194 @@ const AdminPanel: React.FC = () => {
         </div>
       )}
 
+
+      {/* Aba: Override Contábil */}
+      {activeTab === 'override' && (
+        <div className="space-y-4">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-black text-gray-800">Override Contábil</h3>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Substitui dados do contábil (transactions) por lançamentos manuais (transactions_manual) na DRE e Lançamentos.
+                Quando ativo, as linhas contábeis do tag01/marca/período são ignoradas.
+              </p>
+            </div>
+            <button
+              onClick={() => setOverrideShowForm(!overrideShowForm)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-xs uppercase transition-all"
+            >
+              <Plus size={14} />
+              Nova Regra
+            </button>
+          </div>
+
+          {/* Mensagem */}
+          {overrideMessage && (
+            <div className={`p-3 rounded-lg text-sm font-medium flex items-center gap-2 ${
+              overrideMessage.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+            }`}>
+              {overrideMessage.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+              {overrideMessage.text}
+              <button onClick={() => setOverrideMessage(null)} className="ml-auto text-gray-400 hover:text-gray-600"><X size={14} /></button>
+            </div>
+          )}
+
+          {/* Formulário novo override */}
+          {overrideShowForm && (
+            <div className="bg-red-50/50 border border-red-200 rounded-xl p-4 space-y-3">
+              <h4 className="font-bold text-sm text-red-800">Nova Regra de Override</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Tag01 (Centro de Custo) *</label>
+                  <input
+                    value={overrideForm.tag01}
+                    onChange={e => setOverrideForm(f => ({ ...f, tag01: e.target.value }))}
+                    placeholder="Ex: MARKETING DIGITAL"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-300 focus:border-red-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Marca <span className="text-gray-400">(vazio = todas)</span></label>
+                  <input
+                    value={overrideForm.marca}
+                    onChange={e => setOverrideForm(f => ({ ...f, marca: e.target.value }))}
+                    placeholder="Ex: COC"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-300 focus:border-red-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Filial <span className="text-gray-400">(vazio = todas)</span></label>
+                  <input
+                    value={overrideForm.filial}
+                    onChange={e => setOverrideForm(f => ({ ...f, filial: e.target.value }))}
+                    placeholder="Ex: SP - Matriz"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-300 focus:border-red-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Mês Início <span className="text-gray-400">(vazio = sempre)</span></label>
+                  <input
+                    type="month"
+                    value={overrideForm.mes_de}
+                    onChange={e => setOverrideForm(f => ({ ...f, mes_de: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-300 focus:border-red-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Mês Fim <span className="text-gray-400">(vazio = permanente)</span></label>
+                  <input
+                    type="month"
+                    value={overrideForm.mes_ate}
+                    onChange={e => setOverrideForm(f => ({ ...f, mes_ate: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-300 focus:border-red-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">Motivo</label>
+                  <input
+                    value={overrideForm.motivo}
+                    onChange={e => setOverrideForm(f => ({ ...f, motivo: e.target.value }))}
+                    placeholder="Ex: Contábil com rateio incorreto"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-300 focus:border-red-400 outline-none"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleOverrideAdd}
+                  disabled={overrideSaving || !overrideForm.tag01.trim()}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold text-xs uppercase transition-all disabled:opacity-50"
+                >
+                  {overrideSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Salvar
+                </button>
+                <button
+                  onClick={() => { setOverrideShowForm(false); setOverrideForm({ tag01: '', marca: '', filial: '', mes_de: '', mes_ate: '', motivo: '' }); }}
+                  className="px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Tabela de overrides */}
+          {overrideLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={24} className="animate-spin text-red-500" />
+              <span className="ml-2 text-sm text-gray-500">Carregando...</span>
+            </div>
+          ) : overrideData.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <Layers size={40} className="mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Nenhuma regra de override cadastrada.</p>
+              <p className="text-xs mt-1">Clique em "Nova Regra" para substituir dados contábeis por manuais.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto border border-gray-200 rounded-xl">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="px-3 py-2.5 text-left font-bold text-xs text-gray-600 uppercase">Status</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-xs text-gray-600 uppercase">Tag01</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-xs text-gray-600 uppercase">Marca</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-xs text-gray-600 uppercase">Filial</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-xs text-gray-600 uppercase">Período</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-xs text-gray-600 uppercase">Motivo</th>
+                    <th className="px-3 py-2.5 text-left font-bold text-xs text-gray-600 uppercase">Criado por</th>
+                    <th className="px-3 py-2.5 text-center font-bold text-xs text-gray-600 uppercase">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overrideData.map(row => (
+                    <tr key={row.id} className={`border-b border-gray-100 hover:bg-gray-50 transition-colors ${!row.ativo ? 'opacity-50 bg-gray-50' : ''}`}>
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => handleOverrideToggle(row.id, row.ativo)}
+                          className={`px-2 py-0.5 rounded-full text-xs font-bold transition-all ${
+                            row.ativo
+                              ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                              : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                          }`}
+                        >
+                          {row.ativo ? 'ATIVO' : 'INATIVO'}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-gray-800">{row.tag01}</td>
+                      <td className="px-3 py-2 text-gray-600">{row.marca || <span className="text-gray-300 italic">Todas</span>}</td>
+                      <td className="px-3 py-2 text-gray-600">{row.filial || <span className="text-gray-300 italic">Todas</span>}</td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {row.mes_de || '...'} {' → '} {row.mes_ate || <span className="text-red-500 font-bold text-xs">PERMANENTE</span>}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500 text-xs max-w-[200px] truncate" title={row.motivo}>{row.motivo || '-'}</td>
+                      <td className="px-3 py-2 text-gray-400 text-xs">{row.created_by?.split('@')[0] || '-'}</td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          onClick={() => handleOverrideDelete(row.id)}
+                          className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-all"
+                          title="Excluir regra"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Nota explicativa */}
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+            <strong>Como funciona:</strong> Quando uma regra está <strong>ATIVA</strong>, os dados do contábil (transactions) para o tag01/marca/período
+            são <strong>ignorados</strong> na DRE Gerencial, Lançamentos e Justificativas. Apenas os dados de transactions_manual contam.
+            <br />
+            <strong>Importante:</strong> Após criar/alterar regras, é necessário executar <code className="bg-amber-100 px-1 rounded">REFRESH MATERIALIZED VIEW dre_agg</code> no Supabase
+            para que o drill-down reflita as mudanças. A DRE Gerencial (get_soma_tags) atualiza em tempo real.
+          </div>
+        </div>
+      )}
 
     </div>
   );

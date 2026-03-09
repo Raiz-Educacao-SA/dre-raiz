@@ -2665,6 +2665,93 @@ export const runNormalizarFornecedores = async (): Promise<{ ok: boolean; data?:
 };
 
 // ============================================
+// Override Contábil (substituição contábil → manual)
+// ============================================
+
+export interface OverrideContabil {
+  id: number;
+  tag01: string;
+  marca: string | null;
+  filial: string | null;
+  mes_de: string | null;
+  mes_ate: string | null;
+  motivo: string;
+  ativo: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const getOverrideContabil = async (): Promise<OverrideContabil[]> => {
+  const { data, error } = await supabase
+    .from('override_contabil')
+    .select('*')
+    .order('tag01')
+    .order('marca');
+  if (error) {
+    console.error('Erro ao buscar override_contabil:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const insertOverrideContabil = async (
+  row: Omit<OverrideContabil, 'id' | 'created_at' | 'updated_at'>
+): Promise<OverrideContabil | null> => {
+  const { data, error } = await supabase
+    .from('override_contabil')
+    .insert(row)
+    .select()
+    .single();
+  if (error) {
+    console.error('Erro ao inserir override_contabil:', error);
+    return null;
+  }
+  return data;
+};
+
+export const updateOverrideContabil = async (
+  id: number,
+  updates: Partial<Omit<OverrideContabil, 'id' | 'created_at' | 'updated_at'>>
+): Promise<{ ok: boolean; error?: string }> => {
+  const { data, error } = await supabase
+    .from('override_contabil')
+    .update(updates)
+    .eq('id', id)
+    .select();
+  if (error) {
+    console.error('Erro ao atualizar override_contabil:', error);
+    return { ok: false, error: error.message };
+  }
+  if (!data || data.length === 0) {
+    return { ok: false, error: 'Nenhuma linha atualizada. Verifique permissões (RLS).' };
+  }
+  return { ok: true };
+};
+
+export const deleteOverrideContabil = async (id: number): Promise<boolean> => {
+  const { error } = await supabase
+    .from('override_contabil')
+    .delete()
+    .eq('id', id);
+  if (error) {
+    console.error('Erro ao deletar override_contabil:', error);
+    return false;
+  }
+  return true;
+};
+
+export const subscribeOverrideContabil = (onChange: () => void) => {
+  const channel = supabase
+    .channel('override_contabil_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'override_contabil' }, () => {
+      onChange();
+    })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
+
+// ============================================
 // Rateio Raiz Log
 // ============================================
 
