@@ -97,6 +97,11 @@ BEGIN
     v_ant := v_ant + v_rows;
   END LOOP;
 
+  -- Refresh dre_agg para refletir as mudanças no drill-down da DRE Gerencial
+  IF (v_real + v_orcado + v_ant) > 0 THEN
+    REFRESH MATERIALIZED VIEW dre_agg;
+  END IF;
+
   RETURN jsonb_build_object(
     'status', 'ok',
     'real', v_real,

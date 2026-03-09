@@ -1606,11 +1606,18 @@ export const bulkUpdateRecurring = async (
 // ========== MANUAL CHANGES ==========
 
 /** Query leve: apenas COUNT de pendentes — para badge do Sidebar no boot (<100ms) */
-export const getPendingChangesCount = async (): Promise<number> => {
-  const { count, error } = await supabase
+export const getPendingChangesCount = async (userEmail?: string, isApprover?: boolean): Promise<number> => {
+  let query = supabase
     .from('manual_changes')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'Pendente');
+
+  // Se NÃO é approver/admin, contar apenas as solicitações do próprio usuário
+  if (!isApprover && userEmail) {
+    query = query.eq('requested_by', userEmail);
+  }
+
+  const { count, error } = await query;
   if (error) {
     console.error('❌ Erro ao contar pendentes:', error);
     return 0;

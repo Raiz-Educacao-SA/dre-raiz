@@ -213,11 +213,13 @@ const App: React.FC = () => {
   const manualChangesLoadedRef = React.useRef(false);
 
   // Boot: buscar apenas contagem de pendentes para o badge do Sidebar
+  // Approver/Admin vê TODAS as pendentes; demais veem apenas as próprias solicitações
   useEffect(() => {
-    supabaseService.getPendingChangesCount?.()
+    if (!user?.email) return;
+    supabaseService.getPendingChangesCount?.(user.email, isApprover)
       .then(count => setPendingCountFast(count))
       .catch(() => {}); // silencioso — badge mostra 0 se falhar
-  }, []);
+  }, [user?.email, isApprover]);
 
   // Carregar dados completos quando navegar para Aprovações
   useEffect(() => {
@@ -265,13 +267,16 @@ const App: React.FC = () => {
   }, [currentView]);
 
   // Contador de pendências para o Sidebar
-  // Usa dados completos se carregados, senão usa contagem rápida do boot
+  // Approver/Admin: conta TODAS as pendentes (precisa aprovar)
+  // Demais: conta apenas as PRÓPRIAS solicitações (requested_by = user.email)
   const pendingApprovalsCount = useMemo(() => {
     if (manualChanges.length > 0) {
-      return manualChanges.filter(c => c.status === 'Pendente').length;
+      const pending = manualChanges.filter(c => c.status === 'Pendente');
+      if (isApprover) return pending.length;
+      return pending.filter(c => c.requestedBy === user?.email).length;
     }
     return pendingCountFast;
-  }, [manualChanges, pendingCountFast]);
+  }, [manualChanges, pendingCountFast, isApprover, user?.email]);
 
   // Marcas únicas presentes nos dados
   // ✅ Filtrar apenas marcas permitidas (RLS)
@@ -579,6 +584,9 @@ const App: React.FC = () => {
       approvedByName: user?.name || 'Usuário Desconhecido',
     };
 
+    // Campos aplicados na transação (para atualizar estado local com TODOS os campos, não só status)
+    let appliedUpdates: Record<string, any> = {};
+
     if (change.type === 'RATEIO') {
       const rawParts = (parsedValue.transactions || (Array.isArray(parsedValue) ? parsedValue : [])) as Transaction[];
       const newParts = rawParts.map(({ updated_at, id, chave_id, ...rest }: any, idx: number) => ({
@@ -615,7 +623,8 @@ const App: React.FC = () => {
       }
       if (restData.date) updatedData.date = restData.date;
       if (restData.marca) updatedData.marca = restData.marca;
-      if (restData.recurring) updatedData.recurring = restData.recurring;
+      // recurring: aceitar qualquer valor, inclusive 'Não' (truthy check já funciona, mas ser explícito)
+      if (restData.recurring !== undefined && restData.recurring !== null) updatedData.recurring = restData.recurring;
       if (restData.tag01) updatedData.tag01 = restData.tag01;
       if (restData.tag02) updatedData.tag02 = restData.tag02;
       if (restData.tag03) updatedData.tag03 = restData.tag03;
@@ -630,6 +639,8 @@ const App: React.FC = () => {
       ]);
       console.log('📋 _applyChange updateSuccess:', updateSuccess);
       if (!updateSuccess) throw new Error('Falha ao atualizar transação no Supabase');
+
+      appliedUpdates = updatedData;
     }
 
     // Atualizar estado local imediatamente (UI reage sem esperar refreshData)
@@ -637,12 +648,11 @@ const App: React.FC = () => {
       c.id === changeId ? { ...c, ...approvalMeta } : c
     ));
 
-    // Atualizar searchedTransactions para refletir o novo status
-    const newStatus = change.type === 'EXCLUSAO' ? 'Excluído' : change.type === 'RATEIO' ? 'Rateado' : 'Ajustado';
+    // Atualizar searchedTransactions com TODOS os campos aplicados (não só status)
     setSearchedTransactions(prev =>
       change.type === 'EXCLUSAO' || change.type === 'RATEIO'
         ? prev.filter(t => t.id !== change.transactionId)
-        : prev.map(t => t.id === change.transactionId ? { ...t, status: newStatus } : t)
+        : prev.map(t => t.id === change.transactionId ? { ...t, ...appliedUpdates } : t)
     );
   }, [manualChanges, user]);
 

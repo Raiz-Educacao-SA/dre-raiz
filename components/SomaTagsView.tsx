@@ -1068,6 +1068,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // Refresh forçado: invalida cache antes de buscar
   const forceRefresh = useCallback(() => {
     invalidateSomaTagsCache();
+    setDimensionCache({});  // Limpa cache de drill-down (vendor, tag02, etc.)
     fetchData();
   }, [fetchData]);
 
