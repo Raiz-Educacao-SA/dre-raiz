@@ -27,21 +27,23 @@ $$;
 
 -- 2. get_conta_contabil_options()
 --    Retorna contas da tabela tags com cod_conta de exatamente 14 caracteres
+--    tag0 resolvido via tag0_map (JOIN) para evitar "99 cadastrar tag0"
 CREATE OR REPLACE FUNCTION get_conta_contabil_options()
 RETURNS SETOF jsonb
 LANGUAGE sql STABLE
 AS $$
   SELECT jsonb_build_object(
-    'cod_conta',    cod_conta,
-    'nome_nat_orc', COALESCE(nome_nat_orc, nat_orc),
-    'tag0',         tag0,
-    'tag01',        tag1,
-    'tag02',        tag2,
-    'tag03',        tag3
+    'cod_conta',    t.cod_conta,
+    'nome_nat_orc', COALESCE(t.nome_nat_orc, t.nat_orc),
+    'tag0',         COALESCE(tm.tag0, t.tag0),
+    'tag01',        t.tag1,
+    'tag02',        t.tag2,
+    'tag03',        t.tag3
   )
-  FROM tags
-  WHERE cod_conta IS NOT NULL AND LENGTH(cod_conta) = 14
-  ORDER BY cod_conta;
+  FROM tags t
+  LEFT JOIN tag0_map tm ON LOWER(TRIM(t.tag1)) = LOWER(TRIM(tm.tag1_norm))
+  WHERE t.cod_conta IS NOT NULL AND LENGTH(t.cod_conta) = 14
+  ORDER BY t.cod_conta;
 $$;
 
 -- 3. get_tag03_for_tag01s(p_tag01s text[])
