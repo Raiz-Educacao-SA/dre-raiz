@@ -3446,6 +3446,45 @@ const AdminPanel: React.FC = () => {
             </div>
           )}
 
+          {/* Árvore: Como o tributo é calculado */}
+          <div className="mb-4 bg-white/70 border border-amber-200 rounded-xl p-4">
+            <h4 className="text-xs font-black text-amber-800 mb-3 flex items-center gap-1.5">
+              <Calculator size={14} className="text-amber-600" />
+              Como o tributo é calculado automaticamente
+            </h4>
+            <div className="text-[11px] text-gray-700 font-mono leading-relaxed space-y-0.5">
+              <div className="font-bold text-amber-700">Receita (tag0 = '01. RECEITA LÍQUIDA')</div>
+              <div className="pl-3 text-gray-500">│</div>
+              <div className="pl-3">├─ <span className="text-blue-600 font-semibold">transactions</span> <span className="text-gray-400">(contábil)</span> — <span className="text-red-500 text-[10px]">exclui se override ativo</span></div>
+              <div className="pl-3">└─ <span className="text-green-600 font-semibold">transactions_manual</span> — <span className="text-green-500 text-[10px]">sempre incluso</span></div>
+              <div className="pl-3 text-gray-500">│</div>
+              <div className="pl-3 text-gray-600">▼ Agregar por: <span className="font-bold text-gray-800">filial + mês + tipo_receita (tag01)</span></div>
+              <div className="pl-3 text-gray-500">│</div>
+              <div className="pl-3 text-gray-600">▼ Cruzar com <span className="font-bold text-amber-700">tributos_config</span> <span className="text-gray-400">(marca + filial + tipo_receita)</span></div>
+              <div className="pl-3 text-gray-500">│</div>
+              <div className="pl-3">├─ <span className="font-bold text-purple-700">PIS/COFINS</span>: receita × alíquota% × -1 <span className="text-gray-400">→ TRIB_PISCOFINS_YYYY-MM_FILIAL_TIPO</span></div>
+              <div className="pl-3">├─ <span className="font-bold text-purple-700">ISS</span>: receita × alíquota% × -1 <span className="text-gray-400">→ TRIB_ISS_YYYY-MM_FILIAL_TIPO</span></div>
+              <div className="pl-3">└─ <span className="font-bold text-purple-700">PAA</span>: receita × alíquota% × -1 <span className="text-gray-400">→ TRIB_PAA_YYYY-MM_FILIAL_TIPO</span></div>
+              <div className="pl-3 text-gray-500">│</div>
+              <div className="pl-3 text-gray-600">▼ UPSERT em <span className="font-bold text-gray-800">transactions</span> <span className="text-gray-400">(tag0 = '02. CUSTOS VARIÁVEIS')</span></div>
+              <div className="pl-3 text-gray-600">▼ Refresh <span className="font-bold text-gray-800">dre_agg</span></div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-3 text-[10px]">
+              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                <Clock size={11} className="text-amber-500" />
+                <span className="text-amber-700 font-bold">Automático a cada 15 min via pg_cron</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1">
+                <Hash size={11} className="text-blue-500" />
+                <span className="text-blue-700 font-bold">chave_id idempotente — não duplica ao re-executar</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-lg px-2 py-1">
+                <CheckCircle size={11} className="text-green-500" />
+                <span className="text-green-700 font-bold">Valores negativos (dedução de receita)</span>
+              </div>
+            </div>
+          </div>
+
           {/* Layout 2 colunas */}
           <div className="flex gap-4">
             {/* === COLUNA ESQUERDA — Tabela completa === */}
