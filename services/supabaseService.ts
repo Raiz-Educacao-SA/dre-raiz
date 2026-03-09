@@ -2901,6 +2901,29 @@ export const subscribeTributosConfig = (onChange: () => void) => {
 };
 
 // ============================================
+// Tributos — Pendências (receita sem config)
+// ============================================
+
+export interface TributoPendente {
+  o_marca: string;
+  o_filial: string;
+  o_tipo_receita: string;
+  o_meses: number;
+  o_receita_total: number;
+}
+
+export async function getTributosPendentes(): Promise<TributoPendente[]> {
+  try {
+    const { data, error } = await supabase.rpc('get_tributos_pendentes');
+    if (error) throw error;
+    return (data || []) as TributoPendente[];
+  } catch (err) {
+    console.error('Erro ao buscar tributos pendentes:', err);
+    return [];
+  }
+}
+
+// ============================================
 // Variance Justifications — Cobrança de Desvios
 // ============================================
 

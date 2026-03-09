@@ -3,19 +3,18 @@
 -- Cálculo automático de tributos (PIS/COFINS, ISS, PAA) sobre receita
 --
 -- Lógica:
---   1. Soma receita por filial/mês/tipo_receita (tag01) de tag0='01. RECEITA LÍQUIDA'
+--   1. Soma receita por filial/mês/tipo_receita (tag01) de tag0='01. RECEITA LIQUIDA'
 --      Empilha transactions + transactions_manual, respeitando override_contabil
 --   2. Cruza com tributos_config (alíquotas por marca+filial+tipo_receita)
 --   3. Calcula: receita × alíquota / 100 × -1 (dedução = negativo)
 --   4. Gera 3 lançamentos por combinação: PIS/COFINS, ISS, PAA
---   5. UPSERT em tributos_log + transactions
+--   5. UPSERT em tributos_log + DELETE/INSERT em transactions_manual
 --   6. Refresh dre_agg
 --   7. pg_cron a cada 15 minutos
 --
--- Campos em transactions:
---   conta_contabil = por tipo: '4.1.1.01.01.01' (PIS/COFINS), '4.1.1.01.01.02' (ISS), '4.1.1.01.01.03' (PAA)
---   tag0           = '02. CUSTOS VARIÁVEIS'
---   tag01          = 'Tributos' (ou via de-para tags)
+-- Destino: transactions_manual (dado gerencial, não contábil)
+--   conta_contabil = definida no tributos_config ou default
+--   tag0/tag01/tag02/tag03 = populados automaticamente pelos triggers da tabela
 --   vendor         = 'Planejamento Financeiro'
 --   chave_id       = 'TRIB_{TIPO}_YYYY-MM_FILIAL_TIPORECEITA' (idempotente)
 -- ══════════════════════════════════════════════════════════════════════
@@ -51,6 +50,16 @@ ALTER TABLE tributos_log DISABLE ROW LEVEL SECURITY;
 
 
 -- ══════════════════════════════════════════════════════════════════════
+-- PASSO 1b — Garantir UNIQUE no chave_id de transactions_manual
+-- (necessário para ON CONFLICT funcionar)
+-- ══════════════════════════════════════════════════════════════════════
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tm_chave_id_unique
+  ON transactions_manual (chave_id)
+  WHERE chave_id IS NOT NULL;
+
+
+-- ══════════════════════════════════════════════════════════════════════
 -- PASSO 2 — Função principal
 -- ══════════════════════════════════════════════════════════════════════
 
@@ -66,27 +75,14 @@ LANGUAGE plpgsql SECURITY DEFINER AS $$
 DECLARE
   v_ts       TIMESTAMPTZ := NOW();
   v_tag0_out TEXT := '02. CUSTOS VARIÁVEIS';
-  v_tag01    TEXT := 'Tributos';
-  v_tag02    TEXT;
-  v_tag03    TEXT;
   v_vendor   TEXT := 'Planejamento Financeiro';
 BEGIN
   SET LOCAL row_security = off;
 
-  -- Buscar tags via de-para da conta contábil de tributos (se existir)
-  SELECT cc.tag1, cc.tag2, cc.tag3
-    INTO v_tag01, v_tag02, v_tag03
-  FROM tags cc
-  WHERE cc.cod_conta = '4.1.1.01.01.01'
-  LIMIT 1;
-
-  v_tag01 := COALESCE(v_tag01, 'Tributos');
-  v_tag02 := COALESCE(v_tag02, 'Impostos sobre Receita');
-  v_tag03 := COALESCE(v_tag03, 'Impostos sobre Receita');
-
   WITH
   -- 1. Receita bruta por filial/mês/tag01 (tipo_receita)
-  --    Tag0 = '01. RECEITA LÍQUIDA', recurring='Sim'
+  --    Tag0 = '01. RECEITA LIQUIDA'
+  --    Tag01 IN (Integral, Material Didático, Receita De Mensalidade, Receitas Extras, Receitas Não Operacionais)
   --    Empilha transactions + transactions_manual, respeitando override_contabil
   receita_base AS (
     -- 1a. transactions (contábil) — exclui linhas com override ativo
@@ -98,7 +94,14 @@ BEGIN
       t.tag01                AS tipo_receita,
       t.amount
     FROM transactions t
-    WHERE t.tag0 = '01. RECEITA LÍQUIDA'
+    WHERE t.tag0 = '01. RECEITA LIQUIDA'
+      AND t.tag01 IN (
+        'Integral',
+        'Material Didático',
+        'Receita De Mensalidade',
+        'Receitas Extras',
+        'Receitas Não Operacionais'
+      )
       AND COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND COALESCE(t.recurring, 'Sim') = 'Sim'
       AND t.filial IS NOT NULL
@@ -115,7 +118,7 @@ BEGIN
 
     UNION ALL
 
-    -- 1b. transactions_manual — sempre incluso
+    -- 1b. transactions_manual — sempre incluso (exclui tributos calculados anteriormente)
     SELECT
       LEFT(t.date::text, 7)  AS ym,
       t.filial,
@@ -124,10 +127,18 @@ BEGIN
       t.tag01                AS tipo_receita,
       t.amount
     FROM transactions_manual t
-    WHERE t.tag0 = '01. RECEITA LÍQUIDA'
+    WHERE t.tag0 = '01. RECEITA LIQUIDA'
+      AND t.tag01 IN (
+        'Integral',
+        'Material Didático',
+        'Receita De Mensalidade',
+        'Receitas Extras',
+        'Receitas Não Operacionais'
+      )
       AND COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND COALESCE(t.recurring, 'Sim') = 'Sim'
       AND t.filial IS NOT NULL
+      AND COALESCE(t.chave_id, '') NOT LIKE 'TRIB_%'
   ),
 
   -- 2. Agregar por filial/mês/tipo_receita
@@ -159,8 +170,9 @@ BEGIN
       tc.iss                                                     AS iss_pct,
       ROUND(ra.receita_bruta * tc.iss / 100 * -1, 2)            AS iss_val,
       tc.paa                                                     AS paa_pct,
-      ROUND(ra.receita_bruta * tc.paa / 100 * -1, 2)            AS paa_val,
-      ROUND(ra.receita_bruta * (tc.pis_cofins + tc.iss + tc.paa) / 100 * -1, 2) AS total_tributos
+      ROUND(ra.receita_bruta * tc.paa / 100, 2)                 AS paa_val,       -- PAA positivo
+      ROUND(ra.receita_bruta * (tc.pis_cofins + tc.iss) / 100 * -1, 2)
+        + ROUND(ra.receita_bruta * tc.paa / 100, 2)             AS total_tributos
     FROM receita_agg ra
     INNER JOIN tributos_config tc
       ON tc.marca = ra.marca
@@ -191,8 +203,8 @@ BEGIN
     paa_val        = EXCLUDED.paa_val,
     total_tributos = EXCLUDED.total_tributos;
 
-  -- 5. UPSERT em transactions — PIS/COFINS (só se alíquota > 0)
-  INSERT INTO transactions (
+  -- 5. UPSERT em transactions_manual — PIS/COFINS (só se valor <> 0)
+  INSERT INTO transactions_manual (
     id, date, description, category, conta_contabil,
     amount, type, scenario, status,
     filial, nome_filial, marca,
@@ -200,11 +212,11 @@ BEGIN
     vendor, recurring, chave_id
   )
   SELECT
-    gen_random_uuid()::text,
+    'TRIB_PISCOFINS_' || l.year_month || '_' || l.filial || '_' || REPLACE(l.tipo_receita, ' ', '_'),
     (l.year_month || '-01'),
     'PIS/COFINS s/ ' || l.tipo_receita,
     'Tributos',
-    '4.1.1.01.01.01',
+    '3.1.3.01.01.03',
     l.pis_cofins_val,
     v_tag0_out,
     'Real',
@@ -213,28 +225,25 @@ BEGIN
     l.nome_filial,
     l.marca,
     v_tag0_out,
-    v_tag01,
-    v_tag02,
-    v_tag03,
+    NULL,  -- tag01: será populado pelo trigger fn_auto_populate_tags_from_conta
+    NULL,  -- tag02: idem
+    NULL,  -- tag03: idem
     v_vendor,
     'Sim',
     'TRIB_PISCOFINS_' || l.year_month || '_' || l.filial || '_' || REPLACE(l.tipo_receita, ' ', '_')
   FROM tributos_log l
   WHERE l.calculated_at = v_ts
     AND l.pis_cofins_val <> 0
-  ON CONFLICT (chave_id) DO UPDATE SET
-    amount      = EXCLUDED.amount,
-    description = EXCLUDED.description,
-    nome_filial = EXCLUDED.nome_filial,
-    marca       = EXCLUDED.marca,
-    tag0        = EXCLUDED.tag0,
-    tag01       = EXCLUDED.tag01,
-    tag02       = EXCLUDED.tag02,
-    tag03       = EXCLUDED.tag03,
-    updated_at  = NOW();
+  ON CONFLICT (chave_id) WHERE chave_id IS NOT NULL DO UPDATE SET
+    amount         = EXCLUDED.amount,
+    conta_contabil = EXCLUDED.conta_contabil,
+    description    = EXCLUDED.description,
+    nome_filial    = EXCLUDED.nome_filial,
+    marca          = EXCLUDED.marca,
+    updated_at     = NOW();
 
-  -- 6. UPSERT em transactions — ISS (só se alíquota > 0)
-  INSERT INTO transactions (
+  -- 6. UPSERT em transactions_manual — ISS (só se valor <> 0)
+  INSERT INTO transactions_manual (
     id, date, description, category, conta_contabil,
     amount, type, scenario, status,
     filial, nome_filial, marca,
@@ -242,11 +251,11 @@ BEGIN
     vendor, recurring, chave_id
   )
   SELECT
-    gen_random_uuid()::text,
+    'TRIB_ISS_' || l.year_month || '_' || l.filial || '_' || REPLACE(l.tipo_receita, ' ', '_'),
     (l.year_month || '-01'),
     'ISS s/ ' || l.tipo_receita,
     'Tributos',
-    '4.1.1.01.01.02',
+    '3.1.3.01.01.01',
     l.iss_val,
     v_tag0_out,
     'Real',
@@ -255,28 +264,25 @@ BEGIN
     l.nome_filial,
     l.marca,
     v_tag0_out,
-    v_tag01,
-    v_tag02,
-    v_tag03,
+    NULL,
+    NULL,
+    NULL,
     v_vendor,
     'Sim',
     'TRIB_ISS_' || l.year_month || '_' || l.filial || '_' || REPLACE(l.tipo_receita, ' ', '_')
   FROM tributos_log l
   WHERE l.calculated_at = v_ts
     AND l.iss_val <> 0
-  ON CONFLICT (chave_id) DO UPDATE SET
-    amount      = EXCLUDED.amount,
-    description = EXCLUDED.description,
-    nome_filial = EXCLUDED.nome_filial,
-    marca       = EXCLUDED.marca,
-    tag0        = EXCLUDED.tag0,
-    tag01       = EXCLUDED.tag01,
-    tag02       = EXCLUDED.tag02,
-    tag03       = EXCLUDED.tag03,
-    updated_at  = NOW();
+  ON CONFLICT (chave_id) WHERE chave_id IS NOT NULL DO UPDATE SET
+    amount         = EXCLUDED.amount,
+    conta_contabil = EXCLUDED.conta_contabil,
+    description    = EXCLUDED.description,
+    nome_filial    = EXCLUDED.nome_filial,
+    marca          = EXCLUDED.marca,
+    updated_at     = NOW();
 
-  -- 7. UPSERT em transactions — PAA (só se alíquota > 0)
-  INSERT INTO transactions (
+  -- 7. UPSERT em transactions_manual — PAA (só se valor <> 0)
+  INSERT INTO transactions_manual (
     id, date, description, category, conta_contabil,
     amount, type, scenario, status,
     filial, nome_filial, marca,
@@ -284,11 +290,11 @@ BEGIN
     vendor, recurring, chave_id
   )
   SELECT
-    gen_random_uuid()::text,
+    'TRIB_PAA_' || l.year_month || '_' || l.filial || '_' || REPLACE(l.tipo_receita, ' ', '_'),
     (l.year_month || '-01'),
     'PAA s/ ' || l.tipo_receita,
     'Tributos',
-    '4.1.1.01.01.03',
+    '3.1.3.01.01.50',
     l.paa_val,
     v_tag0_out,
     'Real',
@@ -297,25 +303,22 @@ BEGIN
     l.nome_filial,
     l.marca,
     v_tag0_out,
-    v_tag01,
-    v_tag02,
-    v_tag03,
+    NULL,
+    NULL,
+    NULL,
     v_vendor,
     'Sim',
     'TRIB_PAA_' || l.year_month || '_' || l.filial || '_' || REPLACE(l.tipo_receita, ' ', '_')
   FROM tributos_log l
   WHERE l.calculated_at = v_ts
     AND l.paa_val <> 0
-  ON CONFLICT (chave_id) DO UPDATE SET
-    amount      = EXCLUDED.amount,
-    description = EXCLUDED.description,
-    nome_filial = EXCLUDED.nome_filial,
-    marca       = EXCLUDED.marca,
-    tag0        = EXCLUDED.tag0,
-    tag01       = EXCLUDED.tag01,
-    tag02       = EXCLUDED.tag02,
-    tag03       = EXCLUDED.tag03,
-    updated_at  = NOW();
+  ON CONFLICT (chave_id) WHERE chave_id IS NOT NULL DO UPDATE SET
+    amount         = EXCLUDED.amount,
+    conta_contabil = EXCLUDED.conta_contabil,
+    description    = EXCLUDED.description,
+    nome_filial    = EXCLUDED.nome_filial,
+    marca          = EXCLUDED.marca,
+    updated_at     = NOW();
 
   -- 8. Refresh materialized view
   PERFORM refresh_dre_agg();
@@ -335,8 +338,115 @@ $$;
 
 
 -- ══════════════════════════════════════════════════════════════════════
+-- PASSO 2b — Função de pendências (receita sem config de tributos)
+-- ══════════════════════════════════════════════════════════════════════
+
+DROP FUNCTION IF EXISTS get_tributos_pendentes();
+
+CREATE OR REPLACE FUNCTION get_tributos_pendentes()
+RETURNS TABLE (
+  o_marca        TEXT,
+  o_filial       TEXT,
+  o_tipo_receita TEXT,
+  o_meses        BIGINT,
+  o_receita_total NUMERIC
+)
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  SET LOCAL row_security = off;
+
+  RETURN QUERY
+  WITH receita_base AS (
+    SELECT
+      LEFT(t.date::text, 7)  AS ym,
+      t.filial,
+      COALESCE(t.nome_filial, t.filial) AS nome_filial,
+      t.marca,
+      t.tag01                AS tipo_receita,
+      t.amount
+    FROM transactions t
+    WHERE t.tag0 = '01. RECEITA LIQUIDA'
+      AND t.tag01 IN (
+        'Integral',
+        'Material Didático',
+        'Receita De Mensalidade',
+        'Receitas Extras',
+        'Receitas Não Operacionais'
+      )
+      AND COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
+      AND COALESCE(t.recurring, 'Sim') = 'Sim'
+      AND t.filial IS NOT NULL
+      AND COALESCE(t.chave_id, '') NOT LIKE 'TRIB_%'
+      AND NOT EXISTS (
+        SELECT 1 FROM override_contabil oc
+        WHERE oc.ativo = true
+          AND oc.tag01 = COALESCE(t.tag01, 'Sem Subclassificação')
+          AND (oc.marca  IS NULL OR oc.marca  = t.marca)
+          AND (oc.filial IS NULL OR oc.filial = t.nome_filial)
+          AND (oc.mes_de  IS NULL OR LEFT(t.date::text, 7) >= oc.mes_de)
+          AND (oc.mes_ate IS NULL OR LEFT(t.date::text, 7) <= oc.mes_ate)
+      )
+
+    UNION ALL
+
+    SELECT
+      LEFT(t.date::text, 7)  AS ym,
+      t.filial,
+      COALESCE(t.nome_filial, t.filial) AS nome_filial,
+      t.marca,
+      t.tag01                AS tipo_receita,
+      t.amount
+    FROM transactions_manual t
+    WHERE t.tag0 = '01. RECEITA LIQUIDA'
+      AND t.tag01 IN (
+        'Integral',
+        'Material Didático',
+        'Receita De Mensalidade',
+        'Receitas Extras',
+        'Receitas Não Operacionais'
+      )
+      AND COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
+      AND COALESCE(t.recurring, 'Sim') = 'Sim'
+      AND t.filial IS NOT NULL
+      AND COALESCE(t.chave_id, '') NOT LIKE 'TRIB_%'
+  ),
+  receita_agg AS (
+    SELECT
+      COALESCE(MAX(nome_filial), MAX(filial)) AS nome_filial,
+      MAX(marca)                              AS marca,
+      tipo_receita,
+      COUNT(DISTINCT ym)                      AS meses,
+      SUM(amount)                             AS receita_total
+    FROM receita_base
+    WHERE tipo_receita IS NOT NULL
+    GROUP BY filial, tipo_receita
+    HAVING SUM(amount) <> 0
+  )
+  SELECT
+    ra.marca,
+    ra.nome_filial,
+    ra.tipo_receita,
+    ra.meses,
+    ra.receita_total
+  FROM receita_agg ra
+  WHERE NOT EXISTS (
+    SELECT 1 FROM tributos_config tc
+    WHERE tc.marca = ra.marca
+      AND tc.filial = ra.nome_filial
+      AND tc.tipo_receita = ra.tipo_receita
+  )
+  ORDER BY ra.marca, ra.nome_filial, ra.tipo_receita;
+END;
+$$;
+
+
+-- ══════════════════════════════════════════════════════════════════════
 -- PASSO 3 — Agendar pg_cron (a cada 15 minutos)
 -- ══════════════════════════════════════════════════════════════════════
+
+-- Remover job anterior se existir (caso já tenha rodado versão antiga)
+SELECT cron.unschedule('calcular-tributos')
+WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'calcular-tributos');
 
 SELECT cron.schedule(
   'calcular-tributos',
@@ -370,7 +480,7 @@ SELECT
 FROM tributos_log
 ORDER BY year_month, marca, filial, tipo_receita;
 
--- Conferir transactions inseridas
+-- Conferir transactions_manual inseridas
 SELECT
   LEFT(date::text, 7) AS mes,
   filial,
@@ -378,11 +488,10 @@ SELECT
   description,
   TO_CHAR(amount, 'FM999,999,990.00') AS valor,
   conta_contabil,
-  tag0, tag01,
+  tag0, tag01, tag02, tag03,
   chave_id
-FROM transactions
+FROM transactions_manual
 WHERE chave_id LIKE 'TRIB_%'
-  AND scenario = 'Real'
 ORDER BY date, filial, chave_id;
 
 -- Conferir job pg_cron ativo

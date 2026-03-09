@@ -110,6 +110,13 @@ const AdminPanel: React.FC = () => {
   const [tribMessage, setTribMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
   const [tribFilterMarca, setTribFilterMarca] = useState('');
   const [tribFilterFilial, setTribFilterFilial] = useState('');
+  const [tribFilterTipoReceita, setTribFilterTipoReceita] = useState('');
+  const [tribFilterPisCofins, setTribFilterPisCofins] = useState('');
+  const [tribFilterIss, setTribFilterIss] = useState('');
+  const [tribFilterPaa, setTribFilterPaa] = useState('');
+  // Pendências (receita sem config)
+  const [tribPendentes, setTribPendentes] = useState<supabaseService.TributoPendente[]>([]);
+  const [tribPendentesLoading, setTribPendentesLoading] = useState(false);
   // Import Excel
   const [tribFile, setTribFile] = useState<File | null>(null);
   const [tribImportPreview, setTribImportPreview] = useState<{ marca: string; filial: string; tipo_receita: string; pis_cofins: number; iss: number; paa: number }[]>([]);
@@ -208,7 +215,10 @@ const AdminPanel: React.FC = () => {
       if (pddData.length === 0) loadPddData();
       if (pddAllTags.length === 0) loadPddContas();
     }
-    if (activeTab === 'tributos' && tribData.length === 0) loadAllTributos();
+    if (activeTab === 'tributos') {
+      if (tribData.length === 0) loadAllTributos();
+      loadTributosPendentes();
+    }
     if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
     if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
     if (activeTab === 'smtp' && !smtpConfigured && !smtpLoading) loadSmtpConfig();
@@ -815,6 +825,18 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  const loadTributosPendentes = async () => {
+    setTribPendentesLoading(true);
+    try {
+      const data = await supabaseService.getTributosPendentes();
+      setTribPendentes(data);
+    } catch (error) {
+      console.error('Erro ao buscar pendências:', error);
+    } finally {
+      setTribPendentesLoading(false);
+    }
+  };
+
   const showTribMessage = (type: 'success' | 'error' | 'info', text: string) => {
     setTribMessage({ type, text });
     setTimeout(() => setTribMessage(null), 5000);
@@ -946,10 +968,23 @@ const AdminPanel: React.FC = () => {
   const tribFiliaisDisponiveis = tribFilterMarca
     ? [...new Set(tribData.filter(r => r.marca === tribFilterMarca).map(r => r.filial))].sort()
     : [...new Set(tribData.map(r => r.filial))].sort();
+  const tribTiposReceita = (() => {
+    let base = tribData;
+    if (tribFilterMarca) base = base.filter(r => r.marca === tribFilterMarca);
+    if (tribFilterFilial) base = base.filter(r => r.filial === tribFilterFilial);
+    return [...new Set(base.map(r => r.tipo_receita))].sort();
+  })();
+  const tribPisCofinsValues = [...new Set(tribData.map(r => String(r.pis_cofins)))].sort((a, b) => Number(a) - Number(b));
+  const tribIssValues = [...new Set(tribData.map(r => String(r.iss)))].sort((a, b) => Number(a) - Number(b));
+  const tribPaaValues = [...new Set(tribData.map(r => String(r.paa)))].sort((a, b) => Number(a) - Number(b));
 
   const tribFiltered = tribData.filter(r => {
     if (tribFilterMarca && r.marca !== tribFilterMarca) return false;
     if (tribFilterFilial && r.filial !== tribFilterFilial) return false;
+    if (tribFilterTipoReceita && r.tipo_receita !== tribFilterTipoReceita) return false;
+    if (tribFilterPisCofins && String(r.pis_cofins) !== tribFilterPisCofins) return false;
+    if (tribFilterIss && String(r.iss) !== tribFilterIss) return false;
+    if (tribFilterPaa && String(r.paa) !== tribFilterPaa) return false;
     return true;
   });
 
@@ -3446,6 +3481,57 @@ const AdminPanel: React.FC = () => {
             </div>
           )}
 
+          {/* Alerta de pendências: receita sem config de tributos */}
+          {tribPendentes.length > 0 && (
+            <details className="mb-4 bg-red-50 border-2 border-red-300 rounded-xl group" open>
+              <summary className="px-4 py-3 cursor-pointer select-none flex items-center gap-2 list-none">
+                <AlertTriangle size={16} className="text-red-600 shrink-0" />
+                <span className="text-xs font-black text-red-800">
+                  {tribPendentes.length} combinação(ões) de receita SEM tributo cadastrado
+                </span>
+                <span className="ml-auto text-[10px] font-medium text-red-400 group-open:hidden">▸ ver</span>
+                <span className="ml-auto text-[10px] font-medium text-red-400 hidden group-open:inline">▾ ocultar</span>
+              </summary>
+              <div className="px-4 pb-3">
+                <p className="text-[10px] text-red-600 mb-2">
+                  Estas combinações de marca/filial/tipo de receita possuem receita mas <strong>não têm alíquotas configuradas</strong>. O cálculo de tributos não será feito para elas.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="bg-red-100/80 text-red-800">
+                        <th className="px-2 py-1.5 text-left font-black rounded-tl-lg">Marca</th>
+                        <th className="px-2 py-1.5 text-left font-black">Filial</th>
+                        <th className="px-2 py-1.5 text-left font-black">Tipo Receita</th>
+                        <th className="px-2 py-1.5 text-right font-black">Meses</th>
+                        <th className="px-2 py-1.5 text-right font-black rounded-tr-lg">Receita Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tribPendentes.map((p, i) => (
+                        <tr key={i} className={`border-t border-red-200 ${i % 2 === 0 ? 'bg-red-50/50' : 'bg-white/50'}`}>
+                          <td className="px-2 py-1.5 font-bold text-red-900">{p.o_marca}</td>
+                          <td className="px-2 py-1.5 text-red-800">{p.o_filial}</td>
+                          <td className="px-2 py-1.5 text-red-800">{p.o_tipo_receita}</td>
+                          <td className="px-2 py-1.5 text-right text-red-700">{p.o_meses}</td>
+                          <td className="px-2 py-1.5 text-right font-bold text-red-900">
+                            {Number(p.o_receita_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+          )}
+          {tribPendentesLoading && (
+            <div className="mb-4 flex items-center gap-2 text-[10px] text-amber-600">
+              <Loader2 size={12} className="animate-spin" />
+              Verificando pendências...
+            </div>
+          )}
+
           {/* Árvore: Como o tributo é calculado (colapsável) */}
           <details className="mb-4 bg-white/70 border border-amber-200 rounded-xl group" open>
             <summary className="px-4 py-3 cursor-pointer select-none flex items-center gap-1.5 text-xs font-black text-amber-800 list-none">
@@ -3465,11 +3551,11 @@ const AdminPanel: React.FC = () => {
                 <div className="pl-3 text-gray-500">│</div>
                 <div className="pl-3 text-gray-600">▼ Cruzar com <span className="font-bold text-amber-700">tributos_config</span> <span className="text-gray-400">(marca + filial + tipo_receita)</span></div>
                 <div className="pl-3 text-gray-500">│</div>
-                <div className="pl-3">├─ <span className="font-bold text-purple-700">PIS/COFINS</span>: receita × alíquota% × -1 <span className="text-gray-400">→ TRIB_PISCOFINS_YYYY-MM_FILIAL_TIPO</span></div>
-                <div className="pl-3">├─ <span className="font-bold text-purple-700">ISS</span>: receita × alíquota% × -1 <span className="text-gray-400">→ TRIB_ISS_YYYY-MM_FILIAL_TIPO</span></div>
-                <div className="pl-3">└─ <span className="font-bold text-purple-700">PAA</span>: receita × alíquota% × -1 <span className="text-gray-400">→ TRIB_PAA_YYYY-MM_FILIAL_TIPO</span></div>
+                <div className="pl-3">├─ <span className="font-bold text-purple-700">PIS/COFINS</span>: receita × alíquota% × <span className="text-red-600 font-bold">-1</span> <span className="text-gray-400">(3.1.3.01.01.03) → TRIB_PISCOFINS_YYYY-MM_FILIAL_TIPO</span></div>
+                <div className="pl-3">├─ <span className="font-bold text-purple-700">ISS</span>: receita × alíquota% × <span className="text-red-600 font-bold">-1</span> <span className="text-gray-400">(3.1.3.01.01.01) → TRIB_ISS_YYYY-MM_FILIAL_TIPO</span></div>
+                <div className="pl-3">└─ <span className="font-bold text-purple-700">PAA</span>: receita × alíquota% × <span className="text-green-600 font-bold">+1</span> <span className="text-gray-400">(3.1.3.01.01.50) → TRIB_PAA_YYYY-MM_FILIAL_TIPO</span></div>
                 <div className="pl-3 text-gray-500">│</div>
-                <div className="pl-3 text-gray-600">▼ UPSERT em <span className="font-bold text-gray-800">transactions</span> <span className="text-gray-400">(tag0 = '02. CUSTOS VARIÁVEIS')</span></div>
+                <div className="pl-3 text-gray-600">▼ UPSERT em <span className="font-bold text-gray-800">transactions_manual</span> <span className="text-gray-400">(tag0 = '02. CUSTOS VARIÁVEIS')</span></div>
                 <div className="pl-3 text-gray-600">▼ Refresh <span className="font-bold text-gray-800">dre_agg</span></div>
               </div>
               <div className="mt-3 flex flex-wrap gap-3 text-[10px]">
@@ -3493,27 +3579,59 @@ const AdminPanel: React.FC = () => {
           <div className="flex gap-4">
             {/* === COLUNA ESQUERDA — Tabela completa === */}
             <div className="flex-1 flex flex-col gap-2 min-w-0">
-              {/* Filtros: Marca + Filial + Exportar */}
-              <div className="flex items-center gap-2">
+              {/* Filtros: Marca, Filial, Tipo Receita, PIS/COFINS, ISS, PAA */}
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <select
                   value={tribFilterMarca}
-                  onChange={e => { setTribFilterMarca(e.target.value); setTribFilterFilial(''); }}
-                  className="px-2 py-1.5 text-[10px] font-bold border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white text-gray-700 min-w-[120px]"
+                  onChange={e => { setTribFilterMarca(e.target.value); setTribFilterFilial(''); setTribFilterTipoReceita(''); }}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white text-gray-700 min-w-[100px]"
                 >
                   <option value="">Todas Marcas</option>
                   {tribMarcas.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
                 <select
                   value={tribFilterFilial}
-                  onChange={e => setTribFilterFilial(e.target.value)}
-                  className="px-2 py-1.5 text-[10px] font-bold border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white text-gray-700 min-w-[200px] flex-1"
+                  onChange={e => { setTribFilterFilial(e.target.value); setTribFilterTipoReceita(''); }}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white text-gray-700 min-w-[160px]"
                 >
                   <option value="">Todas Filiais</option>
                   {tribFiliaisDisponiveis.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
-                {(tribFilterMarca || tribFilterFilial) && (
+                <select
+                  value={tribFilterTipoReceita}
+                  onChange={e => setTribFilterTipoReceita(e.target.value)}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-amber-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white text-gray-700 min-w-[150px]"
+                >
+                  <option value="">Todos Tipos Receita</option>
+                  {tribTiposReceita.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select
+                  value={tribFilterPisCofins}
+                  onChange={e => setTribFilterPisCofins(e.target.value)}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-purple-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white text-gray-700 min-w-[90px]"
+                >
+                  <option value="">PIS/COFINS</option>
+                  {tribPisCofinsValues.map(v => <option key={v} value={v}>{v}%</option>)}
+                </select>
+                <select
+                  value={tribFilterIss}
+                  onChange={e => setTribFilterIss(e.target.value)}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-purple-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white text-gray-700 min-w-[70px]"
+                >
+                  <option value="">ISS</option>
+                  {tribIssValues.map(v => <option key={v} value={v}>{v}%</option>)}
+                </select>
+                <select
+                  value={tribFilterPaa}
+                  onChange={e => setTribFilterPaa(e.target.value)}
+                  className="px-2 py-1.5 text-[10px] font-bold border border-purple-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400 bg-white text-gray-700 min-w-[70px]"
+                >
+                  <option value="">PAA</option>
+                  {tribPaaValues.map(v => <option key={v} value={v}>{v}%</option>)}
+                </select>
+                {(tribFilterMarca || tribFilterFilial || tribFilterTipoReceita || tribFilterPisCofins || tribFilterIss || tribFilterPaa) && (
                   <button
-                    onClick={() => { setTribFilterMarca(''); setTribFilterFilial(''); }}
+                    onClick={() => { setTribFilterMarca(''); setTribFilterFilial(''); setTribFilterTipoReceita(''); setTribFilterPisCofins(''); setTribFilterIss(''); setTribFilterPaa(''); }}
                     className="text-[9px] text-red-500 hover:text-red-700 font-bold shrink-0"
                   >
                     Limpar
