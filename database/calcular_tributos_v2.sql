@@ -1,30 +1,32 @@
 -- ══════════════════════════════════════════════════════════════════════
--- calcular_tributos.sql
+-- calcular_tributos_v2.sql
 -- Cálculo automático de tributos (PIS/COFINS, ISS, PAA) sobre receita
+-- V2: temp tables, marca no GROUP BY, marca na UNIQUE, marca no chave_id
 --
 -- Lógica:
---   1. Soma receita por filial/mês/tipo_receita (tag01) de tag0='01. RECEITA LIQUIDA'
+--   1. Soma receita por marca/filial/mês/tipo_receita (tag01) de tag0='01. RECEITA LIQUIDA'
 --      Empilha transactions + transactions_manual, respeitando override_contabil
 --   2. Cruza com tributos_config (alíquotas por marca+filial+tipo_receita)
---   3. Calcula: receita × alíquota / 100 × -1 (dedução = negativo)
---   4. Gera 3 lançamentos por combinação: PIS/COFINS, ISS, PAA
---   5. UPSERT em tributos_log + DELETE/INSERT em transactions_manual (limpa lixo)
---   6. Refresh dre_agg
---   7. pg_cron a cada 15 minutos
+--   3. Calcula: PIS/COFINS(-), ISS(-), PAA(+)
+--   4. Gera 3 lançamentos por combinação
+--   5. DELETE + INSERT em transactions_manual (sem lixo)
+--   6. UPSERT em tributos_log (auditoria)
+--   7. Refresh dre_agg
+--   8. pg_cron a cada 15 minutos
 --
--- Destino: transactions_manual (dado gerencial, não contábil)
---   conta_contabil = definida no tributos_config ou default
---   tag0/tag01/tag02/tag03 = populados automaticamente pelos triggers da tabela
---   vendor         = 'Planejamento Financeiro'
---   chave_id       = 'TRIB_{TIPO}_YYYY-MM_FILIAL_TIPORECEITA' (idempotente)
+-- Contas contábeis:
+--   PIS/COFINS = 3.1.3.01.01.03 (negativo)
+--   ISS        = 3.1.3.01.01.01 (negativo)
+--   PAA        = 3.1.3.01.01.50 (positivo)
+--
+-- chave_id = 'TRIB_{TIPO}_{MARCA}_{YYYY-MM}_{FILIAL}_{TIPORECEITA}'
 -- ══════════════════════════════════════════════════════════════════════
 
 
 -- ══════════════════════════════════════════════════════════════════════
--- PASSO 1 — Tabela de log (auditoria)
+-- PASSO 1 — Tabela de log (auditoria) — com marca na UNIQUE
 -- ══════════════════════════════════════════════════════════════════════
 
--- Recriar tributos_log com marca na UNIQUE
 DROP TABLE IF EXISTS tributos_log CASCADE;
 
 CREATE TABLE tributos_log (
@@ -55,7 +57,6 @@ ALTER TABLE tributos_log DISABLE ROW LEVEL SECURITY;
 
 -- ══════════════════════════════════════════════════════════════════════
 -- PASSO 1b — Garantir UNIQUE no chave_id de transactions_manual
--- (necessário para ON CONFLICT funcionar)
 -- ══════════════════════════════════════════════════════════════════════
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tm_chave_id_unique
@@ -64,7 +65,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_tm_chave_id_unique
 
 
 -- ══════════════════════════════════════════════════════════════════════
--- PASSO 2 — Função principal
+-- PASSO 2 — Função principal (temp tables)
 -- ══════════════════════════════════════════════════════════════════════
 
 DROP FUNCTION IF EXISTS calcular_tributos();
@@ -289,22 +290,17 @@ BEGIN
     SELECT
       LEFT(t.date::text, 7)  AS ym,
       t.filial,
-      COALESCE(t.nome_filial, t.filial) AS nome_filial,
+      t.nome_filial,
       t.marca,
       t.tag01                AS tipo_receita,
       t.amount
     FROM transactions t
     WHERE t.tag0 = '01. RECEITA LIQUIDA'
-      AND t.tag01 IN (
-        'Integral',
-        'Material Didático',
-        'Receita De Mensalidade',
-        'Receitas Extras',
-        'Receitas Não Operacionais'
-      )
+      AND t.tag01 IN ('Integral','Material Didático','Receita De Mensalidade','Receitas Extras','Receitas Não Operacionais')
       AND COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND COALESCE(t.recurring, 'Sim') = 'Sim'
       AND t.filial IS NOT NULL
+      AND t.marca IS NOT NULL
       AND COALESCE(t.chave_id, '') NOT LIKE 'TRIB_%'
       AND NOT EXISTS (
         SELECT 1 FROM override_contabil oc
@@ -321,34 +317,29 @@ BEGIN
     SELECT
       LEFT(t.date::text, 7)  AS ym,
       t.filial,
-      COALESCE(t.nome_filial, t.filial) AS nome_filial,
+      t.nome_filial,
       t.marca,
       t.tag01                AS tipo_receita,
       t.amount
     FROM transactions_manual t
     WHERE t.tag0 = '01. RECEITA LIQUIDA'
-      AND t.tag01 IN (
-        'Integral',
-        'Material Didático',
-        'Receita De Mensalidade',
-        'Receitas Extras',
-        'Receitas Não Operacionais'
-      )
+      AND t.tag01 IN ('Integral','Material Didático','Receita De Mensalidade','Receitas Extras','Receitas Não Operacionais')
       AND COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND COALESCE(t.recurring, 'Sim') = 'Sim'
       AND t.filial IS NOT NULL
+      AND t.marca IS NOT NULL
       AND COALESCE(t.chave_id, '') NOT LIKE 'TRIB_%'
   ),
   receita_agg AS (
     SELECT
-      COALESCE(MAX(nome_filial), MAX(filial)) AS nome_filial,
+      nome_filial,
       marca,
       tipo_receita,
-      COUNT(DISTINCT ym)                      AS meses,
-      SUM(amount)                             AS receita_total
+      COUNT(DISTINCT ym)  AS meses,
+      SUM(amount)         AS receita_total
     FROM receita_base
     WHERE tipo_receita IS NOT NULL
-    GROUP BY filial, marca, tipo_receita
+    GROUP BY filial, nome_filial, marca, tipo_receita
     HAVING SUM(amount) <> 0
   )
   SELECT
@@ -373,7 +364,6 @@ $$;
 -- PASSO 3 — Agendar pg_cron (a cada 15 minutos)
 -- ══════════════════════════════════════════════════════════════════════
 
--- Remover job anterior se existir (caso já tenha rodado versão antiga)
 SELECT cron.unschedule('calcular-tributos')
 WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'calcular-tributos');
 
@@ -388,15 +378,14 @@ SELECT cron.schedule(
 -- PASSO 4 — Executar primeira vez e conferir
 -- ══════════════════════════════════════════════════════════════════════
 
--- Executar o cálculo
 SELECT * FROM calcular_tributos();
 
 -- Conferir log
 SELECT
   year_month                                  AS mes,
+  marca,
   filial,
   nome_filial,
-  marca,
   tipo_receita,
   TO_CHAR(receita_bruta, 'FM999,999,990.00')  AS receita,
   TO_CHAR(pis_cofins_pct, 'FM990.0000') || '%' AS "PIS/COFINS %",
@@ -412,8 +401,8 @@ ORDER BY year_month, marca, filial, tipo_receita;
 -- Conferir transactions_manual inseridas
 SELECT
   LEFT(date::text, 7) AS mes,
-  filial,
   marca,
+  filial,
   description,
   TO_CHAR(amount, 'FM999,999,990.00') AS valor,
   conta_contabil,
@@ -421,7 +410,7 @@ SELECT
   chave_id
 FROM transactions_manual
 WHERE chave_id LIKE 'TRIB_%'
-ORDER BY date, filial, chave_id;
+ORDER BY date, marca, filial, chave_id;
 
 -- Conferir job pg_cron ativo
 SELECT jobid, jobname, schedule, active
