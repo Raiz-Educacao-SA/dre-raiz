@@ -151,11 +151,6 @@ const VarianceJustificationsView: React.FC = () => {
   // Thresholds config
   const [showThresholds, setShowThresholds] = useState(false);
   const [thresholds, setThresholds] = useState<VarianceThreshold[]>([]);
-  const [generationDepth, setGenerationDepth] = useState<1 | 2 | 3>(() => {
-    const saved = localStorage.getItem('variance_generation_depth');
-    return (saved === '1' || saved === '3') ? Number(saved) as 1 | 3 : 2;
-  });
-
   // Available marcas
   const [availableMarcas, setAvailableMarcas] = useState<string[]>([]);
 
@@ -1571,8 +1566,6 @@ const VarianceJustificationsView: React.FC = () => {
           <ThresholdsPanel
             thresholds={thresholds}
             setThresholds={setThresholds}
-            generationDepth={generationDepth}
-            onDepthChange={(d: 1 | 2 | 3) => { setGenerationDepth(d); localStorage.setItem('variance_generation_depth', String(d)); }}
           />
         )}
       </div>
@@ -2055,18 +2048,10 @@ const VarianceJustificationsView: React.FC = () => {
 
 // ── Thresholds Panel (small admin config) ──
 
-const DEPTH_OPTIONS: { value: 1 | 2 | 3; label: string; desc: string }[] = [
-  { value: 1, label: 'tag01', desc: 'Centro de Custo + Marca' },
-  { value: 2, label: 'tag02', desc: 'Segmento + Marca' },
-  { value: 3, label: 'tag03', desc: 'Projeto + Marca' },
-];
-
 const ThresholdsPanel: React.FC<{
   thresholds: VarianceThreshold[];
   setThresholds: React.Dispatch<React.SetStateAction<VarianceThreshold[]>>;
-  generationDepth: 1 | 2 | 3;
-  onDepthChange: (d: 1 | 2 | 3) => void;
-}> = ({ thresholds, setThresholds, generationDepth, onDepthChange }) => {
+}> = ({ thresholds, setThresholds }) => {
   const [loading, setLoading] = useState(false);
   const [newMarca, setNewMarca] = useState('');
   const [newTag0, setNewTag0] = useState('');
@@ -2109,41 +2094,6 @@ const ThresholdsPanel: React.FC<{
 
   return (
     <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
-      {/* Depth toggle */}
-      <div>
-        <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-1.5 flex items-center gap-1">
-          <Settings size={12} />
-          Nível de Geração
-        </h4>
-        <p className="text-[10px] text-gray-400 mb-2">
-          Até que nível de detalhe gerar justificativas ao clicar em "Foto" na DRE Gerencial.
-        </p>
-        <div className="flex gap-2">
-          {DEPTH_OPTIONS.map(opt => {
-            const active = generationDepth === opt.value;
-            return (
-              <button
-                key={opt.value}
-                onClick={() => onDepthChange(opt.value)}
-                className={`flex-1 px-3 py-2 rounded-lg border-2 text-center transition-all ${
-                  active
-                    ? 'border-indigo-500 bg-indigo-50 shadow-sm'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
-                }`}
-              >
-                <div className={`text-xs font-black ${active ? 'text-indigo-600' : 'text-gray-500'}`}>
-                  {opt.label}
-                </div>
-                <div className={`text-[9px] mt-0.5 ${active ? 'text-indigo-400' : 'text-gray-400'}`}>
-                  {opt.desc}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Thresholds */}
       <div>
         <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-1.5">
           Limites de Variação (Thresholds)
