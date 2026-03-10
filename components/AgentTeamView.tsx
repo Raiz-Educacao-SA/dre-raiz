@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getSomaTags, getDREFilterOptions } from '../services/supabaseService';
-import type { DREFilterOptions } from '../services/supabaseService';
+import { getSomaTags, getDREFilterOptions, getVarianceJustifications } from '../services/supabaseService';
+import type { DREFilterOptions, VarianceJustification } from '../services/supabaseService';
 import type { Team, Agent, TeamAgent, AgentRun, AgentStep } from '../types/agentTeam';
 import * as agentTeamService from '../services/agentTeamService';
 import MultiSelectFilter from './MultiSelectFilter';
@@ -43,6 +43,9 @@ const AgentTeamView: React.FC = () => {
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
   const [selectedTags01, setSelectedTags01] = useState<string[]>([]);
   const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
+
+  // Snapshot info
+  const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
 
   // View mode: 'cards' (grid with expand/collapse) or 'tabs' (single tab view)
   const [viewMode, setViewMode] = useState<'cards' | 'tabs'>('cards');
@@ -142,34 +145,111 @@ const AgentTeamView: React.FC = () => {
     setError(null);
 
     try {
-      // Calcular range de meses
+      // Calcular range de meses selecionados
       const sortedMonths = selectedMonths.map(m => MONTH_MAP[m]).sort();
-      const mFrom = sortedMonths.length > 0 ? `2026-${sortedMonths[0]}` : '2026-01';
-      const mTo = sortedMonths.length > 0 ? `2026-${sortedMonths[sortedMonths.length - 1]}` : '2026-12';
+      const yearMonths = sortedMonths.length > 0
+        ? sortedMonths.map(mm => `2026-${mm}`)
+        : ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
 
-      const dreSnapshot = await getSomaTags(
-        mFrom,
-        mTo,
-        selectedMarcas.length > 0 ? selectedMarcas : undefined,
-        selectedFiliais.length > 0 ? selectedFiliais : undefined,
-        undefined, // tags02
-        selectedTags01.length > 0 ? selectedTags01 : undefined,
-      );
+      // ── Buscar snapshot da foto (variance_justifications) ──
+      // Tenta usar a mesma "foto" que os pacoteiros justificam
+      let dreSnapshot: Record<string, unknown>[] = [];
+      let usedSnapshot = false;
+
+      // Para cada mês selecionado, buscar variance items
+      const allVarItems: VarianceJustification[] = [];
+      for (const ym of yearMonths) {
+        const items = await getVarianceJustifications({
+          year_month: ym,
+          marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
+        });
+        allVarItems.push(...items);
+      }
+
+      if (allVarItems.length > 0) {
+        // Converter variance_justifications → formato SomaTagsRow para buildFinancialSummary
+        const somaTagsRows: Record<string, unknown>[] = [];
+        // Agrupar por tag0+tag01+scenario+month para evitar duplicação
+        const seen = new Set<string>();
+
+        for (const item of allVarItems) {
+          // Pular items depth > 1 (tag02/tag03) — buildFinancialSummary trabalha em tag0+tag01
+          if (item.tag02) continue;
+
+          // Cenário Real
+          const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
+          if (!seen.has(keyReal)) {
+            seen.add(keyReal);
+            somaTagsRows.push({
+              tag0: item.tag0,
+              tag01: item.tag01 || '',
+              scenario: 'Real',
+              month: item.year_month,
+              total: item.real_value || 0,
+            });
+          }
+
+          // Cenário comparativo (Orçado ou A-1)
+          const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
+          const keyComp = `${item.tag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
+          if (!seen.has(keyComp)) {
+            seen.add(keyComp);
+            somaTagsRows.push({
+              tag0: item.tag0,
+              tag01: item.tag01 || '',
+              scenario: scenarioLabel,
+              month: item.year_month,
+              total: item.compare_value || 0,
+            });
+          }
+        }
+
+        if (somaTagsRows.length > 0) {
+          dreSnapshot = somaTagsRows;
+          usedSnapshot = true;
+          // Pegar snapshot_at mais recente
+          const snapDates = allVarItems
+            .map(i => i.snapshot_at)
+            .filter(Boolean)
+            .sort()
+            .reverse();
+          setSnapshotAt(snapDates[0] || null);
+          console.log(`📸 Usando foto da justificativa: ${somaTagsRows.length} rows, snapshot_at=${snapDates[0]}`);
+        }
+      }
+
+      // Fallback: se não tem foto, busca ao vivo
+      if (!usedSnapshot) {
+        const mFrom = yearMonths[0];
+        const mTo = yearMonths[yearMonths.length - 1];
+        dreSnapshot = await getSomaTags(
+          mFrom,
+          mTo,
+          selectedMarcas.length > 0 ? selectedMarcas : undefined,
+          selectedFiliais.length > 0 ? selectedFiliais : undefined,
+          undefined,
+          selectedTags01.length > 0 ? selectedTags01 : undefined,
+        ) as Record<string, unknown>[];
+        setSnapshotAt(null);
+        console.log(`⚡ Sem foto disponível, usando dados ao vivo: ${dreSnapshot.length} rows`);
+      }
 
       // Contexto de filtros para os agentes
       const monthsLabel = selectedMonths.length > 0 ? selectedMonths.join(', ') : 'Jan-Dez';
       const filterContext: Record<string, unknown> = {
         year: '2026',
         months_range: monthsLabel,
+        data_source: usedSnapshot ? 'snapshot' : 'live',
       };
       if (selectedMarcas.length > 0) filterContext.marcas = selectedMarcas;
       if (selectedFiliais.length > 0) filterContext.filiais = selectedFiliais;
       if (selectedTags01.length > 0) filterContext.tags01 = selectedTags01;
+      if (snapshotAt) filterContext.snapshot_at = snapshotAt;
 
       const { runId } = await agentTeamService.startPipeline(
         selectedTeamId,
         objective.trim(),
-        dreSnapshot as Record<string, unknown>[],
+        dreSnapshot,
         filterContext,
         user.email,
         user.name
@@ -399,7 +479,7 @@ const AgentTeamView: React.FC = () => {
           />
         </div>
 
-        {/* Start button */}
+        {/* Start button + snapshot badge */}
         <div className="flex items-center gap-3">
           <button
             onClick={handleStart}
@@ -410,6 +490,12 @@ const AgentTeamView: React.FC = () => {
             {isStarting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
             Iniciar Análise
           </button>
+          {snapshotAt && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+              <CalendarDays size={10} />
+              Foto {new Date(snapshotAt).toLocaleDateString('pt-BR')} {new Date(snapshotAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
         </div>
 
         {error && (
