@@ -17,15 +17,7 @@ import {
 } from '../types/agentTeamSchemas';
 import { buildPrompt } from '../api/agent-team/_lib/agentPrompts';
 import { buildFinancialSummary } from '../api/agent-team/_lib/buildFinancialSummary';
-import { createClient } from '@supabase/supabase-js';
-
-// --------------------------------------------
-// Supabase client (frontend, anon key)
-// --------------------------------------------
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+import { supabase } from '../supabase';
 
 // --------------------------------------------
 // Leitura direta do Supabase (dados públicos via RLS)
@@ -419,8 +411,10 @@ export async function processNextStep(runId: string): Promise<void> {
       .eq('id', step.id);
 
     // 8. Chamar Claude via proxy /api/anthropic
+    console.log(`🚀 Step ${step.step_order} (${step.agent_code}) — chamando Claude... system=${system.length}chars user=${user.length}chars`);
     const isConsolidation = step.step_type === 'consolidate' || step.step_type === 'review';
     const claudeResult = await callClaudeViaProxy(system, user, isConsolidation, step.agent_code);
+    console.log(`📦 Step ${step.step_order} (${step.agent_code}) — resposta: ${claudeResult.tokensOutput} tokens, stop_reason ok`);
 
     // 9. Validar com Zod (safeParse — não explode)
     const zodSchema = getZodSchemaForStep(step.step_type, step.agent_code);
@@ -652,16 +646,10 @@ async function callClaudeViaProxy(
 ): Promise<ClaudeResult> {
   const defaultModel = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
   // Steps leves (Alex plan, Bruna, Edmundo, Denilson) usam Haiku 4.5 (~75% mais barato)
-  const isLightStep = ['alex', 'bruna', 'edmundo', 'denilson'].includes(agentCode) && !isConsolidation;
-  const model = isLightStep ? 'claude-haiku-4-5-20251001' : defaultModel;
-  const isHeavyOutput = ['carlos'].includes(agentCode);
-  const isMediumOutput = ['denilson', 'edmundo', 'falcao'].includes(agentCode);
-  const isReview = ['executivo'].includes(agentCode);
-  const maxTokens = isConsolidation ? 16384
-    : isHeavyOutput ? 16384
-    : isMediumOutput ? 12288
-    : isReview ? 12288
-    : 8192;
+  // Todos os agentes usam Haiku (rápido + barato), exceto consolidação e review que precisam de Sonnet
+  const useSonnet = isConsolidation || ['executivo', 'diretor'].includes(agentCode);
+  const model = useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
+  const maxTokens = isConsolidation ? 16384 : 8192;
 
   // Forçar JSON via prompt (sem output_config)
   const fullSystem = system + '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO — máximo 2 frases por campo string.';
