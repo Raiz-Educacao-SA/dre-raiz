@@ -271,7 +271,7 @@ const VarianceJustificationsView: React.FC = () => {
   const ytdFlatRows = useMemo((): YtdFlatRow[] => {
     if (ytdItems.length === 0) return [];
 
-    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
+    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.', '06.']);
     const CALC_LABELS_YTD = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
     const isDrePrefix = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
 
@@ -470,7 +470,7 @@ const VarianceJustificationsView: React.FC = () => {
     const mOy = gpy('01.').orc + gpy('02.').orc + gpy('03.').orc;
     const mAy = gpy('01.').a1 + gpy('02.').a1 + gpy('03.').a1;
     const eRy = mRy + gpy('04.').real, eOy = mOy + gpy('04.').orc, eAy = mAy + gpy('04.').a1;
-    const etRy = eRy + gpy('05.').real, etOy = eOy + gpy('05.').orc, etAy = eAy + gpy('05.').a1;
+    const etRy = eRy + gpy('05.').real + gpy('06.').real, etOy = eOy + gpy('05.').orc + gpy('06.').orc, etAy = eAy + gpy('05.').a1 + gpy('06.').a1;
 
     const makeYtdCalc = (label: string, r: number, o: number, a: number): YtdFlatRow => ({
       depth: 0, groupKey: `ytd-${label}`, label, tag0: label, tag01: '', tag02: null, marca: null,
@@ -487,7 +487,7 @@ const VarianceJustificationsView: React.FC = () => {
       if (idx >= 0) rows.splice(idx + 1, 0, calcRow);
       else rows.push(calcRow);
     };
-    insertAfterYtd('05.', makeYtdCalc('EBITDA TOTAL', etRy, etOy, etAy));
+    insertAfterYtd('06.', makeYtdCalc('EBITDA TOTAL', etRy, etOy, etAy));
     insertAfterYtd('04.', makeYtdCalc('EBITDA (S/ RATEIO RAIZ CSC)', eRy, eOy, eAy));
     insertAfterYtd('03.', makeYtdCalc('MARGEM DE CONTRIBUIÇÃO', mRy, mOy, mAy));
 
@@ -796,7 +796,7 @@ const VarianceJustificationsView: React.FC = () => {
     const mO = gp('01.').orc + gp('02.').orc + gp('03.').orc;
     const mA = gp('01.').a1 + gp('02.').a1 + gp('03.').a1;
     const eR = mR + gp('04.').real, eO = mO + gp('04.').orc, eA = mA + gp('04.').a1;
-    const etR = eR + gp('05.').real, etO = eO + gp('05.').orc, etA = eA + gp('05.').a1;
+    const etR = eR + gp('05.').real + gp('06.').real, etO = eO + gp('05.').orc + gp('06.').orc, etA = eA + gp('05.').a1 + gp('06.').a1;
 
     const makeCalc = (label: string, r: number, o: number, a: number): FlatRow => ({
       depth: 0, groupKey: label, label, tag0: label, tag01: '', tag02: null, tag03: null, marca: null,
@@ -817,7 +817,7 @@ const VarianceJustificationsView: React.FC = () => {
       if (idx >= 0) rows.splice(idx + 1, 0, calcRow);
       else rows.push(calcRow);
     };
-    insertAfterPrefix('05.', makeCalc('EBITDA TOTAL', etR, etO, etA));
+    insertAfterPrefix('06.', makeCalc('EBITDA TOTAL', etR, etO, etA));
     insertAfterPrefix('04.', makeCalc('EBITDA (S/ RATEIO RAIZ CSC)', eR, eO, eA));
     insertAfterPrefix('03.', makeCalc('MARGEM DE CONTRIBUIÇÃO', mR, mO, mA));
 

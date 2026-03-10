@@ -7,7 +7,6 @@ import {
   LineChart,
   History,
   ReceiptText,
-  Brain,
   LogOut,
   User as UserIcon,
   Shield,
@@ -38,7 +37,6 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
       { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
       { id: 'executive_dashboard', label: 'Painel Executivo', icon: TrendingUp },
-      { id: 'agent_team', label: 'Equipe IA', icon: Brain },
       { id: 'admin', label: 'Admin', icon: Shield },
     ] : []),
   ];

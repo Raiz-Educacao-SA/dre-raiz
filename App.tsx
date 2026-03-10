@@ -18,7 +18,7 @@ const AdminPanel = React.lazy(() => import('./components/AdminPanel'));
 const SomaTagsView = React.lazy(() => import('./components/SomaTagsView'));
 const ExecutiveDashboard = React.lazy(() => import('./components/agentTeam/ExecutiveDashboard'));
 // HoldingDashboardPage removido — integrado ao CEO Dashboard como aba "Portfolio"
-const AgentTeamView = React.lazy(() => import('./components/AgentTeamView'));
+// AgentTeamView agora é aba dentro de AnalysisView
 const CronogramaPopup = React.lazy(() => import('./components/CronogramaPopup'));
 // VarianceJustificationsView agora é aba dentro de AnalysisView
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
@@ -1271,14 +1271,7 @@ const App: React.FC = () => {
               </Suspense>
             </ErrorBoundary>
           )}
-          {/* Justificativas agora dentro de AnalysisView (aba) */}
-          {currentView === 'agent_team' && (
-            <ErrorBoundary fallbackMessage="Erro ao carregar Equipe IA">
-              <Suspense fallback={<LoadingSpinner message="Carregando equipe de agentes IA..." />}>
-                <AgentTeamView />
-              </Suspense>
-            </ErrorBoundary>
-          )}
+          {/* Justificativas e Agentes Financeiros agora dentro de AnalysisView (abas) */}
         </div>
       </main>
     </div>

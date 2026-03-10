@@ -179,6 +179,72 @@ export async function listRuns(limit = 20): Promise<ListRunsResponse> {
 }
 
 // --------------------------------------------
+// testSingleAgent — roda 1 agente isolado (sem gravar no banco)
+// --------------------------------------------
+
+export interface SingleAgentTestResult {
+  agentCode: string;
+  stepType: string;
+  output: Record<string, unknown>;
+  rawText: string;
+  tokensInput: number;
+  tokensOutput: number;
+  model: string;
+  durationMs: number;
+  zodValid: boolean;
+  zodErrors?: string[];
+}
+
+export async function testSingleAgent(
+  agentCode: string,
+  stepType: string,
+  objective: string,
+  dreSnapshot: Record<string, unknown>[],
+  filterContext: Record<string, unknown>,
+): Promise<SingleAgentTestResult> {
+  const startTime = Date.now();
+
+  // 1. Build financial summary
+  const financialSummary = buildFinancialSummary(dreSnapshot as any[]);
+
+  // 2. Build prompts
+  const { system, user } = buildPrompt(
+    agentCode,
+    stepType,
+    objective,
+    financialSummary,
+    [], // sem outputs anteriores no teste isolado
+    filterContext,
+  );
+
+  console.log(`🧪 Teste ${agentCode}/${stepType} — system=${system.length}chars user=${user.length}chars`);
+
+  // 3. Call Claude
+  const isConsolidation = stepType === 'consolidate' || stepType === 'review';
+  const claudeResult = await callClaudeViaProxy(system, user, isConsolidation, agentCode);
+
+  // 4. Validate with Zod
+  const zodSchema = getZodSchemaForStep(stepType, agentCode);
+  const parseResult = zodSchema.safeParse(claudeResult.parsed);
+
+  const durationMs = Date.now() - startTime;
+  console.log(`🧪 Teste ${agentCode}/${stepType} concluído em ${durationMs}ms — zod=${parseResult.success ? '✅' : '⚠️'}`);
+
+  return {
+    agentCode,
+    stepType,
+    output: parseResult.success ? parseResult.data : claudeResult.parsed,
+    rawText: claudeResult.rawText,
+    tokensInput: claudeResult.tokensInput,
+    tokensOutput: claudeResult.tokensOutput,
+    model: claudeResult.model,
+    durationMs,
+    zodValid: parseResult.success,
+    zodErrors: parseResult.success ? undefined : parseResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`),
+  };
+}
+
+// --------------------------------------------
 // startPipeline — client-side (Supabase direto)
 // --------------------------------------------
 

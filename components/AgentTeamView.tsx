@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2 } from 'lucide-react';
+import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2, X, AlertTriangle, Target, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getSomaTags, getDREFilterOptions, getVarianceJustifications } from '../services/supabaseService';
 import type { DREFilterOptions, VarianceJustification } from '../services/supabaseService';
@@ -46,6 +46,10 @@ const AgentTeamView: React.FC = () => {
 
   // Snapshot info
   const [snapshotAt, setSnapshotAt] = useState<string | null>(null);
+
+  // Single agent test
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<agentTeamService.SingleAgentTestResult | null>(null);
 
   // View mode: 'cards' (grid with expand/collapse) or 'tabs' (single tab view)
   const [viewMode, setViewMode] = useState<'cards' | 'tabs'>('cards');
@@ -138,113 +142,89 @@ const AgentTeamView: React.FC = () => {
     };
   }, [activeRunId]);
 
-  // 4. Iniciar pipeline
+  // 4. Helper — busca DRE snapshot (foto ou ao vivo)
+  const fetchDreData = useCallback(async () => {
+    const sortedMonths = selectedMonths.map(m => MONTH_MAP[m]).sort();
+    const yearMonths = sortedMonths.length > 0
+      ? sortedMonths.map(mm => `2026-${mm}`)
+      : ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
+
+    let dreSnapshot: Record<string, unknown>[] = [];
+    let usedSnapshot = false;
+    let snapDate: string | null = null;
+
+    // Buscar snapshot da foto (variance_justifications)
+    const allVarItems: VarianceJustification[] = [];
+    for (const ym of yearMonths) {
+      const items = await getVarianceJustifications({
+        year_month: ym,
+        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
+      });
+      allVarItems.push(...items);
+    }
+
+    if (allVarItems.length > 0) {
+      const somaTagsRows: Record<string, unknown>[] = [];
+      const seen = new Set<string>();
+
+      for (const item of allVarItems) {
+        if (item.tag02) continue; // só depth 0-1
+
+        const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
+        if (!seen.has(keyReal)) {
+          seen.add(keyReal);
+          somaTagsRows.push({ tag0: item.tag0, tag01: item.tag01 || '', scenario: 'Real', month: item.year_month, total: item.real_value || 0 });
+        }
+
+        const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
+        const keyComp = `${item.tag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
+        if (!seen.has(keyComp)) {
+          seen.add(keyComp);
+          somaTagsRows.push({ tag0: item.tag0, tag01: item.tag01 || '', scenario: scenarioLabel, month: item.year_month, total: item.compare_value || 0 });
+        }
+      }
+
+      if (somaTagsRows.length > 0) {
+        dreSnapshot = somaTagsRows;
+        usedSnapshot = true;
+        const snapDates = allVarItems.map(i => i.snapshot_at).filter(Boolean).sort().reverse();
+        snapDate = snapDates[0] || null;
+        console.log(`📸 Usando foto da justificativa: ${somaTagsRows.length} rows, snapshot_at=${snapDate}`);
+      }
+    }
+
+    // Fallback: dados ao vivo
+    if (!usedSnapshot) {
+      const mFrom = yearMonths[0];
+      const mTo = yearMonths[yearMonths.length - 1];
+      dreSnapshot = await getSomaTags(mFrom, mTo, selectedMarcas.length > 0 ? selectedMarcas : undefined, selectedFiliais.length > 0 ? selectedFiliais : undefined, undefined, selectedTags01.length > 0 ? selectedTags01 : undefined) as Record<string, unknown>[];
+      console.log(`⚡ Sem foto disponível, usando dados ao vivo: ${dreSnapshot.length} rows`);
+    }
+
+    setSnapshotAt(snapDate);
+
+    const monthsLabel = selectedMonths.length > 0 ? selectedMonths.join(', ') : 'Jan-Dez';
+    const filterContext: Record<string, unknown> = {
+      year: '2026',
+      months_range: monthsLabel,
+      data_source: usedSnapshot ? 'snapshot' : 'live',
+    };
+    if (selectedMarcas.length > 0) filterContext.marcas = selectedMarcas;
+    if (selectedFiliais.length > 0) filterContext.filiais = selectedFiliais;
+    if (selectedTags01.length > 0) filterContext.tags01 = selectedTags01;
+    if (snapDate) filterContext.snapshot_at = snapDate;
+
+    return { dreSnapshot, filterContext };
+  }, [selectedMonths, selectedMarcas, selectedFiliais, selectedTags01]);
+
+  // 4b. Iniciar pipeline completo
   const handleStart = useCallback(async () => {
     if (!selectedTeamId || !objective.trim() || !user) return;
     setIsStarting(true);
     setError(null);
 
     try {
-      // Calcular range de meses selecionados
-      const sortedMonths = selectedMonths.map(m => MONTH_MAP[m]).sort();
-      const yearMonths = sortedMonths.length > 0
-        ? sortedMonths.map(mm => `2026-${mm}`)
-        : ['2026-01','2026-02','2026-03','2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12'];
-
-      // ── Buscar snapshot da foto (variance_justifications) ──
-      // Tenta usar a mesma "foto" que os pacoteiros justificam
-      let dreSnapshot: Record<string, unknown>[] = [];
-      let usedSnapshot = false;
-
-      // Para cada mês selecionado, buscar variance items
-      const allVarItems: VarianceJustification[] = [];
-      for (const ym of yearMonths) {
-        const items = await getVarianceJustifications({
-          year_month: ym,
-          marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
-        });
-        allVarItems.push(...items);
-      }
-
-      if (allVarItems.length > 0) {
-        // Converter variance_justifications → formato SomaTagsRow para buildFinancialSummary
-        const somaTagsRows: Record<string, unknown>[] = [];
-        // Agrupar por tag0+tag01+scenario+month para evitar duplicação
-        const seen = new Set<string>();
-
-        for (const item of allVarItems) {
-          // Pular items depth > 1 (tag02/tag03) — buildFinancialSummary trabalha em tag0+tag01
-          if (item.tag02) continue;
-
-          // Cenário Real
-          const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
-          if (!seen.has(keyReal)) {
-            seen.add(keyReal);
-            somaTagsRows.push({
-              tag0: item.tag0,
-              tag01: item.tag01 || '',
-              scenario: 'Real',
-              month: item.year_month,
-              total: item.real_value || 0,
-            });
-          }
-
-          // Cenário comparativo (Orçado ou A-1)
-          const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
-          const keyComp = `${item.tag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
-          if (!seen.has(keyComp)) {
-            seen.add(keyComp);
-            somaTagsRows.push({
-              tag0: item.tag0,
-              tag01: item.tag01 || '',
-              scenario: scenarioLabel,
-              month: item.year_month,
-              total: item.compare_value || 0,
-            });
-          }
-        }
-
-        if (somaTagsRows.length > 0) {
-          dreSnapshot = somaTagsRows;
-          usedSnapshot = true;
-          // Pegar snapshot_at mais recente
-          const snapDates = allVarItems
-            .map(i => i.snapshot_at)
-            .filter(Boolean)
-            .sort()
-            .reverse();
-          setSnapshotAt(snapDates[0] || null);
-          console.log(`📸 Usando foto da justificativa: ${somaTagsRows.length} rows, snapshot_at=${snapDates[0]}`);
-        }
-      }
-
-      // Fallback: se não tem foto, busca ao vivo
-      if (!usedSnapshot) {
-        const mFrom = yearMonths[0];
-        const mTo = yearMonths[yearMonths.length - 1];
-        dreSnapshot = await getSomaTags(
-          mFrom,
-          mTo,
-          selectedMarcas.length > 0 ? selectedMarcas : undefined,
-          selectedFiliais.length > 0 ? selectedFiliais : undefined,
-          undefined,
-          selectedTags01.length > 0 ? selectedTags01 : undefined,
-        ) as Record<string, unknown>[];
-        setSnapshotAt(null);
-        console.log(`⚡ Sem foto disponível, usando dados ao vivo: ${dreSnapshot.length} rows`);
-      }
-
-      // Contexto de filtros para os agentes
-      const monthsLabel = selectedMonths.length > 0 ? selectedMonths.join(', ') : 'Jan-Dez';
-      const filterContext: Record<string, unknown> = {
-        year: '2026',
-        months_range: monthsLabel,
-        data_source: usedSnapshot ? 'snapshot' : 'live',
-      };
-      if (selectedMarcas.length > 0) filterContext.marcas = selectedMarcas;
-      if (selectedFiliais.length > 0) filterContext.filiais = selectedFiliais;
-      if (selectedTags01.length > 0) filterContext.tags01 = selectedTags01;
-      if (snapshotAt) filterContext.snapshot_at = snapshotAt;
+      const { dreSnapshot, filterContext } = await fetchDreData();
 
       const { runId } = await agentTeamService.startPipeline(
         selectedTeamId,
@@ -262,9 +242,34 @@ const AgentTeamView: React.FC = () => {
     } finally {
       setIsStarting(false);
     }
-  }, [selectedTeamId, objective, user, selectedMarcas, selectedFiliais, selectedTags01, selectedMonths]);
+  }, [selectedTeamId, objective, user, fetchDreData]);
 
-  // 4b. Cancelar pipeline
+  // 4c. Testar agente isolado (Alex plan)
+  const handleTestAlex = useCallback(async () => {
+    if (!objective.trim()) return;
+    setIsTesting(true);
+    setError(null);
+    setTestResult(null);
+
+    try {
+      const { dreSnapshot, filterContext } = await fetchDreData();
+      const result = await agentTeamService.testSingleAgent(
+        'alex',
+        'plan',
+        objective.trim(),
+        dreSnapshot,
+        filterContext,
+      );
+      setTestResult(result);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao testar Alex';
+      setError(msg);
+    } finally {
+      setIsTesting(false);
+    }
+  }, [objective, fetchDreData]);
+
+  // 4d. Cancelar pipeline
   const handleCancel = useCallback(async () => {
     if (!activeRunId) return;
     try {
@@ -479,16 +484,24 @@ const AgentTeamView: React.FC = () => {
           />
         </div>
 
-        {/* Start button + snapshot badge */}
-        <div className="flex items-center gap-3">
+        {/* Start button + Test Alex + snapshot badge */}
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={handleStart}
-            disabled={!selectedTeamId || !objective.trim() || isStarting || isRunning}
+            disabled={!selectedTeamId || !objective.trim() || isStarting || isRunning || isTesting}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold uppercase text-white transition-all disabled:opacity-40"
             style={{ backgroundColor: 'var(--color-primary-500)' }}
           >
             {isStarting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
             Iniciar Análise
+          </button>
+          <button
+            onClick={handleTestAlex}
+            disabled={!objective.trim() || isStarting || isRunning || isTesting}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+          >
+            {isTesting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
+            Testar Alex
           </button>
           {snapshotAt && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
@@ -501,6 +514,103 @@ const AgentTeamView: React.FC = () => {
         {error && (
           <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>
         )}
+
+        {/* Test Result Panel — Friendly View */}
+        {testResult && (() => {
+          const out = testResult.output as any;
+          const AGENT_NAMES: Record<string, string> = {
+            bruna: 'Bruna', carlos: 'Carlos', denilson: 'Denilson',
+            edmundo: 'Edmundo', falcao: 'Falcão',
+          };
+          const AGENT_COLORS: Record<string, string> = {
+            bruna: 'bg-purple-100 text-purple-700 border-purple-200',
+            carlos: 'bg-blue-100 text-blue-700 border-blue-200',
+            denilson: 'bg-green-100 text-green-700 border-green-200',
+            edmundo: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+            falcao: 'bg-red-100 text-red-700 border-red-200',
+          };
+          return (
+            <div className="bg-white border border-amber-200 rounded-xl overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border-b border-amber-200">
+                <h3 className="text-sm font-bold text-amber-800 flex items-center gap-2">
+                  <Brain size={16} />
+                  Alex — Plano Estratégico
+                </h3>
+                <div className="flex items-center gap-2">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${testResult.zodValid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {testResult.zodValid ? 'Válido' : 'Zod Falhou'}
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
+                    {testResult.model} · {Math.round(testResult.durationMs / 1000)}s · {testResult.tokensInput}→{testResult.tokensOutput} tok
+                  </span>
+                  <button onClick={() => setTestResult(null)} className="text-gray-400 hover:text-gray-600">
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {testResult.zodErrors && (
+                <div className="text-xs text-red-600 bg-red-50 px-4 py-2 border-b border-red-200">
+                  {testResult.zodErrors.map((e, i) => <div key={i}>{e}</div>)}
+                </div>
+              )}
+
+              <div className="p-4 space-y-4">
+                {/* Executive Summary */}
+                {out.executive_summary && (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                    <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                      <Target size={12} />
+                      Resumo Executivo
+                    </h4>
+                    <p className="text-sm text-gray-800 leading-relaxed">{out.executive_summary}</p>
+                  </div>
+                )}
+
+                {/* Priority Areas */}
+                {out.priority_areas?.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                      <AlertTriangle size={12} />
+                      Áreas Prioritárias ({out.priority_areas.length})
+                    </h4>
+                    <div className="space-y-1.5">
+                      {out.priority_areas.map((area: string, i: number) => (
+                        <div key={i} className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">
+                            {i + 1}
+                          </span>
+                          <p className="text-xs text-gray-800 leading-relaxed">{area}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Assignments */}
+                {out.assignments?.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                      <UserCheck size={12} />
+                      Direcionamento dos Agentes ({out.assignments.length})
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {out.assignments.map((a: any, i: number) => (
+                        <div key={i} className="flex items-start gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2.5 hover:shadow-sm transition-shadow">
+                          <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-bold border ${AGENT_COLORS[a.agent_code] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                            {AGENT_NAMES[a.agent_code] || a.agent_code}
+                          </span>
+                          <p className="text-xs text-gray-700 leading-relaxed">{a.focus}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Run Header */}

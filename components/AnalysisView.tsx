@@ -11,7 +11,8 @@ import {
   X,
   CalendarDays,
   ClipboardCheck,
-  Loader2
+  Loader2,
+  Brain
 } from 'lucide-react';
 import { ExecutiveSummary, ActionsList } from '../analysisPack';
 import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown } from '../services/supabaseService';
@@ -22,6 +23,7 @@ import MultiSelectFilter from './MultiSelectFilter';
 import VariancePptPreview from './VariancePptPreview';
 
 const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
+const AgentTeamView = React.lazy(() => import('./AgentTeamView'));
 
 const MONTHS_OPTIONS = (() => {
   const now = new Date();
@@ -34,7 +36,7 @@ const MONTHS_OPTIONS = (() => {
   return months.reverse();
 })();
 
-type TabType = 'justificativas' | 'summary' | 'actions' | 'slides';
+type TabType = 'justificativas' | 'summary' | 'actions' | 'slides' | 'agentes';
 
 export default function AnalysisView() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -257,8 +259,9 @@ export default function AnalysisView() {
   };
 
   const tabs = [
+    { id: 'justificativas', label: 'Corte DRE - (Justificativas)', icon: ClipboardCheck },
+    { id: 'agentes', label: 'Agentes Financeiros', icon: Brain },
     { id: 'summary', label: 'Sumário Executivo', icon: FileText },
-    { id: 'justificativas', label: 'Justificativas', icon: ClipboardCheck },
     { id: 'actions', label: 'Plano de Ação', icon: ListChecks },
     { id: 'slides', label: 'Slides de Análise', icon: Presentation },
   ];
@@ -278,7 +281,7 @@ export default function AnalysisView() {
               </p>
             </div>
 
-            {activeTab !== 'justificativas' && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm">
+            {activeTab !== 'justificativas' && activeTab !== 'agentes' && <div className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-xl border border-blue-200 shadow-sm">
               {/* Mês */}
               <MultiSelectFilter
                 label="MÊS"
@@ -470,7 +473,14 @@ export default function AnalysisView() {
           </Suspense>
         )}
 
-        <div className={`max-w-7xl mx-auto p-6 ${activeTab === 'justificativas' ? 'hidden' : ''}`}>
+        {/* ==================== ABA AGENTES FINANCEIROS ==================== */}
+        {activeTab === 'agentes' && (
+          <Suspense fallback={<div className="flex items-center justify-center py-20"><RefreshCw size={32} className="text-gray-400 animate-spin" /></div>}>
+            <AgentTeamView />
+          </Suspense>
+        )}
+
+        <div className={`max-w-7xl mx-auto p-6 ${activeTab === 'justificativas' || activeTab === 'agentes' ? 'hidden' : ''}`}>
           {/* ==================== ABA SUMÁRIO ==================== */}
           {activeTab === 'summary' && (
             <div>

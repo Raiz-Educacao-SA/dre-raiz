@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { getSomaTags, invalidateSomaTagsCache, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator, ChevronsDown, ChevronsUp, GripVertical } from 'lucide-react';
+import { getSomaTags, invalidateSomaTagsCache, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow, generateSnapshotFromDre } from '../services/supabaseService';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator, ChevronsDown, ChevronsUp, GripVertical, Camera } from 'lucide-react';
 // ExcelJS carregado sob demanda em exportExcel() via dynamic import
 import type ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
 const DreAnalysisSection = React.lazy(() => import('./DreAnalysisSection'));
 import { useAuth } from '../contexts/AuthContext';
 import { DreAnalysis } from '../types';
+import { toast } from 'sonner';
 
 // ── Formatação ────────────────────────────────────────────────────────────────
 const fmt = (v: number) =>
@@ -153,7 +154,7 @@ interface SomaTagsViewProps {
 }
 
 const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01, allowedMarcas, presentationMode: externalPM, onPresentationModeChange }) => {
-  const { user: authUser } = useAuth();
+  const { user: authUser, isAdmin } = useAuth();
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
   const [error,     setError]     = useState('');
@@ -201,6 +202,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
   // ── Filtro Recorrência ────────────────────────────────────────────────────
   const [recurring, setRecurring] = useState<'Sim' | 'Não' | null>('Sim');
+
+  // ── Foto DRE (snapshot) ──────────────────────────────────────────────────
+  const [isGeneratingSnapshot, setIsGeneratingSnapshot] = useState(false);
 
   // ── Drill-down ────────────────────────────────────────────────────────────
   const [dimensionCache,    setDimensionCache]    = useState<Record<string, DREDimensionRow[]>>({});
@@ -1072,6 +1076,41 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     fetchData();
   }, [fetchData]);
 
+  // ── Gerar Foto DRE (snapshot para Corte DRE / Justificativas) ────────────
+  const handleGenerateSnapshot = useCallback(async () => {
+    // Exige exatamente 1 mês selecionado — foto é mensal
+    if (selectedMonths.length !== 1) {
+      toast.error('Selecione exatamente 1 mês no filtro para gerar a foto');
+      return;
+    }
+    if (displayedGroups.length === 0) {
+      toast.error('Nenhum dado na DRE para gerar foto');
+      return;
+    }
+    const yearMonth = `${year}-${selectedMonths[0]}`;
+
+    setIsGeneratingSnapshot(true);
+    try {
+      const result = await generateSnapshotFromDre(yearMonth, displayedGroups, {
+        marca: selectedMarcas.length === 1 ? selectedMarcas[0] : undefined,
+        depth: 2,
+      });
+      if (result.error) {
+        toast.error(`Erro: ${result.error}`);
+      } else {
+        const monthLabel = MONTH_LABELS[selectedMonths[0]] || selectedMonths[0];
+        const parts = [];
+        if (result.created > 0) parts.push(`${result.created} novos`);
+        if (result.updated > 0) parts.push(`${result.updated} atualizados`);
+        toast.success(`Foto ${monthLabel}/${year} v${result.version}: ${parts.join(' + ') || '0 itens'}`);
+      }
+    } catch (e) {
+      toast.error('Erro ao gerar foto da DRE');
+    } finally {
+      setIsGeneratingSnapshot(false);
+    }
+  }, [displayedGroups, selectedMonths, year, selectedMarcas]);
+
   // Registra ações no App.tsx (header) — deve ficar após exportExcel e fetchData
   useEffect(() => {
     onRegisterActions?.({ refresh: forceRefresh, exportExcel });
@@ -1819,6 +1858,18 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             className="p-1.5 bg-rose-50 text-rose-500 rounded-lg border border-rose-200 hover:bg-rose-100 transition-all shadow-sm shrink-0"
             title="Limpar filtros de dimensão">
             <FilterX size={13} />
+          </button>
+        )}
+
+        {/* Gerar Foto DRE — admin only */}
+        {isAdmin && (
+          <button
+            onClick={handleGenerateSnapshot}
+            disabled={isGeneratingSnapshot || loading || selectedMonths.length !== 1}
+            className="flex items-center gap-1 px-2 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm shrink-0 text-[10px] font-black uppercase tracking-tight"
+            title={selectedMonths.length !== 1 ? 'Selecione exatamente 1 mês para gerar foto' : 'Gerar foto da DRE para Corte DRE (Justificativas)'}>
+            {isGeneratingSnapshot ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+            <span>Foto</span>
           </button>
         )}
 

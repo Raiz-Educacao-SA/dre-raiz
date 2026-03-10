@@ -3216,6 +3216,321 @@ export async function fetchLiveDreForPpt(
 }
 
 /**
+ * Gera snapshot de desvios a partir dos dados EXATOS exibidos na DRE Gerencial.
+ * Chamado pelo botão "Gerar Foto" no SomaTagsView — garante foto = tela.
+ */
+export interface DreSnapshotGroup {
+  tag0: string;
+  real: number;
+  orcado: number;
+  a1: number;
+  items: Array<{ tag01: string; real: number; orcado: number; a1: number }>;
+}
+
+export const generateSnapshotFromDre = async (
+  yearMonth: string,
+  groups: DreSnapshotGroup[],
+  opts: {
+    marca?: string;
+    depth?: 1 | 2 | 3;
+  } = {},
+): Promise<{ created: number; updated: number; version: number; snapshot_at?: string; error?: string; diagnostics?: string }> => {
+  try {
+    const snapshotAt = new Date().toISOString();
+    const marca = opts.marca;
+    const depth = opts.depth || 2;
+    debug(`📸 Gerando foto DRE para ${yearMonth}, marca=${marca || 'todas'}, depth=${depth} — snapshot_at=${snapshotAt}`);
+
+    // Prefixos DRE (01.–06.)
+    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.', '06.']);
+    const isDrePrefix = (tag0: string) => DRE_PREFIXES.has((tag0 || '').slice(0, 3));
+
+    // 1. Converter groups da DRE → formato unificado (tag0+tag01, sem tag02)
+    // Estes valores SÃO os da tela — zero chance de divergência
+    const allAggData: any[] = [];
+    for (const g of groups) {
+      if (!isDrePrefix(g.tag0)) continue;
+      for (const item of g.items) {
+        // Real
+        allAggData.push({ tag0: g.tag0, tag01: item.tag01, tag02: null, tag03: null, scenario: 'Real', total_amount: item.real, marca: marca || '' });
+        // Orçado
+        if (item.orcado !== 0) allAggData.push({ tag0: g.tag0, tag01: item.tag01, tag02: null, tag03: null, scenario: 'Orçado', total_amount: item.orcado, marca: marca || '' });
+        // A-1
+        if (item.a1 !== 0) allAggData.push({ tag0: g.tag0, tag01: item.tag01, tag02: null, tag03: null, scenario: 'A-1', total_amount: item.a1, marca: marca || '' });
+      }
+    }
+
+    debug(`📸 DRE groups: ${allAggData.length} linhas de ${groups.length} tag0s`);
+
+    if (allAggData.length === 0) {
+      return { created: 0, updated: 0, version: 0, error: 'Nenhum dado na DRE para gerar foto.' };
+    }
+
+    // 2. DETALHE tag02+marca via get_variance_snapshot (se depth >= 2)
+    if (depth >= 2) {
+      const PAGE_SIZE = 1000;
+      let snapOffset = 0;
+      let snapMore = true;
+      while (snapMore) {
+        const { data: snapPage, error: snapError } = await supabase
+          .rpc('get_variance_snapshot', {
+            p_year_month: yearMonth,
+            p_marcas: marca ? [marca] : null,
+            p_recurring: 'Sim',
+          })
+          .range(snapOffset, snapOffset + PAGE_SIZE - 1);
+
+        if (snapError) {
+          debug(`⚠️ get_variance_snapshot falhou: ${snapError.message}`);
+          break;
+        }
+        if (!snapPage || snapPage.length === 0) {
+          snapMore = false;
+        } else {
+          for (const r of snapPage) {
+            if (!isDrePrefix(r.tag0)) continue;
+            if (r.tag02) {
+              allAggData.push({
+                tag0: r.tag0, tag01: r.tag01, tag02: r.tag02, tag03: null,
+                scenario: r.scenario, total_amount: r.total, marca: r.marca || '',
+              });
+            }
+          }
+          snapMore = snapPage.length === PAGE_SIZE;
+          snapOffset += PAGE_SIZE;
+        }
+      }
+    }
+
+    // 3. Buscar versão atual
+    let versionQuery = supabase
+      .from('variance_justifications')
+      .select('version')
+      .eq('year_month', yearMonth)
+      .order('version', { ascending: false })
+      .limit(1);
+    if (marca) versionQuery = versionQuery.eq('marca', marca);
+    const { data: versionData } = await versionQuery;
+    const nextVersion = (versionData?.[0]?.version || 0) + 1;
+
+    // 4. Buscar itens existentes com justificativa (para preservar)
+    let existingQuery = supabase
+      .from('variance_justifications')
+      .select('*')
+      .eq('year_month', yearMonth)
+      .in('status', ['justified', 'approved', 'rejected']);
+    if (marca) existingQuery = existingQuery.eq('marca', marca);
+    const { data: existingItems } = await existingQuery;
+
+    const existingMap = new Map<string, VarianceJustification>();
+    if (existingItems) {
+      for (const item of existingItems) {
+        const pk = `${item.marca}||${item.tag0}|${item.tag01 || ''}|${item.tag02 || ''}|${item.tag03 || ''}|${item.comparison_type}`;
+        existingMap.set(pk, item);
+      }
+    }
+
+    // 5. Buscar owners via user_permissions
+    const { data: permissions } = await supabase
+      .from('user_permissions')
+      .select('user_id, permission_type, permission_value')
+      .in('permission_type', ['centro_custo', 'cia']);
+    const { data: allUsers } = await supabase
+      .from('users')
+      .select('id, email, name');
+
+    const userMap = new Map<string, { email: string; name: string }>();
+    if (allUsers) allUsers.forEach(u => userMap.set(u.id, { email: u.email, name: u.name }));
+    const tag01OwnerMap = new Map<string, { email: string; name: string }>();
+    if (permissions) {
+      for (const p of permissions) {
+        if (p.permission_type === 'centro_custo' && p.permission_value) {
+          const u = userMap.get(p.user_id);
+          if (u) tag01OwnerMap.set(p.permission_value, u);
+        }
+      }
+    }
+
+    // 6. Buscar thresholds
+    const { data: thresholdsData } = await supabase
+      .from('variance_thresholds')
+      .select('*')
+      .eq('active', true);
+    const activeThresholds = (thresholdsData || []) as VarianceThreshold[];
+
+    const exceedsThreshold = (tag0: string, marcaVal: string, varAbsVal: number, varPctVal: number | null): boolean => {
+      if (activeThresholds.length === 0) return true;
+      let best: VarianceThreshold | null = null;
+      for (const t of activeThresholds) {
+        const matchMarca = !t.marca || t.marca === marcaVal;
+        const matchTag0 = !t.tag0 || tag0.startsWith(t.tag0);
+        if (!matchMarca || !matchTag0) continue;
+        const specificity = (t.marca ? 2 : 0) + (t.tag0 ? 1 : 0);
+        const bestSpec = best ? ((best.marca ? 2 : 0) + (best.tag0 ? 1 : 0)) : -1;
+        if (specificity > bestSpec) best = t;
+      }
+      if (!best) return true;
+      const absExceeds = best.min_abs_value > 0 && Math.abs(varAbsVal) >= best.min_abs_value;
+      const pctExceeds = best.min_pct_value > 0 && varPctVal !== null && Math.abs(varPctVal) >= best.min_pct_value;
+      if (best.min_abs_value > 0 && best.min_pct_value > 0) return absExceeds || pctExceeds;
+      if (best.min_abs_value > 0) return absExceeds;
+      if (best.min_pct_value > 0) return pctExceeds;
+      return true;
+    };
+
+    // 7. Agregar e gerar rows
+    const aggMap = new Map<string, number>();
+    for (const row of allAggData) {
+      const key = `${row.marca}||${row.tag0}|${row.tag01 || ''}|${row.tag02 || ''}|${row.tag03 || ''}|${row.scenario}`;
+      aggMap.set(key, (aggMap.get(key) || 0) + Number(row.total_amount || 0));
+    }
+    const combos = new Set<string>();
+    for (const row of allAggData) {
+      combos.add(`${row.marca}||${row.tag0}|${row.tag01 || ''}|${row.tag02 || ''}|${row.tag03 || ''}`);
+    }
+
+    const newRows: any[] = [];
+    const updateItems: any[] = [];
+
+    for (const combo of combos) {
+      const parts = combo.split('||');
+      const comboMarca = parts[0];
+      const tagParts = parts[1].split('|');
+      const [tag0, tag01, tag02, tag03] = tagParts;
+      const realVal = aggMap.get(`${combo}|Real`) || 0;
+      const orcVal = aggMap.get(`${combo}|Orçado`) || 0;
+      const a1Val = aggMap.get(`${combo}|A-1`) || 0;
+      const owner = tag01 ? tag01OwnerMap.get(tag01) : undefined;
+
+      const processComparison = (compareVal: number, compType: 'orcado' | 'a1') => {
+        if (realVal === 0 && compareVal === 0) return;
+        const varAbs = realVal - compareVal;
+        const varPct = compareVal !== 0 ? Math.round(((realVal - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
+        const isLeaf = !!(comboMarca && comboMarca !== '' && (tag02 || depth === 1));
+        const realSemOrcado = compType === 'orcado' && realVal !== 0 && compareVal === 0;
+        if (isLeaf && !realSemOrcado && !exceedsThreshold(tag0, comboMarca, varAbs, varPct)) return;
+
+        const existKey = `${comboMarca || marca || ''}||${tag0}|${tag01 || ''}|${tag02 || ''}|${tag03 || ''}|${compType}`;
+        const existing = existingMap.get(existKey);
+
+        if (existing) {
+          updateItems.push({
+            id: existing.id, real_value: realVal, compare_value: compareVal,
+            variance_abs: varAbs, variance_pct: varPct, version: nextVersion,
+            owner_email: owner?.email || existing.owner_email,
+            owner_name: owner?.name || existing.owner_name,
+          });
+          existingMap.delete(existKey);
+        } else {
+          newRows.push({
+            year_month: yearMonth, marca: comboMarca || marca || '',
+            tag0, tag01: tag01 || '', tag02: tag02 || null, tag03: tag03 || null,
+            comparison_type: compType, real_value: realVal, compare_value: compareVal,
+            variance_abs: varAbs, variance_pct: varPct,
+            owner_email: owner?.email || null, owner_name: owner?.name || null,
+            version: nextVersion, snapshot_at: snapshotAt,
+          });
+        }
+      };
+      processComparison(orcVal, 'orcado');
+      processComparison(a1Val, 'a1');
+    }
+
+    // 8. CalcRows: MARGEM, EBITDA, EBITDA TOTAL (dos groups da tela)
+    const prefixTotals = new Map<string, number>();
+    for (const g of groups) {
+      if (!isDrePrefix(g.tag0)) continue;
+      const pfx = g.tag0.slice(0, 3);
+      prefixTotals.set(`${pfx}|Real`, (prefixTotals.get(`${pfx}|Real`) || 0) + g.real);
+      prefixTotals.set(`${pfx}|Orçado`, (prefixTotals.get(`${pfx}|Orçado`) || 0) + g.orcado);
+      prefixTotals.set(`${pfx}|A-1`, (prefixTotals.get(`${pfx}|A-1`) || 0) + g.a1);
+    }
+    const get = (pfx: string, sc: string) => prefixTotals.get(`${pfx}|${sc}`) || 0;
+    const margemR = get('01.', 'Real') + get('02.', 'Real') + get('03.', 'Real');
+    const margemO = get('01.', 'Orçado') + get('02.', 'Orçado') + get('03.', 'Orçado');
+    const margemA = get('01.', 'A-1') + get('02.', 'A-1') + get('03.', 'A-1');
+    const ebitdaR = margemR + get('04.', 'Real'), ebitdaO = margemO + get('04.', 'Orçado'), ebitdaA = margemA + get('04.', 'A-1');
+    const etR = ebitdaR + get('05.', 'Real') + get('06.', 'Real');
+    const etO = ebitdaO + get('05.', 'Orçado') + get('06.', 'Orçado');
+    const etA = ebitdaA + get('05.', 'A-1') + get('06.', 'A-1');
+
+    const addCalcRow = (label: string, realV: number, orcV: number, a1V: number) => {
+      const addComp = (compareVal: number, compType: 'orcado' | 'a1') => {
+        if (realV === 0 && compareVal === 0) return;
+        const varAbs = realV - compareVal;
+        const varPct = compareVal !== 0 ? Math.round(((realV - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
+        newRows.push({
+          year_month: yearMonth, marca: marca || '',
+          tag0: label, tag01: '', tag02: null, tag03: null,
+          comparison_type: compType, real_value: realV, compare_value: compareVal,
+          variance_abs: varAbs, variance_pct: varPct,
+          owner_email: null, owner_name: null,
+          version: nextVersion, snapshot_at: snapshotAt,
+        });
+      };
+      addComp(orcV, 'orcado');
+      addComp(a1V, 'a1');
+    };
+    addCalcRow('MARGEM DE CONTRIBUIÇÃO', margemR, margemO, margemA);
+    addCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', ebitdaR, ebitdaO, ebitdaA);
+    addCalcRow('EBITDA TOTAL', etR, etO, etA);
+
+    // 9. DELETE pendentes/notificados antigos
+    let delQuery = supabase.from('variance_justifications').delete().eq('year_month', yearMonth);
+    if (marca) delQuery = delQuery.eq('marca', marca);
+    delQuery = delQuery.in('status', ['pending', 'notified']);
+    await delQuery;
+
+    // 9.5 DELETE calc rows antigos
+    let delCalcQuery = supabase.from('variance_justifications').delete().eq('year_month', yearMonth)
+      .in('tag0', ['MARGEM DE CONTRIBUIÇÃO', 'EBITDA', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
+    if (marca) delCalcQuery = delCalcQuery.eq('marca', marca);
+    await delCalcQuery;
+
+    // 10. UPDATE existentes
+    let totalUpdated = 0;
+    for (const item of updateItems) {
+      const { error: updErr } = await supabase
+        .from('variance_justifications')
+        .update({
+          real_value: item.real_value, compare_value: item.compare_value,
+          variance_abs: item.variance_abs, variance_pct: item.variance_pct,
+          version: item.version, owner_email: item.owner_email, owner_name: item.owner_name,
+          snapshot_at: snapshotAt,
+        })
+        .eq('id', item.id);
+      if (!updErr) totalUpdated++;
+    }
+
+    // 11. INSERT novos em batches
+    let totalCreated = 0;
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < newRows.length; i += BATCH_SIZE) {
+      const batch = newRows.slice(i, i + BATCH_SIZE);
+      const { data: inserted, error: insertErr } = await supabase
+        .from('variance_justifications')
+        .insert(batch)
+        .select('id');
+      if (insertErr) {
+        console.error(`❌ INSERT batch ${i} falhou:`, insertErr);
+        for (const row of batch) {
+          const { error: singleErr } = await supabase.from('variance_justifications').insert(row);
+          if (!singleErr) totalCreated++;
+        }
+      } else {
+        totalCreated += inserted?.length || batch.length;
+      }
+    }
+
+    debug(`📸 Foto v${nextVersion}: ${totalCreated} criados + ${totalUpdated} atualizados`);
+    return { created: totalCreated, updated: totalUpdated, version: nextVersion, snapshot_at: snapshotAt };
+  } catch (err: any) {
+    console.error('❌ generateSnapshotFromDre:', err);
+    return { created: 0, updated: 0, version: 0, error: err.message || String(err) };
+  }
+};
+
+/**
  * Gera itens de desvio para um mês/marca.
  * FONTE PRINCIPAL: get_soma_tags RPC (mesma do DRE Gerencial) → tag0+tag01
  * DETALHE: dre_agg materialized view → tag02+tag03 (suplementar)
@@ -3231,44 +3546,46 @@ export const generateVarianceItems = async (
     const depthLabels: Record<number, string> = { 1: 'tag01+marca', 2: 'tag02+marca', 3: 'tag03+marca' };
     debug(`📊 Gerando desvios para ${yearMonth}, marca=${marca || 'todas'}, depth=${depth} (${depthLabels[depth]}) — snapshot_at=${snapshotAt}`);
 
-    // 1. FONTE PRINCIPAL — get_soma_tags RPC (mesma fonte do DRE Gerencial)
-    // Retorna {tag0, tag01, scenario, month, total} — EXATAMENTE o que o DRE mostra
-    const { data: somaData, error: somaError } = await supabase
-      .rpc('get_soma_tags', {
-        p_month_from: yearMonth,
-        p_month_to: yearMonth,
-        p_marcas: marca ? [marca] : null,
-        p_nome_filiais: null,
-        p_tags02: null,
-        p_tags01: null,
-        p_recurring: 'Sim',    // Mesmo padrão do DRE Gerencial (recurring = 'Sim')
-        p_tags03: null,
-      });
-
-    if (somaError) {
-      console.error('Erro ao buscar get_soma_tags:', somaError);
-      return { created: 0, updated: 0, version: 0, error: `Erro get_soma_tags: ${somaError.message}` };
-    }
+    // 1. FONTE PRINCIPAL — getSomaTags() (MESMA função usada pelo DRE Gerencial)
+    // Usa a wrapper que o SomaTagsView usa, garantindo dados idênticos
+    const somaData = await getSomaTags(
+      yearMonth, yearMonth,
+      marca ? [marca] : undefined,
+      undefined, undefined, undefined,
+      'Sim',     // Mesmo padrão do DRE Gerencial (recurring = 'Sim')
+      undefined,
+    );
 
     if (!somaData || somaData.length === 0) {
       return { created: 0, updated: 0, version: 0, error: 'Nenhum dado retornado por get_soma_tags para o período. Verifique se existem lançamentos.' };
     }
 
-    // Corte até EBITDA TOTAL: apenas prefixos 01.–05.
-    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
+    // Corte até EBITDA TOTAL: prefixos 01.–06. (06. = Rateio Raiz, parte do EBITDA TOTAL)
+    const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.', '06.']);
     const isDrePrefix = (tag0: string) => DRE_PREFIXES.has((tag0 || '').slice(0, 3));
 
-    // Converter soma → formato unificado (tag02=null, tag03=null)
-    // somaData = nível tag0+tag01 (fonte get_soma_tags, exata ao DRE Gerencial)
-    const allAggData: any[] = somaData.filter((row: any) => isDrePrefix(row.tag0)).map((row: any) => ({
-      tag0: row.tag0,
-      tag01: row.tag01,
-      tag02: null,
-      tag03: null,
-      scenario: row.scenario,
-      total_amount: row.total,
-      marca: marca || '',
-    }));
+    // Pré-agregar soma por (tag0, tag01, scenario) — EXATAMENTE como SomaTagsView faz
+    // get_soma_tags retorna UNION ALL (pode ter 2 rows p/ mesmo tag0+tag01+scenario: transactions + transactions_manual)
+    // SomaTagsView soma com += , aqui fazemos o mesmo antes de gerar os itens
+    const somaAggMap = new Map<string, number>();
+    for (const row of somaData) {
+      if (!isDrePrefix(row.tag0)) continue;
+      const key = `${row.tag0}|${row.tag01}|${row.scenario}`;
+      somaAggMap.set(key, (somaAggMap.get(key) || 0) + Number(row.total || 0));
+    }
+
+    // Converter soma agregado → formato unificado
+    const allAggData: any[] = [];
+    for (const [key, total] of somaAggMap) {
+      const [tag0, tag01, scenario] = key.split('|');
+      allAggData.push({
+        tag0, tag01,
+        tag02: null, tag03: null,
+        scenario,
+        total_amount: total,
+        marca: marca || '',
+      });
+    }
 
     debug(`📊 get_soma_tags: ${allAggData.length} linhas DRE para ${yearMonth}`);
 
@@ -3512,14 +3829,13 @@ export const generateVarianceItems = async (
     }
 
     // 6.5 Linhas calculadas: MARGEM DE CONTRIBUIÇÃO e EBITDA
-    // Agregar por prefixo tag0 + cenário + marca
-    // Calc rows: usar APENAS somaData (get_soma_tags) para evitar contagem dupla com dre_agg detail
+    // Agregar por prefixo tag0 + cenário — usa somaAggMap (já pré-agregado, idêntico à DRE)
     const prefixTotals = new Map<string, number>();
-    for (const row of somaData as any[]) {
-      if (!isDrePrefix(row.tag0)) continue;
-      const prefix = (row.tag0 || '').slice(0, 3); // '01.', '02.', etc.
-      const key = `${marca || ''}|${prefix}|${row.scenario}`;
-      prefixTotals.set(key, (prefixTotals.get(key) || 0) + Number(row.total || 0));
+    for (const [key, total] of somaAggMap) {
+      const [tag0, , scenario] = key.split('|');
+      const prefix = (tag0 || '').slice(0, 3); // '01.', '02.', etc.
+      const pfxKey = `${marca || ''}|${prefix}|${scenario}`;
+      prefixTotals.set(pfxKey, (prefixTotals.get(pfxKey) || 0) + total);
     }
 
     const calcMarcas = [marca || ''];
@@ -3536,10 +3852,10 @@ export const generateVarianceItems = async (
       const ebitdaOrc = margemOrc + get('04.', 'Orçado');
       const ebitdaA1 = margemA1 + get('04.', 'A-1');
 
-      // EBITDA TOTAL = EBITDA + 05. RATEIO RAIZ
-      const ebitdaTotalReal = ebitdaReal + get('05.', 'Real');
-      const ebitdaTotalOrc = ebitdaOrc + get('05.', 'Orçado');
-      const ebitdaTotalA1 = ebitdaA1 + get('05.', 'A-1');
+      // EBITDA TOTAL = EBITDA + 05. + 06. RATEIO RAIZ
+      const ebitdaTotalReal = ebitdaReal + get('05.', 'Real') + get('06.', 'Real');
+      const ebitdaTotalOrc = ebitdaOrc + get('05.', 'Orçado') + get('06.', 'Orçado');
+      const ebitdaTotalA1 = ebitdaA1 + get('05.', 'A-1') + get('06.', 'A-1');
 
       const addCalcRow = (label: string, realV: number, orcV: number, a1V: number) => {
         const addComp = (compareVal: number, compType: 'orcado' | 'a1') => {
