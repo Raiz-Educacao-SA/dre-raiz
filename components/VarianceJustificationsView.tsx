@@ -9,7 +9,6 @@ import {
   XCircle,
   Sparkles,
   Loader2,
-  RefreshCw,
   AlertTriangle,
   FileText,
   Settings,
@@ -27,7 +26,6 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   getVarianceJustifications,
   getVarianceYtdItems,
-  generateVarianceItems,
   submitJustification,
   reviewJustification,
   bulkReviewJustifications,
@@ -128,7 +126,6 @@ const VarianceJustificationsView: React.FC = () => {
   // Data
   const [items, setItems] = useState<VarianceJustification[]>([]);
   const [loading, setLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [notifying, setNotifying] = useState(false);
 
 
@@ -846,33 +843,6 @@ const VarianceJustificationsView: React.FC = () => {
 
   // ── Actions ──
 
-  const handleGenerate = async () => {
-    if (!yearMonth) {
-      toast.error('Selecione um mês');
-      return;
-    }
-    setGenerating(true);
-    try {
-      const result = await generateVarianceItems(yearMonth, filterMarcas.length > 0 ? filterMarcas[0] : undefined, generationDepth);
-      if (result.error) {
-        toast.error(`Erro: ${result.error}`);
-      } else {
-        const parts = [];
-        if (result.created > 0) parts.push(`${result.created} novos`);
-        if (result.updated > 0) parts.push(`${result.updated} atualizados`);
-        toast.success(`Versão ${result.version}: ${parts.join(' + ') || '0 itens'}`);
-        if (result.diagnostics) {
-          toast.info(result.diagnostics, { duration: 5000 });
-        }
-        fetchData();
-      }
-    } catch (e) {
-      toast.error('Erro ao gerar desvios');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
   const handleNotify = async () => {
     if (!yearMonth) return;
     setNotifying(true);
@@ -1552,14 +1522,6 @@ const VarianceJustificationsView: React.FC = () => {
             <>
               <div className="h-5 w-px bg-blue-200 shrink-0" />
               <button
-                onClick={handleGenerate}
-                disabled={generating}
-                className="flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-[#1B75BB] to-[#152e55] text-white transition-all disabled:opacity-50 shadow-sm shrink-0"
-              >
-                {generating ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                Gerar
-              </button>
-              <button
                 onClick={handleNotify}
                 disabled={notifying}
                 className="flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 text-white transition-all disabled:opacity-50 shadow-sm shrink-0"
@@ -1648,7 +1610,7 @@ const VarianceJustificationsView: React.FC = () => {
             <p className="text-sm font-semibold">Nenhum desvio encontrado</p>
             <p className="text-xs mt-1">
               {isAdminOrManager
-                ? 'Clique em "Gerar Desvios" para criar itens para o mês selecionado'
+                ? 'Use o botão "Foto" na DRE Gerencial para gerar o snapshot do mês'
                 : 'Nenhum desvio atribuído a você para este período'}
             </p>
           </div>
@@ -2154,7 +2116,7 @@ const ThresholdsPanel: React.FC<{
           Nível de Geração
         </h4>
         <p className="text-[10px] text-gray-400 mb-2">
-          Até que nível de detalhe gerar justificativas ao clicar em "Gerar Desvios".
+          Até que nível de detalhe gerar justificativas ao clicar em "Foto" na DRE Gerencial.
         </p>
         <div className="flex gap-2">
           {DEPTH_OPTIONS.map(opt => {
