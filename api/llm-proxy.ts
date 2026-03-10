@@ -131,10 +131,9 @@ async function handleGroq(req: VercelRequest, res: VercelResponse) {
 
 // ── Generate AI handler ──
 
-import { callClaudeJSON } from '../services/claudeService';
-import { buildSystemPrompt, buildUserPrompt } from '../analysisPack/utils/prompts';
-import { AnalysisPackSchema } from '../analysisPack/types/schema';
-import type { AnalysisContext } from '../types';
+// Lazy imports — só carregam quando handleGenerateAi é chamado
+// Evita crash na inicialização da serverless function para outras actions
+type AnalysisContext = import('../types').AnalysisContext;
 
 function analysisPackJsonSchema() {
   return {
@@ -191,6 +190,11 @@ async function handleGenerateAi(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Lazy imports — só carrega quando esta action é chamada
+    const { callClaudeJSON } = await import('../services/claudeService');
+    const { buildSystemPrompt, buildUserPrompt } = await import('../analysisPack/utils/prompts');
+    const { AnalysisPackSchema } = await import('../analysisPack/types/schema');
+
     const body = req.body as { context: AnalysisContext };
 
     if (!body?.context) {
