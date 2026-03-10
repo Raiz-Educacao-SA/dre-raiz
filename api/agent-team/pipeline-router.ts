@@ -441,7 +441,7 @@ async function handleReviewStep(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Erro ao atualizar review' });
     }
 
-    const auditAction = body.action === 'approved' ? 'approval' : 'rejection';
+    const auditAction = body.action === 'approve' ? 'approval' : 'rejection';
     recordAuditEntryAsync({
       run_id: existing.run_id,
       action_type: auditAction,
@@ -630,7 +630,7 @@ async function handleRunScheduled(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        const steps = (teamAgents as TeamAgentRow[]).map((ta) => ({
+        const steps = (teamAgents as any[]).map((ta: TeamAgentRow) => ({
           run_id: run.id,
           agent_code: ta.agents.code,
           step_type: ta.step_type,

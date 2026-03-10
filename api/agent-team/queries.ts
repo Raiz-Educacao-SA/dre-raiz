@@ -420,7 +420,7 @@ async function handleRuns(req: VercelRequest, res: VercelResponse) {
 
     const { data: runs, error } = await sb
       .from('agent_runs')
-      .select('id, team_id, objective, status, started_by, started_by_name, started_at, completed_at, consolidated_summary')
+      .select('id, team_id, objective, status, started_by, started_by_name, started_at, completed_at, consolidated_summary, dre_data_snapshot, financial_summary, filter_context, admin_comment')
       .order('started_at', { ascending: false })
       .limit(limit);
 
