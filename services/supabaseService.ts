@@ -2954,6 +2954,7 @@ export interface VarianceJustification {
   notified_at: string | null;
   version: number;
   snapshot_at: string | null;
+  mandatory: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -3407,8 +3408,8 @@ export const generateSnapshotFromDre = async (
         const varAbs = realVal - compareVal;
         const varPct = compareVal !== 0 ? Math.round(((realVal - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
         const isLeaf = !!(comboMarca && comboMarca !== '' && (tag02 || depth === 1));
-        const realSemOrcado = compType === 'orcado' && realVal !== 0 && compareVal === 0;
-        if (isLeaf && !realSemOrcado && !exceedsThreshold(tag0, comboMarca, varAbs, varPct)) return;
+        // Threshold define se justificativa é obrigatória (fora do range) ou opcional (dentro)
+        const isMandatory = isLeaf ? exceedsThreshold(tag0, comboMarca, varAbs, varPct) : false;
 
         const existKey = `${comboMarca || marca || ''}||${tag0}|${tag01 || ''}|${tag02 || ''}|${tag03 || ''}|${compType}`;
         const existing = existingMap.get(existKey);
@@ -3419,6 +3420,7 @@ export const generateSnapshotFromDre = async (
             variance_abs: varAbs, variance_pct: varPct, version: nextVersion,
             owner_email: owner?.email || existing.owner_email,
             owner_name: owner?.name || existing.owner_name,
+            mandatory: isMandatory,
           });
           existingMap.delete(existKey);
         } else {
@@ -3429,6 +3431,7 @@ export const generateSnapshotFromDre = async (
             variance_abs: varAbs, variance_pct: varPct,
             owner_email: owner?.email || null, owner_name: owner?.name || null,
             version: nextVersion, snapshot_at: snapshotAt,
+            mandatory: isMandatory,
           });
         }
       };
@@ -3496,7 +3499,7 @@ export const generateSnapshotFromDre = async (
           real_value: item.real_value, compare_value: item.compare_value,
           variance_abs: item.variance_abs, variance_pct: item.variance_pct,
           version: item.version, owner_email: item.owner_email, owner_name: item.owner_name,
-          snapshot_at: snapshotAt,
+          snapshot_at: snapshotAt, mandatory: item.mandatory,
         })
         .eq('id', item.id);
       if (!updErr) totalUpdated++;

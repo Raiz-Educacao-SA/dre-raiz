@@ -570,6 +570,9 @@ const VarianceJustificationsView: React.FC = () => {
     // Owner (shared)
     ownerEmail: string | null;
     ownerName: string | null;
+    // Obrigatoriedade (threshold)
+    orcMandatory: boolean;
+    a1Mandatory: boolean;
   };
 
   /** Helper: aggregate values from a list of items */
@@ -642,6 +645,8 @@ const VarianceJustificationsView: React.FC = () => {
         a1AiSummary: a1Direct?.ai_summary || null,
         ownerEmail: orcDirect?.owner_email || a1Direct?.owner_email || allItems[0]?.owner_email || null,
         ownerName: orcDirect?.owner_name || a1Direct?.owner_name || allItems[0]?.owner_name || null,
+        orcMandatory: orcDirect?.mandatory ?? false,
+        a1Mandatory: a1Direct?.mandatory ?? false,
       };
     };
 
@@ -798,6 +803,7 @@ const VarianceJustificationsView: React.FC = () => {
       a1Compare: a, a1VarAbs: r - a, a1VarPct: varPctCalc(r, a),
       a1Status: '', a1DbItem: null, a1AiSummary: null,
       ownerEmail: null, ownerName: null,
+      orcMandatory: false, a1Mandatory: false,
     });
 
     // Insert after last row of each prefix group (reverse order to preserve indices)
@@ -824,6 +830,8 @@ const VarianceJustificationsView: React.FC = () => {
     const justified = items.filter(i => i.status === 'justified').length;
     const approved = items.filter(i => i.status === 'approved').length;
     const rejected = items.filter(i => i.status === 'rejected').length;
+    const mandatoryPending = items.filter(i => i.mandatory && (i.status === 'pending' || i.status === 'notified')).length;
+    const mandatoryTotal = items.filter(i => i.mandatory).length;
     const version = items.length > 0 ? Math.max(...items.map(i => i.version || 1)) : 0;
     // snapshot_at: pega o mais recente entre os items da versão atual
     const currentVersionItems = items.filter(i => i.version === version && i.snapshot_at);
@@ -833,7 +841,7 @@ const VarianceJustificationsView: React.FC = () => {
           return d > latest ? d : latest;
         }, currentVersionItems[0].snapshot_at!)
       : null;
-    return { pending, notified, justified, approved, rejected, total: items.length, version, snapshotAt };
+    return { pending, notified, justified, approved, rejected, mandatoryPending, mandatoryTotal, total: items.length, version, snapshotAt };
   }, [items]);
 
   // ── Actions ──
@@ -1208,6 +1216,7 @@ const VarianceJustificationsView: React.FC = () => {
     const status = isOrc ? row.orcStatus : row.a1Status;
     const dbItem = isOrc ? row.orcDbItem : row.a1DbItem;
     const aiSummary = isOrc ? row.orcAiSummary : row.a1AiSummary;
+    const mandatory = isOrc ? row.orcMandatory : row.a1Mandatory;
     const borderCls = isOrc ? 'border-l-2 border-emerald-200/60' : 'border-l-2 border-purple-200/60';
 
     const canJustify = !row.hasChildren && row.depth >= 2 && dbItem &&
@@ -1233,6 +1242,15 @@ const VarianceJustificationsView: React.FC = () => {
               {status && (
                 <span className={`inline-flex px-1 py-0.5 rounded text-[7px] font-bold leading-none whitespace-nowrap ${STATUS_COLORS[status] || ''}`}>
                   {STATUS_LABELS[status] || ''}
+                </span>
+              )}
+              {row.depth >= 2 && dbItem && (
+                <span className={`inline-flex px-1 py-0.5 rounded text-[7px] font-bold leading-none whitespace-nowrap ${
+                  mandatory
+                    ? 'bg-red-100 text-red-700 border border-red-300'
+                    : 'bg-gray-100 text-gray-400'
+                }`}>
+                  {mandatory ? 'Obrig.' : 'Opcional'}
                 </span>
               )}
               {canJustify && dbItem && (
@@ -1438,6 +1456,9 @@ const VarianceJustificationsView: React.FC = () => {
               <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700" title={`Snapshot: ${stats.snapshotAt}`}>
                 Foto {new Date(stats.snapshotAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
+            )}
+            {stats.mandatoryPending > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300 font-bold">{stats.mandatoryPending} obrig. pendentes</span>
             )}
             <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">{stats.pending + stats.notified} pendentes</span>
             <span className="px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">{stats.justified} justificados</span>
@@ -2096,10 +2117,10 @@ const ThresholdsPanel: React.FC<{
     <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-4">
       <div>
         <h4 className="text-[10px] font-bold uppercase text-gray-500 mb-1.5">
-          Limites de Variação (Thresholds)
+          Limites de Obrigatoriedade
         </h4>
         <p className="text-[10px] text-gray-400 mb-2">
-          Valores mínimos para gerar cobranças. Se 0, todos os desvios são incluídos.
+          Desvios acima destes limites são marcados como <b className="text-red-600">obrigatórios</b>. Abaixo ficam como <b className="text-gray-500">opcionais</b>. Se nenhum limite cadastrado, todos são obrigatórios.
         </p>
       </div>
 
