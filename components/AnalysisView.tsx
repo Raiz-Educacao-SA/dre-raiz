@@ -4,7 +4,6 @@ import {
   ListChecks,
   Presentation,
   Sparkles,
-  FileSpreadsheet,
   RefreshCw,
   Flag,
   Building2,
@@ -14,7 +13,7 @@ import {
   Loader2,
   Brain
 } from 'lucide-react';
-import { ExecutiveSummary, ActionsList } from '../analysisPack';
+import { ExecutiveSummary } from '../analysisPack';
 import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
 import type { AnalysisContext } from '../analysisPack/types/schema';
@@ -24,6 +23,7 @@ import VariancePptPreview from './VariancePptPreview';
 
 const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
 const AgentTeamView = React.lazy(() => import('./AgentTeamView'));
+const ActionPlansConsolidatedView = React.lazy(() => import('./ActionPlansConsolidatedView'));
 
 const MONTHS_OPTIONS = (() => {
   const now = new Date();
@@ -59,12 +59,10 @@ export default function AnalysisView() {
 
   // Estados separados para cada aba
   const [summaryData, setSummaryData] = useState<{ summary: any; meta: any } | null>(null);
-  const [actionsData, setActionsData] = useState<any[] | null>(null);
   const [variancePreviewData, setVariancePreviewData] = useState<VariancePptData | null>(null);
 
   // Loading states separados
   const [summaryLoading, setSummaryLoading] = useState(false);
-  const [actionsLoading, setActionsLoading] = useState(false);
   const [slidesLoading, setSlidesLoading] = useState(false);
   const [variancePptLoading, setVariancePptLoading] = useState(false);
 
@@ -128,23 +126,6 @@ export default function AnalysisView() {
       alert(`❌ ${error.message || 'Erro ao gerar sumário.'}`);
     } finally {
       setSummaryLoading(false);
-    }
-  };
-
-  // ========================================
-  // Gerar Plano de Ação
-  // ========================================
-  const handleGenerateActions = async () => {
-    setActionsLoading(true);
-    try {
-      const context = await fetchSnapshotContext();
-      const data = await callAI(context, 'actions');
-      setActionsData(data.actions);
-    } catch (error: any) {
-      console.error('Erro ao gerar ações:', error);
-      alert(`❌ ${error.message || 'Erro ao gerar plano de ação.'}`);
-    } finally {
-      setActionsLoading(false);
     }
   };
 
@@ -374,26 +355,6 @@ export default function AnalysisView() {
               </button>
             )}
 
-            {activeTab === 'actions' && (
-              <button
-                onClick={handleGenerateActions}
-                disabled={actionsLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-[#F44C00] text-white rounded-lg hover:bg-[#d63d00] disabled:opacity-50 disabled:cursor-not-allowed font-bold text-sm transition-all"
-              >
-                {actionsLoading ? (
-                  <>
-                    <RefreshCw size={16} className="animate-spin" />
-                    Gerando...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={16} />
-                    Gerar Plano de Ação
-                  </>
-                )}
-              </button>
-            )}
-
             {activeTab === 'slides' && (
               <div className="flex gap-2">
                 <button
@@ -439,7 +400,6 @@ export default function AnalysisView() {
               // Indicador de conteúdo gerado
               let hasContent = false;
               if (tab.id === 'summary') hasContent = !!summaryData;
-              if (tab.id === 'actions') hasContent = !!actionsData;
               if (tab.id === 'slides') hasContent = !!variancePreviewData;
 
               return (
@@ -480,7 +440,19 @@ export default function AnalysisView() {
           </Suspense>
         )}
 
-        <div className={`max-w-7xl mx-auto p-6 ${activeTab === 'justificativas' || activeTab === 'agentes' ? 'hidden' : ''}`}>
+        {/* ==================== ABA PLANO DE AÇÃO ==================== */}
+        {activeTab === 'actions' && (
+          <div className="max-w-7xl mx-auto p-6">
+            <Suspense fallback={<div className="flex items-center justify-center py-20"><RefreshCw size={32} className="text-gray-400 animate-spin" /></div>}>
+              <ActionPlansConsolidatedView
+                selectedMonth={selectedMonth}
+                selectedMarcas={selectedMarcas}
+              />
+            </Suspense>
+          </div>
+        )}
+
+        <div className={`max-w-7xl mx-auto p-6 ${activeTab === 'justificativas' || activeTab === 'agentes' || activeTab === 'actions' ? 'hidden' : ''}`}>
           {/* ==================== ABA SUMÁRIO ==================== */}
           {activeTab === 'summary' && (
             <div>
@@ -509,36 +481,6 @@ export default function AnalysisView() {
                   title="Nenhum sumário gerado ainda"
                   description="Clique no botão acima para gerar um sumário executivo com IA."
                   loading={summaryLoading}
-                />
-              )}
-            </div>
-          )}
-
-          {/* ==================== ABA AÇÕES ==================== */}
-          {activeTab === 'actions' && (
-            <div>
-              {actionsData ? (
-                <div className="space-y-4">
-                  <ActionsList actions={actionsData} />
-
-                  {/* Botão para regerar */}
-                  <div className="flex justify-center">
-                    <button
-                      onClick={handleGenerateActions}
-                      disabled={actionsLoading}
-                      className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-bold text-sm"
-                    >
-                      <RefreshCw size={16} />
-                      Regerar Plano de Ação
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <EmptyState
-                  icon={<ListChecks size={48} className="text-gray-400" />}
-                  title="Nenhum plano de ação gerado"
-                  description="Clique no botão acima para gerar um plano de ação com IA."
-                  loading={actionsLoading}
                 />
               )}
             </div>

@@ -21,6 +21,7 @@ import {
   ChevronsUp,
   Wand2,
   BrainCircuit,
+  Target,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -34,9 +35,11 @@ import {
   getVarianceThresholds,
   upsertVarianceThreshold,
   deleteVarianceThreshold,
+  createActionPlan,
   VarianceJustification,
   VarianceThreshold,
 } from '../services/supabaseService';
+import ActionPlanForm from './ActionPlanForm';
 import { generateVarianceSummary, VarianceSummaryItem, aiAnalyzeVariance, aiImproveText, aiGenerateActionPlan, aiImproveActionPlan } from '../services/anthropicService';
 import { toast } from 'sonner';
 import MultiSelectFilter from './MultiSelectFilter';
@@ -137,6 +140,9 @@ const VarianceJustificationsView: React.FC = () => {
   const [justifyItem, setJustifyItem] = useState<VarianceJustification | null>(null);
   const [justifyText, setJustifyText] = useState('');
   const [justifyPlan, setJustifyPlan] = useState('');
+
+  // Action Plan modal (5W1H)
+  const [actionPlanItem, setActionPlanItem] = useState<VarianceJustification | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState<'analyze' | 'improve' | 'plan-generate' | 'plan-improve' | null>(null);
 
@@ -1313,6 +1319,15 @@ const VarianceJustificationsView: React.FC = () => {
                   <FileText size={9} />
                 </button>
               )}
+              {row.depth >= 2 && dbItem && (dbItem.justification || (dbItem.variance_abs != null && dbItem.variance_abs < 0)) && (
+                <button
+                  onClick={() => setActionPlanItem(dbItem)}
+                  className="p-0.5 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                  title="Plano de Ação 5W1H"
+                >
+                  <Target size={9} />
+                </button>
+              )}
               {aiSummary && <Sparkles size={8} className="text-indigo-300 flex-shrink-0" title="Síntese IA" />}
             </div>
           ) : (
@@ -2018,6 +2033,78 @@ const VarianceJustificationsView: React.FC = () => {
                   </button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Action Plan Modal (5W1H) ── */}
+      {actionPlanItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-5">
+              <h3 className="text-sm font-black uppercase tracking-tight mb-3" style={{ color: 'var(--color-primary-500)' }}>
+                Plano de Ação — 5W1H
+              </h3>
+              <ActionPlanForm
+                item={{
+                  id: actionPlanItem.id,
+                  year_month: actionPlanItem.year_month,
+                  marca: actionPlanItem.marca || '',
+                  tag0: actionPlanItem.tag0,
+                  tag01: actionPlanItem.tag01,
+                  tag02: actionPlanItem.tag02,
+                  comparison_type: actionPlanItem.comparison_type as 'orcado' | 'a1',
+                  real_value: actionPlanItem.real_value,
+                  compare_value: actionPlanItem.compare_value,
+                  variance_abs: actionPlanItem.variance_abs,
+                  variance_pct: actionPlanItem.variance_pct,
+                  justification: actionPlanItem.justification,
+                  status: actionPlanItem.status,
+                }}
+                userName={user?.display_name || user?.email || ''}
+                userEmail={user?.email || ''}
+                onSave={async (data) => {
+                  // Save justification to variance_justifications if changed
+                  if (data.justification && data.justification !== actionPlanItem.justification) {
+                    await submitJustification(actionPlanItem.id, data.justification, undefined);
+                  }
+                  // Save action plan to action_plans table
+                  if (data.actionPlan) {
+                    await createActionPlan({
+                      variance_justification_id: actionPlanItem.id,
+                      year_month: actionPlanItem.year_month,
+                      marca: actionPlanItem.marca || null,
+                      tag0: actionPlanItem.tag0,
+                      tag01: actionPlanItem.tag01,
+                      tag02: actionPlanItem.tag02,
+                      comparison_type: actionPlanItem.comparison_type as 'orcado' | 'a1',
+                      real_value: actionPlanItem.real_value,
+                      compare_value: actionPlanItem.compare_value,
+                      variance_abs: actionPlanItem.variance_abs,
+                      variance_pct: actionPlanItem.variance_pct,
+                      justification: data.justification || actionPlanItem.justification || '',
+                      what: data.actionPlan.what,
+                      why: data.actionPlan.why,
+                      how: data.actionPlan.how,
+                      who_responsible: data.actionPlan.who_responsible,
+                      who_email: data.actionPlan.who_email,
+                      deadline: data.actionPlan.deadline,
+                      expected_impact: data.actionPlan.expected_impact,
+                      status: 'aberto' as const,
+                      ai_generated: data.actionPlan.ai_generated,
+                      created_by: user?.email || '',
+                      created_by_name: user?.display_name || null,
+                      progress_note: null,
+                      completed_at: null,
+                    });
+                    toast.success('Plano de ação criado com sucesso');
+                  }
+                  setActionPlanItem(null);
+                  fetchData();
+                }}
+                onClose={() => setActionPlanItem(null)}
+              />
             </div>
           </div>
         </div>

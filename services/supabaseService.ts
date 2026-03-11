@@ -4582,3 +4582,184 @@ export const markEngagementEmailSent = async (userId: string) => {
     console.error('Error marking engagement email sent:', error);
   }
 };
+
+// ============================================
+// Action Plans — Planos de Ação 5W1H
+// ============================================
+
+export interface ActionPlan {
+  id: number;
+  variance_justification_id: number | null;
+  year_month: string;
+  marca: string | null;
+  tag0: string | null;
+  tag01: string | null;
+  tag02: string | null;
+  comparison_type: 'orcado' | 'a1';
+  real_value: number | null;
+  compare_value: number | null;
+  variance_abs: number | null;
+  variance_pct: number | null;
+  what: string;
+  why: string;
+  how: string | null;
+  who_responsible: string;
+  who_email: string | null;
+  deadline: string;
+  expected_impact: string | null;
+  status: 'aberto' | 'em_andamento' | 'concluido' | 'atrasado' | 'cancelado';
+  justification: string | null;
+  progress_note: string | null;
+  completed_at: string | null;
+  ai_generated: boolean;
+  created_by: string;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActionPlanFilters {
+  year_month?: string;
+  marcas?: string[];
+  status?: string[];
+  who_email?: string;
+  tag0?: string;
+  tag01?: string;
+}
+
+export type ActionPlanInsert = Omit<ActionPlan, 'id' | 'created_at' | 'updated_at'>;
+export type ActionPlanUpdate = Partial<Pick<ActionPlan, 'what' | 'why' | 'how' | 'who_responsible' | 'who_email' | 'deadline' | 'expected_impact' | 'status' | 'justification' | 'progress_note' | 'completed_at'>>;
+
+export const getActionPlans = async (filters?: ActionPlanFilters): Promise<ActionPlan[]> => {
+  const PAGE = 1000;
+  let offset = 0;
+  let allData: ActionPlan[] = [];
+  let keepGoing = true;
+
+  while (keepGoing) {
+    let query = supabase
+      .from('action_plans')
+      .select('*')
+      .order('deadline', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+
+    if (filters?.year_month) query = query.eq('year_month', filters.year_month);
+    if (filters?.marcas && filters.marcas.length > 0) {
+      query = query.in('marca', filters.marcas);
+    }
+    if (filters?.status && filters.status.length > 0) {
+      query = query.in('status', filters.status);
+    }
+    if (filters?.who_email) query = query.eq('who_email', filters.who_email);
+    if (filters?.tag0) query = query.eq('tag0', filters.tag0);
+    if (filters?.tag01) query = query.eq('tag01', filters.tag01);
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Erro ao buscar action_plans:', error);
+      return allData;
+    }
+    if (!data || data.length === 0) {
+      keepGoing = false;
+    } else {
+      allData = allData.concat(data as ActionPlan[]);
+      keepGoing = data.length === PAGE;
+      offset += PAGE;
+    }
+  }
+
+  // Auto-mark overdue on client side (in case pg_cron hasn't run yet)
+  const today = new Date().toISOString().slice(0, 10);
+  for (const plan of allData) {
+    if (['aberto', 'em_andamento'].includes(plan.status) && plan.deadline < today) {
+      plan.status = 'atrasado';
+    }
+  }
+
+  return allData;
+};
+
+export const getActionPlansByVariance = async (varianceId: number): Promise<ActionPlan[]> => {
+  const { data, error } = await supabase
+    .from('action_plans')
+    .select('*')
+    .eq('variance_justification_id', varianceId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Erro ao buscar action_plans por variance:', error);
+    return [];
+  }
+  return (data || []) as ActionPlan[];
+};
+
+export const createActionPlan = async (plan: ActionPlanInsert): Promise<ActionPlan | null> => {
+  const { data, error } = await supabase
+    .from('action_plans')
+    .insert(plan)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Erro ao criar action_plan:', error);
+    throw new Error(error.message);
+  }
+  return data as ActionPlan;
+};
+
+export const updateActionPlan = async (id: number, updates: ActionPlanUpdate): Promise<ActionPlan | null> => {
+  const { data, error } = await supabase
+    .from('action_plans')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Erro ao atualizar action_plan:', error);
+    throw new Error(error.message);
+  }
+  return data as ActionPlan;
+};
+
+export const deleteActionPlan = async (id: number): Promise<void> => {
+  const { error } = await supabase
+    .from('action_plans')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao deletar action_plan:', error);
+    throw new Error(error.message);
+  }
+};
+
+export const getActionPlanKpis = async (filters?: ActionPlanFilters): Promise<{
+  total: number;
+  aberto: number;
+  em_andamento: number;
+  concluido: number;
+  atrasado: number;
+  cancelado: number;
+}> => {
+  const plans = await getActionPlans(filters);
+  return {
+    total: plans.length,
+    aberto: plans.filter(p => p.status === 'aberto').length,
+    em_andamento: plans.filter(p => p.status === 'em_andamento').length,
+    concluido: plans.filter(p => p.status === 'concluido').length,
+    atrasado: plans.filter(p => p.status === 'atrasado').length,
+    cancelado: plans.filter(p => p.status === 'cancelado').length,
+  };
+};
+
+export const subscribeActionPlans = (callback: () => void) => {
+  const channel = supabase
+    .channel('action_plans_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'action_plans' }, () => {
+      callback();
+    })
+    .subscribe();
+
+  return () => { supabase.removeChannel(channel); };
+};
