@@ -331,26 +331,41 @@ const AgentTeamView: React.FC = () => {
     }
   }, [selectedTeamId, objective, user, fetchDreData]);
 
-  // 4c. Testar agente isolado (Alex plan)
-  const handleTestAlex = useCallback(async () => {
+  // 4c. Testar pipeline até agente-alvo (Alex → ... → alvo)
+  const [testingStep, setTestingStep] = useState<string | null>(null);
+  const [pipelineResults, setPipelineResults] = useState<agentTeamService.SingleAgentTestResult[]>([]);
+
+  const handleTestPipeline = useCallback(async (targetAgent: string) => {
     if (!objective.trim()) return;
     setIsTesting(true);
     setError(null);
     setTestResult(null);
+    setPipelineResults([]);
+    setTestingStep('Carregando dados...');
 
     try {
       const { dreSnapshot, filterContext } = await fetchDreData();
-      const result = await agentTeamService.testSingleAgent(
-        'alex',
-        'plan',
+      const result = await agentTeamService.testPipelineUpTo(
+        targetAgent,
         objective.trim(),
         dreSnapshot,
         filterContext,
+        (stepResult, idx, total) => {
+          setPipelineResults(prev => [...prev, stepResult]);
+          if (idx < total - 1) {
+            const next = idx + 1 < total ? `Step ${idx + 2}...` : '';
+            setTestingStep(`${stepResult.agentCode} ✓ ${next}`);
+          }
+        },
       );
-      setTestResult(result);
+      // Último resultado como testResult principal (para compatibilidade)
+      const lastStep = result.steps[result.steps.length - 1];
+      setTestResult(lastStep);
+      setTestingStep(null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Erro ao testar Alex';
+      const msg = err instanceof Error ? err.message : `Erro ao testar pipeline até ${targetAgent}`;
       setError(msg);
+      setTestingStep(null);
     } finally {
       setIsTesting(false);
     }
@@ -571,7 +586,7 @@ const AgentTeamView: React.FC = () => {
           />
         </div>
 
-        {/* Start button + Test Alex + snapshot badge */}
+        {/* Start button + Test Pipeline + snapshot badge */}
         <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={handleStart}
@@ -583,12 +598,12 @@ const AgentTeamView: React.FC = () => {
             Iniciar Análise
           </button>
           <button
-            onClick={handleTestAlex}
+            onClick={() => handleTestPipeline('bruna')}
             disabled={!objective.trim() || isStarting || isRunning || isTesting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100"
           >
             {isTesting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-            Testar Alex
+            {isTesting && testingStep ? testingStep : 'Testar até Bruna'}
           </button>
           {snapshotAt && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
@@ -602,99 +617,149 @@ const AgentTeamView: React.FC = () => {
           <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>
         )}
 
-        {/* Test Result Panel — Friendly View */}
-        {testResult && (() => {
-          const out = testResult.output as any;
-          const AGENT_NAMES: Record<string, string> = {
-            bruna: 'Bruna', carlos: 'Carlos', denilson: 'Denilson',
-            edmundo: 'Edmundo', falcao: 'Falcão',
+        {/* Pipeline Test Results */}
+        {pipelineResults.length > 0 && (() => {
+          const STEP_STYLES: Record<string, { bg: string; border: string; headerBg: string; headerText: string; label: string }> = {
+            'alex/plan': { bg: 'border-amber-200', border: 'border-amber-200', headerBg: 'bg-amber-50', headerText: 'text-amber-800', label: 'Alex — Plano Estratégico' },
+            'bruna/execute': { bg: 'border-purple-200', border: 'border-purple-200', headerBg: 'bg-purple-50', headerText: 'text-purple-800', label: 'Bruna — Qualidade de Dados' },
+            'carlos/execute': { bg: 'border-blue-200', border: 'border-blue-200', headerBg: 'bg-blue-50', headerText: 'text-blue-800', label: 'Carlos — Performance' },
+            'denilson/execute': { bg: 'border-green-200', border: 'border-green-200', headerBg: 'bg-green-50', headerText: 'text-green-800', label: 'Denilson — Otimização' },
+            'edmundo/execute': { bg: 'border-cyan-200', border: 'border-cyan-200', headerBg: 'bg-cyan-50', headerText: 'text-cyan-800', label: 'Edmundo — Forecast' },
+            'falcao/execute': { bg: 'border-red-200', border: 'border-red-200', headerBg: 'bg-red-50', headerText: 'text-red-800', label: 'Falcão — Risco' },
           };
-          const AGENT_COLORS: Record<string, string> = {
-            bruna: 'bg-purple-100 text-purple-700 border-purple-200',
-            carlos: 'bg-blue-100 text-blue-700 border-blue-200',
-            denilson: 'bg-green-100 text-green-700 border-green-200',
-            edmundo: 'bg-cyan-100 text-cyan-700 border-cyan-200',
-            falcao: 'bg-red-100 text-red-700 border-red-200',
-          };
+
           return (
-            <div className="bg-white border border-amber-200 rounded-xl overflow-hidden">
-              {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 bg-amber-50 border-b border-amber-200">
-                <h3 className="text-sm font-bold text-amber-800 flex items-center gap-2">
-                  <Brain size={16} />
-                  Alex — Plano Estratégico
-                </h3>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${testResult.zodValid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {testResult.zodValid ? 'Válido' : 'Zod Falhou'}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
-                    {testResult.model} · {Math.round(testResult.durationMs / 1000)}s · {testResult.tokensInput}→{testResult.tokensOutput} tok
-                  </span>
-                  <button onClick={() => setTestResult(null)} className="text-gray-400 hover:text-gray-600">
-                    <X size={14} />
-                  </button>
-                </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Pipeline de Teste ({pipelineResults.length} steps)</span>
+                <button onClick={() => { setPipelineResults([]); setTestResult(null); }} className="text-gray-400 hover:text-gray-600">
+                  <X size={14} />
+                </button>
               </div>
-
-              {testResult.zodErrors && (
-                <div className="text-xs text-red-600 bg-red-50 px-4 py-2 border-b border-red-200">
-                  {testResult.zodErrors.map((e, i) => <div key={i}>{e}</div>)}
-                </div>
-              )}
-
-              <div className="p-4 space-y-4">
-                {/* Executive Summary */}
-                {out.executive_summary && (
-                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
-                    <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                      <Target size={12} />
-                      Resumo Executivo
-                    </h4>
-                    <p className="text-sm text-gray-800 leading-relaxed">{out.executive_summary}</p>
-                  </div>
-                )}
-
-                {/* Priority Areas */}
-                {out.priority_areas?.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <AlertTriangle size={12} />
-                      Áreas Prioritárias ({out.priority_areas.length})
-                    </h4>
-                    <div className="space-y-1.5">
-                      {out.priority_areas.map((area: string, i: number) => (
-                        <div key={i} className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">
-                            {i + 1}
-                          </span>
-                          <p className="text-xs text-gray-800 leading-relaxed">{area}</p>
+              {pipelineResults.map((r, idx) => {
+                const key = `${r.agentCode}/${r.stepType}`;
+                const style = STEP_STYLES[key] || { bg: 'border-gray-200', border: 'border-gray-200', headerBg: 'bg-gray-50', headerText: 'text-gray-800', label: `${r.agentCode} — ${r.stepType}` };
+                const out = r.output as any;
+                return (
+                  <details key={idx} open={idx === pipelineResults.length - 1}>
+                    <summary className={`cursor-pointer ${style.headerBg} border ${style.border} rounded-lg px-4 py-2.5 flex items-center justify-between`}>
+                      <span className={`text-sm font-bold ${style.headerText} flex items-center gap-2`}>
+                        <Brain size={14} />
+                        {style.label}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${r.zodValid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {r.zodValid ? 'Válido' : 'Zod Falhou'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">
+                          {r.model} · {Math.round(r.durationMs / 1000)}s · {r.tokensInput}→{r.tokensOutput} tok
+                        </span>
+                      </div>
+                    </summary>
+                    <div className={`border ${style.border} border-t-0 rounded-b-lg p-4 bg-white`}>
+                      {r.zodErrors && (
+                        <div className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded mb-3">
+                          {r.zodErrors.map((e, i) => <div key={i}>{e}</div>)}
                         </div>
-                      ))}
+                      )}
+                      {/* Render genérico dos campos do output */}
+                      <div className="space-y-3">
+                        {out.executive_summary && (
+                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wide mb-1.5">Resumo Executivo</h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.executive_summary}</p>
+                          </div>
+                        )}
+                        {out.executive_data_quality_summary && (
+                          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-purple-700 uppercase tracking-wide mb-1.5">Resumo Qualidade de Dados</h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.executive_data_quality_summary}</p>
+                          </div>
+                        )}
+                        {out.dre_highlights && (
+                          <div className="space-y-1.5">
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide">Destaques DRE</h4>
+                            {Object.entries(out.dre_highlights).map(([k, v]) => (
+                              <div key={k} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                <span className="text-[10px] font-bold text-gray-500 uppercase">{k.replace(/_/g, ' ')}</span>
+                                <p className="text-[11px] text-gray-700 mt-0.5">{String(v)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {out.quality_score !== undefined && (
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-bold text-gray-600">Score:</span>
+                            <span className={`text-lg font-bold ${out.quality_score >= 80 ? 'text-green-600' : out.quality_score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                              {Math.round(out.quality_score)}/100
+                            </span>
+                          </div>
+                        )}
+                        {out.fragility_points?.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Fragilidades ({out.fragility_points.length})</h4>
+                            {out.fragility_points.map((fp: any, i: number) => (
+                              <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-1.5">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${fp.severity === 'critical' ? 'bg-red-100 text-red-700' : fp.severity === 'high' ? 'bg-orange-100 text-orange-700' : fp.severity === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
+                                    {fp.severity}
+                                  </span>
+                                  <span className="text-[10px] font-medium text-gray-500">{fp.affected_area}</span>
+                                  <span className="text-[9px] text-gray-400 font-mono">{fp.type}</span>
+                                </div>
+                                <p className="text-[11px] text-gray-700">{fp.description}</p>
+                                {fp.probable_cause && <p className="text-[10px] text-gray-400 mt-0.5">Causa: {fp.probable_cause}</p>}
+                                {fp.suggested_fix && <p className="text-[10px] text-green-600 mt-0.5">Correção: {fp.suggested_fix}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {out.data_integrity_risk_summary && (
+                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-orange-700 uppercase tracking-wide mb-1.5">Risco Informacional</h4>
+                            <p className="text-[10px] text-gray-700"><strong>Performance:</strong> {out.data_integrity_risk_summary.impact_on_performance}</p>
+                            <p className="text-[10px] text-gray-700"><strong>Otimização:</strong> {out.data_integrity_risk_summary.impact_on_optimization}</p>
+                            <p className="text-[10px] text-gray-700"><strong>Forecast:</strong> {out.data_integrity_risk_summary.impact_on_forecast}</p>
+                            {out.data_integrity_risk_summary.interpretive_caution && (
+                              <p className="text-[10px] text-amber-700 font-medium mt-1">{out.data_integrity_risk_summary.interpretive_caution}</p>
+                            )}
+                          </div>
+                        )}
+                        {out.recommended_caution_level && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-gray-600">Cautela:</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${out.recommended_caution_level === 'high_confidence' ? 'bg-green-100 text-green-700' : out.recommended_caution_level.includes('critical') ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {out.recommended_caution_level.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                        )}
+                        {out.priority_areas?.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Áreas Prioritárias</h4>
+                            {out.priority_areas.map((area: string, i: number) => (
+                              <div key={i} className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 mb-1">
+                                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                                <p className="text-[11px] text-gray-800">{area}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {out.assignments?.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Direcionamento</h4>
+                            {out.assignments.map((a: any, i: number) => (
+                              <div key={i} className="flex items-start gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 mb-1">
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-100 text-indigo-700">{a.agent_code}</span>
+                                <p className="text-[11px] text-gray-700">{a.focus}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-
-                {/* Assignments */}
-                {out.assignments?.length > 0 && (
-                  <div>
-                    <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <UserCheck size={12} />
-                      Direcionamento dos Agentes ({out.assignments.length})
-                    </h4>
-                    <div className="grid grid-cols-1 gap-2">
-                      {out.assignments.map((a: any, i: number) => (
-                        <div key={i} className="flex items-start gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2.5 hover:shadow-sm transition-shadow">
-                          <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-bold border ${AGENT_COLORS[a.agent_code] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                            {AGENT_NAMES[a.agent_code] || a.agent_code}
-                          </span>
-                          <p className="text-xs text-gray-700 leading-relaxed">{a.focus}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+                  </details>
+                );
+              })}
             </div>
           );
         })()}

@@ -245,6 +245,93 @@ export async function testSingleAgent(
 }
 
 // --------------------------------------------
+// testPipelineUpTo — roda pipeline sequencial até um agente-alvo (sem gravar no banco)
+// --------------------------------------------
+
+export interface PipelineTestResult {
+  steps: SingleAgentTestResult[];
+  totalDurationMs: number;
+}
+
+/** Define a ordem da pipeline de teste */
+const TEST_PIPELINE_STEPS: { agentCode: string; stepType: string }[] = [
+  { agentCode: 'alex', stepType: 'plan' },
+  { agentCode: 'bruna', stepType: 'execute' },
+  { agentCode: 'carlos', stepType: 'execute' },
+  { agentCode: 'denilson', stepType: 'execute' },
+  { agentCode: 'edmundo', stepType: 'execute' },
+  { agentCode: 'falcao', stepType: 'execute' },
+  { agentCode: 'alex', stepType: 'consolidate' },
+  { agentCode: 'executivo', stepType: 'review' },
+];
+
+export async function testPipelineUpTo(
+  targetAgentCode: string,
+  objective: string,
+  dreSnapshot: Record<string, unknown>[],
+  filterContext: Record<string, unknown>,
+  onStepComplete?: (result: SingleAgentTestResult, stepIndex: number, total: number) => void,
+): Promise<PipelineTestResult> {
+  const startTime = Date.now();
+  const financialSummary = buildFinancialSummary(dreSnapshot as any[]);
+
+  // Determinar até qual step rodar
+  const targetIdx = TEST_PIPELINE_STEPS.findIndex(
+    s => s.agentCode === targetAgentCode && (targetAgentCode !== 'alex' || s.stepType !== 'consolidate')
+  );
+  if (targetIdx === -1) throw new Error(`Agente "${targetAgentCode}" não encontrado na pipeline`);
+
+  const stepsToRun = TEST_PIPELINE_STEPS.slice(0, targetIdx + 1);
+  const results: SingleAgentTestResult[] = [];
+  const prevOutputs: { agent_code: string; step_type: string; output_data: Record<string, unknown> }[] = [];
+
+  for (let i = 0; i < stepsToRun.length; i++) {
+    const step = stepsToRun[i];
+    const stepStart = Date.now();
+
+    console.log(`🧪 Pipeline [${i + 1}/${stepsToRun.length}] ${step.agentCode}/${step.stepType}...`);
+
+    const { system, user } = buildPrompt(
+      step.agentCode,
+      step.stepType,
+      objective,
+      financialSummary,
+      prevOutputs,
+      filterContext,
+    );
+
+    const isConsolidation = step.stepType === 'consolidate' || step.stepType === 'review';
+    const claudeResult = await callClaudeViaProxy(system, user, isConsolidation, step.agentCode);
+
+    const zodSchema = getZodSchemaForStep(step.stepType, step.agentCode);
+    const parseResult = zodSchema.safeParse(claudeResult.parsed);
+
+    const durationMs = Date.now() - stepStart;
+    console.log(`🧪 Pipeline [${i + 1}/${stepsToRun.length}] ${step.agentCode}/${step.stepType} — ${durationMs}ms — zod=${parseResult.success ? '✅' : '⚠️'}`);
+
+    const result: SingleAgentTestResult = {
+      agentCode: step.agentCode,
+      stepType: step.stepType,
+      output: parseResult.success ? parseResult.data : claudeResult.parsed,
+      rawText: claudeResult.rawText,
+      tokensInput: claudeResult.tokensInput,
+      tokensOutput: claudeResult.tokensOutput,
+      model: claudeResult.model,
+      durationMs,
+      zodValid: parseResult.success,
+      zodErrors: parseResult.success ? undefined : parseResult.error.issues.map(i => `${i.path.join('.')}: ${i.message}`),
+    };
+
+    results.push(result);
+    prevOutputs.push({ agent_code: step.agentCode, step_type: step.stepType, output_data: result.output });
+
+    if (onStepComplete) onStepComplete(result, i, stepsToRun.length);
+  }
+
+  return { steps: results, totalDurationMs: Date.now() - startTime };
+}
+
+// --------------------------------------------
 // startPipeline — client-side (Supabase direto)
 // --------------------------------------------
 
@@ -712,10 +799,11 @@ async function callClaudeViaProxy(
 ): Promise<ClaudeResult> {
   const defaultModel = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
   // Alex (plan) define a análise base para todos — usa Opus para máxima precisão numérica
+  // Bruna (data quality) precisa de precisão para avaliar consistência — usa Sonnet
   // Consolidação e review executivo usam Sonnet (boa qualidade)
   // Demais agentes usam Haiku (rápido + barato)
   const useOpus = agentCode === 'alex' && !isConsolidation;
-  const useSonnet = isConsolidation || ['executivo', 'diretor'].includes(agentCode);
+  const useSonnet = isConsolidation || ['executivo', 'diretor', 'bruna'].includes(agentCode);
   const model = useOpus ? 'claude-opus-4-20250514' : useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
   const maxTokens = isConsolidation ? 16384 : 8192;
 

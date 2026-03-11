@@ -103,34 +103,68 @@ export function supervisorPlanJsonSchema() {
 // ============================================
 
 export const DataQualityOutputSchema = z.object({
+  executive_data_quality_summary: z.string(),
   quality_score: z.number().min(0).max(100),
-  issues: z.array(z.object({
+  fragility_points: z.array(z.object({
+    type: z.string(),
     description: z.string(),
     severity: z.enum(['low', 'medium', 'high', 'critical']),
     affected_area: z.string(),
+    affected_tags: z.string(),
+    scenario_affected: z.string(),
+    probable_cause: z.string(),
+    suggested_fix: z.string(),
+    analysis_impact: z.string(),
   })),
-  caution_level: z.enum(['high_confidence', 'moderate_reservations', 'critical_reservations']),
+  data_integrity_risk_summary: z.object({
+    overall_risk_level: z.string(),
+    most_sensitive_areas: z.array(z.string()),
+    impact_on_performance: z.string(),
+    impact_on_optimization: z.string(),
+    impact_on_forecast: z.string(),
+    interpretive_caution: z.string(),
+  }),
+  recommended_caution_level: z.enum(['high_confidence', 'proceed_with_moderate_reservations', 'proceed_with_critical_reservations']),
 });
 
 export function dataQualityJsonSchema() {
   return {
     type: 'object' as const, additionalProperties: false,
     properties: {
+      executive_data_quality_summary: { type: 'string' as const },
       quality_score: { type: 'number' as const },
-      issues: {
+      fragility_points: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
           properties: {
+            type: { type: 'string' as const },
             description: { type: 'string' as const },
             severity: { type: 'string' as const, enum: ['low', 'medium', 'high', 'critical'] },
             affected_area: { type: 'string' as const },
+            affected_tags: { type: 'string' as const },
+            scenario_affected: { type: 'string' as const },
+            probable_cause: { type: 'string' as const },
+            suggested_fix: { type: 'string' as const },
+            analysis_impact: { type: 'string' as const },
           },
-          required: ['description', 'severity', 'affected_area'] as const,
+          required: ['type', 'description', 'severity', 'affected_area', 'affected_tags', 'scenario_affected', 'probable_cause', 'suggested_fix', 'analysis_impact'] as const,
         },
       },
-      caution_level: { type: 'string' as const, enum: ['high_confidence', 'moderate_reservations', 'critical_reservations'] },
+      data_integrity_risk_summary: {
+        type: 'object' as const, additionalProperties: false,
+        properties: {
+          overall_risk_level: { type: 'string' as const },
+          most_sensitive_areas: { type: 'array' as const, items: { type: 'string' as const } },
+          impact_on_performance: { type: 'string' as const },
+          impact_on_optimization: { type: 'string' as const },
+          impact_on_forecast: { type: 'string' as const },
+          interpretive_caution: { type: 'string' as const },
+        },
+        required: ['overall_risk_level', 'most_sensitive_areas', 'impact_on_performance', 'impact_on_optimization', 'impact_on_forecast', 'interpretive_caution'] as const,
+      },
+      recommended_caution_level: { type: 'string' as const, enum: ['high_confidence', 'proceed_with_moderate_reservations', 'proceed_with_critical_reservations'] },
     },
-    required: ['quality_score', 'issues', 'caution_level'] as const,
+    required: ['executive_data_quality_summary', 'quality_score', 'fragility_points', 'data_integrity_risk_summary', 'recommended_caution_level'] as const,
   };
 }
 
