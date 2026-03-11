@@ -169,7 +169,7 @@ function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSa
       setAiLoadingJust('improve');
       try {
         const ctx = buildContext(item);
-        const userPrompt = `Melhore a seguinte justificativa de desvio financeiro, tornando-a mais clara e executiva. Mantenha o sentido original.\n\nContexto:\n${ctx}\n\nJustificativa atual:\n${justification}`;
+        const userPrompt = `Melhore a seguinte justificativa de desvio financeiro, tornando-a mais clara e executiva. Mantenha o sentido original. Responda SOMENTE com o texto melhorado, sem explicacoes, sem notas, sem lista de melhorias.\n\nContexto:\n${ctx}\n\nJustificativa atual:\n${justification}`;
         const text = await callAI(SYSTEM_PROMPT, userPrompt, 500);
         setJustification(text.trim());
       } catch (err) {
@@ -189,7 +189,7 @@ function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSa
       try {
         const ctx = buildContext(item);
         const existing = `\n\nPlano atual:\nO que: ${what}\nObjetivo: ${why}\nComo: ${how}\nResponsavel: ${whoResp}\nImpacto esperado: ${expectedImpact}`;
-        const userPrompt = `Melhore o plano de acao abaixo para o desvio financeiro, tornando-o mais especifico e executivo. Responda SOMENTE o JSON com as chaves: what, why, how, who_responsible, deadline (YYYY-MM-DD), expected_impact.\n\n${ctx}${existing}`;
+        const userPrompt = `Melhore o plano de acao abaixo para o desvio financeiro, tornando-o mais especifico e executivo. Responda SOMENTE o JSON com as chaves: what, why, how, who_responsible, deadline (YYYY-MM-DD), expected_impact. Sem explicacoes, sem notas, sem lista de melhorias — apenas o JSON.\n\n${ctx}${existing}`;
         const raw = await callAI(SYSTEM_PROMPT, userPrompt, 800);
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('No JSON');
