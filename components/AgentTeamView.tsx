@@ -301,6 +301,31 @@ const AgentTeamView: React.FC = () => {
     if (snapDate) filterContext.snapshot_at = snapDate;
     if (Object.keys(versionsByMonth).length > 0) filterContext.snapshot_versions = versionsByMonth;
 
+    // Coletar dados per-marca para Denilson (quando nenhuma marca selecionada)
+    if (selectedMarcas.length === 0 && allVarItems.length > 0) {
+      const perMarcaAgg = new Map<string, { real: number; orcado: number }>();
+      for (const item of allVarItems) {
+        if (!item.tag02 || !item.marca) continue; // só items com marca
+        if (item.comparison_type !== 'orcado') continue; // evitar double-count
+        const key = `${item.marca}|${item.tag0}`;
+        const existing = perMarcaAgg.get(key) || { real: 0, orcado: 0 };
+        existing.real += Number(item.real_value || 0);
+        existing.orcado += Number(item.compare_value || 0);
+        perMarcaAgg.set(key, existing);
+      }
+      const perMarcaSummary: { marca: string; tag0: string; real: number; orcado: number; delta_pct: number }[] = [];
+      for (const [key, vals] of perMarcaAgg) {
+        const [marca, tag0] = key.split('|');
+        const denominator = Math.abs(vals.orcado);
+        const delta_pct = denominator > 0 ? Math.round(((vals.real - vals.orcado) / denominator) * 10000) / 100 : 0;
+        perMarcaSummary.push({ marca, tag0, real: Math.round(vals.real * 100) / 100, orcado: Math.round(vals.orcado * 100) / 100, delta_pct });
+      }
+      if (perMarcaSummary.length > 0) {
+        filterContext.per_marca_summary = perMarcaSummary;
+        console.log(`📊 Per-marca summary: ${perMarcaSummary.length} items para ${new Set(perMarcaSummary.map(p => p.marca)).size} marcas`);
+      }
+    }
+
     return { dreSnapshot, filterContext };
   }, [selectedMonths, selectedMarcas, selectedFiliais, selectedTags01]);
 
@@ -727,9 +752,9 @@ const AgentTeamView: React.FC = () => {
                         )}
                         {out.recommended_caution_level && (
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-gray-600">Cautela:</span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${out.recommended_caution_level === 'high_confidence' ? 'bg-green-100 text-green-700' : out.recommended_caution_level.includes('critical') ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                              {out.recommended_caution_level.replace(/_/g, ' ')}
+                            <span className="text-xs font-bold text-gray-600">Nível de Confiança:</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${out.recommended_caution_level === 'alta_confianca' || out.recommended_caution_level === 'high_confidence' ? 'bg-green-100 text-green-700' : out.recommended_caution_level.includes('critica') || out.recommended_caution_level.includes('critical') ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {out.recommended_caution_level === 'alta_confianca' ? 'Alta Confiança' : out.recommended_caution_level === 'cautela_moderada' ? 'Cautela Moderada' : out.recommended_caution_level === 'cautela_critica' ? 'Cautela Crítica' : out.recommended_caution_level.replace(/_/g, ' ')}
                             </span>
                           </div>
                         )}
@@ -827,76 +852,85 @@ const AgentTeamView: React.FC = () => {
                             )}
                           </div>
                         )}
-                        {/* Denilson — Optimization Summary */}
-                        {out.optimization_summary && (
-                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                            <h4 className="text-xs font-bold text-green-700 uppercase tracking-wide mb-1.5">Diagnóstico de Otimização</h4>
-                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.optimization_summary}</p>
+                        {/* Denilson — Resumo Executivo (Real vs Orçado) */}
+                        {out.resumo_executivo && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1.5">Resumo Real vs Orçado</h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.resumo_executivo}</p>
                           </div>
                         )}
-                        {/* Denilson — Actions */}
-                        {out.actions?.length > 0 && out.actions[0]?.target_tag01 && (
+                        {/* Denilson — Análise por Linha (modo marca selecionada) */}
+                        {out.analise_por_linha?.length > 0 && (
                           <div>
-                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Plano de Ações ({out.actions.length})</h4>
-                            {out.actions.map((a: any, i: number) => (
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Análise por Linha DRE ({out.analise_por_linha.length})</h4>
+                            {out.analise_por_linha.map((linha: any, i: number) => (
                               <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-1.5">
                                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
-                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${a.priority === 'high' ? 'bg-red-100 text-red-700' : a.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
-                                    {a.priority}
+                                  <span className="text-[11px] font-bold text-gray-700">{linha.tag0}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${linha.classificacao === 'favoravel' ? 'bg-green-100 text-green-700' : linha.classificacao === 'desfavoravel' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {linha.classificacao === 'favoravel' ? 'Favorável' : linha.classificacao === 'desfavoravel' ? 'Desfavorável' : 'Neutro'}
                                   </span>
-                                  <span className="text-[9px] text-gray-400">{a.target_line} → {a.target_tag01}</span>
-                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${a.is_real_gain ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                    {a.is_real_gain ? 'Ganho Real' : 'Enquadramento'}
-                                  </span>
-                                  <span className="text-[9px] text-gray-400">{a.timeline} · {a.difficulty}</span>
+                                  <span className="text-[9px] text-gray-400">Δ {linha.delta_pct > 0 ? '+' : ''}{linha.delta_pct}%</span>
                                 </div>
-                                <p className="text-[11px] text-gray-700">{a.action}</p>
-                                <p className="text-[10px] text-green-600 font-medium mt-0.5">Impacto: R$ {Number(a.expected_impact_brl).toLocaleString('pt-BR')}</p>
+                                <div className="flex gap-4 text-[10px] text-gray-500 mb-1">
+                                  <span>Real: <b className="text-gray-700">R$ {Number(linha.real_brl).toLocaleString('pt-BR')}</b></span>
+                                  <span>Orçado: <b className="text-gray-700">R$ {Number(linha.orcado_brl).toLocaleString('pt-BR')}</b></span>
+                                </div>
+                                {linha.destaques_tag01?.length > 0 && (
+                                  <div className="ml-3 mt-1 space-y-0.5">
+                                    {linha.destaques_tag01.map((d: any, j: number) => (
+                                      <div key={j} className="text-[10px] text-gray-600">
+                                        <span className="font-medium">{d.tag01}</span>: R$ {Number(d.real_brl).toLocaleString('pt-BR')} vs R$ {Number(d.orcado_brl).toLocaleString('pt-BR')} ({d.delta_pct > 0 ? '+' : ''}{d.delta_pct}%) — {d.comentario}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <p className="text-[10px] text-blue-700 mt-1 font-medium">{linha.recado}</p>
                               </div>
                             ))}
                           </div>
                         )}
-                        {/* Denilson — Total Impact */}
-                        {out.total_expected_impact?.ebitda_impact_brl && (
-                          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-4">
-                            <div>
-                              <span className="text-[10px] text-gray-500">Impacto Total EBITDA</span>
-                              <p className="text-sm font-bold text-emerald-700">R$ {Number(out.total_expected_impact.ebitda_impact_brl).toLocaleString('pt-BR')}</p>
-                            </div>
-                            <div>
-                              <span className="text-[10px] text-gray-500">Margem</span>
-                              <p className="text-sm font-bold text-emerald-700">+{out.total_expected_impact.margin_impact_pct} pp</p>
-                            </div>
-                            {out.total_expected_impact.quick_wins_brl > 0 && (
-                              <div>
-                                <span className="text-[10px] text-gray-500">Quick Wins</span>
-                                <p className="text-sm font-bold text-amber-600">R$ {Number(out.total_expected_impact.quick_wins_brl).toLocaleString('pt-BR')}</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {/* Denilson — Constraints */}
-                        {out.constraints?.length > 0 && out.constraints[0]?.mitigation && (
+                        {/* Denilson — Análise por Marca (modo sem marca selecionada) */}
+                        {out.analise_por_marca?.length > 0 && (
                           <div>
-                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Restrições ({out.constraints.length})</h4>
-                            {out.constraints.map((c: any, i: number) => (
-                              <div key={i} className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-1.5">
-                                <p className="text-[11px] text-gray-700">{c.description}</p>
-                                <p className="text-[10px] text-gray-400 mt-0.5">Afeta: {c.affected_actions}</p>
-                                <p className="text-[10px] text-green-600 mt-0.5">Mitigação: {c.mitigation}</p>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Análise por Marca ({out.analise_por_marca.length})</h4>
+                            {out.analise_por_marca.map((m: any, i: number) => (
+                              <div key={i} className="bg-white border border-gray-200 rounded-lg px-3 py-2 mb-2">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center">{m.marca?.slice(0, 2)}</span>
+                                  <span className="text-[12px] font-bold text-gray-800">{m.marca}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${m.situacao_geral === 'acima_do_orcado' ? 'bg-green-100 text-green-700' : m.situacao_geral === 'abaixo_do_orcado' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {m.situacao_geral === 'acima_do_orcado' ? 'Acima do Orçado' : m.situacao_geral === 'abaixo_do_orcado' ? 'Abaixo do Orçado' : 'No Orçado'}
+                                  </span>
+                                  {m.ebitda_estimado !== undefined && m.ebitda_estimado !== 0 && (
+                                    <span className="text-[9px] text-gray-400">EBITDA: R$ {Number(m.ebitda_estimado).toLocaleString('pt-BR')}</span>
+                                  )}
+                                </div>
+                                <div className="space-y-0.5 ml-1">
+                                  {m.linhas?.map((l: any, j: number) => (
+                                    <div key={j} className="flex items-start gap-1.5 text-[10px]">
+                                      <span className={`flex-shrink-0 mt-0.5 w-1.5 h-1.5 rounded-full ${l.classificacao === 'favoravel' ? 'bg-green-500' : l.classificacao === 'desfavoravel' ? 'bg-red-500' : 'bg-gray-400'}`}></span>
+                                      <span className="text-gray-500 w-32 flex-shrink-0">{l.tag0}</span>
+                                      <span className="text-gray-700">R$ {Number(l.real_brl).toLocaleString('pt-BR')}</span>
+                                      <span className="text-gray-400">vs</span>
+                                      <span className="text-gray-700">R$ {Number(l.orcado_brl).toLocaleString('pt-BR')}</span>
+                                      <span className={`font-medium ${l.delta_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>({l.delta_pct > 0 ? '+' : ''}{l.delta_pct}%)</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-[10px] text-blue-700 mt-1.5 leading-relaxed">{m.recado_marca}</p>
                               </div>
                             ))}
                           </div>
                         )}
-                        {/* Denilson — Executive Recommendation */}
-                        {out.executive_recommendation && (
-                          <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3">
-                            <h4 className="text-xs font-bold text-green-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                        {/* Denilson — Recado Final */}
+                        {out.recado_final && (
+                          <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
                               <Target size={12} />
-                              Recomendação Executiva
+                              Recado Final
                             </h4>
-                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.executive_recommendation}</p>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.recado_final}</p>
                           </div>
                         )}
                         {out.priority_areas?.length > 0 && (

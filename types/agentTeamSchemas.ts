@@ -124,7 +124,7 @@ export const DataQualityOutputSchema = z.object({
     impact_on_forecast: z.string(),
     interpretive_caution: z.string(),
   }),
-  recommended_caution_level: z.enum(['high_confidence', 'proceed_with_moderate_reservations', 'proceed_with_critical_reservations']),
+  recommended_caution_level: z.enum(['alta_confianca', 'cautela_moderada', 'cautela_critica']),
 });
 
 export function dataQualityJsonSchema() {
@@ -162,7 +162,7 @@ export function dataQualityJsonSchema() {
         },
         required: ['overall_risk_level', 'most_sensitive_areas', 'impact_on_performance', 'impact_on_optimization', 'impact_on_forecast', 'interpretive_caution'] as const,
       },
-      recommended_caution_level: { type: 'string' as const, enum: ['high_confidence', 'proceed_with_moderate_reservations', 'proceed_with_critical_reservations'] },
+      recommended_caution_level: { type: 'string' as const, enum: ['alta_confianca', 'cautela_moderada', 'cautela_critica'] },
     },
     required: ['executive_data_quality_summary', 'quality_score', 'fragility_points', 'data_integrity_risk_summary', 'recommended_caution_level'] as const,
   };
@@ -245,78 +245,114 @@ export function performanceJsonSchema() {
 }
 
 // ============================================
-// DENILSON — Optimization
+// DENILSON — Real vs Orçado
 // ============================================
 
+// Schema flexível: aceita analise_por_linha OU analise_por_marca (dependendo se tem marca selecionada)
+const DestaqueTag01Schema = z.object({
+  tag01: z.string(),
+  real_brl: z.number(),
+  orcado_brl: z.number(),
+  delta_pct: z.number(),
+  comentario: z.string(),
+});
+
+const AnalisePorLinhaSchema = z.object({
+  tag0: z.string(),
+  real_brl: z.number(),
+  orcado_brl: z.number(),
+  delta_pct: z.number(),
+  classificacao: z.string(),
+  destaques_tag01: z.array(DestaqueTag01Schema).optional().default([]),
+  recado: z.string(),
+});
+
+const LinhaMarcaSchema = z.object({
+  tag0: z.string(),
+  real_brl: z.number(),
+  orcado_brl: z.number(),
+  delta_pct: z.number(),
+  classificacao: z.string(),
+  comentario: z.string(),
+});
+
+const AnalisePorMarcaSchema = z.object({
+  marca: z.string(),
+  situacao_geral: z.string(),
+  linhas: z.array(LinhaMarcaSchema),
+  ebitda_estimado: z.number().optional().default(0),
+  recado_marca: z.string(),
+});
+
 export const OptimizationOutputSchema = z.object({
-  optimization_summary: z.string(),
-  actions: z.array(z.object({
-    action: z.string(),
-    target_line: z.string(),
-    target_tag01: z.string(),
-    expected_impact_brl: z.number(),
-    priority: z.enum(['high', 'medium', 'low']),
-    is_real_gain: z.boolean(),
-    timeline: z.string(),
-    difficulty: z.string(),
-  })),
-  total_expected_impact: z.object({
-    ebitda_impact_brl: z.number(),
-    margin_impact_pct: z.number(),
-    quick_wins_brl: z.number(),
-  }),
-  constraints: z.array(z.object({
-    description: z.string(),
-    affected_actions: z.string(),
-    mitigation: z.string(),
-  })),
-  executive_recommendation: z.string(),
+  resumo_executivo: z.string(),
+  // Aceita ambos — o prompt define qual deve vir preenchido
+  analise_por_linha: z.array(AnalisePorLinhaSchema).optional().default([]),
+  analise_por_marca: z.array(AnalisePorMarcaSchema).optional().default([]),
+  recado_final: z.string(),
 });
 
 export function optimizationJsonSchema() {
+  const destaqueTag01 = {
+    type: 'object' as const, additionalProperties: false,
+    properties: {
+      tag01: { type: 'string' as const },
+      real_brl: { type: 'number' as const },
+      orcado_brl: { type: 'number' as const },
+      delta_pct: { type: 'number' as const },
+      comentario: { type: 'string' as const },
+    },
+    required: ['tag01', 'real_brl', 'orcado_brl', 'delta_pct', 'comentario'] as const,
+  };
+
   return {
     type: 'object' as const, additionalProperties: false,
     properties: {
-      optimization_summary: { type: 'string' as const },
-      actions: {
+      resumo_executivo: { type: 'string' as const },
+      analise_por_linha: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
           properties: {
-            action: { type: 'string' as const },
-            target_line: { type: 'string' as const },
-            target_tag01: { type: 'string' as const },
-            expected_impact_brl: { type: 'number' as const },
-            priority: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
-            is_real_gain: { type: 'boolean' as const },
-            timeline: { type: 'string' as const },
-            difficulty: { type: 'string' as const },
+            tag0: { type: 'string' as const },
+            real_brl: { type: 'number' as const },
+            orcado_brl: { type: 'number' as const },
+            delta_pct: { type: 'number' as const },
+            classificacao: { type: 'string' as const },
+            destaques_tag01: { type: 'array' as const, items: destaqueTag01 },
+            recado: { type: 'string' as const },
           },
-          required: ['action', 'target_line', 'target_tag01', 'expected_impact_brl', 'priority', 'is_real_gain', 'timeline', 'difficulty'] as const,
+          required: ['tag0', 'real_brl', 'orcado_brl', 'delta_pct', 'classificacao', 'recado'] as const,
         },
       },
-      total_expected_impact: {
-        type: 'object' as const, additionalProperties: false,
-        properties: {
-          ebitda_impact_brl: { type: 'number' as const },
-          margin_impact_pct: { type: 'number' as const },
-          quick_wins_brl: { type: 'number' as const },
-        },
-        required: ['ebitda_impact_brl', 'margin_impact_pct', 'quick_wins_brl'] as const,
-      },
-      constraints: {
+      analise_por_marca: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
           properties: {
-            description: { type: 'string' as const },
-            affected_actions: { type: 'string' as const },
-            mitigation: { type: 'string' as const },
+            marca: { type: 'string' as const },
+            situacao_geral: { type: 'string' as const },
+            linhas: {
+              type: 'array' as const, items: {
+                type: 'object' as const, additionalProperties: false,
+                properties: {
+                  tag0: { type: 'string' as const },
+                  real_brl: { type: 'number' as const },
+                  orcado_brl: { type: 'number' as const },
+                  delta_pct: { type: 'number' as const },
+                  classificacao: { type: 'string' as const },
+                  comentario: { type: 'string' as const },
+                },
+                required: ['tag0', 'real_brl', 'orcado_brl', 'delta_pct', 'classificacao', 'comentario'] as const,
+              },
+            },
+            ebitda_estimado: { type: 'number' as const },
+            recado_marca: { type: 'string' as const },
           },
-          required: ['description', 'affected_actions', 'mitigation'] as const,
+          required: ['marca', 'situacao_geral', 'linhas', 'recado_marca'] as const,
         },
       },
-      executive_recommendation: { type: 'string' as const },
+      recado_final: { type: 'string' as const },
     },
-    required: ['optimization_summary', 'actions', 'total_expected_impact', 'constraints', 'executive_recommendation'] as const,
+    required: ['resumo_executivo', 'recado_final'] as const,
   };
 }
 

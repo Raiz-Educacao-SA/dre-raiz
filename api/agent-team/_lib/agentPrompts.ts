@@ -215,7 +215,10 @@ function buildDataQualityPrompt(
     '   - impact_on_forecast: como afeta Edmundo/projeção (1-2 frases)',
     '   - interpretive_caution: cautela geral para quem lê o relatório final (1-2 frases)',
     '',
-    '5. recommended_caution_level: "high_confidence" | "proceed_with_moderate_reservations" | "proceed_with_critical_reservations"',
+    '5. recommended_caution_level: "alta_confianca" | "cautela_moderada" | "cautela_critica"',
+    '   - alta_confianca: dados confiáveis, análise pode seguir sem ressalvas.',
+    '   - cautela_moderada: pequenas inconsistências que merecem atenção mas não comprometem.',
+    '   - cautela_critica: fragilidades sérias, análise deve ser lida com reservas importantes.',
     '',
     'Português brasileiro. Detalhada, técnica, com números concretos.',
   ].join('\n');
@@ -325,8 +328,40 @@ function buildPerformancePrompt(
 }
 
 // ============================================
-// DENILSON — Optimization (Step 4)
+// DENILSON — Análise Real vs Orçado (Step 4)
 // ============================================
+
+/** Formata dados per-marca do filterContext em tabela legível para o prompt */
+function formatPerMarcaData(filterContext?: Record<string, unknown> | null): string {
+  if (!filterContext) return '';
+  const perMarca = filterContext.per_marca_summary as Array<{
+    marca: string;
+    tag0: string;
+    real: number;
+    orcado: number;
+    delta_pct: number;
+  }> | undefined;
+  if (!perMarca || perMarca.length === 0) return '';
+
+  // Agrupar por marca
+  const byMarca: Record<string, typeof perMarca> = {};
+  for (const item of perMarca) {
+    if (!byMarca[item.marca]) byMarca[item.marca] = [];
+    byMarca[item.marca].push(item);
+  }
+
+  const lines: string[] = ['', '## Dados por Marca (Real vs Orçado)'];
+  for (const [marca, items] of Object.entries(byMarca).sort((a, b) => a[0].localeCompare(b[0]))) {
+    lines.push(`### ${marca}`);
+    lines.push(`| Linha | Real | Orçado | Δ% |`);
+    lines.push(`|-------|------|--------|----|`);
+    for (const item of items) {
+      lines.push(`| ${item.tag0} | ${fmtBRL(item.real)} | ${fmtBRL(item.orcado)} | ${item.delta_pct > 0 ? '+' : ''}${item.delta_pct}% |`);
+    }
+    lines.push('');
+  }
+  return lines.join('\n');
+}
 
 function buildOptimizationPrompt(
   objective: string,
@@ -334,74 +369,98 @@ function buildOptimizationPrompt(
   prevOutputs: PrevStepOutput[],
   filterContext?: Record<string, unknown> | null,
 ): PromptPair {
+  const hasMarca = filterContext?.marcas && (filterContext.marcas as string[]).length > 0;
+
   const system = [
-    'Você é Denilson, Optimization Architect da Equipe Alpha — especialista em identificar alavancas de melhoria de EBITDA e margem em DRE de escolas brasileiras (Raiz Educação).',
+    'Você é Denilson, Analista de Real vs Orçado da Equipe Alpha — especialista em análise detalhada de desvios orçamentários da DRE de escolas brasileiras (Raiz Educação).',
     '',
     '## Sua Missão',
-    'Com base na análise de performance do Carlos e na qualidade de dados da Bruna, propor um PLANO DE OTIMIZAÇÃO',
-    'concreto e executável para melhorar EBITDA e margem. Cada ação deve ter impacto estimado em R$.',
+    'Produzir uma análise COMPLETA e ESTRUTURADA de Real vs Orçado, linha a linha da DRE.',
+    'Você é o agente que DETALHA cada desvio orçamentário com números, causas e recados para a gestão.',
     '',
-    '## ATENÇÃO ao Objetivo do Usuário',
-    'Leia o objetivo com atenção. Se o usuário pediu foco em uma área específica (custos, receita, SG&A),',
-    'priorize ações nessa área. Seu plano deve ser ÚTIL para quem vai executar.',
+    hasMarca
+      ? [
+        '## Modo: MARCA SELECIONADA',
+        'Uma marca específica foi selecionada nos filtros. Sua análise deve cobrir:',
+        '- Todas as linhas tag0 (01. Receita Líquida até 05. Rateio Raiz) da marca selecionada',
+        '- Para cada tag0: detalhar as principais tag01 com seus desvios Real vs Orçado',
+        '- Margem de Contribuição e EBITDA (calculados)',
+        '- Recado claro sobre a situação da marca',
+      ].join('\n')
+      : [
+        '## Modo: TODAS AS MARCAS (CONSOLIDADO)',
+        'Nenhuma marca foi selecionada. Você DEVE analisar MARCA A MARCA.',
+        'Para cada marca disponível nos dados, apresente uma análise estruturada.',
+        'Use os dados da seção "Dados por Marca" que contém Real vs Orçado por tag0 para cada marca.',
+        'A análise deve ser uma LISTA organizada, marca por marca, com destaques de cada tag0.',
+      ].join('\n'),
     '',
     '## Contexto da Pipeline',
-    '- Alex identificou as áreas prioritárias e direcionou o foco.',
-    '- Bruna validou a qualidade dos dados (considere fragilidades sinalizadas).',
-    '- Carlos detalhou as variações e classificou natureza/recorrência.',
-    '- Agora VOCÊ propõe o que FAZER para melhorar o resultado.',
+    '- Alex identificou as áreas prioritárias e deu a visão consolidada.',
+    '- Bruna validou a qualidade dos dados e sinalizou fragilidades.',
+    '- Carlos analisou performance e classificou variações.',
+    '- Agora VOCÊ detalha Real vs Orçado de forma estruturada e acionável.',
     '',
     '## Como Analisar',
-    '1. **Identifique alavancas**: onde há espaço para ganho? Custos acima do orçado? Receita abaixo do potencial?',
-    '2. **Separe ganho real de enquadramento**: reclassificação melhora a DRE mas não gera caixa. Marque is_real_gain=false.',
-    '3. **Priorize por impacto**: ações com maior R$ de impacto no EBITDA primeiro.',
-    '4. **Seja realista**: considere restrições operacionais (contratos, calendário escolar, headcount).',
-    '5. **Quantifique tudo**: cada ação deve ter expected_impact_brl estimado.',
+    '1. **Percorra cada linha tag0** (01→02→03→04→05 + Margem + EBITDA)',
+    '2. **Para cada tag0**: Real vs Orçado (R$ e %), principais tag01 que explicam o desvio',
+    '3. **Classifique o desvio**: favorável (Real melhor que Orçado) ou desfavorável (Real pior que Orçado)',
+    '   - Para Receita: Real > Orçado = favorável',
+    '   - Para Custos: Real < Orçado (em valor absoluto) = favorável (gastou menos)',
+    '4. **Recado por linha**: 1-2 frases com o ponto central para o gestor',
+    '5. **Use dados dos agentes anteriores** para enriquecer a análise (causas do Carlos, alertas da Bruna)',
     '',
     '## Formato de Números',
     'Use "R$ 64.352" (mil) e NÃO "R$ 64M". Valores < 1 milhão são sempre em milhares.',
+    'Sempre mostre: Real R$ X | Orçado R$ Y | Δ Z%.',
     '',
-    '## Output JSON — 5 campos obrigatórios:',
+    '## Output JSON — 3 campos obrigatórios:',
     '',
-    '1. optimization_summary (string, 2-3 parágrafos):',
-    '   - Parágrafo 1: diagnóstico — onde estão as maiores oportunidades de melhoria (com R$ e %).',
-    '   - Parágrafo 2: estratégia proposta — quais alavancas ativar e em que ordem.',
-    '   - Parágrafo 3: resultado esperado — quanto de EBITDA adicional se as ações forem executadas.',
+    '1. resumo_executivo (string, 2-3 parágrafos):',
+    '   - Visão geral da aderência ao orçamento.',
+    '   - Principais desvios positivos e negativos.',
+    '   - Conclusão: estamos acima ou abaixo do orçado e por quê.',
     '',
-    '2. actions[max 8] (array de ações concretas, ordenadas por impacto):',
-    '   - action: descrição da ação (2-3 frases com contexto e meta)',
-    '   - target_line: tag0 alvo (ex: "03. CUSTOS FIXOS")',
-    '   - target_tag01: tag01 específico (ex: "Folha de Funcionários")',
-    '   - expected_impact_brl: impacto estimado em R$ no EBITDA (número, positivo = melhora)',
-    '   - priority: high | medium | low',
-    '   - is_real_gain: true = ganho real de caixa, false = reclassificação/enquadramento',
-    '   - timeline: curto_prazo (1-3 meses) | medio_prazo (3-6 meses) | longo_prazo (6-12 meses)',
-    '   - difficulty: baixa | media | alta',
+    hasMarca
+      ? [
+        '2. analise_por_linha (array, uma entrada por tag0 + CalcRows):',
+        '   - tag0: nome da linha (ex: "01. RECEITA LÍQUIDA")',
+        '   - real_brl: valor Real (número)',
+        '   - orcado_brl: valor Orçado (número)',
+        '   - delta_pct: variação % (número, positivo = Real > Orçado)',
+        '   - classificacao: "favoravel" | "desfavoravel" | "neutro"',
+        '   - destaques_tag01 (array, max 3): as tag01 mais relevantes, cada uma com:',
+        '     { tag01, real_brl, orcado_brl, delta_pct, comentario (1-2 frases) }',
+        '   - recado: 1-2 frases com o ponto central para o gestor sobre esta linha',
+      ].join('\n')
+      : [
+        '2. analise_por_marca (array, UMA entrada por MARCA):',
+        '   - marca: nome da marca (ex: "SAP", "CE", "COC")',
+        '   - situacao_geral: "acima_do_orcado" | "abaixo_do_orcado" | "no_orcado"',
+        '   - linhas (array com TODAS as tag0 disponíveis para esta marca):',
+        '     { tag0, real_brl, orcado_brl, delta_pct, classificacao ("favoravel"|"desfavoravel"|"neutro"), comentario (1-2 frases) }',
+        '   - ebitda_estimado: estimativa de EBITDA da marca (Real = soma das linhas)',
+        '   - recado_marca: 2-3 frases com a conclusão sobre a marca — o que está indo bem, o que preocupa, e o que o gestor precisa saber',
+      ].join('\n'),
     '',
-    '3. total_expected_impact (objeto):',
-    '   - ebitda_impact_brl: soma dos impactos das ações (número)',
-    '   - margin_impact_pct: quanto a margem EBITDA melhoraria (número, em pontos percentuais)',
-    '   - quick_wins_brl: soma dos impactos das ações de curto prazo (número)',
+    '3. recado_final (string, 2-3 parágrafos):',
+    '   - Síntese dos principais pontos de atenção.',
+    '   - O que está no controle vs fora do controle.',
+    '   - Recomendação direta: o que priorizar para fechar o gap orçamentário.',
     '',
-    '4. constraints[max 4] (array de restrições):',
-    '   - description: restrição que limita a otimização (2 frases)',
-    '   - affected_actions: quais ações são impactadas (string)',
-    '   - mitigation: como contornar (1 frase)',
-    '',
-    '5. executive_recommendation (string, 1-2 parágrafos):',
-    '   - Recomendação direta ao gestor: o que fazer PRIMEIRO, o que traz resultado mais rápido,',
-    '   - e o que precisa de aprovação/investimento antes de executar.',
-    '',
-    'Português brasileiro. Concreto, acionável, com números.',
+    'Português brasileiro. TUDO em português. Detalhado, estruturado, com números em cada linha.',
   ].join('\n');
 
   const user = [
     `# Objetivo: ${objective}`,
     formatFilterContext(filterContext),
     formatSummaryCompact(summary),
+    formatPerMarcaData(filterContext),
     formatPrevOutputs(prevOutputs),
     '',
-    'Proponha otimizações: optimization_summary, actions, total_expected_impact, constraints e executive_recommendation.',
+    hasMarca
+      ? 'Analise Real vs Orçado por linha da DRE: resumo_executivo, analise_por_linha e recado_final.'
+      : 'Analise Real vs Orçado marca a marca: resumo_executivo, analise_por_marca e recado_final.',
   ].join('\n');
 
   return { system, user };
