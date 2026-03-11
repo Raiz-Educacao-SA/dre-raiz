@@ -50,6 +50,14 @@ export const FinancialSummarySchema = z.object({
 
 export const SupervisorPlanOutputSchema = z.object({
   executive_summary: z.string(),
+  dre_highlights: z.object({
+    receita_liquida: z.string(),
+    custos_variaveis: z.string(),
+    custos_fixos: z.string(),
+    sga: z.string(),
+    rateio_raiz: z.string(),
+    ebitda_total: z.string(),
+  }),
   priority_areas: z.array(z.string()),
   assignments: z.array(z.object({
     agent_code: z.string(),
@@ -62,6 +70,18 @@ export function supervisorPlanJsonSchema() {
     type: 'object' as const, additionalProperties: false,
     properties: {
       executive_summary: { type: 'string' as const },
+      dre_highlights: {
+        type: 'object' as const, additionalProperties: false,
+        properties: {
+          receita_liquida: { type: 'string' as const },
+          custos_variaveis: { type: 'string' as const },
+          custos_fixos: { type: 'string' as const },
+          sga: { type: 'string' as const },
+          rateio_raiz: { type: 'string' as const },
+          ebitda_total: { type: 'string' as const },
+        },
+        required: ['receita_liquida', 'custos_variaveis', 'custos_fixos', 'sga', 'rateio_raiz', 'ebitda_total'] as const,
+      },
       priority_areas: { type: 'array' as const, items: { type: 'string' as const } },
       assignments: {
         type: 'array' as const, items: {
@@ -74,7 +94,7 @@ export function supervisorPlanJsonSchema() {
         },
       },
     },
-    required: ['executive_summary', 'priority_areas', 'assignments'] as const,
+    required: ['executive_summary', 'dre_highlights', 'priority_areas', 'assignments'] as const,
   };
 }
 

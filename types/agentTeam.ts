@@ -157,12 +157,20 @@ export interface VendorBreakdown {
 // Agent Outputs (estruturados)
 // --------------------------------------------
 
+export interface DreHighlights {
+  receita_liquida: string;
+  custos_variaveis: string;
+  custos_fixos: string;
+  sga: string;
+  rateio_raiz: string;
+  ebitda_total: string;
+}
+
 export interface SupervisorPlanOutput {
   executive_summary: string;
-  key_findings: string[];
-  priority_actions: string[];
-  risks_identified: string[];
-  assignments: AgentAssignment[];
+  dre_highlights: DreHighlights;
+  priority_areas: string[];
+  assignments: { agent_code: string; focus: string }[];
 }
 
 export interface AgentAssignment {

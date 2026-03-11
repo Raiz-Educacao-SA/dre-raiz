@@ -50,7 +50,7 @@ function categorize(tag0: string): Category | null {
   if (tag0.startsWith('02.')) return 'custos_variaveis';
   if (tag0.startsWith('03.')) return 'custos_fixos';
   if (tag0.startsWith('04.')) return 'sga';
-  if (tag0.startsWith('06.')) return 'rateio';
+  if (tag0.startsWith('05.')) return 'rateio';
   return null;
 }
 
@@ -147,9 +147,9 @@ export function buildFinancialSummary(rows: SomaTagsRow[], vendorData?: VendorBr
     a1: round2(acc.rateio.a1),
   };
 
-  // 7. Margem de contribuição = receita + custos variáveis (custos são negativos)
-  const mcReal = acc.receita.real + acc.custos_variaveis.real;
-  const mcOrcado = acc.receita.orcado + acc.custos_variaveis.orcado;
+  // 7. Margem de contribuição = receita + custos variáveis + custos fixos (custos são negativos)
+  const mcReal = acc.receita.real + acc.custos_variaveis.real + acc.custos_fixos.real;
+  const mcOrcado = acc.receita.orcado + acc.custos_variaveis.orcado + acc.custos_fixos.orcado;
 
   const pctReal = safePct(mcReal, acc.receita.real);
   const pctOrcado = safePct(mcOrcado, acc.receita.orcado);

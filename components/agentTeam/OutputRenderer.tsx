@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ArrowUpRight, ArrowDownRight, Shield, TrendingUp, FileText, Users, Target, Zap, BarChart3, Presentation } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, ArrowDownRight, Shield, TrendingUp, FileText, Users, Target, Zap, BarChart3, Presentation, DollarSign, Receipt, Building, Briefcase, ArrowLeftRight, PieChart } from 'lucide-react';
 import type {
   AgentStep,
   SupervisorPlanOutput,
@@ -319,39 +319,65 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function SupervisorPlanView({ data }: { data: SupervisorPlanOutput }) {
   const assignments = data.assignments || [];
+  const hl = (data as any).dre_highlights;
+  const priorityAreas = (data as any).priority_areas || (data as any).key_findings || [];
   return (
     <div className="space-y-3">
       <Card>
         <SectionTitle icon={<FileText size={12} className="text-indigo-500" />}>Resumo Executivo</SectionTitle>
         <TextBlock text={data.executive_summary} />
       </Card>
-      <Card>
-        <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Achados Principais</SectionTitle>
-        <BulletList items={data.key_findings} />
-      </Card>
-      <Card>
-        <SectionTitle icon={<TrendingUp size={12} className="text-green-500" />}>Ações Prioritárias</SectionTitle>
-        <BulletList items={data.priority_actions} />
-      </Card>
-      {(data.risks_identified?.length ?? 0) > 0 && (
+
+      {hl && (
         <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Riscos Identificados</SectionTitle>
-          <BulletList items={data.risks_identified} />
+          <SectionTitle icon={<BarChart3 size={12} className="text-blue-600" />}>Destaques por Linha da DRE</SectionTitle>
+          <div className="space-y-2 mt-1">
+            {[
+              { key: 'receita_liquida', label: '01. Receita Líquida', icon: <DollarSign size={11} className="text-green-600" />, bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800' },
+              { key: 'custos_variaveis', label: '02. Custos Variáveis', icon: <Receipt size={11} className="text-orange-600" />, bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800' },
+              { key: 'custos_fixos', label: '03. Custos Fixos', icon: <Building size={11} className="text-amber-600" />, bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800' },
+              { key: 'sga', label: '04. SG&A', icon: <Briefcase size={11} className="text-red-600" />, bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800' },
+              { key: 'rateio_raiz', label: '05. Rateio Raiz', icon: <ArrowLeftRight size={11} className="text-purple-600" />, bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800' },
+              { key: 'ebitda_total', label: 'EBITDA TOTAL', icon: <PieChart size={11} className="text-indigo-600" />, bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-800' },
+            ].map(({ key, label, icon, bg, border, text }) => {
+              const content = hl[key];
+              if (!content) return null;
+              return (
+                <div key={key} className={`${bg} border ${border} rounded-lg px-3 py-2`}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    {icon}
+                    <span className={`text-[11px] font-bold ${text}`}>{label}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-700 leading-relaxed">{S(content)}</p>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
+
+      {priorityAreas.length > 0 && (
+        <Card>
+          <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Áreas Prioritárias</SectionTitle>
+          <BulletList items={priorityAreas} />
+        </Card>
+      )}
+
       {assignments.length > 0 && (
         <Card>
           <SectionTitle icon={<Users size={12} className="text-purple-500" />}>Atribuições</SectionTitle>
           <div className="space-y-2">
-            {assignments.map((a, i) => (
+            {assignments.map((a: any, i: number) => (
               <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
                 <span className="text-xs font-bold text-gray-900 capitalize">{S(a.agent_code)}</span>
-                <p className="text-[11px] text-gray-600">{S(a.objective)}</p>
-                <div className="flex flex-wrap gap-1">
-                  {(a.focus_areas || []).map((f, j) => (
-                    <span key={j} className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[9px] font-medium">{S(f)}</span>
-                  ))}
-                </div>
+                <p className="text-[11px] text-gray-600">{S(a.focus || a.objective || '')}</p>
+                {(a.focus_areas || []).length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {a.focus_areas.map((f: string, j: number) => (
+                      <span key={j} className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[9px] font-medium">{S(f)}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -711,10 +711,12 @@ async function callClaudeViaProxy(
   agentCode: string = '',
 ): Promise<ClaudeResult> {
   const defaultModel = import.meta.env.VITE_ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
-  // Steps leves (Alex plan, Bruna, Edmundo, Denilson) usam Haiku 4.5 (~75% mais barato)
-  // Todos os agentes usam Haiku (rápido + barato), exceto consolidação e review que precisam de Sonnet
+  // Alex (plan) define a análise base para todos — usa Opus para máxima precisão numérica
+  // Consolidação e review executivo usam Sonnet (boa qualidade)
+  // Demais agentes usam Haiku (rápido + barato)
+  const useOpus = agentCode === 'alex' && !isConsolidation;
   const useSonnet = isConsolidation || ['executivo', 'diretor'].includes(agentCode);
-  const model = useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
+  const model = useOpus ? 'claude-opus-4-20250514' : useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
   const maxTokens = isConsolidation ? 16384 : 8192;
 
   // Forçar JSON via prompt (sem output_config)

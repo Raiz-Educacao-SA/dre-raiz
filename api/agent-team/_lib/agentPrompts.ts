@@ -31,8 +31,51 @@ function formatFilterContext(filterContext?: Record<string, unknown> | null): st
   return parts.join('\n');
 }
 
+/** Formata número em BRL legível: 1316389.12 → "R$ 1.316.389,12" */
+function fmtBRL(n: number): string {
+  return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function formatSummaryCompact(summary: FinancialSummary): string {
-  return '## Dados Financeiros\n```json\n' + JSON.stringify(summary) + '\n```';
+  // Formatar dados em texto legível para evitar que o LLM confunda unidades
+  const lines: string[] = ['## Dados Financeiros (valores em Reais)'];
+  lines.push(`Período: ${summary.periodo}`);
+  lines.push('');
+  lines.push('### DRE Resumida');
+  lines.push(`| Linha | Real | Orçado | A-1 |`);
+  lines.push(`|-------|------|--------|-----|`);
+  lines.push(`| 01. Receita Líquida | ${fmtBRL(summary.receita.real)} | ${fmtBRL(summary.receita.orcado)} | ${fmtBRL(summary.receita.a1)} |`);
+  lines.push(`| 02. Custos Variáveis | ${fmtBRL(summary.custos_variaveis.real)} | ${fmtBRL(summary.custos_variaveis.orcado)} | ${fmtBRL(summary.custos_variaveis.a1)} |`);
+  lines.push(`| 03. Custos Fixos | ${fmtBRL(summary.custos_fixos.real)} | ${fmtBRL(summary.custos_fixos.orcado)} | ${fmtBRL(summary.custos_fixos.a1)} |`);
+  lines.push(`| **Margem de Contribuição** | **${fmtBRL(summary.margem_contribuicao.real)}** (${summary.margem_contribuicao.pct_real}%) | **${fmtBRL(summary.margem_contribuicao.orcado)}** (${summary.margem_contribuicao.pct_orcado}%) | |`);
+  lines.push(`| 04. SG&A | ${fmtBRL(summary.sga.real)} | ${fmtBRL(summary.sga.orcado)} | ${fmtBRL(summary.sga.a1)} |`);
+  lines.push(`| 05. Rateio Raiz | ${fmtBRL(summary.rateio.real)} | ${fmtBRL(summary.rateio.orcado)} | ${fmtBRL(summary.rateio.a1)} |`);
+  lines.push(`| **EBITDA TOTAL** | **${fmtBRL(summary.ebitda.real)}** (${summary.ebitda.pct_real}%) | **${fmtBRL(summary.ebitda.orcado)}** | **${fmtBRL(summary.ebitda.a1)}** |`);
+  lines.push('');
+  lines.push(`Gap Receita vs Orçado: ${summary.receita.gap_pct}%`);
+  lines.push('');
+  lines.push('### Top 5 Variações (Real vs Orçado)');
+  for (const v of summary.top5_variacoes) {
+    lines.push(`- ${v.tag01}: Real ${fmtBRL(v.real)} | Orçado ${fmtBRL(v.orcado)} | Δ ${v.delta_pct}%`);
+  }
+  lines.push('');
+  lines.push('### Top 5 Tags01 Receita');
+  for (const t of summary.top5_tags01_receita) {
+    lines.push(`- ${t.tag01}: ${fmtBRL(t.total)}`);
+  }
+  lines.push('');
+  lines.push('### Top 5 Tags01 Custo');
+  for (const t of summary.top5_tags01_custo) {
+    lines.push(`- ${t.tag01}: ${fmtBRL(t.total)}`);
+  }
+  if (summary.tendencia_mensal.length > 1) {
+    lines.push('');
+    lines.push('### Tendência Mensal');
+    for (const m of summary.tendencia_mensal) {
+      lines.push(`- ${m.mes}: Receita ${fmtBRL(m.receita)} | EBITDA ${fmtBRL(m.ebitda)}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 function formatPrevOutputs(prevOutputs: PrevStepOutput[]): string {
@@ -64,7 +107,7 @@ function buildSupervisorPlanPrompt(
     '   - 02. Custos Variáveis — aderência e tendência',
     '   - 03. Custos Fixos — compressão ou expansão',
     '   - 04. SG&A — eficiência administrativa',
-    '   - 06. Rateio Raiz — alocação corporativa',
+    '   - 05. Rateio Raiz — alocação corporativa',
     '   - Margem de Contribuição — saúde operacional',
     '   - EBITDA — resultado final e % margem',
     '2. Identifique os top 5 desvios materiais (por tag01)',
@@ -80,12 +123,27 @@ function buildSupervisorPlanPrompt(
     'Sempre use números: "gap de R$ X | R$ Y vs Orçado (Z%)".',
     'Nunca escreva análise sem variação numérica.',
     '',
-    '## Output JSON — 3 campos obrigatórios:',
-    '1. executive_summary: 2-3 frases interpretando o problema com números concretos',
-    '2. priority_areas[max 5]: strings com as frentes prioritárias identificadas na DRE',
-    '3. assignments[5]: { agent_code, focus(1 frase) } — um para cada agente',
+    '## Output JSON — 4 campos obrigatórios:',
     '',
-    'Português brasileiro. CONCISO.',
+    '1. executive_summary (string, 2-3 parágrafos):',
+    '   - Parágrafo 1: Visão geral — EBITDA TOTAL Real vs Orçado (R$ e %), margem EBITDA, resultado geral (superou/ficou abaixo).',
+    '   - Parágrafo 2: Principais drivers positivos e negativos que explicam o resultado.',
+    '   - Parágrafo 3: Conclusão com visão de risco/oportunidade.',
+    '   - Use "R$ 64.352" (mil) e NÃO "R$ 64M" (milhão). Valores < 1 milhão são sempre em milhares.',
+    '',
+    '2. dre_highlights (objeto com 6 campos string, cada um com 2-4 frases):',
+    '   - receita_liquida: Real vs Orçado (R$ e %), Real vs A-1, principais tag01 que explicam o gap, interpretação.',
+    '   - custos_variaveis: Real vs Orçado (R$ e %), quais tag01 puxaram para cima/baixo, eficiência.',
+    '   - custos_fixos: Real vs Orçado (R$ e %), quais tag01 tiveram maior economia ou estouro, tendência.',
+    '   - sga: Real vs Orçado (R$ e %), quais tag01 explicam o desvio, alerta se acima do orçado.',
+    '   - rateio_raiz: Real vs Orçado (R$ e %), impacto no EBITDA, se o custo corporativo está controlado.',
+    '   - ebitda_total: Real vs Orçado (R$ e %), margem %, comparação com A-1, conclusão sobre saúde financeira.',
+    '',
+    '3. priority_areas[max 5]: strings com as frentes prioritárias — cada uma com tag01, valor do desvio e % ("Folha de Funcionários: R$ -81.335 vs Orçado, -17,7%")',
+    '',
+    '4. assignments[5]: { agent_code, focus(1-2 frases com números concretos) } — um para cada agente',
+    '',
+    'Português brasileiro. Detalhado com números, mas direto ao ponto.',
   ].join('\n');
 
   const user = [

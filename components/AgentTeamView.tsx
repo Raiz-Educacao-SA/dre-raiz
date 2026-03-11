@@ -153,18 +153,19 @@ const AgentTeamView: React.FC = () => {
     let usedSnapshot = false;
     let snapDate: string | null = null;
 
-    // Buscar snapshot da foto (variance_justifications) — SEMPRE a versão mais recente
+    // Buscar snapshot da foto (variance_justifications) — SEMPRE a versão mais recente por mês
     const allVarItems: VarianceJustification[] = [];
     const versionsByMonth: Record<string, number> = {};
-    const marcasFilter = selectedMarcas.length > 0 ? selectedMarcas : undefined;
+    const hasMarcaFilter = selectedMarcas.length > 0;
 
     for (const ym of yearMonths) {
-      const latestVersion = await getLatestVarianceVersion(ym, marcasFilter);
+      // Versão é por snapshot (mês), NÃO por marca — buscar sem filtro de marca
+      const latestVersion = await getLatestVarianceVersion(ym);
       if (latestVersion === 0) continue; // sem foto para este mês
       versionsByMonth[ym] = latestVersion;
+      // Buscar TODOS os items da versão (com e sem marca) para poder agregar corretamente
       const items = await getVarianceJustifications({
         year_month: ym,
-        marcas: marcasFilter,
         version: latestVersion,
       });
       allVarItems.push(...items);
@@ -175,19 +176,58 @@ const AgentTeamView: React.FC = () => {
       // ATENÇÃO: cada tag01 tem 2 rows (orcado + a1), ambas com mesmo real_value
       // Real deve ser contado UMA vez por (tag0, tag01, month) — usar apenas comparison_type='orcado'
       const aggMap = new Map<string, number>();
-      for (const item of allVarItems) {
-        if (item.tag02) continue; // só depth 0-1 (tag0+tag01)
 
-        // Real — contar apenas via orcado para não duplicar (a1 tem o mesmo real_value)
-        if (item.comparison_type === 'orcado') {
-          const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
-          aggMap.set(keyReal, (aggMap.get(keyReal) || 0) + Number(item.real_value || 0));
+      if (hasMarcaFilter) {
+        // MARCA SELECIONADA: usar items tag02+marca (depth 2) e agregar UP para tag0+tag01
+        // Para tag0 que NÃO tem items tag02 para a marca selecionada, usar consolidado (marca='')
+        // 1. Descobrir quais tag0 têm detalhamento tag02 com a marca selecionada
+        const tag0sComTag02 = new Set<string>();
+        for (const item of allVarItems) {
+          if (item.tag02 && item.marca && selectedMarcas.includes(item.marca)) {
+            tag0sComTag02.add(item.tag0);
+          }
         }
 
-        // Orçado ou A-1 (compare_value é único por comparison_type)
-        const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
-        const keyComp = `${item.tag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
-        aggMap.set(keyComp, (aggMap.get(keyComp) || 0) + Number(item.compare_value || 0));
+        for (const item of allVarItems) {
+          const itemTag0 = item.tag0;
+          const temDetalhe = tag0sComTag02.has(itemTag0);
+
+          if (temDetalhe) {
+            // Tag0 COM tag02+marca: agregar a partir dos items tag02
+            if (!item.tag02) continue; // pular consolidados
+            if (!item.marca || !selectedMarcas.includes(item.marca)) continue;
+          } else {
+            // Tag0 SEM tag02 para esta marca: usar consolidados (marca='')
+            if (item.tag02) continue; // só tag0+tag01
+          }
+
+          // Real — contar apenas via orcado para não duplicar
+          if (item.comparison_type === 'orcado') {
+            const keyReal = `${itemTag0}|${item.tag01 || ''}|Real|${item.year_month}`;
+            aggMap.set(keyReal, (aggMap.get(keyReal) || 0) + Number(item.real_value || 0));
+          }
+
+          // Orçado ou A-1
+          const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
+          const keyComp = `${itemTag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
+          aggMap.set(keyComp, (aggMap.get(keyComp) || 0) + Number(item.compare_value || 0));
+        }
+      } else {
+        // SEM MARCA: usar items tag0+tag01 consolidados (marca='')
+        for (const item of allVarItems) {
+          if (item.tag02) continue; // só depth 0-1 (tag0+tag01)
+
+          // Real — contar apenas via orcado para não duplicar
+          if (item.comparison_type === 'orcado') {
+            const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
+            aggMap.set(keyReal, (aggMap.get(keyReal) || 0) + Number(item.real_value || 0));
+          }
+
+          // Orçado ou A-1
+          const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
+          const keyComp = `${item.tag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
+          aggMap.set(keyComp, (aggMap.get(keyComp) || 0) + Number(item.compare_value || 0));
+        }
       }
 
       const somaTagsRows: Record<string, unknown>[] = [];
@@ -196,12 +236,46 @@ const AgentTeamView: React.FC = () => {
         somaTagsRows.push({ tag0, tag01, scenario, month, total });
       }
 
+      // Gerar CalcRows (linhas calculadas da DRE) — mesma lógica do SomaTagsView
+      // Acumular totais por (tag0_prefix, scenario, month)
+      const calcAgg = new Map<string, number>();
+      for (const row of somaTagsRows) {
+        const prefix = ((row.tag0 as string) || '').slice(0, 3); // '01.', '02.', etc.
+        const k = `${prefix}|${row.scenario}|${row.month}`;
+        calcAgg.set(k, (calcAgg.get(k) || 0) + Number(row.total || 0));
+      }
+
+      // Helper para somar prefixos por (scenario, month)
+      const sumPrefixes = (prefixes: string[], scenario: string, month: string) =>
+        prefixes.reduce((acc, p) => acc + (calcAgg.get(`${p}|${scenario}|${month}`) || 0), 0);
+
+      // Coletar combinações únicas de (scenario, month)
+      const scenarioMonths = new Set<string>();
+      for (const row of somaTagsRows) {
+        scenarioMonths.add(`${row.scenario}|${row.month}`);
+      }
+
+      for (const sm of scenarioMonths) {
+        const [scenario, month] = sm.split('|');
+        // MARGEM DE CONTRIBUIÇÃO = 01 + 02 + 03
+        const margem = sumPrefixes(['01.', '02.', '03.'], scenario, month);
+        somaTagsRows.push({ tag0: '▶ MARGEM DE CONTRIBUIÇÃO', tag01: '', scenario, month, total: margem });
+
+        // EBITDA (S/ RATEIO RAIZ CSC) = 01 + 02 + 03 + 04
+        const ebitdaSemRateio = sumPrefixes(['01.', '02.', '03.', '04.'], scenario, month);
+        somaTagsRows.push({ tag0: '▶ EBITDA (S/ RATEIO RAIZ CSC)', tag01: '', scenario, month, total: ebitdaSemRateio });
+
+        // EBITDA TOTAL = 01 + 02 + 03 + 04 + 05
+        const ebitdaTotal = sumPrefixes(['01.', '02.', '03.', '04.', '05.'], scenario, month);
+        somaTagsRows.push({ tag0: '▶ EBITDA TOTAL', tag01: '', scenario, month, total: ebitdaTotal });
+      }
+
       if (somaTagsRows.length > 0) {
         dreSnapshot = somaTagsRows;
         usedSnapshot = true;
         const snapDates = allVarItems.map(i => i.snapshot_at).filter(Boolean).sort().reverse();
         snapDate = snapDates[0] || null;
-        console.log(`📸 Usando foto v${JSON.stringify(versionsByMonth)}: ${somaTagsRows.length} rows, snapshot_at=${snapDate}`);
+        console.log(`📸 Usando foto v${JSON.stringify(versionsByMonth)}: ${somaTagsRows.length} rows (incl. CalcRows), snapshot_at=${snapDate}`);
       }
     }
 
