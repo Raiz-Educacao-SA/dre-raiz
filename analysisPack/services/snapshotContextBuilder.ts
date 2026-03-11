@@ -4,45 +4,46 @@ import type { VarianceJustification } from "../../services/supabaseService";
 /**
  * Constrói AnalysisContext a partir dos dados de variance_justifications (snapshot).
  * Usa a mesma "foto" que os pacoteiros justificam — AI e humanos na mesma base.
+ *
+ * Hierarquia no snapshot:
+ *   depth-0: tag0 (sem tag01/tag02/marca) → consolidado
+ *   depth-1: tag0 + tag01 (sem tag02/marca) → consolidado
+ *   depth-2: tag0 + tag01 + tag02 (sem marca) → consolidado
+ *   depth-3: tag0 + tag01 + tag02 + marca → por marca
+ *
+ * Quando filtrado por marca:
+ *   depth-0/1/2 NÃO têm marca → valores consolidados (todas as marcas)
+ *   depth-3 TEM marca → valores da marca específica
+ *   → Devemos agregar depth-3 items por tag0 para obter DRE da marca
  */
 export function buildContextFromSnapshot(
   items: VarianceJustification[],
   params?: { org_name?: string; year_month?: string; marca?: string },
 ): AnalysisContext {
-  // Quando filtrado por marca, remover itens consolidados (sem marca) para não misturar
-  const filteredItems = params?.marca
-    ? items.filter(i => i.marca === params.marca || (i.marca && i.marca === params.marca))
-    : items;
-
-  // Separar por comparison_type
-  const orcItems = filteredItems.filter(i => i.comparison_type === 'orcado');
-  const a1Items = filteredItems.filter(i => i.comparison_type === 'a1');
-
-  // ── Helpers ──
-  // Depth-0 = tag0 level (01., 02., 03., 04., 05.)
   const prefix = (tag0: string) => (tag0 || '').slice(0, 3);
 
-  // Agregar valores por prefixo
-  // Tenta depth-0 primeiro (sem tag01), fallback para agregar depth-1 (tag01 sem tag02)
+  // Separar por comparison_type (usar TODOS os items, não filtrar por marca ainda)
+  const allOrcItems = items.filter(i => i.comparison_type === 'orcado');
+  const allA1Items = items.filter(i => i.comparison_type === 'a1');
+
+  // ── Construir prefixMap com a estratégia correta ──
   const prefixMap = new Map<string, { real: number; orc: number; a1: number }>();
 
-  // Strategy: depth-0 items (consolidated lines without tag01)
-  const depth0Orc = orcItems.filter(i => !i.tag01 && !i.tag02 && !i.tag03);
-  for (const i of depth0Orc) {
-    const p = prefix(i.tag0);
-    if (!p.match(/^\d{2}\./)) continue;
-    const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
-    existing.real += i.real_value || 0;
-    existing.orc += i.compare_value || 0;
-    prefixMap.set(p, existing);
-  }
+  if (params?.marca) {
+    // ═══ MODO MARCA ═══
+    // Agregar a partir dos items que TÊM a marca (depth-3: tag0+tag01+tag02+marca)
+    // Estes são os únicos com valores específicos da marca
 
-  // Fallback: se depth-0 não teve dados, agregar a partir de depth-1 (tag01 sem tag02)
-  // Isso acontece quando snapshot foi gerado por marca e só existem itens com tag01
-  const hasDepth0Data = Array.from(prefixMap.values()).some(v => v.real !== 0 || v.orc !== 0);
-  if (!hasDepth0Data) {
-    const depth1Orc = orcItems.filter(i => i.tag01 && !i.tag02 && !i.tag03);
-    for (const i of depth1Orc) {
+    // Orçado
+    const marcaOrc = allOrcItems.filter(i => i.marca === params.marca);
+    // Usar os items de menor granularidade disponível para evitar double-counting:
+    // Se tem items depth-3 (com tag02 + marca), usar esses
+    // Se não, tentar depth-2 (tag01 + marca), etc.
+    const leafOrc = marcaOrc.filter(i => i.tag02); // depth-2/3 items (mais granular)
+    const useLeafOrc = leafOrc.length > 0 ? leafOrc : marcaOrc.filter(i => i.tag01);
+    // Deduplicate: usar items mais profundos para evitar double-counting
+    // Agregar os leaf items por tag0 prefix
+    for (const i of useLeafOrc) {
       const p = prefix(i.tag0);
       if (!p.match(/^\d{2}\./)) continue;
       const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
@@ -50,24 +51,12 @@ export function buildContextFromSnapshot(
       existing.orc += i.compare_value || 0;
       prefixMap.set(p, existing);
     }
-  }
 
-  // A-1 values
-  const depth0A1 = a1Items.filter(i => !i.tag01 && !i.tag02 && !i.tag03);
-  for (const i of depth0A1) {
-    const p = prefix(i.tag0);
-    if (!p.match(/^\d{2}\./)) continue;
-    const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
-    if (existing.real === 0) existing.real = i.real_value || 0;
-    existing.a1 += i.compare_value || 0;
-    prefixMap.set(p, existing);
-  }
-
-  // Fallback A-1 depth-1
-  const hasA1Data = Array.from(prefixMap.values()).some(v => v.a1 !== 0);
-  if (!hasA1Data) {
-    const depth1A1 = a1Items.filter(i => i.tag01 && !i.tag02 && !i.tag03);
-    for (const i of depth1A1) {
+    // A-1
+    const marcaA1 = allA1Items.filter(i => i.marca === params.marca);
+    const leafA1 = marcaA1.filter(i => i.tag02);
+    const useLeafA1 = leafA1.length > 0 ? leafA1 : marcaA1.filter(i => i.tag01);
+    for (const i of useLeafA1) {
       const p = prefix(i.tag0);
       if (!p.match(/^\d{2}\./)) continue;
       const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
@@ -75,6 +64,16 @@ export function buildContextFromSnapshot(
       existing.a1 += i.compare_value || 0;
       prefixMap.set(p, existing);
     }
+
+    // Se ainda zerado (marca não encontrada nos items), fallback: usar consolidado
+    const hasMarcaData = Array.from(prefixMap.values()).some(v => v.real !== 0 || v.orc !== 0);
+    if (!hasMarcaData) {
+      // Fallback para items consolidados (sem marca) — melhor que nada
+      aggregateConsolidated(allOrcItems, allA1Items, prefixMap, prefix);
+    }
+  } else {
+    // ═══ MODO CONSOLIDADO ═══
+    aggregateConsolidated(allOrcItems, allA1Items, prefixMap, prefix);
   }
 
   const gp = (p: string) => prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
@@ -150,9 +149,13 @@ export function buildContextFromSnapshot(
     ],
   };
 
-  // ── Pareto: Top variações por tag01 (Orçado) ──
-  const tag01Orc = orcItems.filter(i => i.tag01 && !i.tag02 && !i.tag03);
-  const paretoItems = tag01Orc
+  // ── Pareto: Top variações por tag01 ──
+  // Quando por marca, usar items da marca; quando consolidado, usar items sem tag02
+  const paretoSource = params?.marca
+    ? allOrcItems.filter(i => i.marca === params.marca && i.tag01)
+    : allOrcItems.filter(i => i.tag01 && !i.tag02 && !i.tag03);
+
+  const paretoItems = paretoSource
     .map(i => ({ name: `${i.tag0} > ${i.tag01}`, value: i.variance_abs || 0 }))
     .filter(i => Math.abs(i.value) > 0)
     .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
@@ -175,7 +178,7 @@ export function buildContextFromSnapshot(
   };
 
   const heatmap_variance = {
-    x: ['Consolidado'],
+    x: [params?.marca || 'Consolidado'],
     y: prefixes.map(p => PREFIX_LABELS[p] || p),
     values: heatmapValues,
     unit: 'percent' as const,
@@ -199,17 +202,19 @@ export function buildContextFromSnapshot(
     ],
   };
 
-  // ── Justificativas dos responsáveis (para enriquecer o prompt da IA) ──
-  const justifications = orcItems
-    .filter(i => i.justification && i.justification.trim().length > 0)
-    .map(i => ({
-      conta: [i.tag0, i.tag01, i.tag02].filter(Boolean).join(' > '),
-      variacao: i.variance_abs,
-      variacao_pct: i.variance_pct,
-      justificativa: i.justification,
-      plano_acao: i.action_plan || undefined,
-      responsavel: i.owner_name || i.owner_email || undefined,
-    }));
+  // ── Justificativas dos responsáveis ──
+  const justSource = params?.marca
+    ? allOrcItems.filter(i => (i.marca === params.marca || !i.marca) && i.justification && i.justification.trim().length > 0)
+    : allOrcItems.filter(i => i.justification && i.justification.trim().length > 0);
+
+  const justifications = justSource.map(i => ({
+    conta: [i.tag0, i.tag01, i.tag02].filter(Boolean).join(' > '),
+    variacao: i.variance_abs,
+    variacao_pct: i.variance_pct,
+    justificativa: i.justification,
+    plano_acao: i.action_plan || undefined,
+    responsavel: i.owner_name || i.owner_email || undefined,
+  }));
 
   // ── Montar período e escopo ──
   const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
@@ -226,12 +231,12 @@ export function buildContextFromSnapshot(
     scope_label,
     kpis,
     datasets: {
-      r12: { x: [period_label], series: [] }, // snapshot é ponto único, não R12
+      r12: { x: [period_label], series: [] },
       ebitda_bridge_vs_plan_ytd,
       pareto_cost_variance_ytd,
       heatmap_variance,
       drivers_table,
-      justifications, // extra: justificativas humanas para a IA usar
+      justifications,
     },
     analysis_rules: {
       prefer_pareto: true,
@@ -239,4 +244,65 @@ export function buildContextFromSnapshot(
       highlight_threshold_percent: 0.03,
     },
   };
+}
+
+/**
+ * Agrega items consolidados (sem marca) — modo padrão.
+ * Depth-0 (sem tag01) primeiro, fallback para depth-1 (com tag01 sem tag02).
+ */
+function aggregateConsolidated(
+  orcItems: VarianceJustification[],
+  a1Items: VarianceJustification[],
+  prefixMap: Map<string, { real: number; orc: number; a1: number }>,
+  prefix: (tag0: string) => string,
+) {
+  // Depth-0: sem tag01
+  const depth0Orc = orcItems.filter(i => !i.tag01 && !i.tag02 && !i.tag03);
+  for (const i of depth0Orc) {
+    const p = prefix(i.tag0);
+    if (!p.match(/^\d{2}\./)) continue;
+    const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+    existing.real += i.real_value || 0;
+    existing.orc += i.compare_value || 0;
+    prefixMap.set(p, existing);
+  }
+
+  // Fallback depth-1 se depth-0 vazio
+  const hasData = Array.from(prefixMap.values()).some(v => v.real !== 0 || v.orc !== 0);
+  if (!hasData) {
+    const depth1Orc = orcItems.filter(i => i.tag01 && !i.tag02 && !i.tag03);
+    for (const i of depth1Orc) {
+      const p = prefix(i.tag0);
+      if (!p.match(/^\d{2}\./)) continue;
+      const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+      existing.real += i.real_value || 0;
+      existing.orc += i.compare_value || 0;
+      prefixMap.set(p, existing);
+    }
+  }
+
+  // A-1 depth-0
+  const depth0A1 = a1Items.filter(i => !i.tag01 && !i.tag02 && !i.tag03);
+  for (const i of depth0A1) {
+    const p = prefix(i.tag0);
+    if (!p.match(/^\d{2}\./)) continue;
+    const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+    if (existing.real === 0) existing.real = i.real_value || 0;
+    existing.a1 += i.compare_value || 0;
+    prefixMap.set(p, existing);
+  }
+
+  // Fallback A-1 depth-1
+  const hasA1 = Array.from(prefixMap.values()).some(v => v.a1 !== 0);
+  if (!hasA1) {
+    const depth1A1 = a1Items.filter(i => i.tag01 && !i.tag02 && !i.tag03);
+    for (const i of depth1A1) {
+      const p = prefix(i.tag0);
+      if (!p.match(/^\d{2}\./)) continue;
+      const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+      if (existing.real === 0) existing.real = i.real_value || 0;
+      existing.a1 += i.compare_value || 0;
+      prefixMap.set(p, existing);
+    }
+  }
 }
