@@ -173,6 +173,7 @@ export function dataQualityJsonSchema() {
 // ============================================
 
 export const PerformanceOutputSchema = z.object({
+  user_objective_response: z.string(),
   executive_performance_summary: z.string(),
   ranked_variations: z.array(z.object({
     dre_line: z.string(),
@@ -201,6 +202,7 @@ export function performanceJsonSchema() {
   return {
     type: 'object' as const, additionalProperties: false,
     properties: {
+      user_objective_response: { type: 'string' as const },
       executive_performance_summary: { type: 'string' as const },
       ranked_variations: {
         type: 'array' as const, items: {
@@ -238,7 +240,7 @@ export function performanceJsonSchema() {
         required: ['items_to_deepen', 'lines_to_monitor', 'budget_assumptions_to_review'] as const,
       },
     },
-    required: ['executive_performance_summary', 'ranked_variations', 'margin_ebitda_impact', 'recommended_actions'] as const,
+    required: ['user_objective_response', 'executive_performance_summary', 'ranked_variations', 'margin_ebitda_impact', 'recommended_actions'] as const,
   };
 }
 

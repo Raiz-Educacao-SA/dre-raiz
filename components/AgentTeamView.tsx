@@ -733,6 +733,16 @@ const AgentTeamView: React.FC = () => {
                             </span>
                           </div>
                         )}
+                        {/* Carlos — Resposta ao Objetivo do Usuário */}
+                        {out.user_objective_response && (
+                          <div className="bg-emerald-50 border-2 border-emerald-300 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-emerald-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                              <Target size={12} />
+                              Resposta ao seu Objetivo
+                            </h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.user_objective_response}</p>
+                          </div>
+                        )}
                         {/* Carlos — Performance Summary */}
                         {out.executive_performance_summary && (
                           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
