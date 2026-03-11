@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2, X, AlertTriangle, Target, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { getSomaTags, getDREFilterOptions, getVarianceJustifications } from '../services/supabaseService';
+import { getSomaTags, getDREFilterOptions, getVarianceJustifications, getLatestVarianceVersion } from '../services/supabaseService';
 import type { DREFilterOptions, VarianceJustification } from '../services/supabaseService';
 import type { Team, Agent, TeamAgent, AgentRun, AgentStep } from '../types/agentTeam';
 import * as agentTeamService from '../services/agentTeamService';
@@ -153,35 +153,43 @@ const AgentTeamView: React.FC = () => {
     let usedSnapshot = false;
     let snapDate: string | null = null;
 
-    // Buscar snapshot da foto (variance_justifications)
+    // Buscar snapshot da foto (variance_justifications) — SEMPRE a versão mais recente
     const allVarItems: VarianceJustification[] = [];
+    const versionsByMonth: Record<string, number> = {};
+    const marcasFilter = selectedMarcas.length > 0 ? selectedMarcas : undefined;
+
     for (const ym of yearMonths) {
+      const latestVersion = await getLatestVarianceVersion(ym, marcasFilter);
+      if (latestVersion === 0) continue; // sem foto para este mês
+      versionsByMonth[ym] = latestVersion;
       const items = await getVarianceJustifications({
         year_month: ym,
-        marcas: selectedMarcas.length > 0 ? selectedMarcas : undefined,
+        marcas: marcasFilter,
+        version: latestVersion,
       });
       allVarItems.push(...items);
     }
 
     if (allVarItems.length > 0) {
-      const somaTagsRows: Record<string, unknown>[] = [];
-      const seen = new Set<string>();
-
+      // Agregar valores por (tag0, tag01, scenario, month) — pré-agregar para evitar duplicatas
+      const aggMap = new Map<string, number>();
       for (const item of allVarItems) {
-        if (item.tag02) continue; // só depth 0-1
+        if (item.tag02) continue; // só depth 0-1 (tag0+tag01)
 
+        // Real
         const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
-        if (!seen.has(keyReal)) {
-          seen.add(keyReal);
-          somaTagsRows.push({ tag0: item.tag0, tag01: item.tag01 || '', scenario: 'Real', month: item.year_month, total: item.real_value || 0 });
-        }
+        aggMap.set(keyReal, (aggMap.get(keyReal) || 0) + Number(item.real_value || 0));
 
+        // Orçado ou A-1
         const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
         const keyComp = `${item.tag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
-        if (!seen.has(keyComp)) {
-          seen.add(keyComp);
-          somaTagsRows.push({ tag0: item.tag0, tag01: item.tag01 || '', scenario: scenarioLabel, month: item.year_month, total: item.compare_value || 0 });
-        }
+        aggMap.set(keyComp, (aggMap.get(keyComp) || 0) + Number(item.compare_value || 0));
+      }
+
+      const somaTagsRows: Record<string, unknown>[] = [];
+      for (const [key, total] of aggMap) {
+        const [tag0, tag01, scenario, month] = key.split('|');
+        somaTagsRows.push({ tag0, tag01, scenario, month, total });
       }
 
       if (somaTagsRows.length > 0) {
@@ -189,7 +197,7 @@ const AgentTeamView: React.FC = () => {
         usedSnapshot = true;
         const snapDates = allVarItems.map(i => i.snapshot_at).filter(Boolean).sort().reverse();
         snapDate = snapDates[0] || null;
-        console.log(`📸 Usando foto da justificativa: ${somaTagsRows.length} rows, snapshot_at=${snapDate}`);
+        console.log(`📸 Usando foto v${JSON.stringify(versionsByMonth)}: ${somaTagsRows.length} rows, snapshot_at=${snapDate}`);
       }
     }
 
@@ -213,6 +221,7 @@ const AgentTeamView: React.FC = () => {
     if (selectedFiliais.length > 0) filterContext.filiais = selectedFiliais;
     if (selectedTags01.length > 0) filterContext.tags01 = selectedTags01;
     if (snapDate) filterContext.snapshot_at = snapDate;
+    if (Object.keys(versionsByMonth).length > 0) filterContext.snapshot_versions = versionsByMonth;
 
     return { dreSnapshot, filterContext };
   }, [selectedMonths, selectedMarcas, selectedFiliais, selectedTags01]);

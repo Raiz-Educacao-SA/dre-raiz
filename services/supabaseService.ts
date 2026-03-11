@@ -2976,6 +2976,7 @@ export interface VarianceFilters {
   status?: string;
   owner_email?: string;
   comparison_type?: string;
+  version?: number;
 }
 
 /**
@@ -3006,6 +3007,7 @@ export const getVarianceJustifications = async (
     } else if (filters?.marca) {
       query = query.or(`marca.eq.${filters.marca},marca.is.null,marca.eq.`);
     }
+    if (filters?.version) query = query.eq('version', filters.version);
     if (filters?.status) query = query.eq('status', filters.status);
     if (filters?.owner_email) query = query.eq('owner_email', filters.owner_email);
     if (filters?.comparison_type) query = query.eq('comparison_type', filters.comparison_type);
@@ -3024,6 +3026,27 @@ export const getVarianceJustifications = async (
     }
   }
   return allData;
+};
+
+/**
+ * Retorna a versão mais recente de variance_justifications para um year_month.
+ * Se marcas fornecidas, filtra por marca. Retorna 0 se nenhuma foto existe.
+ */
+export const getLatestVarianceVersion = async (
+  yearMonth: string,
+  marcas?: string[],
+): Promise<number> => {
+  let query = supabase
+    .from('variance_justifications')
+    .select('version')
+    .eq('year_month', yearMonth)
+    .order('version', { ascending: false })
+    .limit(1);
+  if (marcas && marcas.length > 0) {
+    query = query.in('marca', marcas);
+  }
+  const { data } = await query;
+  return data?.[0]?.version || 0;
 };
 
 /**
