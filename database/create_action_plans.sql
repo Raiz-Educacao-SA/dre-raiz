@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_ap_deadline ON action_plans (deadline);
 ALTER TABLE action_plans ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY ap_select ON action_plans FOR SELECT TO authenticated USING (true);
-CREATE POLICY ap_insert ON action_plans FOR INSERT TO authenticated WITH CHECK (auth.email() IS NOT NULL);
+CREATE POLICY ap_insert ON action_plans FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY ap_update ON action_plans FOR UPDATE TO authenticated USING (
   created_by = auth.email()
   OR who_email = auth.email()
