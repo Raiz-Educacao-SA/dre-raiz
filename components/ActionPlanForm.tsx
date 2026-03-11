@@ -248,7 +248,7 @@ function ActionPlanForm({ item, userName, userEmail, readOnly, onSave, onClose }
   const deviationBg = item.variance_abs >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200';
 
   return (
-    <div className="max-h-[85vh] overflow-y-auto space-y-5 p-1">
+    <div className="space-y-5 p-1">
       {/* ============================================================= */}
       {/* DEVIATION SUMMARY HEADER                                      */}
       {/* ============================================================= */}
@@ -316,7 +316,7 @@ function ActionPlanForm({ item, userName, userEmail, readOnly, onSave, onClose }
 
         <textarea
           rows={4}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none resize-none"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none resize-y"
           placeholder="Descreva o motivo do desvio..."
           value={justification}
           onChange={(e) => setJustification(e.target.value)}
@@ -606,7 +606,7 @@ function FormField({
         {textarea ? (
           <textarea
             rows={rows ?? 2}
-            className={`${base} resize-none`}
+            className={`${base} resize-y`}
             placeholder={placeholder}
             value={value}
             onChange={(e) => onChange(e.target.value)}
