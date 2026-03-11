@@ -623,12 +623,12 @@ const AgentTeamView: React.FC = () => {
             Iniciar Análise
           </button>
           <button
-            onClick={() => handleTestPipeline('denilson')}
+            onClick={() => handleTestPipeline('edmundo')}
             disabled={!objective.trim() || isStarting || isRunning || isTesting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100"
           >
             {isTesting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-            {isTesting && testingStep ? testingStep : 'Testar até Denilson'}
+            {isTesting && testingStep ? testingStep : 'Testar até Edmundo'}
           </button>
           {snapshotAt && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
@@ -712,14 +712,25 @@ const AgentTeamView: React.FC = () => {
                             ))}
                           </div>
                         )}
+                        {/* Quality Score (Alex plan absorveu Bruna) */}
                         {out.quality_score !== undefined && (
                           <div className="flex items-center gap-3">
-                            <span className="text-xs font-bold text-gray-600">Score:</span>
+                            <span className="text-xs font-bold text-gray-600">Confiabilidade dos Dados:</span>
                             <span className={`text-lg font-bold ${out.quality_score >= 80 ? 'text-green-600' : out.quality_score >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
                               {Math.round(out.quality_score)}/100
                             </span>
                           </div>
                         )}
+                        {/* Alertas de Qualidade */}
+                        {out.alertas_qualidade?.length > 0 && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                            <h4 className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-1">Alertas de Qualidade</h4>
+                            {out.alertas_qualidade.map((alerta: string, i: number) => (
+                              <p key={i} className="text-[10px] text-gray-700 ml-2">• {alerta}</p>
+                            ))}
+                          </div>
+                        )}
+                        {/* Backward compat: Bruna old fields */}
                         {out.fragility_points?.length > 0 && (
                           <div>
                             <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Fragilidades ({out.fragility_points.length})</h4>
@@ -730,24 +741,10 @@ const AgentTeamView: React.FC = () => {
                                     {fp.severity}
                                   </span>
                                   <span className="text-[10px] font-medium text-gray-500">{fp.affected_area}</span>
-                                  <span className="text-[9px] text-gray-400 font-mono">{fp.type}</span>
                                 </div>
                                 <p className="text-[11px] text-gray-700">{fp.description}</p>
-                                {fp.probable_cause && <p className="text-[10px] text-gray-400 mt-0.5">Causa: {fp.probable_cause}</p>}
-                                {fp.suggested_fix && <p className="text-[10px] text-green-600 mt-0.5">Correção: {fp.suggested_fix}</p>}
                               </div>
                             ))}
-                          </div>
-                        )}
-                        {out.data_integrity_risk_summary && (
-                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
-                            <h4 className="text-xs font-bold text-orange-700 uppercase tracking-wide mb-1.5">Risco Informacional</h4>
-                            <p className="text-[10px] text-gray-700"><strong>Performance:</strong> {out.data_integrity_risk_summary.impact_on_performance}</p>
-                            <p className="text-[10px] text-gray-700"><strong>Otimização:</strong> {out.data_integrity_risk_summary.impact_on_optimization}</p>
-                            <p className="text-[10px] text-gray-700"><strong>Forecast:</strong> {out.data_integrity_risk_summary.impact_on_forecast}</p>
-                            {out.data_integrity_risk_summary.interpretive_caution && (
-                              <p className="text-[10px] text-amber-700 font-medium mt-1">{out.data_integrity_risk_summary.interpretive_caution}</p>
-                            )}
                           </div>
                         )}
                         {out.recommended_caution_level && (
@@ -931,6 +928,86 @@ const AgentTeamView: React.FC = () => {
                               Recado Final
                             </h4>
                             <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.recado_final}</p>
+                          </div>
+                        )}
+                        {/* Edmundo — Resumo Projeção */}
+                        {out.resumo_projecao && (
+                          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-purple-700 uppercase tracking-wide mb-1.5">Projeção & Cenários</h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.resumo_projecao}</p>
+                          </div>
+                        )}
+                        {/* Edmundo — Projeções por Marca */}
+                        {out.projecoes_por_marca?.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Projeções por Marca ({out.projecoes_por_marca.length})</h4>
+                            {out.projecoes_por_marca.map((p: any, i: number) => (
+                              <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-1.5">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-[11px] font-bold text-gray-800">{p.marca}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${p.confianca === 'alta' ? 'bg-green-100 text-green-700' : p.confianca === 'baixa' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                    {p.confianca}
+                                  </span>
+                                </div>
+                                <div className="flex gap-3 text-[10px] text-gray-500">
+                                  <span>Base: <b className="text-gray-700">R$ {Number(p.ebitda_base).toLocaleString('pt-BR')}</b></span>
+                                  <span>Target: <b className="text-blue-700">R$ {Number(p.ebitda_target).toLocaleString('pt-BR')}</b></span>
+                                  <span>Stress: <b className="text-red-600">R$ {Number(p.ebitda_stress).toLocaleString('pt-BR')}</b></span>
+                                </div>
+                                <p className="text-[10px] text-gray-600 mt-0.5">{p.comentario}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Edmundo — Riscos */}
+                        {out.riscos?.length > 0 && out.riscos[0]?.titulo && (
+                          <div>
+                            <h4 className="text-xs font-bold text-red-600 uppercase tracking-wide mb-1.5">Riscos Identificados ({out.riscos.length})</h4>
+                            {out.riscos.map((r: any, i: number) => (
+                              <div key={i} className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-1.5">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-[11px] font-bold text-gray-800">{r.titulo}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${r.probabilidade === 'alta' ? 'bg-red-100 text-red-700' : r.probabilidade === 'baixa' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                    {r.probabilidade}
+                                  </span>
+                                  {r.marca_afetada && <span className="text-[9px] text-gray-400">{r.marca_afetada}</span>}
+                                  {r.impacto_estimado_brl ? <span className="text-[9px] text-red-500 font-medium">R$ {Number(r.impacto_estimado_brl).toLocaleString('pt-BR')}</span> : null}
+                                </div>
+                                <p className="text-[10px] text-gray-700">{r.descricao}</p>
+                                <p className="text-[10px] text-green-600 mt-0.5">Mitigação: {r.mitigacao}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Edmundo — Recado Estratégico */}
+                        {out.recado_estrategico && (
+                          <div className="bg-purple-50 border-2 border-purple-300 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-purple-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                              <Target size={12} />
+                              Recado Estratégico
+                            </h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.recado_estrategico}</p>
+                          </div>
+                        )}
+                        {/* Alex Consolidation — Perguntas da Diretoria */}
+                        {out.perguntas_diretoria?.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Perguntas da Diretoria ({out.perguntas_diretoria.length})</h4>
+                            {out.perguntas_diretoria.map((q: string, i: number) => (
+                              <div key={i} className="flex items-start gap-2 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-1.5 mb-1">
+                                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">?</span>
+                                <p className="text-[11px] text-gray-800">{q}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Alex Consolidation — Nível de Prontidão */}
+                        {out.nivel_prontidao && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-gray-600">Prontidão:</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${out.nivel_prontidao === 'pronto' ? 'bg-green-100 text-green-700' : out.nivel_prontidao === 'nao_pronto' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                              {out.nivel_prontidao === 'pronto' ? 'Pronto' : out.nivel_prontidao === 'precisa_ajustes' ? 'Precisa Ajustes' : out.nivel_prontidao === 'nao_pronto' ? 'Não Pronto' : out.nivel_prontidao}
+                            </span>
                           </div>
                         )}
                         {out.priority_areas?.length > 0 && (

@@ -58,6 +58,8 @@ export const SupervisorPlanOutputSchema = z.object({
     rateio_raiz: z.string(),
     ebitda_total: z.string(),
   }),
+  quality_score: z.number().min(0).max(100).optional().default(85),
+  alertas_qualidade: z.array(z.string()).optional().default([]),
   priority_areas: z.array(z.string()),
   assignments: z.array(z.object({
     agent_code: z.string(),
@@ -82,6 +84,8 @@ export function supervisorPlanJsonSchema() {
         },
         required: ['receita_liquida', 'custos_variaveis', 'custos_fixos', 'sga', 'rateio_raiz', 'ebitda_total'] as const,
       },
+      quality_score: { type: 'number' as const },
+      alertas_qualidade: { type: 'array' as const, items: { type: 'string' as const } },
       priority_areas: { type: 'array' as const, items: { type: 'string' as const } },
       assignments: {
         type: 'array' as const, items: {
@@ -357,68 +361,66 @@ export function optimizationJsonSchema() {
 }
 
 // ============================================
-// EDMUNDO — Forecast
+// EDMUNDO — Forecast + Riscos
 // ============================================
 
 export const ForecastOutputSchema = z.object({
-  projections: z.array(z.object({
-    brand: z.string(),
-    base_case_ebitda: z.number(),
-    target_case_ebitda: z.number(),
-    stress_case_ebitda: z.number(),
-    confidence: z.enum(['high', 'medium', 'low']),
-    narrative: z.string(),
+  resumo_projecao: z.string(),
+  projecoes_por_marca: z.array(z.object({
+    marca: z.string(),
+    ebitda_base: z.number(),
+    ebitda_target: z.number(),
+    ebitda_stress: z.number(),
+    confianca: z.string(),
+    comentario: z.string(),
   })),
-  gap_to_target: z.object({
-    total_gap_brl: z.number(),
-    main_drivers: z.array(z.string()),
-    feasibility: z.string(),
-  }),
-  risks: z.array(z.object({
-    description: z.string(),
-    probability: z.enum(['high', 'medium', 'low']),
+  riscos: z.array(z.object({
+    titulo: z.string(),
+    descricao: z.string(),
+    probabilidade: z.string(),
+    impacto_estimado_brl: z.number().optional().default(0),
+    marca_afetada: z.string().optional().default('Todas'),
+    mitigacao: z.string(),
   })),
+  recado_estrategico: z.string(),
 });
 
 export function forecastJsonSchema() {
   return {
     type: 'object' as const, additionalProperties: false,
     properties: {
-      projections: {
+      resumo_projecao: { type: 'string' as const },
+      projecoes_por_marca: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
           properties: {
-            brand: { type: 'string' as const },
-            base_case_ebitda: { type: 'number' as const },
-            target_case_ebitda: { type: 'number' as const },
-            stress_case_ebitda: { type: 'number' as const },
-            confidence: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
-            narrative: { type: 'string' as const },
+            marca: { type: 'string' as const },
+            ebitda_base: { type: 'number' as const },
+            ebitda_target: { type: 'number' as const },
+            ebitda_stress: { type: 'number' as const },
+            confianca: { type: 'string' as const },
+            comentario: { type: 'string' as const },
           },
-          required: ['brand', 'base_case_ebitda', 'target_case_ebitda', 'stress_case_ebitda', 'confidence', 'narrative'] as const,
+          required: ['marca', 'ebitda_base', 'ebitda_target', 'ebitda_stress', 'confianca', 'comentario'] as const,
         },
       },
-      gap_to_target: {
-        type: 'object' as const, additionalProperties: false,
-        properties: {
-          total_gap_brl: { type: 'number' as const },
-          main_drivers: { type: 'array' as const, items: { type: 'string' as const } },
-          feasibility: { type: 'string' as const },
-        },
-        required: ['total_gap_brl', 'main_drivers', 'feasibility'] as const,
-      },
-      risks: {
+      riscos: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
           properties: {
-            description: { type: 'string' as const },
-            probability: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
+            titulo: { type: 'string' as const },
+            descricao: { type: 'string' as const },
+            probabilidade: { type: 'string' as const },
+            impacto_estimado_brl: { type: 'number' as const },
+            marca_afetada: { type: 'string' as const },
+            mitigacao: { type: 'string' as const },
           },
-          required: ['description', 'probability'] as const,
+          required: ['titulo', 'descricao', 'probabilidade', 'mitigacao'] as const,
         },
       },
+      recado_estrategico: { type: 'string' as const },
     },
-    required: ['projections', 'gap_to_target', 'risks'] as const,
+    required: ['resumo_projecao', 'projecoes_por_marca', 'riscos', 'recado_estrategico'] as const,
   };
 }
 
@@ -500,7 +502,7 @@ export const ConsolidationOutputSchema = z.object({
   consolidated_summary: z.string(),
   recommendations: z.array(z.object({
     action: z.string(),
-    priority: z.enum(['high', 'medium', 'low']),
+    priority: z.string(),
     expected_impact: z.string(),
     owner: z.string(),
   })),
@@ -508,6 +510,8 @@ export const ConsolidationOutputSchema = z.object({
     title: z.string(),
     bullets: z.array(z.string()),
   })),
+  perguntas_diretoria: z.array(z.string()).optional().default([]),
+  nivel_prontidao: z.string().optional().default('pronto'),
 });
 
 export function consolidationJsonSchema() {
@@ -520,7 +524,7 @@ export function consolidationJsonSchema() {
           type: 'object' as const, additionalProperties: false,
           properties: {
             action: { type: 'string' as const },
-            priority: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
+            priority: { type: 'string' as const },
             expected_impact: { type: 'string' as const },
             owner: { type: 'string' as const },
           },
@@ -537,6 +541,8 @@ export function consolidationJsonSchema() {
           required: ['title', 'bullets'] as const,
         },
       },
+      perguntas_diretoria: { type: 'array' as const, items: { type: 'string' as const } },
+      nivel_prontidao: { type: 'string' as const },
     },
     required: ['consolidated_summary', 'recommendations', 'board_slides'] as const,
   };

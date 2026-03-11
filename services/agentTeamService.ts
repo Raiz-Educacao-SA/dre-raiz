@@ -253,16 +253,13 @@ export interface PipelineTestResult {
   totalDurationMs: number;
 }
 
-/** Define a ordem da pipeline de teste */
+/** Pipeline enxuto — 5 steps (Bruna/Falcão/Executivo absorvidos) */
 const TEST_PIPELINE_STEPS: { agentCode: string; stepType: string }[] = [
-  { agentCode: 'alex', stepType: 'plan' },
-  { agentCode: 'bruna', stepType: 'execute' },
-  { agentCode: 'carlos', stepType: 'execute' },
-  { agentCode: 'denilson', stepType: 'execute' },
-  { agentCode: 'edmundo', stepType: 'execute' },
-  { agentCode: 'falcao', stepType: 'execute' },
-  { agentCode: 'alex', stepType: 'consolidate' },
-  { agentCode: 'executivo', stepType: 'review' },
+  { agentCode: 'alex', stepType: 'plan' },         // Plan + Qualidade de Dados
+  { agentCode: 'carlos', stepType: 'execute' },     // Performance & Variações
+  { agentCode: 'denilson', stepType: 'execute' },   // Real vs Orçado por marca
+  { agentCode: 'edmundo', stepType: 'execute' },    // Forecast + Riscos
+  { agentCode: 'alex', stepType: 'consolidate' },   // Consolidação + Revisão Final
 ];
 
 export async function testPipelineUpTo(
@@ -803,9 +800,9 @@ async function callClaudeViaProxy(
   // Consolidação e review executivo usam Sonnet (boa qualidade)
   // Demais agentes usam Haiku (rápido + barato)
   const useOpus = agentCode === 'alex' && !isConsolidation;
-  const useSonnet = isConsolidation || ['executivo', 'diretor', 'bruna', 'carlos', 'denilson'].includes(agentCode);
+  const useSonnet = isConsolidation || ['executivo', 'diretor', 'bruna', 'carlos', 'denilson', 'edmundo'].includes(agentCode);
   const model = useOpus ? 'claude-opus-4-20250514' : useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
-  const isHeavyOutput = ['denilson'].includes(agentCode);
+  const isHeavyOutput = ['denilson', 'edmundo'].includes(agentCode);
   const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : 8192;
 
   // Forçar JSON via prompt (sem output_config)
