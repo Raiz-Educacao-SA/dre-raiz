@@ -50,13 +50,39 @@ export const AiExecutiveSummary: React.FC<AiExecutiveSummaryProps> = ({
 
   // ============================================
   // ESTRATÉGIA 1: Dados dos Agentes (mais rápido)
+  // Só usa se o filter_context do run bater com os filtros do dashboard
   // ============================================
   const tryAgentData = async (): Promise<{ context: string; source: DataSource } | null> => {
     try {
       const run = await getLatestCompletedRun();
       if (!run || !run.financial_summary) return null;
 
+      // Verificar se filtros coincidem
+      const fc = (run.filter_context || {}) as Record<string, unknown>;
+      const runMarcas = (Array.isArray(fc.marcas) ? fc.marcas : []) as string[];
+      const runFiliais = (Array.isArray(fc.filiais) ? fc.filiais : []) as string[];
+
+      const dashMarcas = [...selectedMarca].sort();
+      const dashFiliais = [...selectedFilial].sort();
+
+      // Marcas devem coincidir (ambas vazias = consolidado, ou mesmas marcas)
+      const marcasMatch = JSON.stringify(dashMarcas) === JSON.stringify([...runMarcas].sort());
+      // Filiais: se dashboard não filtra, OK; se filtra, deve coincidir
+      const filiaisMatch = dashFiliais.length === 0 || JSON.stringify(dashFiliais) === JSON.stringify([...runFiliais].sort());
+
+      if (!marcasMatch || !filiaisMatch) {
+        console.info('⏭️ Agent run filters don\'t match dashboard — skipping agent data');
+        return null;
+      }
+
       const fs = run.financial_summary as FinancialSummary;
+
+      // Sanity check: se receita é zero mas temos transações com receita, dados são stale
+      if (fs.receita.real === 0 && transactions.some(t => (t.tag0 || '').startsWith('01.') && t.scenario === 'Real' && t.amount > 0)) {
+        console.info('⏭️ Agent financial_summary has zero revenue but transactions have data — skipping');
+        return null;
+      }
+
       const steps = await getLatestCompletedRunSteps(run.id);
 
       // Extract agent insights
