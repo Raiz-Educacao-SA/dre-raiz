@@ -623,12 +623,12 @@ const AgentTeamView: React.FC = () => {
             Iniciar Análise
           </button>
           <button
-            onClick={() => handleTestPipeline('edmundo')}
+            onClick={() => handleTestPipeline('_full')}
             disabled={!objective.trim() || isStarting || isRunning || isTesting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100"
           >
             {isTesting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-            {isTesting && testingStep ? testingStep : 'Testar até Edmundo'}
+            {isTesting && testingStep ? testingStep : 'Rodar Pipeline Completo'}
           </button>
           {snapshotAt && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">

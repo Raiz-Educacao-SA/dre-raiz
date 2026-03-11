@@ -272,10 +272,12 @@ export async function testPipelineUpTo(
   const startTime = Date.now();
   const financialSummary = buildFinancialSummary(dreSnapshot as any[]);
 
-  // Determinar até qual step rodar
-  const targetIdx = TEST_PIPELINE_STEPS.findIndex(
-    s => s.agentCode === targetAgentCode && (targetAgentCode !== 'alex' || s.stepType !== 'consolidate')
-  );
+  // Determinar até qual step rodar ('_full' = pipeline completo)
+  const targetIdx = targetAgentCode === '_full'
+    ? TEST_PIPELINE_STEPS.length - 1
+    : TEST_PIPELINE_STEPS.findIndex(
+        s => s.agentCode === targetAgentCode && (targetAgentCode !== 'alex' || s.stepType !== 'consolidate')
+      );
   if (targetIdx === -1) throw new Error(`Agente "${targetAgentCode}" não encontrado na pipeline`);
 
   const stepsToRun = TEST_PIPELINE_STEPS.slice(0, targetIdx + 1);
