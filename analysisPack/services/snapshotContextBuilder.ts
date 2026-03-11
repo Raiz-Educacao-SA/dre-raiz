@@ -9,18 +9,25 @@ export function buildContextFromSnapshot(
   items: VarianceJustification[],
   params?: { org_name?: string; year_month?: string; marca?: string },
 ): AnalysisContext {
+  // Quando filtrado por marca, remover itens consolidados (sem marca) para não misturar
+  const filteredItems = params?.marca
+    ? items.filter(i => i.marca === params.marca || (i.marca && i.marca === params.marca))
+    : items;
+
   // Separar por comparison_type
-  const orcItems = items.filter(i => i.comparison_type === 'orcado');
-  const a1Items = items.filter(i => i.comparison_type === 'a1');
+  const orcItems = filteredItems.filter(i => i.comparison_type === 'orcado');
+  const a1Items = filteredItems.filter(i => i.comparison_type === 'a1');
 
   // ── Helpers ──
   // Depth-0 = tag0 level (01., 02., 03., 04., 05.)
   const prefix = (tag0: string) => (tag0 || '').slice(0, 3);
 
-  // Agregar valores por prefixo (depth 0, sem tag01/tag02/tag03)
-  const depth0Orc = orcItems.filter(i => !i.tag01 && !i.tag02 && !i.tag03);
+  // Agregar valores por prefixo
+  // Tenta depth-0 primeiro (sem tag01), fallback para agregar depth-1 (tag01 sem tag02)
   const prefixMap = new Map<string, { real: number; orc: number; a1: number }>();
 
+  // Strategy: depth-0 items (consolidated lines without tag01)
+  const depth0Orc = orcItems.filter(i => !i.tag01 && !i.tag02 && !i.tag03);
   for (const i of depth0Orc) {
     const p = prefix(i.tag0);
     if (!p.match(/^\d{2}\./)) continue;
@@ -29,16 +36,45 @@ export function buildContextFromSnapshot(
     existing.orc += i.compare_value || 0;
     prefixMap.set(p, existing);
   }
-  // A-1 values from a1 items
+
+  // Fallback: se depth-0 não teve dados, agregar a partir de depth-1 (tag01 sem tag02)
+  // Isso acontece quando snapshot foi gerado por marca e só existem itens com tag01
+  const hasDepth0Data = Array.from(prefixMap.values()).some(v => v.real !== 0 || v.orc !== 0);
+  if (!hasDepth0Data) {
+    const depth1Orc = orcItems.filter(i => i.tag01 && !i.tag02 && !i.tag03);
+    for (const i of depth1Orc) {
+      const p = prefix(i.tag0);
+      if (!p.match(/^\d{2}\./)) continue;
+      const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+      existing.real += i.real_value || 0;
+      existing.orc += i.compare_value || 0;
+      prefixMap.set(p, existing);
+    }
+  }
+
+  // A-1 values
   const depth0A1 = a1Items.filter(i => !i.tag01 && !i.tag02 && !i.tag03);
   for (const i of depth0A1) {
     const p = prefix(i.tag0);
     if (!p.match(/^\d{2}\./)) continue;
     const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
-    // real_value should be same, compare_value is A-1
     if (existing.real === 0) existing.real = i.real_value || 0;
     existing.a1 += i.compare_value || 0;
     prefixMap.set(p, existing);
+  }
+
+  // Fallback A-1 depth-1
+  const hasA1Data = Array.from(prefixMap.values()).some(v => v.a1 !== 0);
+  if (!hasA1Data) {
+    const depth1A1 = a1Items.filter(i => i.tag01 && !i.tag02 && !i.tag03);
+    for (const i of depth1A1) {
+      const p = prefix(i.tag0);
+      if (!p.match(/^\d{2}\./)) continue;
+      const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+      if (existing.real === 0) existing.real = i.real_value || 0;
+      existing.a1 += i.compare_value || 0;
+      prefixMap.set(p, existing);
+    }
   }
 
   const gp = (p: string) => prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
