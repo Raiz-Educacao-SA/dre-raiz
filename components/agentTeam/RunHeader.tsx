@@ -23,24 +23,16 @@ interface RunHeaderProps {
 
 const AGENT_COLORS: Record<string, string> = {
   alex:     '#8b5cf6',
-  bruna:    '#f59e0b',
   carlos:   '#3b82f6',
   denilson: '#10b981',
   edmundo:  '#6366f1',
-  falcao:   '#ef4444',
-  diretor:  '#475569',
-  ceo:      '#1e293b',
 };
 
 const AGENT_NAMES: Record<string, string> = {
   alex:     'Alex',
-  bruna:    'Bruna',
   carlos:   'Carlos',
   denilson: 'Denilson',
   edmundo:  'Edmundo',
-  falcao:   'Falcão',
-  diretor:  'Diretor',
-  ceo:      'CEO',
 };
 
 // --------------------------------------------

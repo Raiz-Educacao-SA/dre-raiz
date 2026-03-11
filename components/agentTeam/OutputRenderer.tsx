@@ -10,16 +10,12 @@ import type {
   RankedVariation,
   DRELineAnalysis,
   OptimizationOutput,
-  BrandActionPlan,
-  ProposedAction,
-  ActionPrioritizationEntry,
+  AnalisePorLinha,
+  AnalisePorMarca,
+  DestaqueTag01,
   ForecastOutput,
-  BrandProjection,
-  TagOpportunityRiskEntry,
-  BrandGap,
-  TagGapBreakdown,
-  SacrificeEntry,
-  TagConfidence,
+  ProjecaoPorMarca,
+  RiscoEdmundo,
   RiskOutput,
   BrandRiskExposure,
   RiskAlert,
@@ -794,235 +790,141 @@ function PerformanceView({ data }: { data: PerformanceAnalysisOutput }) {
 }
 
 // ============================================
-// DENILSON — Optimization View
+// DENILSON — Real vs Orçado View
 // ============================================
 
-const ACTION_TYPE_LABELS: Record<string, string> = {
-  reduce_cost: 'Reduzir Custo',
-  revise_allocation: 'Revisar Alocação',
-  renegotiate: 'Renegociar',
-  remove_non_recurring_pressure: 'Não Recorrente',
-  correct_operational_premise: 'Corrigir Premissa',
-  optimize_mix: 'Otimizar Mix',
-  monitor_only: 'Monitorar',
-  reframe_budget_line: 'Reenquadrar',
-};
-
-const IMPACT_TYPE_STYLES: Record<string, { label: string; color: string }> = {
-  real_financial_gain:          { label: 'Ganho Real',      color: 'bg-green-100 text-green-700' },
-  analytical_reframing:         { label: 'Reenquadramento', color: 'bg-blue-100 text-blue-700' },
-  operational_efficiency_gain:  { label: 'Eficiência',      color: 'bg-purple-100 text-purple-700' },
-  mixed_effect:                 { label: 'Misto',           color: 'bg-yellow-100 text-yellow-700' },
-};
-
 function OptimizationView({ data }: { data: OptimizationOutput }) {
-  const brandPlans = data.brand_plans || [];
-  const summary = data.optimization_summary;
-  const impact = data.estimated_impact;
-  const constraints = data.constraints_feasibility;
-  const matrix = data.action_prioritization_matrix || [];
-  // Compatibilidade com formato antigo
-  const hasOldFormat = !!(data as any).optimization_objective && !brandPlans.length;
+  const linhas = data.analise_por_linha || [];
+  const marcas = data.analise_por_marca || [];
+  const hasMarcas = marcas.length > 0;
+  const hasLinhas = linhas.length > 0;
 
-  if (hasOldFormat) {
-    const oldActions = (data as any).proposed_actions || [];
-    return (
-      <div className="space-y-3">
-        <Card>
-          <SectionTitle icon={<Zap size={12} className="text-emerald-500" />}>Objetivo</SectionTitle>
-          <TextBlock text={(data as any).optimization_objective} />
-        </Card>
-        {oldActions.length > 0 && (
-          <Card>
-            <SectionTitle icon={<Target size={12} className="text-blue-500" />}>Ações ({oldActions.length})</SectionTitle>
-            <div className="space-y-2">
-              {oldActions.map((a: any, i: number) => (
-                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <SeverityBadge level={S(a.implementation_priority || 'medium')} />
-                    <span className="text-xs font-medium text-gray-900">{S(a.area || a.action_title)}</span>
-                  </div>
-                  <p className="text-[11px] text-gray-700">{S(a.suggested_adjustment || a.rationale)}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-        <Card>
-          <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Racional</SectionTitle>
-          <TextBlock text={(data as any).optimization_rationale} />
-        </Card>
-      </div>
-    );
-  }
+  const classColors: Record<string, string> = {
+    favoravel: 'text-green-700 bg-green-50',
+    desfavoravel: 'text-red-700 bg-red-50',
+    neutro: 'text-gray-600 bg-gray-100',
+  };
 
   return (
     <div className="space-y-3">
-      {/* Summary + Impact Overview */}
-      {summary && (
+      {/* Resumo Executivo */}
+      {data.resumo_executivo && (
         <Card>
-          <SectionTitle icon={<Zap size={12} className="text-emerald-500" />}>Resumo da Otimização</SectionTitle>
-          <TextBlock text={summary.best_plan_synthesis} />
-          {(summary.main_levers?.length ?? 0) > 0 && (
-            <div className="mt-1">
-              <p className="text-[10px] text-gray-500 font-medium">Principais Alavancas:</p>
-              <BulletList items={summary.main_levers} />
-            </div>
-          )}
+          <SectionTitle icon={<Receipt size={12} className="text-emerald-500" />}>Resumo Executivo</SectionTitle>
+          <TextBlock text={data.resumo_executivo} />
         </Card>
       )}
 
-      {/* Estimated Impact */}
-      {impact && (
+      {/* Modo Marca Selecionada — analise_por_linha */}
+      {hasLinhas && (
         <Card>
-          <SectionTitle icon={<TrendingUp size={12} className="text-green-500" />}>Impacto Estimado</SectionTitle>
-          <div className="grid grid-cols-3 gap-3 mt-1">
-            <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
-              <p className="text-[10px] text-gray-500">EBITDA</p>
-              <p className="text-sm font-bold text-green-700">+R$ {safeNum(impact.total_ebitda_impact ?? (impact as any).total_ebitda_gain ?? (impact as any).total_ebitda_potential).toLocaleString('pt-BR')}</p>
-            </div>
-            <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
-              <p className="text-[10px] text-gray-500">Margem</p>
-              <p className="text-sm font-bold text-green-700">+{safeNum(impact.total_margin_impact ?? (impact as any).total_margin_gain ?? (impact as any).total_margin_improvement).toFixed(1)}pp</p>
-            </div>
-            <div className="bg-green-50 rounded-lg px-3 py-2 text-center">
-              <p className="text-[10px] text-gray-500">Score</p>
-              <p className="text-sm font-bold text-green-700">+{safeNum(impact.total_score_impact ?? (impact as any).total_score_gain).toFixed(0)}pts</p>
-            </div>
-          </div>
-          {/* Gain type breakdown */}
-          {(safeNum(impact.real_gain_total ?? (impact as any).real_gain) > 0 || safeNum(impact.analytical_reframing_total ?? (impact as any).analytical_adjustment) > 0) && (
-            <div className="flex items-center gap-3 mt-2 text-[10px]">
-              {safeNum(impact.real_gain_total ?? (impact as any).real_gain) > 0 && (
-                <span className="text-green-600 font-medium">Ganho Real: R$ {safeNum(impact.real_gain_total ?? (impact as any).real_gain).toLocaleString('pt-BR')}</span>
-              )}
-              {safeNum(impact.analytical_reframing_total ?? (impact as any).analytical_adjustment) > 0 && (
-                <span className="text-blue-600 font-medium">Reenquadramento: R$ {safeNum(impact.analytical_reframing_total ?? (impact as any).analytical_adjustment).toLocaleString('pt-BR')}</span>
-              )}
-              {safeNum(impact.mixed_gain_total) > 0 && (
-                <span className="text-yellow-600 font-medium">Misto: R$ {safeNum(impact.mixed_gain_total).toLocaleString('pt-BR')}</span>
-              )}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Brand Plans — main deliverable */}
-      {brandPlans.map((bp: BrandActionPlan, bi: number) => (
-        <div key={bi} className="border-2 border-emerald-200 rounded-lg overflow-hidden">
-          <div className="bg-emerald-50 px-4 py-2 border-b border-emerald-200">
-            <div className="flex items-center gap-2">
-              <Zap size={14} className="text-emerald-600" />
-              <h3 className="text-xs font-bold text-emerald-900">{S(bp.brand_name)}</h3>
-            </div>
-            <p className="text-[10px] text-emerald-700 mt-0.5">{S(bp.objective_of_plan)}</p>
-          </div>
-          <div className="px-4 py-3 space-y-2">
-            {/* Issues */}
-            {(bp.current_main_issues?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[10px] text-gray-500 font-medium">Problemas Atuais:</p>
-                <BulletList items={bp.current_main_issues} />
-              </div>
-            )}
-            {/* Proposed Actions */}
-            {(bp.proposed_actions?.length ?? 0) > 0 && (
-              <div className="space-y-2 mt-1">
-                <p className="text-[10px] text-gray-500 font-medium">Ações Propostas ({bp.proposed_actions.length}):</p>
-                {bp.proposed_actions.map((a: ProposedAction, ai: number) => {
-                  const impType = IMPACT_TYPE_STYLES[a.impact_type] || IMPACT_TYPE_STYLES.real_financial_gain;
-                  return (
-                    <div key={ai} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <SeverityBadge level={S(a.implementation_priority || 'medium')} />
-                        <span className="text-xs font-medium text-gray-900">{S(a.action_title)}</span>
-                        <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${impType.color}`}>{S(impType.label)}</span>
-                        {a.action_type && (
-                          <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px]">
-                            {S(ACTION_TYPE_LABELS[a.action_type] || a.action_type)}
-                          </span>
-                        )}
+          <SectionTitle icon={<BarChart3 size={12} className="text-blue-500" />}>Real vs Orçado por Linha DRE ({linhas.length})</SectionTitle>
+          <div className="space-y-3 mt-1">
+            {linhas.map((l: AnalisePorLinha, i: number) => (
+              <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-gray-900">{S(l.tag0)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${classColors[l.classificacao] || classColors.neutro}`}>
+                      {l.classificacao === 'favoravel' ? 'Favorável' : l.classificacao === 'desfavoravel' ? 'Desfavorável' : 'Neutro'}
+                    </span>
+                    <span className={`text-[10px] font-bold ${l.delta_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {l.delta_pct >= 0 ? '+' : ''}{l.delta_pct}%
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] text-gray-500">
+                  <span>Real: <strong className="text-gray-700">R$ {safeNum(l.real_brl).toLocaleString('pt-BR')}</strong></span>
+                  <span>Orçado: <strong className="text-gray-700">R$ {safeNum(l.orcado_brl).toLocaleString('pt-BR')}</strong></span>
+                </div>
+                <p className="text-[11px] text-gray-700">{S(l.recado)}</p>
+                {/* Destaques tag01 */}
+                {(l.destaques_tag01?.length ?? 0) > 0 && (
+                  <div className="mt-1 pl-2 border-l-2 border-gray-200 space-y-1">
+                    {l.destaques_tag01.map((d: DestaqueTag01, di: number) => (
+                      <div key={di} className="text-[10px]">
+                        <span className="font-medium text-gray-700">{S(d.tag01)}</span>
+                        <span className="text-gray-400 mx-1">R$ {safeNum(d.real_brl).toLocaleString('pt-BR')} vs {safeNum(d.orcado_brl).toLocaleString('pt-BR')}</span>
+                        <span className={d.delta_pct >= 0 ? 'text-green-600' : 'text-red-600'}>({d.delta_pct >= 0 ? '+' : ''}{d.delta_pct}%)</span>
+                        <p className="text-gray-500">{S(d.comentario)}</p>
                       </div>
-                      <p className="text-[11px] text-gray-700">{S(a.rationale)}</p>
-                      <div className="flex items-center gap-3 text-[10px]">
-                        <span className="text-green-600 font-medium">
-                          EBITDA: +R$ {(a.expected_impact_ebitda ?? 0).toLocaleString('pt-BR')}
-                        </span>
-                        <span className="text-green-600">
-                          Margem: +{(a.expected_impact_margin ?? 0).toFixed(1)}pp
-                        </span>
-                        {a.feasibility_level && (
-                          <span className="text-gray-400">Viabilidade: {S(a.feasibility_level)}</span>
-                        )}
-                      </div>
-                      {a.observation && <p className="text-[10px] text-gray-400 italic">{S(a.observation)}</p>}
-                    </div>
-                  );
-                })}
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-            {/* Gain summary */}
-            {bp.expected_gain_summary && (
-              <p className="text-[10px] text-emerald-700 font-medium mt-1">{safeVal(bp.expected_gain_summary)}</p>
-            )}
-            {/* Notes */}
-            {bp.notes_for_risk_review && (
-              <p className="text-[10px] text-red-500">Falcão: {safeVal(bp.notes_for_risk_review)}</p>
-            )}
+            ))}
           </div>
-        </div>
-      ))}
-
-      {/* Constraints & Feasibility */}
-      {constraints && (
-        <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Restrições e Viabilidade</SectionTitle>
-          {(constraints.operational_constraints?.length ?? 0) > 0 && (
-            <div className="mb-1">
-              <p className="text-[10px] text-gray-500 font-medium">Restrições Operacionais:</p>
-              <BulletList items={constraints.operational_constraints} />
-            </div>
-          )}
-          {(constraints.items_for_falcao_risk_review?.length ?? 0) > 0 && (
-            <div className="mt-1">
-              <p className="text-[10px] text-red-500 font-medium">Para Avaliação do Falcão:</p>
-              <BulletList items={constraints.items_for_falcao_risk_review} />
-            </div>
-          )}
         </Card>
       )}
 
-      {/* Prioritization Matrix */}
-      {matrix.length > 0 && (
+      {/* Modo Consolidado — analise_por_marca */}
+      {hasMarcas && (
+        <>
+          {marcas.map((m: AnalisePorMarca, mi: number) => (
+            <div key={mi} className="border-2 border-emerald-200 rounded-lg overflow-hidden">
+              <div className="bg-emerald-50 px-4 py-2 border-b border-emerald-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building size={14} className="text-emerald-600" />
+                    <h3 className="text-xs font-bold text-emerald-900">{S(m.marca)}</h3>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                    m.situacao_geral === 'acima_do_orcado' ? 'bg-green-100 text-green-700' :
+                    m.situacao_geral === 'abaixo_do_orcado' ? 'bg-red-100 text-red-700' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>
+                    {m.situacao_geral === 'acima_do_orcado' ? 'Acima do Orçado' :
+                     m.situacao_geral === 'abaixo_do_orcado' ? 'Abaixo do Orçado' : 'No Orçado'}
+                  </span>
+                </div>
+              </div>
+              <div className="px-4 py-3 space-y-2">
+                {/* Linhas da DRE */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="text-gray-500 text-left border-b border-gray-100">
+                        <th className="pb-1 font-medium">Linha</th>
+                        <th className="pb-1 font-medium text-right">Real</th>
+                        <th className="pb-1 font-medium text-right">Orçado</th>
+                        <th className="pb-1 font-medium text-right">Δ%</th>
+                        <th className="pb-1 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(m.linhas || []).map((l, li) => (
+                        <tr key={li} className="border-t border-gray-50">
+                          <td className="py-1 text-gray-700 font-medium">{S(l.tag0)}</td>
+                          <td className="py-1 text-right text-gray-900">R$ {safeNum(l.real_brl).toLocaleString('pt-BR')}</td>
+                          <td className="py-1 text-right text-gray-500">R$ {safeNum(l.orcado_brl).toLocaleString('pt-BR')}</td>
+                          <td className={`py-1 text-right font-medium ${l.delta_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {l.delta_pct >= 0 ? '+' : ''}{l.delta_pct}%
+                          </td>
+                          <td className="py-1">
+                            <span className={`px-1 py-0.5 rounded text-[8px] font-bold ${classColors[l.classificacao] || classColors.neutro}`}>
+                              {l.classificacao === 'favoravel' ? 'Fav' : l.classificacao === 'desfavoravel' ? 'Desf' : 'Neutro'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {m.ebitda_estimado !== 0 && (
+                  <p className="text-[10px] text-emerald-700 font-medium">EBITDA: R$ {safeNum(m.ebitda_estimado).toLocaleString('pt-BR')}</p>
+                )}
+                <p className="text-[11px] text-gray-700">{S(m.recado_marca)}</p>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Recado Final */}
+      {data.recado_final && (
         <Card>
-          <SectionTitle icon={<BarChart3 size={12} className="text-indigo-500" />}>Matriz de Priorização ({matrix.length})</SectionTitle>
-          <div className="overflow-x-auto">
-            <table className="w-full text-[10px]">
-              <thead>
-                <tr className="text-gray-500 text-left border-b border-gray-100">
-                  <th className="pb-1 font-medium">Ação</th>
-                  <th className="pb-1 font-medium">Marca</th>
-                  <th className="pb-1 font-medium">Prioridade</th>
-                  <th className="pb-1 font-medium">Tipo</th>
-                  <th className="pb-1 font-medium">Impacto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matrix.map((m: ActionPrioritizationEntry, i: number) => {
-                  const gt = IMPACT_TYPE_STYLES[m.gain_type] || IMPACT_TYPE_STYLES.real_financial_gain;
-                  return (
-                    <tr key={i} className="border-t border-gray-50">
-                      <td className="py-1 text-gray-700 font-medium">{S(m.action_title)}</td>
-                      <td className="py-1 text-gray-600">{S(m.brand)}</td>
-                      <td className="py-1"><SeverityBadge level={S(m.priority || 'medium')} /></td>
-                      <td className="py-1"><span className={`px-1 py-0.5 rounded text-[8px] font-bold ${gt.color}`}>{S(gt.label)}</span></td>
-                      <td className="py-1 text-gray-600">{safeVal(m.expected_impact)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Recado Final</SectionTitle>
+          <TextBlock text={data.recado_final} />
         </Card>
       )}
     </div>
@@ -1030,289 +932,116 @@ function OptimizationView({ data }: { data: OptimizationOutput }) {
 }
 
 // ============================================
-// EDMUNDO — Forecast View
+// EDMUNDO — Forecast + Riscos View
 // ============================================
 
 const CONFIDENCE_COLORS: Record<string, string> = {
+  alta: 'text-green-600 bg-green-50',
+  media: 'text-yellow-600 bg-yellow-50',
+  baixa: 'text-red-600 bg-red-50',
   high: 'text-green-600 bg-green-50',
   medium: 'text-yellow-600 bg-yellow-50',
   low: 'text-red-600 bg-red-50',
 };
 
-const TAG_CLASS_STYLES: Record<string, { label: string; color: string }> = {
-  opportunity: { label: 'Oportunidade', color: 'text-green-700 bg-green-50' },
-  risk: { label: 'Risco', color: 'text-red-700 bg-red-50' },
+const PROB_COLORS: Record<string, string> = {
+  alta: 'text-red-700 bg-red-50',
+  media: 'text-yellow-700 bg-yellow-50',
+  baixa: 'text-green-700 bg-green-50',
 };
 
 function ForecastView({ data }: { data: ForecastOutput }) {
-  const brandProjections = data.brand_projections || [];
-  const curve = data.adjusted_year_end_curve;
-  const tagMap = data.tag_opportunity_risk_map || [];
-  const gapPlan = data.closing_gap_plan;
-  const sacrifice = data.sacrifice_map;
-  const confidence = data.confidence_report;
-  const signals = data.curve_confirmation_signals;
-
-  // Backward compat with old format
-  const hasOldFormat = !!(data as any).forecast_horizon && !brandProjections.length;
-  if (hasOldFormat) {
-    const oldBase = (data as any).base_projection || [];
-    return (
-      <div className="space-y-3">
-        <Card>
-          <SectionTitle icon={<TrendingUp size={12} className="text-indigo-500" />}>Forecast — {S((data as any).forecast_horizon)}</SectionTitle>
-          <TextBlock text={(data as any).trend_interpretation} />
-        </Card>
-        {oldBase.length > 0 && (
-          <Card>
-            <SectionTitle icon={<BarChart3 size={12} className="text-blue-500" />}>Projeções</SectionTitle>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px]">
-                <thead><tr className="text-gray-500 text-left"><th className="pb-1 font-medium">Período</th><th className="pb-1 font-medium text-right">Receita</th><th className="pb-1 font-medium text-right">EBITDA</th></tr></thead>
-                <tbody>{oldBase.map((b: any, i: number) => (
-                  <tr key={i} className="border-t border-gray-50">
-                    <td className="py-1 text-gray-700 font-medium">{S(b.period)}</td>
-                    <td className="py-1 text-right text-gray-900">R$ {(b.receita ?? 0).toLocaleString('pt-BR')}</td>
-                    <td className="py-1 text-right text-green-600">R$ {(b.ebitda ?? 0).toLocaleString('pt-BR')}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-        {((data as any).forecast_risks?.length ?? 0) > 0 && (
-          <Card>
-            <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Riscos</SectionTitle>
-            <BulletList items={(data as any).forecast_risks} />
-          </Card>
-        )}
-      </div>
-    );
-  }
+  const projecoes = data.projecoes_por_marca || [];
+  const riscos = data.riscos || [];
 
   return (
     <div className="space-y-3">
-      {/* Confidence Report */}
-      {confidence && (
+      {/* Resumo da Projeção */}
+      {data.resumo_projecao && (
         <Card>
-          <div className="flex items-center justify-between">
-            <SectionTitle icon={<Shield size={12} className="text-indigo-500" />}>Confiança da Projeção</SectionTitle>
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${CONFIDENCE_COLORS[confidence.brand_confidence_level] || CONFIDENCE_COLORS.medium}`}>
-              {S(confidence.brand_confidence_level?.toUpperCase())}
-            </span>
-          </div>
-          <TextBlock text={confidence.confidence_rationale} />
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            {(confidence.factors_increasing_confidence?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[10px] text-green-600 font-medium">Fatores positivos:</p>
-                <BulletList items={confidence.factors_increasing_confidence} />
-              </div>
-            )}
-            {(confidence.factors_reducing_confidence?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[10px] text-red-500 font-medium">Fatores negativos:</p>
-                <BulletList items={confidence.factors_reducing_confidence} />
-              </div>
-            )}
-          </div>
-          {(confidence.tag_confidence_breakdown?.length ?? 0) > 0 && (
-            <div className="mt-1">
-              <p className="text-[10px] text-gray-500 font-medium">Confiança por Tag:</p>
-              <div className="flex flex-wrap gap-1 mt-0.5">
-                {confidence.tag_confidence_breakdown.map((tc: TagConfidence, i: number) => (
-                  <span key={i} className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${CONFIDENCE_COLORS[tc.confidence_level] || CONFIDENCE_COLORS.medium}`}>
-                    {S(tc.tag_name)}: {S(tc.confidence_level)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <SectionTitle icon={<TrendingUp size={12} className="text-indigo-500" />}>Resumo da Projeção</SectionTitle>
+          <TextBlock text={data.resumo_projecao} />
         </Card>
       )}
 
-      {/* Brand Projections — 3 scenarios per brand */}
-      {brandProjections.map((bp: BrandProjection, bi: number) => (
-        <div key={bi} className="border-2 border-indigo-200 rounded-lg overflow-hidden">
-          <div className="bg-indigo-50 px-4 py-2 border-b border-indigo-200">
-            <div className="flex items-center gap-2">
-              <TrendingUp size={14} className="text-indigo-600" />
-              <h3 className="text-xs font-bold text-indigo-900">{S(bp.brand_name)}</h3>
-            </div>
-            <p className="text-[10px] text-indigo-700 mt-0.5">{S(bp.current_position_summary)}</p>
-          </div>
-          <div className="px-4 py-3 space-y-2">
-            <TextBlock text={bp.projection_narrative} />
-            {/* Scenario comparison */}
-            <div className="grid grid-cols-3 gap-2 mt-1">
-              {[bp.base_case, bp.target_case, bp.stress_case].map((sc, si) => {
-                if (!sc) return null;
-                const colors = si === 0 ? 'bg-gray-50 border-gray-200' : si === 1 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
-                return (
-                  <div key={si} className={`rounded-lg px-2 py-2 border ${colors}`}>
-                    <p className="text-[10px] font-bold text-gray-700">{S(sc.label || ['Base', 'Target', 'Stress'][si])}</p>
-                    <p className="text-[10px] text-gray-600 mt-0.5">{S(sc.description)}</p>
-                    <div className="mt-1 space-y-0.5 text-[10px]">
-                      <p><span className="text-gray-400">EBITDA:</span> <span className="font-medium">R$ {(sc.projected_ebitda ?? 0).toLocaleString('pt-BR')}</span></p>
-                      <p><span className="text-gray-400">Margem:</span> <span className="font-medium">{(sc.projected_margin ?? 0).toFixed(1)}%</span></p>
-                      <p><span className="text-gray-400">Receita:</span> <span className="font-medium">R$ {(sc.projected_revenue ?? 0).toLocaleString('pt-BR')}</span></p>
+      {/* Projeções por Marca — 3 cenários */}
+      {projecoes.length > 0 && (
+        <Card>
+          <SectionTitle icon={<BarChart3 size={12} className="text-blue-500" />}>Projeções por Marca ({projecoes.length})</SectionTitle>
+          <div className="space-y-3 mt-1">
+            {projecoes.map((p: ProjecaoPorMarca, i: number) => (
+              <div key={i} className="border border-indigo-200 rounded-lg overflow-hidden">
+                <div className="bg-indigo-50 px-3 py-2 border-b border-indigo-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Building size={12} className="text-indigo-600" />
+                    <span className="text-xs font-bold text-indigo-900">{S(p.marca)}</span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${CONFIDENCE_COLORS[p.confianca] || CONFIDENCE_COLORS.media}`}>
+                    {S(p.confianca).toUpperCase()}
+                  </span>
+                </div>
+                <div className="px-3 py-2 space-y-2">
+                  {/* 3 Cenários */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="bg-gray-50 rounded-lg px-2 py-2 text-center border border-gray-200">
+                      <p className="text-[9px] text-gray-500 font-medium">Base</p>
+                      <p className="text-sm font-bold text-gray-800">R$ {safeNum(p.ebitda_base).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="bg-green-50 rounded-lg px-2 py-2 text-center border border-green-200">
+                      <p className="text-[9px] text-green-600 font-medium">Target</p>
+                      <p className="text-sm font-bold text-green-700">R$ {safeNum(p.ebitda_target).toLocaleString('pt-BR')}</p>
+                    </div>
+                    <div className="bg-red-50 rounded-lg px-2 py-2 text-center border border-red-200">
+                      <p className="text-[9px] text-red-500 font-medium">Stress</p>
+                      <p className="text-sm font-bold text-red-700">R$ {safeNum(p.ebitda_stress).toLocaleString('pt-BR')}</p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-            {bp.year_end_projection && (
-              <p className="text-[10px] text-indigo-700 font-medium mt-1">{S(bp.year_end_projection)}</p>
-            )}
+                  <p className="text-[11px] text-gray-700">{S(p.comentario)}</p>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
-      ))}
+        </Card>
+      )}
 
-      {/* Adjusted Year-End Curve */}
-      {curve && (
+      {/* Riscos */}
+      {riscos.length > 0 && (
         <Card>
-          <SectionTitle icon={<BarChart3 size={12} className="text-blue-500" />}>Curva Ajustada de Fechamento</SectionTitle>
-          <TextBlock text={curve.interpretation_of_adjusted_trajectory} />
-          {(curve.identified_outliers?.length ?? 0) > 0 && (
-            <div className="mt-1">
-              <p className="text-[10px] text-amber-600 font-medium">Outliers Identificados ({curve.identified_outliers.length}):</p>
-              <div className="space-y-1 mt-0.5">
-                {curve.identified_outliers.map((o, i) => (
-                  <div key={i} className="bg-amber-50 rounded px-2 py-1 text-[10px]">
-                    <span className="font-medium text-amber-800">{S(o.month)}:</span>{' '}
-                    <span className="text-gray-700">{S(o.event_description)}</span>
-                    {o.impact_value !== 0 && (
-                      <span className="text-amber-600 ml-1">(R$ {Math.abs(o.impact_value).toLocaleString('pt-BR')})</span>
+          <SectionTitle icon={<AlertTriangle size={12} className="text-amber-500" />}>Riscos ({riscos.length})</SectionTitle>
+          <div className="space-y-2 mt-1">
+            {riscos.map((r: RiscoEdmundo, i: number) => (
+              <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-gray-900">{S(r.titulo)}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${PROB_COLORS[r.probabilidade] || PROB_COLORS.media}`}>
+                      {S(r.probabilidade).toUpperCase()}
+                    </span>
+                    {r.marca_afetada && (
+                      <span className="px-1.5 py-0.5 rounded text-[8px] font-medium bg-gray-100 text-gray-600">
+                        {S(r.marca_afetada)}
+                      </span>
                     )}
                   </div>
-                ))}
-              </div>
-              {curve.outlier_adjustment_rationale && (
-                <p className="text-[10px] text-gray-500 mt-1 italic">{S(curve.outlier_adjustment_rationale)}</p>
-              )}
-            </div>
-          )}
-          {curve.difference_between_original_and_adjusted_curve && (
-            <p className="text-[10px] text-blue-600 mt-1">{S(curve.difference_between_original_and_adjusted_curve)}</p>
-          )}
-        </Card>
-      )}
-
-      {/* Tag Opportunity & Risk Map */}
-      {tagMap.length > 0 && (
-        <Card>
-          <SectionTitle icon={<Target size={12} className="text-purple-500" />}>Mapa de Oportunidades e Riscos por Tag ({tagMap.length})</SectionTitle>
-          <div className="space-y-1.5 mt-1">
-            {tagMap.map((t: TagOpportunityRiskEntry, i: number) => {
-              const cls = TAG_CLASS_STYLES[t.classification] || TAG_CLASS_STYLES.risk;
-              const conf = CONFIDENCE_COLORS[t.confidence_level_for_tag] || CONFIDENCE_COLORS.medium;
-              return (
-                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2 space-y-0.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${cls.color}`}>{S(cls.label)}</span>
-                    <span className="text-xs font-medium text-gray-900">{S(t.tag_name)}</span>
-                    <span className="text-[8px] text-gray-400">{S(t.tag_level)}</span>
-                    <span className={`px-1 py-0.5 rounded text-[8px] ${conf}`}>{S(t.confidence_level_for_tag)}</span>
-                  </div>
-                  <p className="text-[10px] text-gray-700">{S(t.rationale)}</p>
-                  <p className="text-[10px] text-indigo-600">{S(t.executable_action_plan)}</p>
-                  <div className="flex gap-3 text-[9px] text-gray-400">
-                    {t.projected_effect_on_year_end && <span>Efeito: {S(t.projected_effect_on_year_end)}</span>}
-                    {t.urgency && <span>Urgência: {S(t.urgency)}</span>}
-                  </div>
                 </div>
-              );
-            })}
+                <p className="text-[11px] text-gray-700">{S(r.descricao)}</p>
+                {r.impacto_estimado_brl !== 0 && (
+                  <p className="text-[10px] text-red-600 font-medium">
+                    Impacto: R$ {safeNum(r.impacto_estimado_brl).toLocaleString('pt-BR')}
+                  </p>
+                )}
+                <p className="text-[10px] text-blue-600">{S(r.mitigacao)}</p>
+              </div>
+            ))}
           </div>
         </Card>
       )}
 
-      {/* Closing Gap Plan */}
-      {gapPlan && (gapPlan.brand_gaps?.length ?? 0) > 0 && (
+      {/* Recado Estratégico */}
+      {data.recado_estrategico && (
         <Card>
-          <SectionTitle icon={<ArrowUpRight size={12} className="text-orange-500" />}>Gap até o Alvo</SectionTitle>
-          {gapPlan.brand_gaps.map((bg: BrandGap, i: number) => (
-            <div key={i} className="mt-1 bg-gray-50 rounded-lg px-3 py-2 space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-gray-900">{S(bg.brand_name)}</span>
-                <span className={`text-xs font-bold ${bg.gap_to_target >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  Gap: R$ {(bg.gap_to_target ?? 0).toLocaleString('pt-BR')}
-                </span>
-              </div>
-              <div className="flex gap-4 text-[10px]">
-                <span className="text-gray-500">Target: R$ {(bg.target_year_end_value ?? 0).toLocaleString('pt-BR')}</span>
-                <span className="text-gray-500">Projetado: R$ {(bg.projected_year_end_value ?? 0).toLocaleString('pt-BR')}</span>
-              </div>
-              {(bg.gap_breakdown_by_tag?.length ?? 0) > 0 && (
-                <div className="mt-0.5">
-                  <p className="text-[9px] text-gray-400 font-medium">Composição do gap:</p>
-                  {bg.gap_breakdown_by_tag.map((tg: TagGapBreakdown, j: number) => (
-                    <div key={j} className="flex items-center gap-2 text-[10px]">
-                      <span className="text-gray-600">{S(tg.tag)}:</span>
-                      <span className="font-medium text-red-600">R$ {(tg.contribution_to_gap ?? 0).toLocaleString('pt-BR')}</span>
-                      <span className={`text-[8px] ${tg.whether_gap_is_recoverable ? 'text-green-500' : 'text-red-500'}`}>
-                        {tg.whether_gap_is_recoverable ? 'recuperável' : 'difícil'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {bg.comments_on_feasibility && (
-                <p className="text-[10px] text-gray-400 italic">{S(bg.comments_on_feasibility)}</p>
-              )}
-            </div>
-          ))}
-        </Card>
-      )}
-
-      {/* Sacrifice Map */}
-      {sacrifice && (
-        <Card>
-          <SectionTitle icon={<AlertTriangle size={12} className="text-red-500" />}>Sacrifícios Necessários</SectionTitle>
-          {[
-            { label: 'Comerciais', items: sacrifice.commercial_sacrifices, color: 'text-orange-600' },
-            { label: 'Operacionais', items: sacrifice.operational_sacrifices, color: 'text-amber-600' },
-            { label: 'Financeiros', items: sacrifice.financial_sacrifices, color: 'text-red-600' },
-          ].map((group, gi) => (
-            (group.items?.length ?? 0) > 0 ? (
-              <div key={gi} className="mt-1">
-                <p className={`text-[10px] font-medium ${group.color}`}>{group.label}:</p>
-                {group.items.map((s: SacrificeEntry, si: number) => (
-                  <div key={si} className="bg-gray-50 rounded px-2 py-1 mt-0.5 text-[10px]">
-                    <p className="font-medium text-gray-800">{S(s.description)}</p>
-                    {s.rationale && <p className="text-gray-500">{S(s.rationale)}</p>}
-                  </div>
-                ))}
-              </div>
-            ) : null
-          ))}
-        </Card>
-      )}
-
-      {/* Curve Confirmation Signals */}
-      {signals && (
-        <Card>
-          <SectionTitle icon={<Target size={12} className="text-green-500" />}>Sinais de Confirmação da Curva</SectionTitle>
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            {(signals.confirmation_signals?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[10px] text-green-600 font-medium">Confirmação:</p>
-                <BulletList items={signals.confirmation_signals} />
-              </div>
-            )}
-            {(signals.invalidation_signals?.length ?? 0) > 0 && (
-              <div>
-                <p className="text-[10px] text-red-500 font-medium">Invalidação:</p>
-                <BulletList items={signals.invalidation_signals} />
-              </div>
-            )}
-          </div>
-          {(signals.projection_revision_triggers?.length ?? 0) > 0 && (
-            <div className="mt-1">
-              <p className="text-[10px] text-amber-600 font-medium">Gatilhos de revisão:</p>
-              <BulletList items={signals.projection_revision_triggers} />
-            </div>
-          )}
+          <SectionTitle icon={<FileText size={12} className="text-gray-500" />}>Recado Estratégico</SectionTitle>
+          <TextBlock text={data.recado_estrategico} />
         </Card>
       )}
     </div>

@@ -339,22 +339,57 @@ export interface MarginAnalysis {
 }
 
 // --------------------------------------------
-// Denilson — Optimization Output
+// Denilson — Real vs Orçado Output (formato atual)
 // --------------------------------------------
 
+export interface DestaqueTag01 {
+  tag01: string;
+  real_brl: number;
+  orcado_brl: number;
+  delta_pct: number;
+  comentario: string;
+}
+
+export interface AnalisePorLinha {
+  tag0: string;
+  real_brl: number;
+  orcado_brl: number;
+  delta_pct: number;
+  classificacao: string;
+  destaques_tag01: DestaqueTag01[];
+  recado: string;
+}
+
+export interface LinhaMarca {
+  tag0: string;
+  real_brl: number;
+  orcado_brl: number;
+  delta_pct: number;
+  classificacao: string;
+  comentario: string;
+}
+
+export interface AnalisePorMarca {
+  marca: string;
+  situacao_geral: string;
+  linhas: LinhaMarca[];
+  ebitda_estimado: number;
+  recado_marca: string;
+}
+
+export interface OptimizationOutput {
+  resumo_executivo: string;
+  analise_por_linha: AnalisePorLinha[];
+  analise_por_marca: AnalisePorMarca[];
+  recado_final: string;
+}
+
+// Legacy types (kept for backward compat with old runs)
 export type OptActionType = 'reduce_cost' | 'revise_allocation' | 'renegotiate' | 'remove_non_recurring_pressure' | 'correct_operational_premise' | 'optimize_mix' | 'monitor_only' | 'reframe_budget_line';
 export type ImpactType = 'real_financial_gain' | 'analytical_reframing' | 'operational_efficiency_gain' | 'mixed_effect';
 export type ImplementationPriority = 'immediate' | 'high' | 'medium' | 'low';
 export type FeasibilityLevel = 'high' | 'medium' | 'low';
 export type ExecutionComplexity = 'low' | 'medium' | 'high';
-
-export interface OptimizationOutput {
-  brand_plans: BrandActionPlan[];
-  optimization_summary: OptimizationSummary;
-  constraints_feasibility: ConstraintsFeasibility;
-  estimated_impact: EstimatedImpactReport;
-  action_prioritization_matrix: ActionPrioritizationEntry[];
-}
 
 export interface BrandActionPlan {
   brand_name: string;
@@ -467,7 +502,34 @@ export interface OptimizationImpact {
 export type TagClassification = 'opportunity' | 'risk';
 export type ConfidenceLevel = 'high' | 'medium' | 'low';
 
+// Formato atual — Edmundo (Forecast + Riscos)
+export interface ProjecaoPorMarca {
+  marca: string;
+  ebitda_base: number;
+  ebitda_target: number;
+  ebitda_stress: number;
+  confianca: string;
+  comentario: string;
+}
+
+export interface RiscoEdmundo {
+  titulo: string;
+  descricao: string;
+  probabilidade: string;
+  impacto_estimado_brl: number;
+  marca_afetada: string;
+  mitigacao: string;
+}
+
 export interface ForecastOutput {
+  resumo_projecao: string;
+  projecoes_por_marca: ProjecaoPorMarca[];
+  riscos: RiscoEdmundo[];
+  recado_estrategico: string;
+}
+
+// Legacy format (kept for backward compat with old runs)
+export interface ForecastOutputLegacy {
   brand_projections: BrandProjection[];
   adjusted_year_end_curve: AdjustedYearEndCurve;
   tag_opportunity_risk_map: TagOpportunityRiskEntry[];

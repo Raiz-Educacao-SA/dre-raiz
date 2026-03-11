@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2, X, AlertTriangle, Target, UserCheck } from 'lucide-react';
+import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2, X, AlertTriangle, Target, UserCheck, Filter, GitCompare, Download, FileText, Timer, TrendingUp, TrendingDown, BarChart3, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getSomaTags, getDREFilterOptions, getVarianceJustifications, getLatestVarianceVersion } from '../services/supabaseService';
 import type { DREFilterOptions, VarianceJustification } from '../services/supabaseService';
-import type { Team, Agent, TeamAgent, AgentRun, AgentStep } from '../types/agentTeam';
+import type { Team, Agent, TeamAgent, AgentRun, AgentStep, FinancialSummary } from '../types/agentTeam';
 import * as agentTeamService from '../services/agentTeamService';
+import { exportComparePPT } from '../services/compareExportPptService';
 import MultiSelectFilter from './MultiSelectFilter';
 import RunHeader, { FilterBadges } from './agentTeam/RunHeader';
 import AgentWorkstation from './agentTeam/AgentWorkstation';
@@ -36,6 +37,15 @@ const AgentTeamView: React.FC = () => {
   // History
   const [runs, setRuns] = useState<AgentRun[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [historyLimit, setHistoryLimit] = useState(5);
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'completed' | 'failed'>('all');
+  const [compareIds, setCompareIds] = useState<Set<string>>(new Set());
+  const [compareMode, setCompareMode] = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
+  const [compareSteps, setCompareSteps] = useState<Record<string, AgentStep[]>>({});
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareTab, setCompareTab] = useState<'overview' | 'kpis' | 'agents' | 'summary'>('overview');
+  const [exportingCompare, setExportingCompare] = useState(false);
 
   // Filters
   const [filterOptions, setFilterOptions] = useState<DREFilterOptions>({ marcas: [], nome_filiais: [], tags01: [] });
@@ -71,6 +81,43 @@ const AgentTeamView: React.FC = () => {
 
   const isRunning = activeRun?.status === 'running';
 
+  // Duration helper
+  const formatDuration = useCallback((startedAt: string, completedAt: string | null): string => {
+    if (!completedAt) return '—';
+    const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+    const totalSec = Math.round(ms / 1000);
+    if (totalSec < 60) return `${totalSec}s`;
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    return `${min}m ${sec}s`;
+  }, []);
+
+  // Load steps when compare modal opens
+  useEffect(() => {
+    if (!showCompareModal || compareLoading) return;
+    const ids = Array.from(compareIds);
+    if (ids.length !== 2) return;
+    const missing = ids.filter(id => !(id in compareSteps));
+    if (missing.length === 0) return;
+    setCompareLoading(true);
+    Promise.all(missing.map(id => agentTeamService.getRun(id)))
+      .then(results => {
+        setCompareSteps(prev => {
+          const next = { ...prev };
+          results.forEach((res, i) => { next[missing[i]] = res.steps; });
+          return next;
+        });
+      })
+      .catch(() => {})
+      .finally(() => setCompareLoading(false));
+  }, [showCompareModal, compareIds]);
+
+  // Filtered runs for history
+  const filteredRuns = useMemo(() => {
+    if (historyStatusFilter === 'all') return runs;
+    return runs.filter(r => r.status === historyStatusFilter);
+  }, [runs, historyStatusFilter]);
+
   // Auto-select tab in tabs mode
   useEffect(() => {
     if (viewMode !== 'tabs' || activeSteps.length === 0) return;
@@ -102,7 +149,7 @@ const AgentTeamView: React.FC = () => {
       setTeams(data);
       if (data.length === 1) setSelectedTeamId(data[0].id);
     });
-    agentTeamService.listRuns(10).then((data) => setRuns(data.runs));
+    agentTeamService.listRuns(50).then((data) => setRuns(data.runs));
     getDREFilterOptions({ monthFrom: '2026-01', monthTo: '2026-12' }).then(setFilterOptions);
   }, []);
 
@@ -127,7 +174,7 @@ const AgentTeamView: React.FC = () => {
         if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
           if (pollingRef.current) clearInterval(pollingRef.current);
           pollingRef.current = null;
-          agentTeamService.listRuns(10).then((data) => setRuns(data.runs));
+          agentTeamService.listRuns(50).then((data) => setRuns(data.runs));
         }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Polling error';
@@ -404,7 +451,7 @@ const AgentTeamView: React.FC = () => {
       setActiveRunId(null);
       setActiveRun(null);
       setActiveSteps([]);
-      agentTeamService.listRuns(10).then((data) => setRuns(data.runs));
+      agentTeamService.listRuns(50).then((data) => setRuns(data.runs));
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao cancelar';
       setError(msg);
@@ -477,7 +524,7 @@ const AgentTeamView: React.FC = () => {
         setActiveSteps([]);
       }
       // Refresh lista
-      const { runs: updated } = await agentTeamService.listRuns(10);
+      const { runs: updated } = await agentTeamService.listRuns(50);
       setRuns(updated);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao excluir';
@@ -506,7 +553,7 @@ const AgentTeamView: React.FC = () => {
           <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--color-gray-900)' }}>
             Análise Financeira 2.0
           </h1>
-          <p className="text-xs text-gray-500">Análise automatizada por agentes IA + Equipe Alpha</p>
+          <p className="text-xs text-gray-500">Análise automatizada por agentes IA | Equipe Alpha</p>
         </div>
       </div>
 
@@ -595,14 +642,6 @@ const AgentTeamView: React.FC = () => {
           >
             {isStarting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
             Iniciar Análise
-          </button>
-          <button
-            onClick={() => handleTestPipeline('_full')}
-            disabled={!objective.trim() || isStarting || isRunning || isTesting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100"
-          >
-            {isTesting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-            {isTesting && testingStep ? testingStep : 'Rodar Pipeline Completo'}
           </button>
           {snapshotAt && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
@@ -1077,13 +1116,9 @@ const AgentTeamView: React.FC = () => {
           {viewMode === 'tabs' && (() => {
             const TAB_META: Record<string, { name: string; color: string }> = {
               alex: { name: 'Alex', color: '#8b5cf6' },
-              bruna: { name: 'Bruna', color: '#f59e0b' },
               carlos: { name: 'Carlos', color: '#3b82f6' },
               denilson: { name: 'Denilson', color: '#10b981' },
               edmundo: { name: 'Edmundo', color: '#6366f1' },
-              falcao: { name: 'Falcão', color: '#ef4444' },
-              diretor: { name: 'Diretor', color: '#475569' },
-              ceo: { name: 'CEO', color: '#1e293b' },
             };
             const TAB_STEP: Record<string, string> = {
               plan: 'Plan', execute: 'Exec', consolidate: 'Consol', review: 'Review',
@@ -1152,57 +1187,708 @@ const AgentTeamView: React.FC = () => {
       <ScheduleManager teams={teams} selectedTeamId={selectedTeamId} />
 
       {/* History */}
-      {runs.length > 0 && (
-        <div className="bg-white p-5 rounded-lg border border-gray-200 space-y-3">
-          <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-            <Clock size={14} className="text-gray-400" />
-            Histórico
-          </h2>
-          <div className="space-y-2">
-            {runs.map((run) => (
-              <div
-                key={run.id}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs hover:bg-gray-50 transition-all"
-              >
+      {runs.length > 0 && (() => {
+        const visibleRuns = filteredRuns.slice(0, historyLimit);
+        const hasMore = filteredRuns.length > historyLimit;
+        const completedCount = runs.filter(r => r.status === 'completed').length;
+        const failedCount = runs.filter(r => r.status === 'failed').length;
+        const compareArray = Array.from(compareIds);
+        const compareRunA = compareArray[0] ? runs.find(r => r.id === compareArray[0]) : null;
+        const compareRunB = compareArray[1] ? runs.find(r => r.id === compareArray[1]) : null;
+        return (
+          <div className="bg-white p-5 rounded-lg border border-gray-200 space-y-3">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Clock size={14} className="text-gray-400" />
+                Histórico
+                <span className="text-[10px] font-normal text-gray-400">({filteredRuns.length}{historyStatusFilter !== 'all' ? ` de ${runs.length}` : ''})</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                {/* Compare toggle */}
                 <button
-                  onClick={() => setActiveRunId(run.id)}
-                  className="flex-1 flex items-center justify-between text-left min-w-0"
+                  onClick={() => { setCompareMode(m => !m); setCompareIds(new Set()); }}
+                  className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded transition-colors ${
+                    compareMode ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-indigo-600'
+                  }`}
+                  title="Comparar análises"
                 >
-                  <div className="min-w-0 space-y-1">
-                    <div>
-                      <span className="font-medium text-gray-900">{run.objective.slice(0, 80)}</span>
-                      <span className="text-gray-400 ml-2">
-                        {new Date(run.started_at).toLocaleDateString('pt-BR')}
-                      </span>
-                    </div>
-                    <FilterBadges filterContext={run.filter_context} size="compact" />
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] shrink-0 ${
-                    run.status === 'completed' ? 'bg-green-100 text-green-700' :
-                    run.status === 'failed' ? 'bg-red-100 text-red-700' :
-                    run.status === 'running' ? 'bg-blue-100 text-blue-700' :
-                    'bg-gray-100 text-gray-500'
-                  }`}>
-                    {run.status}
-                  </span>
+                  <GitCompare size={12} />
+                  Comparar
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDeleteRun(run.id); }}
-                  disabled={run.status === 'running' || deletingId === run.id}
-                  className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-                  title="Excluir análise"
-                >
-                  {deletingId === run.id ? (
-                    <Loader2 size={14} className="animate-spin text-red-400" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}
-                </button>
+                {runs.length > 1 && (
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm(`Excluir TODAS as ${runs.length} análises? Esta ação não pode ser desfeita.`)) return;
+                      for (const r of runs) {
+                        try { await agentTeamService.deleteRun(r.id); } catch {}
+                      }
+                      if (pollingRef.current) clearInterval(pollingRef.current);
+                      pollingRef.current = null;
+                      setActiveRunId(null);
+                      setActiveRun(null);
+                      setActiveSteps([]);
+                      const { runs: updated } = await agentTeamService.listRuns(50);
+                      setRuns(updated);
+                    }}
+                    className="text-[10px] text-red-500 hover:text-red-700 font-medium transition-colors"
+                  >
+                    Limpar tudo
+                  </button>
+                )}
               </div>
-            ))}
+            </div>
+
+            {/* Status filter tabs */}
+            <div className="flex items-center gap-1">
+              {([
+                { key: 'all' as const, label: 'Todos', count: runs.length },
+                { key: 'completed' as const, label: 'Completos', count: completedCount },
+                { key: 'failed' as const, label: 'Falhos', count: failedCount },
+              ]).map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => { setHistoryStatusFilter(tab.key); setHistoryLimit(5); }}
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                    historyStatusFilter === tab.key
+                      ? 'bg-gray-900 text-white'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </div>
+
+            {/* Compare bar */}
+            {compareMode && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 rounded-lg text-[10px] text-indigo-700">
+                <GitCompare size={12} />
+                <span>Selecione 2 análises para comparar ({compareIds.size}/2)</span>
+                {compareIds.size === 2 && (
+                  <button
+                    onClick={() => setShowCompareModal(true)}
+                    className="ml-auto px-3 py-1 bg-indigo-600 text-white rounded-md font-medium hover:bg-indigo-700 transition-colors"
+                  >
+                    Ver Comparação
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Run list */}
+            <div className="space-y-2">
+              {visibleRuns.map((run) => {
+                const duration = formatDuration(run.started_at, run.completed_at);
+                const summaryPreview = run.consolidated_summary
+                  ? run.consolidated_summary.replace(/[#*_\n]+/g, ' ').slice(0, 120)
+                  : null;
+                const isSelected = compareIds.has(run.id);
+                return (
+                  <div
+                    key={run.id}
+                    className={`flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs transition-all ${
+                      isSelected ? 'bg-indigo-50 ring-1 ring-indigo-300' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    {/* Compare checkbox */}
+                    {compareMode && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          setCompareIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(run.id)) { next.delete(run.id); }
+                            else if (next.size < 2) { next.add(run.id); }
+                            return next;
+                          });
+                        }}
+                        className="mt-1 accent-indigo-600 shrink-0"
+                      />
+                    )}
+                    <button
+                      onClick={() => setActiveRunId(run.id)}
+                      className="flex-1 flex flex-col text-left min-w-0 gap-1"
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="min-w-0">
+                          <span className="font-medium text-gray-900">{run.objective.slice(0, 80)}</span>
+                          <span className="text-gray-400 ml-2">
+                            {new Date(run.started_at).toLocaleDateString('pt-BR')} {new Date(run.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* Duration badge */}
+                          {duration !== '—' && (
+                            <span className="flex items-center gap-0.5 text-[9px] text-gray-400">
+                              <Timer size={10} />
+                              {duration}
+                            </span>
+                          )}
+                          {/* Status badge */}
+                          <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] ${
+                            run.status === 'completed' ? 'bg-green-100 text-green-700' :
+                            run.status === 'failed' ? 'bg-red-100 text-red-700' :
+                            run.status === 'running' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-500'
+                          }`}>
+                            {run.status}
+                          </span>
+                        </div>
+                      </div>
+                      {/* Meta row: user + filters */}
+                      <div className="flex items-center gap-2">
+                        {run.started_by_name && (
+                          <span className="flex items-center gap-0.5 text-[9px] text-gray-400">
+                            <UserCheck size={9} />
+                            {run.started_by_name}
+                          </span>
+                        )}
+                        <FilterBadges filterContext={run.filter_context} size="compact" />
+                      </div>
+                      {/* Summary preview */}
+                      {summaryPreview && (
+                        <p className="text-[10px] text-gray-400 leading-tight truncate max-w-full">
+                          <FileText size={9} className="inline mr-1 -mt-0.5" />
+                          {summaryPreview}…
+                        </p>
+                      )}
+                    </button>
+                    {/* Action buttons */}
+                    <div className="flex flex-col gap-1 shrink-0">
+                      {/* Export button */}
+                      {run.status === 'completed' && run.consolidated_summary && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const text = `# Análise Financeira — ${run.objective}\n\nData: ${new Date(run.started_at).toLocaleDateString('pt-BR')}\nDuração: ${duration}\nUsuário: ${run.started_by_name || '—'}\n\n${run.consolidated_summary}`;
+                            const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `analise-${new Date(run.started_at).toISOString().slice(0,10)}.md`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="p-1 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-500 transition-colors"
+                          title="Exportar análise"
+                        >
+                          <Download size={14} />
+                        </button>
+                      )}
+                      {/* Delete button */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteRun(run.id); }}
+                        disabled={deletingId === run.id}
+                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Excluir análise"
+                      >
+                        {deletingId === run.id ? (
+                          <Loader2 size={14} className="animate-spin text-red-400" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Paginação */}
+            {hasMore && (
+              <button
+                onClick={() => setHistoryLimit(prev => prev + 10)}
+                className="w-full py-2 text-[11px] font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors"
+              >
+                Mostrar mais ({filteredRuns.length - historyLimit} restantes)
+              </button>
+            )}
+            {historyLimit > 5 && (
+              <button
+                onClick={() => setHistoryLimit(5)}
+                className="w-full py-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                Recolher
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Compare Modal */}
+      {showCompareModal && (() => {
+        const ids = Array.from(compareIds);
+        const runA = runs.find(r => r.id === ids[0]);
+        const runB = runs.find(r => r.id === ids[1]);
+        if (!runA || !runB) return null;
+
+        const stepsA = compareSteps[runA.id] || [];
+        const stepsB = compareSteps[runB.id] || [];
+        const fsA = runA.financial_summary as FinancialSummary | null;
+        const fsB = runB.financial_summary as FinancialSummary | null;
+
+        const AGENT_LABELS: Record<string, string> = {
+          alex: 'Alex — Supervisor', carlos: 'Carlos — Performance',
+          denilson: 'Denilson — Otimização', edmundo: 'Edmundo — Forecast',
+        };
+        const AGENT_COLORS: Record<string, string> = {
+          alex: '#8b5cf6', carlos: '#3b82f6', denilson: '#10b981', edmundo: '#6366f1',
+        };
+
+        const fmtBRL = (v: number | undefined | null) => {
+          if (v == null) return '—';
+          return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
+        };
+        const fmtPct = (v: number | undefined | null) => {
+          if (v == null) return '—';
+          return `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+        };
+
+        const totalTokens = (steps: AgentStep[]) => steps.reduce((s, st) => s + (st.tokens_input || 0) + (st.tokens_output || 0), 0);
+
+        // Compute KPI comparison rows
+        const kpiRows = fsA && fsB ? [
+          { label: 'Receita Líquida', valA: fsA.receita.real, valB: fsB.receita.real, orcA: fsA.receita.orcado, orcB: fsB.receita.orcado },
+          { label: 'Custos Variáveis', valA: fsA.custos_variaveis.real, valB: fsB.custos_variaveis.real, orcA: fsA.custos_variaveis.orcado, orcB: fsB.custos_variaveis.orcado },
+          { label: 'Custos Fixos', valA: fsA.custos_fixos.real, valB: fsB.custos_fixos.real, orcA: fsA.custos_fixos.orcado, orcB: fsB.custos_fixos.orcado },
+          { label: 'SG&A', valA: fsA.sga.real, valB: fsB.sga.real, orcA: fsA.sga.orcado, orcB: fsB.sga.orcado },
+          { label: 'Rateio Raiz', valA: fsA.rateio.real, valB: fsB.rateio.real, orcA: fsA.rateio.orcado, orcB: fsB.rateio.orcado },
+          { label: 'Margem Contrib.', valA: fsA.margem_contribuicao.real, valB: fsB.margem_contribuicao.real, orcA: fsA.margem_contribuicao.orcado, orcB: fsB.margem_contribuicao.orcado },
+          { label: 'EBITDA', valA: fsA.ebitda.real, valB: fsB.ebitda.real, orcA: fsA.ebitda.orcado, orcB: fsB.ebitda.orcado },
+        ] : [];
+
+        const COMPARE_TABS = [
+          { key: 'overview' as const, label: 'Visão Geral', icon: BarChart3 },
+          { key: 'kpis' as const, label: 'KPIs Financeiros', icon: TrendingUp },
+          { key: 'agents' as const, label: 'Por Agente', icon: Users },
+          { key: 'summary' as const, label: 'Resumo Consolidado', icon: FileText },
+        ];
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => { setShowCompareModal(false); setCompareTab('overview'); }}>
+            <div className="bg-white rounded-xl shadow-2xl w-[95vw] max-w-6xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b">
+                <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                  <GitCompare size={16} className="text-indigo-500" />
+                  Comparação de Análises
+                </h3>
+                <div className="flex items-center gap-2">
+                  {/* Tab navigation */}
+                  {COMPARE_TABS.map(tab => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setCompareTab(tab.key)}
+                      className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors ${
+                        compareTab === tab.key ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-100'
+                      }`}
+                    >
+                      <tab.icon size={12} />
+                      {tab.label}
+                    </button>
+                  ))}
+                  {/* Export PPT */}
+                  <button
+                    onClick={async () => {
+                      if (!runA || !runB) return;
+                      setExportingCompare(true);
+                      try {
+                        await exportComparePPT({
+                          runA, runB,
+                          stepsA: compareSteps[runA.id] || [],
+                          stepsB: compareSteps[runB.id] || [],
+                        });
+                      } catch (err) {
+                        console.error('Erro ao exportar PPT:', err);
+                      } finally {
+                        setExportingCompare(false);
+                      }
+                    }}
+                    disabled={exportingCompare || compareLoading}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50 ml-1"
+                    title="Exportar comparação em PPT"
+                  >
+                    {exportingCompare ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+                    Exportar PPT
+                  </button>
+                  <button onClick={() => { setShowCompareModal(false); setCompareTab('overview'); }} className="p-1 rounded hover:bg-gray-100 text-gray-400 ml-2">
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Loading */}
+              {compareLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 size={24} className="animate-spin text-indigo-400" />
+                  <span className="ml-2 text-sm text-gray-500">Carregando dados...</span>
+                </div>
+              )}
+
+              {/* TAB: Overview */}
+              {!compareLoading && compareTab === 'overview' && (
+                <div className="flex-1 overflow-auto p-6 space-y-6">
+                  {/* Side-by-side meta cards */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {[runA, runB].map((run, idx) => {
+                      const fs = idx === 0 ? fsA : fsB;
+                      const steps = idx === 0 ? stepsA : stepsB;
+                      const tokens = totalTokens(steps);
+                      return (
+                        <div key={run.id} className={`rounded-xl border-2 p-4 space-y-3 ${idx === 0 ? 'border-indigo-200 bg-indigo-50/30' : 'border-purple-200 bg-purple-50/30'}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white ${idx === 0 ? 'bg-indigo-500' : 'bg-purple-500'}`}>
+                              {idx === 0 ? 'A' : 'B'}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-gray-900 truncate">{run.objective.slice(0, 70)}</p>
+                              <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                                <span>{new Date(run.started_at).toLocaleDateString('pt-BR')} {new Date(run.started_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                {run.completed_at && <span className="flex items-center gap-0.5"><Timer size={9} />{formatDuration(run.started_at, run.completed_at)}</span>}
+                                {run.started_by_name && <span>{run.started_by_name}</span>}
+                              </div>
+                            </div>
+                            <span className={`ml-auto px-2 py-0.5 rounded-full font-bold uppercase text-[9px] shrink-0 ${
+                              run.status === 'completed' ? 'bg-green-100 text-green-700' : run.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'
+                            }`}>{run.status}</span>
+                          </div>
+                          <FilterBadges filterContext={run.filter_context} size="compact" />
+                          {/* Quick KPI summary */}
+                          {fs && (
+                            <div className="grid grid-cols-3 gap-2">
+                              <div className="bg-white rounded-lg p-2 text-center">
+                                <p className="text-[9px] text-gray-400 uppercase">Receita</p>
+                                <p className="text-xs font-bold text-gray-900">{fmtBRL(fs.receita.real)}</p>
+                                <p className={`text-[9px] font-medium ${fs.receita.gap_pct >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtPct(fs.receita.gap_pct)} vs orç</p>
+                              </div>
+                              <div className="bg-white rounded-lg p-2 text-center">
+                                <p className="text-[9px] text-gray-400 uppercase">EBITDA</p>
+                                <p className="text-xs font-bold text-gray-900">{fmtBRL(fs.ebitda.real)}</p>
+                                {fs.ebitda.pct_real != null && <p className="text-[9px] text-gray-500">Margem {fs.ebitda.pct_real.toFixed(1)}%</p>}
+                              </div>
+                              <div className="bg-white rounded-lg p-2 text-center">
+                                <p className="text-[9px] text-gray-400 uppercase">Margem Contrib</p>
+                                <p className="text-xs font-bold text-gray-900">{fmtBRL(fs.margem_contribuicao.real)}</p>
+                                <p className={`text-[9px] font-medium ${
+                                  fs.margem_contribuicao.health === 'healthy' ? 'text-green-600' :
+                                  fs.margem_contribuicao.health === 'attention' ? 'text-amber-600' : 'text-red-500'
+                                }`}>{fs.margem_contribuicao.pct_real?.toFixed(1)}%</p>
+                              </div>
+                            </div>
+                          )}
+                          {/* Agent steps summary */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {steps.filter(s => s.agent_code !== 'alex' || s.step_type !== 'consolidate').map(step => (
+                              <span
+                                key={step.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-medium text-white"
+                                style={{ backgroundColor: AGENT_COLORS[step.agent_code] || '#6b7280' }}
+                              >
+                                {step.agent_code}
+                                {step.status === 'completed' ? ' ✓' : step.status === 'failed' ? ' ✗' : ''}
+                              </span>
+                            ))}
+                            <span className="text-[9px] text-gray-400 ml-1">{tokens.toLocaleString('pt-BR')} tokens</span>
+                          </div>
+                          {/* Top variations */}
+                          {fs?.top5_variacoes && fs.top5_variacoes.length > 0 && (
+                            <div>
+                              <p className="text-[9px] text-gray-400 uppercase mb-1">Top Variações vs Orçado</p>
+                              <div className="space-y-0.5">
+                                {fs.top5_variacoes.slice(0, 5).map((v, i) => (
+                                  <div key={i} className="flex items-center justify-between text-[10px]">
+                                    <span className="text-gray-700 truncate max-w-[60%]">{v.tag01}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-500">{fmtBRL(v.real)}</span>
+                                      <span className={`font-medium ${v.delta_pct >= 0 ? 'text-green-600' : 'text-red-500'}`}>{fmtPct(v.delta_pct)}</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: KPIs Financeiros */}
+              {!compareLoading && compareTab === 'kpis' && (
+                <div className="flex-1 overflow-auto p-6">
+                  {kpiRows.length > 0 ? (
+                    <div className="space-y-4">
+                      {/* KPI comparison table */}
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b-2 border-gray-200">
+                            <th className="text-left py-2 text-gray-500 font-medium w-[20%]">Linha DRE</th>
+                            <th className="text-right py-2 font-medium w-[16%]"><span className="text-indigo-600">A</span> Real</th>
+                            <th className="text-right py-2 font-medium w-[16%]"><span className="text-purple-600">B</span> Real</th>
+                            <th className="text-right py-2 font-medium text-gray-400 w-[12%]">Δ A→B</th>
+                            <th className="text-right py-2 font-medium w-[16%]"><span className="text-indigo-600">A</span> Orçado</th>
+                            <th className="text-right py-2 font-medium w-[16%]"><span className="text-purple-600">B</span> Orçado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {kpiRows.map((row, i) => {
+                            const deltaReal = row.valA && row.valB ? ((row.valB - row.valA) / Math.abs(row.valA)) * 100 : null;
+                            const isEbitda = row.label === 'EBITDA';
+                            return (
+                              <tr key={i} className={`border-b ${isEbitda ? 'bg-gray-50 font-semibold' : ''}`}>
+                                <td className="py-2 text-gray-700">{row.label}</td>
+                                <td className="py-2 text-right text-indigo-700">{fmtBRL(row.valA)}</td>
+                                <td className="py-2 text-right text-purple-700">{fmtBRL(row.valB)}</td>
+                                <td className="py-2 text-right">
+                                  {deltaReal != null && (
+                                    <span className={`inline-flex items-center gap-0.5 ${deltaReal >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                      {deltaReal >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                      {fmtPct(deltaReal)}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-2 text-right text-indigo-400">{fmtBRL(row.orcA)}</td>
+                                <td className="py-2 text-right text-purple-400">{fmtBRL(row.orcB)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      {/* Margem + Health comparison */}
+                      {fsA && fsB && (
+                        <div className="grid grid-cols-2 gap-4">
+                          {[{ label: 'A', fs: fsA, color: 'indigo' }, { label: 'B', fs: fsB, color: 'purple' }].map(item => (
+                            <div key={item.label} className={`rounded-lg border border-${item.color}-200 p-3 space-y-2`}>
+                              <p className={`text-[10px] font-bold text-${item.color}-600 uppercase`}>Análise {item.label}</p>
+                              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                <div>
+                                  <span className="text-gray-400">Margem Real:</span>{' '}
+                                  <span className="font-semibold">{item.fs.margem_contribuicao.pct_real?.toFixed(1)}%</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-400">Margem Orç:</span>{' '}
+                                  <span className="font-semibold">{item.fs.margem_contribuicao.pct_orcado?.toFixed(1)}%</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-400">EBITDA %:</span>{' '}
+                                  <span className="font-semibold">{item.fs.ebitda.pct_real?.toFixed(1)}%</span>
+                                </div>
+                                <div>
+                                  <span className="text-gray-400">Saúde:</span>{' '}
+                                  <span className={`font-semibold ${
+                                    item.fs.margem_contribuicao.health === 'healthy' ? 'text-green-600' :
+                                    item.fs.margem_contribuicao.health === 'attention' ? 'text-amber-600' : 'text-red-500'
+                                  }`}>
+                                    {item.fs.margem_contribuicao.health === 'healthy' ? '● Saudável' :
+                                     item.fs.margem_contribuicao.health === 'attention' ? '● Atenção' : '● Crítico'}
+                                  </span>
+                                </div>
+                              </div>
+                              {/* Top receita + custo */}
+                              {item.fs.top5_tags01_receita && item.fs.top5_tags01_receita.length > 0 && (
+                                <div>
+                                  <p className="text-[9px] text-gray-400 uppercase mt-1">Top Receita</p>
+                                  {item.fs.top5_tags01_receita.slice(0, 3).map((t, j) => (
+                                    <div key={j} className="flex justify-between text-[10px]">
+                                      <span className="text-gray-600 truncate">{t.tag01}</span>
+                                      <span className="font-medium">{fmtBRL(t.total)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {item.fs.top5_tags01_custo && item.fs.top5_tags01_custo.length > 0 && (
+                                <div>
+                                  <p className="text-[9px] text-gray-400 uppercase mt-1">Top Custo</p>
+                                  {item.fs.top5_tags01_custo.slice(0, 3).map((t, j) => (
+                                    <div key={j} className="flex justify-between text-[10px]">
+                                      <span className="text-gray-600 truncate">{t.tag01}</span>
+                                      <span className="font-medium text-red-500">{fmtBRL(t.total)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Monthly trend comparison */}
+                      {fsA?.tendencia_mensal && fsB?.tendencia_mensal && (
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Tendência Mensal</p>
+                          <table className="w-full text-[10px]">
+                            <thead>
+                              <tr className="border-b text-gray-400">
+                                <th className="text-left py-1">Mês</th>
+                                <th className="text-right py-1"><span className="text-indigo-500">A</span> Receita</th>
+                                <th className="text-right py-1"><span className="text-purple-500">B</span> Receita</th>
+                                <th className="text-right py-1"><span className="text-indigo-500">A</span> EBITDA</th>
+                                <th className="text-right py-1"><span className="text-purple-500">B</span> EBITDA</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {fsA.tendencia_mensal.map((mA, i) => {
+                                const mB = fsB.tendencia_mensal?.[i];
+                                return (
+                                  <tr key={i} className="border-b border-gray-100">
+                                    <td className="py-1 text-gray-600">{mA.mes}</td>
+                                    <td className="py-1 text-right text-indigo-600">{fmtBRL(mA.receita)}</td>
+                                    <td className="py-1 text-right text-purple-600">{mB ? fmtBRL(mB.receita) : '—'}</td>
+                                    <td className="py-1 text-right text-indigo-600">{fmtBRL(mA.ebitda)}</td>
+                                    <td className="py-1 text-right text-purple-600">{mB ? fmtBRL(mB.ebitda) : '—'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 italic text-center py-8">Dados financeiros não disponíveis para comparação</p>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: Por Agente */}
+              {!compareLoading && compareTab === 'agents' && (
+                <div className="flex-1 overflow-auto p-6 space-y-4">
+                  {['alex', 'carlos', 'denilson', 'edmundo'].map(agentCode => {
+                    const stepA = stepsA.find(s => s.agent_code === agentCode && s.step_type !== 'consolidate');
+                    const stepB = stepsB.find(s => s.agent_code === agentCode && s.step_type !== 'consolidate');
+                    if (!stepA && !stepB) return null;
+
+                    const extractSummary = (step: AgentStep | undefined): string => {
+                      if (!step?.output_data) return 'Sem output';
+                      const out = step.output_data as Record<string, unknown>;
+                      // Try common summary fields
+                      for (const key of ['resumo_executivo', 'resumo_projecao', 'executive_summary', 'plan_summary', 'summary', 'recado_final', 'recado_estrategico']) {
+                        if (typeof out[key] === 'string' && out[key]) return out[key] as string;
+                      }
+                      // Try nested object with resumo
+                      for (const val of Object.values(out)) {
+                        if (val && typeof val === 'object' && 'resumo' in (val as Record<string, unknown>)) {
+                          return (val as Record<string, unknown>).resumo as string;
+                        }
+                      }
+                      return JSON.stringify(out).slice(0, 300) + '...';
+                    };
+
+                    return (
+                      <div key={agentCode} className="border rounded-lg overflow-hidden">
+                        <div className="px-4 py-2 flex items-center gap-2" style={{ backgroundColor: `${AGENT_COLORS[agentCode]}10`, borderBottom: `2px solid ${AGENT_COLORS[agentCode]}` }}>
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center" style={{ backgroundColor: AGENT_COLORS[agentCode] }}>
+                            <Zap size={10} className="text-white" />
+                          </div>
+                          <span className="text-xs font-semibold" style={{ color: AGENT_COLORS[agentCode] }}>
+                            {AGENT_LABELS[agentCode] || agentCode}
+                          </span>
+                          <div className="ml-auto flex items-center gap-3 text-[9px] text-gray-400">
+                            {stepA && <span><span className="text-indigo-500 font-medium">A</span> {(stepA.tokens_input + stepA.tokens_output).toLocaleString('pt-BR')} tok • {stepA.status}</span>}
+                            {stepB && <span><span className="text-purple-500 font-medium">B</span> {(stepB.tokens_input + stepB.tokens_output).toLocaleString('pt-BR')} tok • {stepB.status}</span>}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 divide-x">
+                          {[stepA, stepB].map((step, idx) => (
+                            <div key={idx} className="p-3 max-h-[250px] overflow-auto">
+                              {step ? (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-1">
+                                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${idx === 0 ? 'bg-indigo-500' : 'bg-purple-500'}`}>
+                                      {idx === 0 ? 'A' : 'B'}
+                                    </span>
+                                    <span className={`text-[9px] font-medium ${step.status === 'completed' ? 'text-green-600' : step.status === 'failed' ? 'text-red-500' : 'text-gray-400'}`}>
+                                      {step.status === 'completed' ? '✓ Concluído' : step.status === 'failed' ? '✗ Falhou' : step.status}
+                                    </span>
+                                  </div>
+                                  {step.error_message && (
+                                    <p className="text-[10px] text-red-500 bg-red-50 rounded p-1.5">{step.error_message}</p>
+                                  )}
+                                  <div className="text-[10px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                    {extractSummary(step).slice(0, 800)}
+                                    {extractSummary(step).length > 800 && '…'}
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-gray-400 italic">Agente não executou nesta análise</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* Consolidation step (alex consolidate) */}
+                  {(() => {
+                    const consA = stepsA.find(s => s.agent_code === 'alex' && s.step_type === 'consolidate');
+                    const consB = stepsB.find(s => s.agent_code === 'alex' && s.step_type === 'consolidate');
+                    if (!consA && !consB) return null;
+                    return (
+                      <div className="border rounded-lg overflow-hidden">
+                        <div className="px-4 py-2 flex items-center gap-2 bg-violet-50 border-b-2 border-violet-400">
+                          <div className="w-5 h-5 rounded-full flex items-center justify-center bg-violet-500">
+                            <Target size={10} className="text-white" />
+                          </div>
+                          <span className="text-xs font-semibold text-violet-600">Alex — Consolidação Final</span>
+                        </div>
+                        <div className="grid grid-cols-2 divide-x">
+                          {[consA, consB].map((step, idx) => (
+                            <div key={idx} className="p-3 max-h-[200px] overflow-auto">
+                              {step?.output_data ? (
+                                <div className="text-[10px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                  {(() => {
+                                    const out = step.output_data as Record<string, unknown>;
+                                    const exec = out.executive_summary || out.resumo_executivo || '';
+                                    return typeof exec === 'string' ? exec.slice(0, 600) : JSON.stringify(out).slice(0, 400);
+                                  })()}
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-gray-400 italic">{step ? 'Sem output' : 'Não executou'}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* TAB: Resumo Consolidado */}
+              {!compareLoading && compareTab === 'summary' && (
+                <div className="flex-1 overflow-auto grid grid-cols-2 divide-x">
+                  {[runA, runB].map((run, idx) => (
+                    <div key={run.id} className="p-5 space-y-3 overflow-auto">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${idx === 0 ? 'bg-indigo-500' : 'bg-purple-500'}`}>
+                          {idx === 0 ? 'A' : 'B'}
+                        </span>
+                        <span className="text-xs font-semibold text-gray-900">{run.objective.slice(0, 60)}</span>
+                        <span className="text-[10px] text-gray-400 ml-auto">
+                          {new Date(run.started_at).toLocaleDateString('pt-BR')}
+                        </span>
+                      </div>
+                      <FilterBadges filterContext={run.filter_context} size="compact" />
+                      <div className="border-t pt-3">
+                        {run.consolidated_summary ? (
+                          <div className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+                            {run.consolidated_summary}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-gray-400 italic">Sem resumo consolidado</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

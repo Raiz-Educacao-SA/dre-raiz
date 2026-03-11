@@ -21,14 +21,10 @@ interface AgentWorkstationProps {
 // --------------------------------------------
 
 const AGENT_DISPLAY: Record<string, { name: string; color: string; role: string; avgSeconds: number }> = {
-  alex:     { name: 'Alex',     color: '#8b5cf6', role: 'Supervisor Estratégico',      avgSeconds: 25 },
-  bruna:    { name: 'Bruna',    color: '#f59e0b', role: 'Qualidade de Dados',          avgSeconds: 20 },
-  carlos:   { name: 'Carlos',   color: '#3b82f6', role: 'Performance Financeira',      avgSeconds: 22 },
-  denilson: { name: 'Denilson', color: '#10b981', role: 'Otimização',                  avgSeconds: 25 },
-  edmundo:  { name: 'Edmundo',  color: '#6366f1', role: 'Forecast & Tendências',       avgSeconds: 20 },
-  falcao:   { name: 'Falcão',   color: '#ef4444', role: 'Risco & Supervisão',          avgSeconds: 22 },
-  diretor:  { name: 'Diretor',  color: '#475569', role: 'Comitê Executivo',            avgSeconds: 28 },
-  ceo:      { name: 'CEO',      color: '#1e293b', role: 'Desafio Executivo',           avgSeconds: 30 },
+  alex:     { name: 'Alex',     color: '#8b5cf6', role: 'Supervisor Estratégico',    avgSeconds: 25 },
+  carlos:   { name: 'Carlos',   color: '#3b82f6', role: 'Performance Financeira',    avgSeconds: 22 },
+  denilson: { name: 'Denilson', color: '#10b981', role: 'Otimização',                avgSeconds: 30 },
+  edmundo:  { name: 'Edmundo',  color: '#6366f1', role: 'Forecast & Tendências',     avgSeconds: 20 },
 };
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {

@@ -412,6 +412,62 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // Dev middleware for /api/agent-team/delete-run — usa service_role para bypassar RLS
+        {
+          name: 'delete-run-middleware',
+          configureServer(server) {
+            server.middlewares.use('/api/agent-team/delete-run', async (req: IncomingMessage, res: ServerResponse) => {
+              if (req.method === 'OPTIONS') {
+                res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
+                res.end();
+                return;
+              }
+              if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method not allowed' }));
+                return;
+              }
+              const chunks: Buffer[] = [];
+              for await (const chunk of req) chunks.push(chunk as Buffer);
+              const { runId } = JSON.parse(Buffer.concat(chunks).toString());
+              if (!runId) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'runId obrigatório' }));
+                return;
+              }
+              try {
+                const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+                const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+                if (!serviceKey) {
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'SUPABASE_SERVICE_ROLE_KEY não configurado' }));
+                  return;
+                }
+                // Delete com service_role key (bypassa RLS)
+                const delRes = await fetch(`${supabaseUrl}/rest/v1/agent_runs?id=eq.${runId}`, {
+                  method: 'DELETE',
+                  headers: {
+                    'apikey': serviceKey,
+                    'Authorization': `Bearer ${serviceKey}`,
+                    'Content-Type': 'application/json',
+                    'Prefer': 'return=minimal',
+                  },
+                });
+                if (!delRes.ok) {
+                  const errText = await delRes.text();
+                  res.writeHead(delRes.status, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: errText }));
+                  return;
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true }));
+              } catch (err: any) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+          },
+        },
       ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),

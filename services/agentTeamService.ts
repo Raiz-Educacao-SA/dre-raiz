@@ -166,7 +166,7 @@ export async function listRuns(limit = 20): Promise<ListRunsResponse> {
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   const { data, error } = await supabase
     .from('agent_runs')
-    .select('id, team_id, objective, status, started_by, started_by_name, started_at, completed_at, consolidated_summary')
+    .select('id, team_id, objective, status, started_by, started_by_name, started_at, completed_at, consolidated_summary, filter_context')
     .order('started_at', { ascending: false })
     .limit(safeLimit);
 
@@ -176,6 +176,42 @@ export async function listRuns(limit = 20): Promise<ListRunsResponse> {
   }
 
   return { runs: (data || []) as AgentRun[] };
+}
+
+// --------------------------------------------
+// getLatestCompletedRun — busca último run completo com financial_summary
+// Usado pelo Resumo Executivo IA para "beber" da mesma fonte dos agentes
+// --------------------------------------------
+
+export async function getLatestCompletedRun(): Promise<AgentRun | null> {
+  const { data, error } = await supabase
+    .from('agent_runs')
+    .select('*')
+    .eq('status', 'completed')
+    .not('financial_summary', 'is', null)
+    .order('completed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('❌ getLatestCompletedRun:', error);
+    return null;
+  }
+  return data as AgentRun | null;
+}
+
+export async function getLatestCompletedRunSteps(runId: string): Promise<AgentStep[]> {
+  const { data, error } = await supabase
+    .from('agent_steps')
+    .select('*')
+    .eq('run_id', runId)
+    .order('step_order', { ascending: true });
+
+  if (error) {
+    console.error('❌ getLatestCompletedRunSteps:', error);
+    return [];
+  }
+  return (data || []) as AgentStep[];
 }
 
 // --------------------------------------------
@@ -342,16 +378,8 @@ export async function startPipeline(
   startedBy: string,
   startedByName: string
 ): Promise<RunPipelineResponse> {
-  // 1. Buscar team_agents ativos
-  const { data: teamAgents, error: taError } = await supabase
-    .from('team_agents')
-    .select('step_order, step_type, agents!inner(code, name)')
-    .eq('team_id', teamId)
-    .eq('is_active', true)
-    .order('step_order', { ascending: true });
-
-  if (taError) throw new Error(`Erro ao buscar composição do time: ${taError.message}`);
-  if (!teamAgents || teamAgents.length === 0) throw new Error('Time não possui agentes ativos configurados');
+  // 1. Pipeline fixo — 5 steps (mesma definição de TEST_PIPELINE_STEPS)
+  const PIPELINE_STEPS = TEST_PIPELINE_STEPS;
 
   // 2. buildFinancialSummary client-side
   const financialSummary = buildFinancialSummary(dreSnapshot as any[]);
@@ -434,12 +462,12 @@ export async function startPipeline(
 
   if (runError || !run) throw new Error(`Erro ao criar run: ${runError?.message}`);
 
-  // 4. Criar agent_steps
-  const steps = teamAgents.map((ta: any) => ({
+  // 4. Criar agent_steps (pipeline fixo de 5 steps)
+  const steps = PIPELINE_STEPS.map((ps, idx) => ({
     run_id: run.id,
-    agent_code: ta.agents.code,
-    step_type: ta.step_type,
-    step_order: ta.step_order,
+    agent_code: ps.agentCode,
+    step_type: ps.stepType,
+    step_order: idx + 1,
     status: 'pending',
     review_status: 'pending',
   }));
@@ -774,8 +802,16 @@ export async function cancelRun(runId: string): Promise<void> {
 // --------------------------------------------
 
 export async function deleteRun(runId: string): Promise<void> {
-  const { error } = await supabase.from('agent_runs').delete().eq('id', runId);
-  if (error) throw new Error(`Erro ao excluir análise: ${error.message}`);
+  // Usa proxy server-side com service_role key (bypassa RLS)
+  const res = await fetch('/api/agent-team/delete-run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+    throw new Error(data.error || `Erro ao excluir análise (${res.status})`);
+  }
 }
 
 // ============================================
@@ -804,8 +840,9 @@ async function callClaudeViaProxy(
   const useOpus = agentCode === 'alex' && !isConsolidation;
   const useSonnet = isConsolidation || ['executivo', 'diretor', 'bruna', 'carlos', 'denilson', 'edmundo'].includes(agentCode);
   const model = useOpus ? 'claude-opus-4-20250514' : useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
+  const isDenilson = agentCode === 'denilson';
   const isHeavyOutput = ['denilson', 'edmundo'].includes(agentCode);
-  const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : 8192;
+  const maxTokens = isConsolidation ? 16384 : isDenilson ? 32768 : isHeavyOutput ? 16384 : 8192;
 
   // Forçar JSON via prompt (sem output_config)
   const fullSystem = system + '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO — máximo 2 frases por campo string.';
