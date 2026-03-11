@@ -25,6 +25,16 @@ interface ActionPlanFormProps {
     justification: string | null;
     status: string;
   };
+  initialPlan?: {
+    what: string;
+    why: string;
+    how: string;
+    who_responsible: string;
+    who_email: string;
+    deadline: string;
+    expected_impact: string;
+    status: string;
+  };
   userName: string;
   userEmail: string;
   readOnly?: boolean;
@@ -124,19 +134,19 @@ function buildContext(item: ActionPlanFormProps['item']) {
 // Component
 // ---------------------------------------------------------------------------
 
-function ActionPlanForm({ item, userName, userEmail, readOnly, onSave, onClose }: ActionPlanFormProps) {
+function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSave, onClose }: ActionPlanFormProps) {
   // Form state
   const [justification, setJustification] = useState(item.justification ?? '');
-  const [actionExpanded, setActionExpanded] = useState(item.variance_abs < 0);
+  const [actionExpanded, setActionExpanded] = useState(!!initialPlan || item.variance_abs < 0);
 
-  const [what, setWhat] = useState('');
-  const [why, setWhy] = useState('');
-  const [how, setHow] = useState('');
-  const [whoResp, setWhoResp] = useState(userName);
-  const [whoEmail, setWhoEmail] = useState(userEmail);
-  const [deadline, setDeadline] = useState(defaultDeadline());
-  const [expectedImpact, setExpectedImpact] = useState('');
-  const [actionStatus, setActionStatus] = useState<string>('Aberto');
+  const [what, setWhat] = useState(initialPlan?.what ?? '');
+  const [why, setWhy] = useState(initialPlan?.why ?? '');
+  const [how, setHow] = useState(initialPlan?.how ?? '');
+  const [whoResp, setWhoResp] = useState(initialPlan?.who_responsible ?? userName);
+  const [whoEmail, setWhoEmail] = useState(initialPlan?.who_email ?? userEmail);
+  const [deadline, setDeadline] = useState(initialPlan?.deadline ?? defaultDeadline());
+  const [expectedImpact, setExpectedImpact] = useState(initialPlan?.expected_impact ?? '');
+  const [actionStatus, setActionStatus] = useState<string>(initialPlan?.status ?? 'Aberto');
 
   // UI state
   const [saving, setSaving] = useState(false);

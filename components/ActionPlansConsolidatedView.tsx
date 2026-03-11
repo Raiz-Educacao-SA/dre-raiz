@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Target, Filter, Download, FileText, Clock, CheckCircle2, AlertTriangle, XCircle, Loader2, ChevronDown, ChevronUp, Trash2, Building2, Calendar, User, Search, Rows3 } from 'lucide-react';
+import { Target, Filter, Download, FileText, Clock, CheckCircle2, AlertTriangle, XCircle, Loader2, ChevronDown, ChevronUp, Trash2, Building2, Calendar, User, Search, Pencil } from 'lucide-react';
 import { getActionPlans, updateActionPlan, deleteActionPlan, subscribeActionPlans } from '../services/supabaseService';
 import type { ActionPlan, ActionPlanFilters } from '../services/supabaseService';
+import { useAuth } from '../contexts/AuthContext';
+import ActionPlanForm from './ActionPlanForm';
 import ExcelJS from 'exceljs';
+import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface ActionPlansConsolidatedViewProps {
@@ -49,6 +52,7 @@ const STATUS_SORT_ORDER: Record<PlanStatus, number> = { atrasado: 0, aberto: 1, 
 
 // ── Component ──────────────────────────────────────────────────────────────────
 const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = ({ selectedMonth, selectedMarcas }) => {
+  const { user, isAdmin } = useAuth();
   const [plans, setPlans] = useState<ActionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -57,6 +61,7 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
   const [sortKey, setSortKey] = useState<SortKey>('deadline_asc');
   const [statusDropdownId, setStatusDropdownId] = useState<number | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [editingPlan, setEditingPlan] = useState<ActionPlan | null>(null);
   const [density, setDensity] = useState<Density>(() => {
     try { return (localStorage.getItem(DENSITY_KEY) as Density) || 'compact'; } catch { return 'compact'; }
   });
@@ -207,12 +212,12 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
     return (
       <div className="relative">
         <button
-          onClick={e => { e.stopPropagation(); setStatusDropdownId(statusDropdownId === plan.id ? null : plan.id); }}
-          className={`inline-flex items-center gap-1 ${dc.badgeSize} rounded-full ${dc.textSize} font-semibold ${cfg.bg} ${cfg.text} border ${cfg.border} cursor-pointer hover:opacity-80 transition`}
+          onClick={e => { e.stopPropagation(); if (isAdmin) setStatusDropdownId(statusDropdownId === plan.id ? null : plan.id); }}
+          className={`inline-flex items-center gap-1 ${dc.badgeSize} rounded-full ${dc.textSize} font-semibold ${cfg.bg} ${cfg.text} border ${cfg.border} ${isAdmin ? 'cursor-pointer hover:opacity-80' : 'cursor-default'} transition`}
         >
           {cfg.iconEl(dc.iconSize)}
           {density !== 'ultra' && cfg.label}
-          <ChevronDown size={dc.iconSize - 2} />
+          {isAdmin && <ChevronDown size={dc.iconSize - 2} />}
         </button>
         {statusDropdownId === plan.id && (
           <div className="absolute z-50 mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[140px]">
@@ -303,6 +308,14 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
               {p.completed_at && <span>Concluído: {fmtDate(p.completed_at)}</span>}
               {p.ai_generated && <span className="bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">IA</span>}
               {p.comparison_type && <span className="bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full font-semibold">vs {p.comparison_type === 'orcado' ? 'Orçado' : 'A-1'}</span>}
+              {isAdmin && (
+                <button
+                  onClick={e => { e.stopPropagation(); setEditingPlan(p); }}
+                  className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 border border-indigo-200 transition"
+                >
+                  <Pencil size={10} /> Editar Plano
+                </button>
+              )}
             </div>
           </div>
         </td>
@@ -327,6 +340,72 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleteConfirmId(null)} className="px-4 py-2 text-xs rounded-lg border border-gray-200 hover:bg-gray-50">Cancelar</button>
               <button onClick={() => handleDelete(deleteConfirmId)} className="px-4 py-2 text-xs rounded-lg bg-red-600 text-white hover:bg-red-700">Excluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingPlan && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="p-5">
+              <h3 className="text-sm font-black uppercase tracking-tight mb-3 text-indigo-600">
+                Editar Plano de Ação
+              </h3>
+              <ActionPlanForm
+                item={{
+                  id: editingPlan.id,
+                  year_month: editingPlan.year_month,
+                  marca: editingPlan.marca || '',
+                  tag0: editingPlan.tag0 || '',
+                  tag01: editingPlan.tag01 || '',
+                  tag02: editingPlan.tag02 || null,
+                  comparison_type: editingPlan.comparison_type as 'orcado' | 'a1',
+                  real_value: editingPlan.real_value ?? 0,
+                  compare_value: editingPlan.compare_value ?? 0,
+                  variance_abs: editingPlan.variance_abs ?? 0,
+                  variance_pct: editingPlan.variance_pct ?? null,
+                  justification: editingPlan.justification,
+                  status: editingPlan.status,
+                }}
+                initialPlan={{
+                  what: editingPlan.what,
+                  why: editingPlan.why,
+                  how: editingPlan.how || '',
+                  who_responsible: editingPlan.who_responsible,
+                  who_email: editingPlan.who_email || '',
+                  deadline: editingPlan.deadline,
+                  expected_impact: editingPlan.expected_impact || '',
+                  status: editingPlan.status,
+                }}
+                userName={user?.display_name || user?.email || ''}
+                userEmail={user?.email || ''}
+                onSave={async (data) => {
+                  const updates: Record<string, unknown> = {};
+                  if (data.justification) updates.justification = data.justification;
+                  if (data.actionPlan) {
+                    updates.what = data.actionPlan.what;
+                    updates.why = data.actionPlan.why;
+                    updates.how = data.actionPlan.how;
+                    updates.who_responsible = data.actionPlan.who_responsible;
+                    updates.who_email = data.actionPlan.who_email;
+                    updates.deadline = data.actionPlan.deadline;
+                    updates.expected_impact = data.actionPlan.expected_impact;
+                    updates.status = data.actionPlan.status === 'Aberto' ? 'aberto'
+                      : data.actionPlan.status === 'Em andamento' ? 'em_andamento'
+                      : data.actionPlan.status === 'Concluído' ? 'concluido'
+                      : data.actionPlan.status === 'Atrasado' ? 'atrasado'
+                      : data.actionPlan.status === 'Cancelado' ? 'cancelado'
+                      : data.actionPlan.status;
+                  }
+                  await updateActionPlan(editingPlan.id, updates as any);
+                  toast.success('Plano de ação atualizado');
+                  setEditingPlan(null);
+                  loadPlans();
+                }}
+                onClose={() => setEditingPlan(null)}
+              />
             </div>
           </div>
         </div>
@@ -483,11 +562,20 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
                           >
                             {expanded ? <ChevronUp size={dc.iconSize} className="text-gray-400" /> : <ChevronDown size={dc.iconSize} className="text-gray-400" />}
                           </button>
-                          <button onClick={e => { e.stopPropagation(); setDeleteConfirmId(p.id); }}
-                            className="p-0.5 hover:bg-red-50 rounded" title="Excluir"
-                          >
-                            <Trash2 size={dc.iconSize} className="text-red-400 hover:text-red-600" />
-                          </button>
+                          {isAdmin && (
+                            <button onClick={e => { e.stopPropagation(); setEditingPlan(p); }}
+                              className="p-0.5 hover:bg-indigo-50 rounded" title="Editar"
+                            >
+                              <Pencil size={dc.iconSize} className="text-indigo-400 hover:text-indigo-600" />
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button onClick={e => { e.stopPropagation(); setDeleteConfirmId(p.id); }}
+                              className="p-0.5 hover:bg-red-50 rounded" title="Excluir"
+                            >
+                              <Trash2 size={dc.iconSize} className="text-red-400 hover:text-red-600" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
