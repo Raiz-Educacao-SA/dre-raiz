@@ -504,52 +504,26 @@ const AgentTeamView: React.FC = () => {
         </div>
         <div>
           <h1 className="text-xl font-black tracking-tight" style={{ color: 'var(--color-gray-900)' }}>
-            Equipe Financeira 2.0
+            Análise Financeira 2.0
           </h1>
-          <p className="text-xs text-gray-500">Análise automatizada por agentes IA</p>
+          <p className="text-xs text-gray-500">Análise automatizada por agentes IA + Equipe Alpha</p>
         </div>
       </div>
 
       {/* Team Selection + Objective */}
       <div className="bg-white p-5 rounded-lg border border-gray-200 space-y-4">
-        {/* Team dropdown */}
-        <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1">
-            Time
-          </label>
-          <div className="relative">
-            <select
-              value={selectedTeamId}
-              onChange={(e) => setSelectedTeamId(e.target.value)}
-              disabled={isRunning}
-              className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 pr-8 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 disabled:opacity-50"
-            >
-              <option value="">Selecione um time...</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>{t.name} — {t.description}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          </div>
+        {/* Pipeline — 5 agentes fixos */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Users size={13} className="text-gray-400" />
+          {['Alex (Plan)', 'Carlos', 'Denilson', 'Edmundo', 'Alex (Final)'].map((name, i) => (
+            <React.Fragment key={name}>
+              {i > 0 && <span className="text-gray-300 text-[10px]">&rarr;</span>}
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700">
+                {name}
+              </span>
+            </React.Fragment>
+          ))}
         </div>
-
-        {/* Pipeline composition */}
-        {teamAgents.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Users size={14} className="text-gray-400" />
-            {teamAgents.map((ta, i) => (
-              <React.Fragment key={ta.id}>
-                {i > 0 && <span className="text-gray-300 text-xs">&rarr;</span>}
-                <span
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
-                  style={{ backgroundColor: ta.agent.avatar_color + '20', color: ta.agent.avatar_color }}
-                >
-                  {ta.agent.name} / {ta.step_type}
-                </span>
-              </React.Fragment>
-            ))}
-          </div>
-        )}
 
         {/* Filtros DRE */}
         <div>
