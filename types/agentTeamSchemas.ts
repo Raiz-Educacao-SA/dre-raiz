@@ -110,7 +110,7 @@ export const DataQualityOutputSchema = z.object({
     description: z.string(),
     severity: z.enum(['low', 'medium', 'high', 'critical']),
     affected_area: z.string(),
-    affected_tags: z.string(),
+    affected_tags: z.union([z.string(), z.array(z.string())]).transform(v => Array.isArray(v) ? v.join(', ') : v),
     scenario_affected: z.string(),
     probable_cause: z.string(),
     suggested_fix: z.string(),
