@@ -598,12 +598,12 @@ const AgentTeamView: React.FC = () => {
             Iniciar Análise
           </button>
           <button
-            onClick={() => handleTestPipeline('bruna')}
+            onClick={() => handleTestPipeline('carlos')}
             disabled={!objective.trim() || isStarting || isRunning || isTesting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
           >
             {isTesting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-            {isTesting && testingStep ? testingStep : 'Testar até Bruna'}
+            {isTesting && testingStep ? testingStep : 'Testar até Carlos'}
           </button>
           {snapshotAt && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
@@ -731,6 +731,90 @@ const AgentTeamView: React.FC = () => {
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${out.recommended_caution_level === 'high_confidence' ? 'bg-green-100 text-green-700' : out.recommended_caution_level.includes('critical') ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
                               {out.recommended_caution_level.replace(/_/g, ' ')}
                             </span>
+                          </div>
+                        )}
+                        {/* Carlos — Performance Summary */}
+                        {out.executive_performance_summary && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-1.5">Resumo de Performance</h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.executive_performance_summary}</p>
+                          </div>
+                        )}
+                        {/* Carlos — Ranked Variations */}
+                        {out.ranked_variations?.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Variações Ranqueadas ({out.ranked_variations.length})</h4>
+                            {out.ranked_variations.map((v: any, i: number) => (
+                              <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-1.5">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                                  <span className="text-[10px] font-bold text-gray-700">{v.tag01}</span>
+                                  <span className="text-[9px] text-gray-400">{v.dre_line}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${v.gap_vs_budget_pct > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                    {v.gap_vs_budget_pct > 0 ? '+' : ''}{typeof v.gap_vs_budget_pct === 'number' ? v.gap_vs_budget_pct.toFixed(1) : v.gap_vs_budget_pct}%
+                                  </span>
+                                  <span className="px-1 py-0.5 rounded bg-gray-100 text-gray-500 text-[8px] font-mono">{v.variation_nature}</span>
+                                </div>
+                                <p className="text-[11px] text-gray-700">{v.cause_explanation}</p>
+                                {v.ebitda_impact && <p className="text-[10px] text-blue-600 mt-0.5">EBITDA: {v.ebitda_impact}</p>}
+                                {v.recurrence_expectation && <p className="text-[10px] text-gray-400 mt-0.5">Recorrência: {v.recurrence_expectation}</p>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Carlos — Margin/EBITDA Impact */}
+                        {out.margin_ebitda_impact && (
+                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                            <h4 className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Impacto Margem & EBITDA</h4>
+                            {out.margin_ebitda_impact.ebitda_pressures?.length > 0 && (
+                              <div>
+                                <span className="text-[10px] font-bold text-red-600">Pressões:</span>
+                                {out.margin_ebitda_impact.ebitda_pressures.map((p: string, i: number) => (
+                                  <p key={i} className="text-[10px] text-gray-700 ml-2">• {p}</p>
+                                ))}
+                              </div>
+                            )}
+                            {out.margin_ebitda_impact.ebitda_reliefs?.length > 0 && (
+                              <div>
+                                <span className="text-[10px] font-bold text-green-600">Alívios:</span>
+                                {out.margin_ebitda_impact.ebitda_reliefs.map((r: string, i: number) => (
+                                  <p key={i} className="text-[10px] text-gray-700 ml-2">• {r}</p>
+                                ))}
+                              </div>
+                            )}
+                            {out.margin_ebitda_impact.consolidated_impact_reading && (
+                              <p className="text-[10px] text-indigo-700 font-medium mt-1">{out.margin_ebitda_impact.consolidated_impact_reading}</p>
+                            )}
+                          </div>
+                        )}
+                        {/* Carlos — Recommended Actions */}
+                        {out.recommended_actions && (
+                          <div className="space-y-1.5">
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide">Ações Recomendadas</h4>
+                            {out.recommended_actions.items_to_deepen?.length > 0 && (
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                <span className="text-[10px] font-bold text-gray-500">Aprofundar:</span>
+                                {out.recommended_actions.items_to_deepen.map((item: string, i: number) => (
+                                  <p key={i} className="text-[10px] text-gray-700 ml-2">• {item}</p>
+                                ))}
+                              </div>
+                            )}
+                            {out.recommended_actions.lines_to_monitor?.length > 0 && (
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                <span className="text-[10px] font-bold text-gray-500">Monitorar:</span>
+                                {out.recommended_actions.lines_to_monitor.map((item: string, i: number) => (
+                                  <p key={i} className="text-[10px] text-gray-700 ml-2">• {item}</p>
+                                ))}
+                              </div>
+                            )}
+                            {out.recommended_actions.budget_assumptions_to_review?.length > 0 && (
+                              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                <span className="text-[10px] font-bold text-gray-500">Revisar premissas:</span>
+                                {out.recommended_actions.budget_assumptions_to_review.map((item: string, i: number) => (
+                                  <p key={i} className="text-[10px] text-gray-700 ml-2">• {item}</p>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                         {out.priority_areas?.length > 0 && (

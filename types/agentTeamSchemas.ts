@@ -173,20 +173,27 @@ export function dataQualityJsonSchema() {
 // ============================================
 
 export const PerformanceOutputSchema = z.object({
-  summary: z.string(),
-  top_variations: z.array(z.object({
+  executive_performance_summary: z.string(),
+  ranked_variations: z.array(z.object({
     dre_line: z.string(),
     tag01: z.string(),
-    real: z.number(),
-    budget: z.number(),
-    gap_pct: z.number(),
-    cause: z.string(),
-    nature: z.string(),
+    real_value: z.number(),
+    budget_value: z.number(),
+    gap_vs_budget_pct: z.number(),
+    cause_explanation: z.string(),
+    variation_nature: z.string(),
+    ebitda_impact: z.string(),
+    recurrence_expectation: z.string(),
   })),
-  ebitda_impact: z.object({
-    pressures: z.array(z.string()),
-    reliefs: z.array(z.string()),
-    reading: z.string(),
+  margin_ebitda_impact: z.object({
+    ebitda_pressures: z.array(z.string()),
+    ebitda_reliefs: z.array(z.string()),
+    consolidated_impact_reading: z.string(),
+  }),
+  recommended_actions: z.object({
+    items_to_deepen: z.array(z.string()),
+    lines_to_monitor: z.array(z.string()),
+    budget_assumptions_to_review: z.array(z.string()),
   }),
 });
 
@@ -194,33 +201,44 @@ export function performanceJsonSchema() {
   return {
     type: 'object' as const, additionalProperties: false,
     properties: {
-      summary: { type: 'string' as const },
-      top_variations: {
+      executive_performance_summary: { type: 'string' as const },
+      ranked_variations: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
           properties: {
             dre_line: { type: 'string' as const },
             tag01: { type: 'string' as const },
-            real: { type: 'number' as const },
-            budget: { type: 'number' as const },
-            gap_pct: { type: 'number' as const },
-            cause: { type: 'string' as const },
-            nature: { type: 'string' as const },
+            real_value: { type: 'number' as const },
+            budget_value: { type: 'number' as const },
+            gap_vs_budget_pct: { type: 'number' as const },
+            cause_explanation: { type: 'string' as const },
+            variation_nature: { type: 'string' as const },
+            ebitda_impact: { type: 'string' as const },
+            recurrence_expectation: { type: 'string' as const },
           },
-          required: ['dre_line', 'tag01', 'real', 'budget', 'gap_pct', 'cause', 'nature'] as const,
+          required: ['dre_line', 'tag01', 'real_value', 'budget_value', 'gap_vs_budget_pct', 'cause_explanation', 'variation_nature', 'ebitda_impact', 'recurrence_expectation'] as const,
         },
       },
-      ebitda_impact: {
+      margin_ebitda_impact: {
         type: 'object' as const, additionalProperties: false,
         properties: {
-          pressures: { type: 'array' as const, items: { type: 'string' as const } },
-          reliefs: { type: 'array' as const, items: { type: 'string' as const } },
-          reading: { type: 'string' as const },
+          ebitda_pressures: { type: 'array' as const, items: { type: 'string' as const } },
+          ebitda_reliefs: { type: 'array' as const, items: { type: 'string' as const } },
+          consolidated_impact_reading: { type: 'string' as const },
         },
-        required: ['pressures', 'reliefs', 'reading'] as const,
+        required: ['ebitda_pressures', 'ebitda_reliefs', 'consolidated_impact_reading'] as const,
+      },
+      recommended_actions: {
+        type: 'object' as const, additionalProperties: false,
+        properties: {
+          items_to_deepen: { type: 'array' as const, items: { type: 'string' as const } },
+          lines_to_monitor: { type: 'array' as const, items: { type: 'string' as const } },
+          budget_assumptions_to_review: { type: 'array' as const, items: { type: 'string' as const } },
+        },
+        required: ['items_to_deepen', 'lines_to_monitor', 'budget_assumptions_to_review'] as const,
       },
     },
-    required: ['summary', 'top_variations', 'ebitda_impact'] as const,
+    required: ['executive_performance_summary', 'ranked_variations', 'margin_ebitda_impact', 'recommended_actions'] as const,
   };
 }
 
