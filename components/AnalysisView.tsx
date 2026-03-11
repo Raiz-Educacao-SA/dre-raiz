@@ -20,6 +20,7 @@ import type { AnalysisContext } from '../analysisPack/types/schema';
 import type { VariancePptData } from '../services/variancePptTypes';
 import MultiSelectFilter from './MultiSelectFilter';
 import VariancePptPreview from './VariancePptPreview';
+import { usePermissions } from '../hooks/usePermissions';
 
 const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
 const AgentTeamView = React.lazy(() => import('./AgentTeamView'));
@@ -39,6 +40,8 @@ const MONTHS_OPTIONS = (() => {
 type TabType = 'justificativas' | 'summary' | 'actions' | 'slides' | 'agentes';
 
 export default function AnalysisView() {
+  const { allowedMarcas, allowedFiliais, hasPermissions } = usePermissions();
+
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem('analysisActiveTab');
     return (saved as TabType) || 'summary';
@@ -74,20 +77,44 @@ export default function AnalysisView() {
     }).catch(err => console.error('Erro ao carregar marcas/filiais:', err));
   }, []);
 
-  // Filiais filtradas por marca selecionada
+  // Marcas filtradas por permissões do usuário
+  const permittedMarcas = useMemo(() => {
+    if (!hasPermissions || allowedMarcas.length === 0) return allMarcas;
+    return allMarcas.filter(m => allowedMarcas.includes(m));
+  }, [allMarcas, allowedMarcas, hasPermissions]);
+
+  // Filiais filtradas por permissão + marca selecionada
   const availableBranches = useMemo(() => {
-    if (selectedMarcas.length === 0) return allFiliais.map(f => f.label);
-    return allFiliais.filter(f => selectedMarcas.includes(f.marca)).map(f => f.label);
-  }, [allFiliais, selectedMarcas]);
+    let filiais = allFiliais;
+    // Filtrar por permissões
+    if (hasPermissions && allowedFiliais.length > 0) {
+      filiais = filiais.filter(f => allowedFiliais.includes(f.label));
+    }
+    if (hasPermissions && allowedMarcas.length > 0) {
+      filiais = filiais.filter(f => allowedMarcas.includes(f.marca));
+    }
+    // Filtrar por marca selecionada
+    if (selectedMarcas.length > 0) {
+      filiais = filiais.filter(f => selectedMarcas.includes(f.marca));
+    }
+    return filiais.map(f => f.label);
+  }, [allFiliais, selectedMarcas, allowedMarcas, allowedFiliais, hasPermissions]);
 
   // Salvar aba ativa
   useEffect(() => {
     localStorage.setItem('analysisActiveTab', activeTab);
   }, [activeTab]);
 
+  // Marcas efetivas: seleção do usuário, ou permissões se nada selecionado
+  const effectiveMarcas = useMemo(() => {
+    if (selectedMarcas.length > 0) return selectedMarcas;
+    if (hasPermissions && allowedMarcas.length > 0) return allowedMarcas;
+    return [];
+  }, [selectedMarcas, allowedMarcas, hasPermissions]);
+
   // Helper: buscar snapshot do variance_justifications e montar contexto
   const fetchSnapshotContext = async () => {
-    const marca = selectedMarcas.length > 0 ? selectedMarcas[0] : undefined;
+    const marca = effectiveMarcas.length > 0 ? effectiveMarcas[0] : undefined;
     const items = await getVarianceJustifications({
       year_month: selectedMonth,
       marca,
@@ -136,9 +163,9 @@ export default function AnalysisView() {
     setSlidesLoading(true);
     try {
       // Step 1: Fetch data — live RPCs when marca selected, snapshot otherwise
-      const hasMarca = selectedMarcas.length > 0;
+      const hasMarca = effectiveMarcas.length > 0;
       const items = hasMarca
-        ? await fetchLiveDreForPpt(selectedMonth, selectedMarcas[0])
+        ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0])
         : await getVarianceJustifications({ year_month: selectedMonth });
       if (!items || items.length === 0) {
         alert(hasMarca
@@ -149,7 +176,7 @@ export default function AnalysisView() {
 
       // Step 2: Transform to PPT structure
       const { prepareVariancePptData } = await import('../services/variancePptDataService');
-      const data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas.join(', ') : null);
+      const data = prepareVariancePptData(items, selectedMonth, effectiveMarcas.length > 0 ? effectiveMarcas.join(', ') : null);
 
       // Step 3: Marca breakdown (parallel with AI) — ambos com fallback silencioso
       const [, breakdown] = await Promise.all([
@@ -217,8 +244,8 @@ export default function AnalysisView() {
           })(),
           (async () => {
             try {
-              if (allMarcas.length === 0) return null;
-              return await fetchMarcaBreakdown(selectedMonth, allMarcas, selectedMarcas.length > 0 ? selectedMarcas : null);
+              if (permittedMarcas.length === 0) return null;
+              return await fetchMarcaBreakdown(selectedMonth, permittedMarcas, effectiveMarcas.length > 0 ? effectiveMarcas : null);
             } catch (err) {
               console.warn('Marca breakdown skipped:', err);
               return null;
@@ -294,7 +321,7 @@ export default function AnalysisView() {
               <MultiSelectFilter
                 label="MARCA"
                 icon={<Flag size={12} />}
-                options={allMarcas}
+                options={permittedMarcas}
                 selected={selectedMarcas}
                 onChange={setSelectedMarcas}
                 colorScheme="orange"
@@ -446,7 +473,7 @@ export default function AnalysisView() {
             <Suspense fallback={<div className="flex items-center justify-center py-20"><RefreshCw size={32} className="text-gray-400 animate-spin" /></div>}>
               <ActionPlansConsolidatedView
                 selectedMonth={selectedMonth}
-                selectedMarcas={selectedMarcas}
+                selectedMarcas={effectiveMarcas}
               />
             </Suspense>
           </div>

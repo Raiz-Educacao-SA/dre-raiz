@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Brain, Play, Loader2, ChevronDown, Users, Clock, Flag, Building2, Layers, CalendarDays, LayoutGrid, Columns, Trash2, X, AlertTriangle, Target, UserCheck, Filter, GitCompare, Download, FileText, Timer, TrendingUp, TrendingDown, BarChart3, Zap } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import { getSomaTags, getDREFilterOptions, getVarianceJustifications, getLatestVarianceVersion } from '../services/supabaseService';
 import type { DREFilterOptions, VarianceJustification } from '../services/supabaseService';
 import type { Team, Agent, TeamAgent, AgentRun, AgentStep, FinancialSummary } from '../types/agentTeam';
@@ -20,6 +21,7 @@ const MONTH_MAP: Record<string, string> = {
 
 const AgentTeamView: React.FC = () => {
   const { user, isAdmin } = useAuth();
+  const { allowedMarcas, allowedFiliais, allowedTag01, hasPermissions } = usePermissions();
 
   // Team selection
   const [teams, setTeams] = useState<Team[]>([]);
@@ -150,8 +152,16 @@ const AgentTeamView: React.FC = () => {
       if (data.length === 1) setSelectedTeamId(data[0].id);
     });
     agentTeamService.listRuns(50).then((data) => setRuns(data.runs));
-    getDREFilterOptions({ monthFrom: '2026-01', monthTo: '2026-12' }).then(setFilterOptions);
-  }, []);
+    getDREFilterOptions({ monthFrom: '2026-01', monthTo: '2026-12' }).then(opts => {
+      // Filtrar opções por permissões do usuário
+      if (hasPermissions) {
+        if (allowedMarcas.length > 0) opts.marcas = opts.marcas.filter(m => allowedMarcas.includes(m));
+        if (allowedFiliais.length > 0) opts.nome_filiais = opts.nome_filiais.filter(f => allowedFiliais.includes(f));
+        if (allowedTag01.length > 0) opts.tags01 = opts.tags01.filter(t => allowedTag01.includes(t));
+      }
+      setFilterOptions(opts);
+    });
+  }, [hasPermissions, allowedMarcas, allowedFiliais, allowedTag01]);
 
   // 2. Carregar agents quando team muda
   useEffect(() => {
@@ -203,7 +213,11 @@ const AgentTeamView: React.FC = () => {
     // Buscar snapshot da foto (variance_justifications) — SEMPRE a versão mais recente por mês
     const allVarItems: VarianceJustification[] = [];
     const versionsByMonth: Record<string, number> = {};
-    const hasMarcaFilter = selectedMarcas.length > 0;
+    // Marcas efetivas: seleção do usuário ou permissões
+    const effMarcas = selectedMarcas.length > 0 ? selectedMarcas : (hasPermissions && allowedMarcas.length > 0 ? allowedMarcas : []);
+    const effFiliais = selectedFiliais.length > 0 ? selectedFiliais : (hasPermissions && allowedFiliais.length > 0 ? allowedFiliais : []);
+    const effTags01 = selectedTags01.length > 0 ? selectedTags01 : (hasPermissions && allowedTag01.length > 0 ? allowedTag01 : []);
+    const hasMarcaFilter = effMarcas.length > 0;
 
     for (const ym of yearMonths) {
       // Versão é por snapshot (mês), NÃO por marca — buscar sem filtro de marca
@@ -230,7 +244,7 @@ const AgentTeamView: React.FC = () => {
         // 1. Descobrir quais tag0 têm detalhamento tag02 com a marca selecionada
         const tag0sComTag02 = new Set<string>();
         for (const item of allVarItems) {
-          if (item.tag02 && item.marca && selectedMarcas.includes(item.marca)) {
+          if (item.tag02 && item.marca && effMarcas.includes(item.marca)) {
             tag0sComTag02.add(item.tag0);
           }
         }
@@ -242,7 +256,7 @@ const AgentTeamView: React.FC = () => {
           if (temDetalhe) {
             // Tag0 COM tag02+marca: agregar a partir dos items tag02
             if (!item.tag02) continue; // pular consolidados
-            if (!item.marca || !selectedMarcas.includes(item.marca)) continue;
+            if (!item.marca || !effMarcas.includes(item.marca)) continue;
           } else {
             // Tag0 SEM tag02 para esta marca: usar consolidados (marca='')
             if (item.tag02) continue; // só tag0+tag01
@@ -330,7 +344,7 @@ const AgentTeamView: React.FC = () => {
     if (!usedSnapshot) {
       const mFrom = yearMonths[0];
       const mTo = yearMonths[yearMonths.length - 1];
-      dreSnapshot = await getSomaTags(mFrom, mTo, selectedMarcas.length > 0 ? selectedMarcas : undefined, selectedFiliais.length > 0 ? selectedFiliais : undefined, undefined, selectedTags01.length > 0 ? selectedTags01 : undefined) as Record<string, unknown>[];
+      dreSnapshot = await getSomaTags(mFrom, mTo, effMarcas.length > 0 ? effMarcas : undefined, effFiliais.length > 0 ? effFiliais : undefined, undefined, effTags01.length > 0 ? effTags01 : undefined) as Record<string, unknown>[];
       console.log(`⚡ Sem foto disponível, usando dados ao vivo: ${dreSnapshot.length} rows`);
     }
 
@@ -342,9 +356,9 @@ const AgentTeamView: React.FC = () => {
       months_range: monthsLabel,
       data_source: usedSnapshot ? 'snapshot' : 'live',
     };
-    if (selectedMarcas.length > 0) filterContext.marcas = selectedMarcas;
-    if (selectedFiliais.length > 0) filterContext.filiais = selectedFiliais;
-    if (selectedTags01.length > 0) filterContext.tags01 = selectedTags01;
+    if (effMarcas.length > 0) filterContext.marcas = effMarcas;
+    if (effFiliais.length > 0) filterContext.filiais = effFiliais;
+    if (effTags01.length > 0) filterContext.tags01 = effTags01;
     if (snapDate) filterContext.snapshot_at = snapDate;
     if (Object.keys(versionsByMonth).length > 0) filterContext.snapshot_versions = versionsByMonth;
 
@@ -374,7 +388,7 @@ const AgentTeamView: React.FC = () => {
     }
 
     return { dreSnapshot, filterContext };
-  }, [selectedMonths, selectedMarcas, selectedFiliais, selectedTags01]);
+  }, [selectedMonths, selectedMarcas, selectedFiliais, selectedTags01, hasPermissions, allowedMarcas, allowedFiliais, allowedTag01]);
 
   // 4b. Iniciar pipeline completo
   const handleStart = useCallback(async () => {

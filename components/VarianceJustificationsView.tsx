@@ -42,6 +42,7 @@ import ActionPlanForm from './ActionPlanForm';
 import { generateVarianceSummary, VarianceSummaryItem, aiAnalyzeVariance, aiImproveText, aiGenerateActionPlan, aiImproveActionPlan } from '../services/anthropicService';
 import { toast } from 'sonner';
 import MultiSelectFilter from './MultiSelectFilter';
+import { usePermissions } from '../hooks/usePermissions';
 
 // ── Helpers ──
 
@@ -107,6 +108,7 @@ interface AggValues {
 const VarianceJustificationsView: React.FC = () => {
   const { user, isAdmin } = useAuth();
   const isAdminOrManager = isAdmin || user?.role === 'manager';
+  const { allowedMarcas, hasPermissions } = usePermissions();
 
   // Filters
   // Default: mês anterior (último fechado) — índice 3 após reverse (0=+2, 1=+1, 2=current, 3=prev)
@@ -168,12 +170,19 @@ const VarianceJustificationsView: React.FC = () => {
 
   // ── Fetch data ──
 
+  // Marcas efetivas: seleção do usuário intersectada com permissões
+  const effectiveMarcas = useMemo(() => {
+    if (filterMarcas.length > 0) return filterMarcas;
+    if (hasPermissions && allowedMarcas.length > 0) return allowedMarcas;
+    return [];
+  }, [filterMarcas, allowedMarcas, hasPermissions]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const filters = {
         year_month: yearMonth || undefined,
-        marcas: filterMarcas.length > 0 ? filterMarcas : undefined,
+        marcas: effectiveMarcas.length > 0 ? effectiveMarcas : undefined,
         status: filterStatuses.length === 1 ? filterStatuses[0] : undefined,
         comparison_type: filterType || undefined,
         owner_email: (!isAdminOrManager && user?.email) ? user.email : undefined,
@@ -189,16 +198,20 @@ const VarianceJustificationsView: React.FC = () => {
 
       // Extract unique marcas (always from unfiltered data for dropdown options)
       const marcas = [...new Set(data.map(d => d.marca).filter(Boolean))].sort();
+      // Filtrar por permissões do usuário
+      const permittedMarcas = (hasPermissions && allowedMarcas.length > 0)
+        ? marcas.filter(m => allowedMarcas.includes(m))
+        : marcas;
       setAvailableMarcas(prev => {
-        if (prev.length === 0 && marcas.length > 0) return marcas;
-        return prev.length >= marcas.length ? prev : marcas;
+        if (prev.length === 0 && permittedMarcas.length > 0) return permittedMarcas;
+        return prev.length >= permittedMarcas.length ? prev : permittedMarcas;
       });
     } catch (e) {
       console.error('Erro ao buscar justificativas:', e);
     } finally {
       setLoading(false);
     }
-  }, [yearMonth, filterMarcas, filterStatuses, filterType, isAdminOrManager, user?.email]);
+  }, [yearMonth, effectiveMarcas, filterStatuses, filterType, isAdminOrManager, user?.email, hasPermissions, allowedMarcas]);
 
   useEffect(() => {
     fetchData();
@@ -222,7 +235,7 @@ const VarianceJustificationsView: React.FC = () => {
         `${year}-01`,
         yearMonth,
         undefined,
-        filterMarcas.length > 0 ? filterMarcas : undefined
+        effectiveMarcas.length > 0 ? effectiveMarcas : undefined
       );
       setYtdItems(data);
     } catch (e) {
@@ -230,7 +243,7 @@ const VarianceJustificationsView: React.FC = () => {
     } finally {
       setYtdLoading(false);
     }
-  }, [yearMonth, filterMarcas]);
+  }, [yearMonth, effectiveMarcas]);
 
   useEffect(() => {
     if (showYtd) fetchYtd();

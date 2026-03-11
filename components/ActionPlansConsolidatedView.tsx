@@ -3,6 +3,7 @@ import { Target, Filter, Download, FileText, Clock, CheckCircle2, AlertTriangle,
 import { getActionPlans, updateActionPlan, deleteActionPlan, subscribeActionPlans } from '../services/supabaseService';
 import type { ActionPlan, ActionPlanFilters } from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import ActionPlanForm from './ActionPlanForm';
 import ExcelJS from 'exceljs';
 import { toast } from 'sonner';
@@ -53,6 +54,7 @@ const STATUS_SORT_ORDER: Record<PlanStatus, number> = { atrasado: 0, aberto: 1, 
 // ── Component ──────────────────────────────────────────────────────────────────
 const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = ({ selectedMonth, selectedMarcas }) => {
   const { user, isAdmin } = useAuth();
+  const { allowedMarcas, hasPermissions } = usePermissions();
   const [plans, setPlans] = useState<ActionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -74,7 +76,11 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
     try {
       const filters: ActionPlanFilters = {};
       if (selectedMonth) filters.year_month = selectedMonth;
-      if (selectedMarcas.length > 0) filters.marcas = selectedMarcas;
+      // Marcas: prop do pai (já filtrada por permissão) ou fallback para permissões
+      const effMarcas = selectedMarcas.length > 0
+        ? selectedMarcas
+        : (hasPermissions && allowedMarcas.length > 0 ? allowedMarcas : []);
+      if (effMarcas.length > 0) filters.marcas = effMarcas;
       const data = await getActionPlans(filters);
       setPlans(data);
     } catch (err) {
@@ -82,7 +88,7 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, selectedMarcas]);
+  }, [selectedMonth, selectedMarcas, hasPermissions, allowedMarcas]);
 
   useEffect(() => { loadPlans(); }, [loadPlans]);
   useEffect(() => {
