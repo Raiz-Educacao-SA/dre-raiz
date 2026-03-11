@@ -169,7 +169,7 @@ const App: React.FC = () => {
   // ⚡ LAZY LOAD: Carregar transações apenas quando o usuário navegar para views que precisam
   // Views que precisam de transações: movements, kpis, forecasting, analysis
   // Dashboard usa getSomaTags RPC (já carrega separadamente acima)
-  const viewsNeedingTransactions = ['dashboard', 'analysis'];
+  const viewsNeedingTransactions = ['dashboard'];
   const transactionsLoadedRef = React.useRef(false);
 
   const loadTransactionsIfNeeded = React.useCallback(() => {
