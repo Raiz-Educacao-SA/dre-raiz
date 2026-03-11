@@ -423,7 +423,7 @@ function buildOptimizationPrompt(
     '',
     hasMarca
       ? [
-        '2. analise_por_linha (array, uma entrada por tag0 + CalcRows):',
+        '2. analise_por_linha (array ORDENADA pela DRE: 01.Receita → 02.CV → 03.CF → 04.SG&A → 05.Rateio → Margem → EBITDA):',
         '   - tag0: nome da linha (ex: "01. RECEITA LÍQUIDA")',
         '   - real_brl: valor Real (número)',
         '   - orcado_brl: valor Orçado (número)',
@@ -437,7 +437,7 @@ function buildOptimizationPrompt(
         '2. analise_por_marca (array, UMA entrada por MARCA):',
         '   - marca: nome da marca (ex: "SAP", "CE", "COC")',
         '   - situacao_geral: "acima_do_orcado" | "abaixo_do_orcado" | "no_orcado"',
-        '   - linhas (array, APENAS tag0 com desvio relevante, max 4 por marca):',
+        '   - linhas (array, ORDENADO pela DRE: 01.Receita → 02.CV → 03.CF → 04.SG&A → 05.Rateio, APENAS tag0 com desvio relevante, max 5 por marca):',
         '     { tag0, real_brl, orcado_brl, delta_pct, classificacao ("favoravel"|"desfavoravel"|"neutro"), comentario (1 frase curta) }',
         '   - ebitda_estimado: estimativa de EBITDA da marca (Real = soma das linhas)',
         '   - recado_marca: 1-2 frases com conclusão sobre a marca',
