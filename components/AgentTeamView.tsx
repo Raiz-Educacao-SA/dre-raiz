@@ -171,16 +171,20 @@ const AgentTeamView: React.FC = () => {
     }
 
     if (allVarItems.length > 0) {
-      // Agregar valores por (tag0, tag01, scenario, month) — pré-agregar para evitar duplicatas
+      // Agregar valores por (tag0, tag01, scenario, month)
+      // ATENÇÃO: cada tag01 tem 2 rows (orcado + a1), ambas com mesmo real_value
+      // Real deve ser contado UMA vez por (tag0, tag01, month) — usar apenas comparison_type='orcado'
       const aggMap = new Map<string, number>();
       for (const item of allVarItems) {
         if (item.tag02) continue; // só depth 0-1 (tag0+tag01)
 
-        // Real
-        const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
-        aggMap.set(keyReal, (aggMap.get(keyReal) || 0) + Number(item.real_value || 0));
+        // Real — contar apenas via orcado para não duplicar (a1 tem o mesmo real_value)
+        if (item.comparison_type === 'orcado') {
+          const keyReal = `${item.tag0}|${item.tag01 || ''}|Real|${item.year_month}`;
+          aggMap.set(keyReal, (aggMap.get(keyReal) || 0) + Number(item.real_value || 0));
+        }
 
-        // Orçado ou A-1
+        // Orçado ou A-1 (compare_value é único por comparison_type)
         const scenarioLabel = item.comparison_type === 'orcado' ? 'Orçado' : 'Ano Anterior';
         const keyComp = `${item.tag0}|${item.tag01 || ''}|${scenarioLabel}|${item.year_month}`;
         aggMap.set(keyComp, (aggMap.get(keyComp) || 0) + Number(item.compare_value || 0));
