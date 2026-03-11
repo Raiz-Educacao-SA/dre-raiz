@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  FileText, Sparkles, Loader2, Save, X, AlertTriangle,
+  FileText, Loader2, Save, X, AlertTriangle,
   CheckCircle2, Calendar, User, Target, ArrowUpRight,
   ArrowDownRight, ChevronDown, ChevronUp, Wand2,
 } from 'lucide-react';
@@ -150,8 +150,8 @@ function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSa
 
   // UI state
   const [saving, setSaving] = useState(false);
-  const [aiLoadingJust, setAiLoadingJust] = useState<'generate' | 'improve' | null>(null);
-  const [aiLoadingPlan, setAiLoadingPlan] = useState<'generate' | 'improve' | null>(null);
+  const [aiLoadingJust, setAiLoadingJust] = useState<'improve' | null>(null);
+  const [aiLoadingPlan, setAiLoadingPlan] = useState<'improve' | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
   // Derived
@@ -163,20 +163,17 @@ function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSa
   const cmpLabel = item.comparison_type === 'orcado' ? 'vs Orcado' : 'vs A-1';
   const cmpValueLabel = item.comparison_type === 'orcado' ? 'Orcado' : 'A-1';
 
-  // ------ AI: Justification ------
+  // ------ AI: Justification (improve only) ------
   const handleAIJustification = useCallback(
-    async (mode: 'generate' | 'improve') => {
-      setAiLoadingJust(mode);
+    async () => {
+      setAiLoadingJust('improve');
       try {
         const ctx = buildContext(item);
-        const userPrompt =
-          mode === 'generate'
-            ? `Analise o seguinte desvio financeiro e gere uma justificativa concisa e objetiva (maximo 3 frases):\n\n${ctx}`
-            : `Melhore a seguinte justificativa de desvio financeiro, tornando-a mais clara e executiva. Mantenha o sentido original.\n\nContexto:\n${ctx}\n\nJustificativa atual:\n${justification}`;
+        const userPrompt = `Melhore a seguinte justificativa de desvio financeiro, tornando-a mais clara e executiva. Mantenha o sentido original.\n\nContexto:\n${ctx}\n\nJustificativa atual:\n${justification}`;
         const text = await callAI(SYSTEM_PROMPT, userPrompt, 500);
         setJustification(text.trim());
       } catch (err) {
-        console.error('Erro ao gerar justificativa com IA:', err);
+        console.error('Erro ao melhorar justificativa com IA:', err);
         setErrors(['Erro ao chamar a IA. Tente novamente.']);
       } finally {
         setAiLoadingJust(null);
@@ -185,40 +182,32 @@ function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSa
     [item, justification],
   );
 
-  // ------ AI: Action Plan ------
+  // ------ AI: Action Plan (improve only) ------
   const handleAIPlan = useCallback(
-    async (mode: 'generate' | 'improve') => {
-      setAiLoadingPlan(mode);
+    async () => {
+      setAiLoadingPlan('improve');
       try {
         const ctx = buildContext(item);
-        const existing =
-          mode === 'improve'
-            ? `\n\nPlano atual:\nO que: ${what}\nObjetivo: ${why}\nComo: ${how}\nResponsavel: ${whoResp}\nImpacto esperado: ${expectedImpact}`
-            : '';
-        const userPrompt =
-          mode === 'generate'
-            ? `Dado o desvio financeiro abaixo, gere um plano de acao 5W1H em JSON com as chaves: what, why, how, who_responsible, deadline (YYYY-MM-DD), expected_impact. Responda SOMENTE o JSON.\n\n${ctx}`
-            : `Melhore o plano de acao abaixo para o desvio financeiro, tornando-o mais especifico e executivo. Responda SOMENTE o JSON com as chaves: what, why, how, who_responsible, deadline (YYYY-MM-DD), expected_impact.\n\n${ctx}${existing}`;
+        const existing = `\n\nPlano atual:\nO que: ${what}\nObjetivo: ${why}\nComo: ${how}\nResponsavel: ${whoResp}\nImpacto esperado: ${expectedImpact}`;
+        const userPrompt = `Melhore o plano de acao abaixo para o desvio financeiro, tornando-o mais especifico e executivo. Responda SOMENTE o JSON com as chaves: what, why, how, who_responsible, deadline (YYYY-MM-DD), expected_impact.\n\n${ctx}${existing}`;
         const raw = await callAI(SYSTEM_PROMPT, userPrompt, 800);
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('No JSON');
         const parsed = JSON.parse(jsonMatch[0]);
-        console.log('AI plan parsed:', parsed);
         if (parsed.what) setWhat(parsed.what);
         if (parsed.why) setWhy(parsed.why);
         if (parsed.how) setHow(parsed.how);
         if (parsed.who_responsible) setWhoResp(parsed.who_responsible);
         if (parsed.deadline) setDeadline(parsed.deadline);
         if (parsed.expected_impact) setExpectedImpact(parsed.expected_impact);
-        if (!actionExpanded) setActionExpanded(true);
       } catch (err) {
-        console.error('Erro ao gerar plano com IA:', err);
-        setErrors(['Erro ao gerar plano com IA. Tente novamente.']);
+        console.error('Erro ao melhorar plano com IA:', err);
+        setErrors(['Erro ao melhorar plano com IA. Tente novamente.']);
       } finally {
         setAiLoadingPlan(null);
       }
     },
-    [item, what, why, how, whoResp, expectedImpact, actionExpanded],
+    [item, what, why, how, whoResp, expectedImpact],
   );
 
   // ------ Save ------
@@ -346,18 +335,11 @@ function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSa
 
         <div className="flex gap-2">
           <AIButton
-            label="Gerar com IA"
-            icon={<Sparkles className="w-3.5 h-3.5" />}
-            loading={aiLoadingJust === 'generate'}
-            disabled={aiLoadingJust !== null}
-            onClick={() => handleAIJustification('generate')}
-          />
-          <AIButton
             label="Melhorar com IA"
             icon={<Wand2 className="w-3.5 h-3.5" />}
             loading={aiLoadingJust === 'improve'}
             disabled={aiLoadingJust !== null || !justification.trim()}
-            onClick={() => handleAIJustification('improve')}
+            onClick={handleAIJustification}
           />
         </div>
       </div>
@@ -396,21 +378,14 @@ function ActionPlanForm({ item, initialPlan, userName, userEmail, readOnly, onSa
 
         {actionExpanded && (
           <div className="px-5 pb-5 space-y-4 border-t border-gray-100 pt-4">
-            {/* AI buttons */}
+            {/* AI button */}
             <div className="flex gap-2">
-              <AIButton
-                label="Gerar Plano com IA"
-                icon={<Sparkles className="w-3.5 h-3.5" />}
-                loading={aiLoadingPlan === 'generate'}
-                disabled={aiLoadingPlan !== null}
-                onClick={() => handleAIPlan('generate')}
-              />
               <AIButton
                 label="Melhorar Plano com IA"
                 icon={<Wand2 className="w-3.5 h-3.5" />}
                 loading={aiLoadingPlan === 'improve'}
                 disabled={aiLoadingPlan !== null || !what.trim()}
-                onClick={() => handleAIPlan('improve')}
+                onClick={handleAIPlan}
               />
             </div>
 
