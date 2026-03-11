@@ -92,9 +92,18 @@ async function callAI(
       messages: [{ role: 'user', content: userPrompt }],
     }),
   });
-  if (!res.ok) throw new Error(`AI request failed (${res.status})`);
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    console.error('AI call failed:', res.status, errText);
+    throw new Error(`AI request failed (${res.status})`);
+  }
   const data = await res.json();
-  return data?.content?.[0]?.text ?? '';
+  const text = data?.content?.[0]?.text ?? '';
+  if (!text) {
+    console.error('AI returned empty response:', JSON.stringify(data));
+    throw new Error('AI returned empty response');
+  }
+  return text;
 }
 
 const SYSTEM_PROMPT =
@@ -156,7 +165,8 @@ function ActionPlanForm({ item, userName, userEmail, readOnly, onSave, onClose }
             : `Melhore a seguinte justificativa de desvio financeiro, tornando-a mais clara e executiva. Mantenha o sentido original.\n\nContexto:\n${ctx}\n\nJustificativa atual:\n${justification}`;
         const text = await callAI(SYSTEM_PROMPT, userPrompt, 500);
         setJustification(text.trim());
-      } catch {
+      } catch (err) {
+        console.error('Erro ao gerar justificativa com IA:', err);
         setErrors(['Erro ao chamar a IA. Tente novamente.']);
       } finally {
         setAiLoadingJust(null);
@@ -183,6 +193,7 @@ function ActionPlanForm({ item, userName, userEmail, readOnly, onSave, onClose }
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('No JSON');
         const parsed = JSON.parse(jsonMatch[0]);
+        console.log('AI plan parsed:', parsed);
         if (parsed.what) setWhat(parsed.what);
         if (parsed.why) setWhy(parsed.why);
         if (parsed.how) setHow(parsed.how);
@@ -190,7 +201,8 @@ function ActionPlanForm({ item, userName, userEmail, readOnly, onSave, onClose }
         if (parsed.deadline) setDeadline(parsed.deadline);
         if (parsed.expected_impact) setExpectedImpact(parsed.expected_impact);
         if (!actionExpanded) setActionExpanded(true);
-      } catch {
+      } catch (err) {
+        console.error('Erro ao gerar plano com IA:', err);
         setErrors(['Erro ao gerar plano com IA. Tente novamente.']);
       } finally {
         setAiLoadingPlan(null);
