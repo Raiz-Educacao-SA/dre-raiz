@@ -805,7 +805,8 @@ async function callClaudeViaProxy(
   const useOpus = agentCode === 'alex' && !isConsolidation;
   const useSonnet = isConsolidation || ['executivo', 'diretor', 'bruna', 'carlos', 'denilson'].includes(agentCode);
   const model = useOpus ? 'claude-opus-4-20250514' : useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
-  const maxTokens = isConsolidation ? 16384 : 8192;
+  const isHeavyOutput = ['denilson'].includes(agentCode);
+  const maxTokens = isConsolidation ? 16384 : isHeavyOutput ? 16384 : 8192;
 
   // Forçar JSON via prompt (sem output_config)
   const fullSystem = system + '\n\nIMPORTANTE: Responda EXCLUSIVAMENTE com um objeto JSON válido. Sem texto antes, sem texto depois, sem markdown, sem ```json. Apenas o JSON puro. Seja CONCISO — máximo 2 frases por campo string.';
