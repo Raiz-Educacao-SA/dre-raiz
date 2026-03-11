@@ -21,7 +21,6 @@ import {
   ChevronsUp,
   Wand2,
   BrainCircuit,
-  Target,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import {
@@ -141,8 +140,6 @@ const VarianceJustificationsView: React.FC = () => {
   const [justifyText, setJustifyText] = useState('');
   const [justifyPlan, setJustifyPlan] = useState('');
 
-  // Action Plan modal (5W1H)
-  const [actionPlanItem, setActionPlanItem] = useState<VarianceJustification | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState<'analyze' | 'improve' | 'plan-generate' | 'plan-improve' | null>(null);
 
@@ -1319,15 +1316,6 @@ const VarianceJustificationsView: React.FC = () => {
                   <FileText size={9} />
                 </button>
               )}
-              {row.depth >= 2 && dbItem && (dbItem.justification || (dbItem.variance_abs != null && dbItem.variance_abs < 0)) && (
-                <button
-                  onClick={() => setActionPlanItem(dbItem)}
-                  className="p-0.5 rounded bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-                  title="Plano de Ação 5W1H"
-                >
-                  <Target size={9} />
-                </button>
-              )}
               {aiSummary && <Sparkles size={8} className="text-indigo-300 flex-shrink-0" title="Síntese IA" />}
             </div>
           ) : (
@@ -1883,49 +1871,17 @@ const VarianceJustificationsView: React.FC = () => {
         )}
       </div>
 
-      {/* ── Justification Modal ── */}
+      {/* ── Justification + Action Plan Modal (5W1H) ── */}
       {justifyItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
             <div className="p-5">
-              <h3 className="text-sm font-black uppercase tracking-tight mb-3" style={{ color: 'var(--color-primary-500)' }}>
-                {justifyItem.status === 'approved'
-                  ? (isAdmin ? 'Editar Justificativa (Admin)' : 'Justificativa')
-                  : justifyItem.status === 'justified' ? 'Justificativa' : 'Justificar Desvio'}
-              </h3>
-
-              {/* Context */}
-              <div className="bg-gray-50 rounded-lg p-3 mb-4 text-xs space-y-1">
-                <div className="flex gap-2">
-                  <span className="text-gray-400">Tag0:</span>
-                  <span className="font-semibold">{justifyItem.tag0}</span>
-                </div>
-                <div className="flex gap-2">
-                  <span className="text-gray-400">Tag01:</span>
-                  <span className="font-semibold">{justifyItem.tag01}</span>
-                </div>
-                {justifyItem.tag02 && (
-                  <div className="flex gap-2">
-                    <span className="text-gray-400">Tag02:</span>
-                    <span className="font-semibold">{justifyItem.tag02}</span>
-                  </div>
-                )}
-                <div className="flex gap-4 mt-2 pt-2 border-t border-gray-200">
-                  <div>
-                    <span className="text-gray-400">Real:</span>{' '}
-                    <span className="font-bold font-mono">{fmt(justifyItem.real_value)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">{justifyItem.comparison_type === 'orcado' ? 'Orçado' : String(a1Year)}:</span>{' '}
-                    <span className="font-bold font-mono">{fmt(justifyItem.compare_value)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">Δ:</span>{' '}
-                    <span className={`font-bold font-mono ${(justifyItem.variance_pct ?? 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      {fmt(justifyItem.variance_abs)} ({fmtPct(justifyItem.variance_pct)})
-                    </span>
-                  </div>
-                </div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-black uppercase tracking-tight" style={{ color: 'var(--color-primary-500)' }}>
+                  {justifyItem.status === 'approved'
+                    ? (isAdmin ? 'Editar Justificativa (Admin)' : 'Justificativa')
+                    : justifyItem.status === 'justified' ? 'Justificativa' : 'Justificar Desvio'}
+                </h3>
               </div>
 
               {/* Review note if rejected */}
@@ -1935,175 +1891,86 @@ const VarianceJustificationsView: React.FC = () => {
                 </div>
               )}
 
-              {/* Fields */}
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                    Justificativa *
-                  </label>
-                  <textarea
-                    value={justifyText}
-                    onChange={e => setJustifyText(e.target.value)}
-                    rows={4}
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-colors"
-                    placeholder="Explique o motivo do desvio (mínimo 20 caracteres)..."
-                    disabled={justifyItem.status === 'approved' && !isAdmin}
-                  />
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-[9px] text-gray-400 flex-1">{justifyText.length} caracteres (mín. 20)</span>
-                    {(justifyItem.status !== 'approved' || isAdmin) && (
-                      <>
-                        <button
-                          onClick={handleAiAnalyze}
-                          disabled={!!aiLoading}
-                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-sm"
-                          title="IA gera uma justificativa a partir dos dados do desvio"
-                        >
-                          {aiLoading === 'analyze' ? <Loader2 size={11} className="animate-spin" /> : <BrainCircuit size={11} />}
-                          Analisar com IA
-                        </button>
-                        <button
-                          onClick={handleAiImprove}
-                          disabled={!!aiLoading || justifyText.trim().length < 10}
-                          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 text-white hover:from-blue-600 hover:to-cyan-700 disabled:opacity-50 transition-all shadow-sm"
-                          title="IA melhora o texto que você escreveu"
-                        >
-                          {aiLoading === 'improve' ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
-                          Melhorar com IA
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
-                    Plano de Ação (opcional)
-                  </label>
-                  <textarea
-                    value={justifyPlan}
-                    onChange={e => setJustifyPlan(e.target.value)}
-                    rows={2}
-                    className="w-full text-xs border border-gray-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 transition-colors"
-                    placeholder="Ações planejadas para corrigir o desvio..."
-                    disabled={justifyItem.status === 'approved' && !isAdmin}
-                  />
-                  {(justifyItem.status !== 'approved' || isAdmin) && (
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className="text-[9px] text-gray-400 flex-1">{justifyPlan.length} caracteres</span>
-                      <button
-                        onClick={handleAiPlanGenerate}
-                        disabled={!!aiLoading || justifyText.trim().length < 20}
-                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 disabled:opacity-50 transition-all shadow-sm"
-                        title={justifyText.trim().length < 20 ? 'Preencha a justificativa primeiro (mín. 20 caracteres)' : 'IA gera plano de ação com base na justificativa'}
-                      >
-                        {aiLoading === 'plan-generate' ? <Loader2 size={11} className="animate-spin" /> : <BrainCircuit size={11} />}
-                        Gerar com IA
-                      </button>
-                      <button
-                        onClick={handleAiPlanImprove}
-                        disabled={!!aiLoading || justifyPlan.trim().length < 10}
-                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-600 text-white hover:from-blue-600 hover:to-cyan-700 disabled:opacity-50 transition-all shadow-sm"
-                        title="IA melhora o plano de ação que você escreveu"
-                      >
-                        {aiLoading === 'plan-improve' ? <Loader2 size={11} className="animate-spin" /> : <Wand2 size={11} />}
-                        Melhorar com IA
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Buttons */}
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  onClick={() => { setJustifyItem(null); setJustifyText(''); setJustifyPlan(''); }}
-                  className="px-4 py-2 text-xs font-bold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
-                >
-                  {justifyItem.status === 'approved' && !isAdmin ? 'Fechar' : 'Cancelar'}
-                </button>
-                {(justifyItem.status !== 'approved' || isAdmin) && (
-                  <button
-                    onClick={handleJustifySubmit}
-                    disabled={submitting || justifyText.trim().length < 20}
-                    className="px-4 py-2 text-xs font-bold rounded-lg text-white transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                    style={{ backgroundColor: 'var(--color-primary-500)' }}
-                  >
-                    {submitting ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
-                    {justifyItem.status === 'approved' && isAdmin ? 'Salvar Edição' : 'Enviar Justificativa'}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Action Plan Modal (5W1H) ── */}
-      {actionPlanItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="p-5">
-              <h3 className="text-sm font-black uppercase tracking-tight mb-3" style={{ color: 'var(--color-primary-500)' }}>
-                Plano de Ação — 5W1H
-              </h3>
               <ActionPlanForm
                 item={{
-                  id: actionPlanItem.id,
-                  year_month: actionPlanItem.year_month,
-                  marca: actionPlanItem.marca || '',
-                  tag0: actionPlanItem.tag0,
-                  tag01: actionPlanItem.tag01,
-                  tag02: actionPlanItem.tag02,
-                  comparison_type: actionPlanItem.comparison_type as 'orcado' | 'a1',
-                  real_value: actionPlanItem.real_value,
-                  compare_value: actionPlanItem.compare_value,
-                  variance_abs: actionPlanItem.variance_abs,
-                  variance_pct: actionPlanItem.variance_pct,
-                  justification: actionPlanItem.justification,
-                  status: actionPlanItem.status,
+                  id: justifyItem.id,
+                  year_month: justifyItem.year_month,
+                  marca: justifyItem.marca || '',
+                  tag0: justifyItem.tag0,
+                  tag01: justifyItem.tag01,
+                  tag02: justifyItem.tag02,
+                  comparison_type: justifyItem.comparison_type as 'orcado' | 'a1',
+                  real_value: justifyItem.real_value,
+                  compare_value: justifyItem.compare_value,
+                  variance_abs: justifyItem.variance_abs,
+                  variance_pct: justifyItem.variance_pct,
+                  justification: justifyItem.justification,
+                  status: justifyItem.status,
                 }}
                 userName={user?.display_name || user?.email || ''}
                 userEmail={user?.email || ''}
+                readOnly={justifyItem.status === 'approved' && !isAdmin}
                 onSave={async (data) => {
-                  // Save justification to variance_justifications if changed
-                  if (data.justification && data.justification !== actionPlanItem.justification) {
-                    await submitJustification(actionPlanItem.id, data.justification, undefined);
+                  // 1. Save justification to variance_justifications
+                  if (data.justification && data.justification.trim().length >= 20) {
+                    const result = await submitJustification(
+                      justifyItem.id,
+                      data.justification.trim(),
+                      data.actionPlan ? `${data.actionPlan.what} | ${data.actionPlan.why} | ${data.actionPlan.how}` : undefined
+                    );
+                    if (!result.ok) {
+                      toast.error(result.error || 'Erro ao enviar justificativa');
+                      return;
+                    }
+                    toast.success('Justificativa enviada com sucesso');
+
+                    // Trigger AI cascade
+                    triggerAiCascade(justifyItem);
                   }
-                  // Save action plan to action_plans table
+
+                  // 2. Save action plan to action_plans table
                   if (data.actionPlan) {
-                    await createActionPlan({
-                      variance_justification_id: actionPlanItem.id,
-                      year_month: actionPlanItem.year_month,
-                      marca: actionPlanItem.marca || null,
-                      tag0: actionPlanItem.tag0,
-                      tag01: actionPlanItem.tag01,
-                      tag02: actionPlanItem.tag02,
-                      comparison_type: actionPlanItem.comparison_type as 'orcado' | 'a1',
-                      real_value: actionPlanItem.real_value,
-                      compare_value: actionPlanItem.compare_value,
-                      variance_abs: actionPlanItem.variance_abs,
-                      variance_pct: actionPlanItem.variance_pct,
-                      justification: data.justification || actionPlanItem.justification || '',
-                      what: data.actionPlan.what,
-                      why: data.actionPlan.why,
-                      how: data.actionPlan.how,
-                      who_responsible: data.actionPlan.who_responsible,
-                      who_email: data.actionPlan.who_email,
-                      deadline: data.actionPlan.deadline,
-                      expected_impact: data.actionPlan.expected_impact,
-                      status: 'aberto' as const,
-                      ai_generated: data.actionPlan.ai_generated,
-                      created_by: user?.email || '',
-                      created_by_name: user?.display_name || null,
-                      progress_note: null,
-                      completed_at: null,
-                    });
-                    toast.success('Plano de ação criado com sucesso');
+                    try {
+                      await createActionPlan({
+                        variance_justification_id: justifyItem.id,
+                        year_month: justifyItem.year_month,
+                        marca: justifyItem.marca || null,
+                        tag0: justifyItem.tag0,
+                        tag01: justifyItem.tag01,
+                        tag02: justifyItem.tag02,
+                        comparison_type: justifyItem.comparison_type as 'orcado' | 'a1',
+                        real_value: justifyItem.real_value,
+                        compare_value: justifyItem.compare_value,
+                        variance_abs: justifyItem.variance_abs,
+                        variance_pct: justifyItem.variance_pct,
+                        justification: data.justification || justifyItem.justification || '',
+                        what: data.actionPlan.what,
+                        why: data.actionPlan.why,
+                        how: data.actionPlan.how,
+                        who_responsible: data.actionPlan.who_responsible,
+                        who_email: data.actionPlan.who_email,
+                        deadline: data.actionPlan.deadline,
+                        expected_impact: data.actionPlan.expected_impact,
+                        status: 'aberto' as const,
+                        ai_generated: data.actionPlan.ai_generated,
+                        created_by: user?.email || '',
+                        created_by_name: user?.display_name || null,
+                        progress_note: null,
+                        completed_at: null,
+                      });
+                      toast.success('Plano de ação criado — veja na aba Plano de Ação');
+                    } catch (e) {
+                      console.error('Erro ao criar plano de ação:', e);
+                      toast.error('Justificativa salva, mas erro ao criar plano de ação');
+                    }
                   }
-                  setActionPlanItem(null);
+
+                  setJustifyItem(null);
+                  setJustifyText('');
+                  setJustifyPlan('');
                   fetchData();
                 }}
-                onClose={() => setActionPlanItem(null)}
+                onClose={() => { setJustifyItem(null); setJustifyText(''); setJustifyPlan(''); }}
               />
             </div>
           </div>

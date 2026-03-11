@@ -27,6 +27,7 @@ interface ActionPlanFormProps {
   };
   userName: string;
   userEmail: string;
+  readOnly?: boolean;
   onSave: (data: { justification: string; actionPlan?: ActionPlanData }) => Promise<void>;
   onClose: () => void;
 }
@@ -114,7 +115,7 @@ function buildContext(item: ActionPlanFormProps['item']) {
 // Component
 // ---------------------------------------------------------------------------
 
-function ActionPlanForm({ item, userName, userEmail, onSave, onClose }: ActionPlanFormProps) {
+function ActionPlanForm({ item, userName, userEmail, readOnly, onSave, onClose }: ActionPlanFormProps) {
   // Form state
   const [justification, setJustification] = useState(item.justification ?? '');
   const [actionExpanded, setActionExpanded] = useState(item.variance_abs < 0);
@@ -493,21 +494,23 @@ function ActionPlanForm({ item, userName, userEmail, onSave, onClose }: ActionPl
           onClick={onClose}
           className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
         >
-          Cancelar
+          {readOnly ? 'Fechar' : 'Cancelar'}
         </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          {saving ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
-          {saving ? 'Salvando...' : 'Salvar'}
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {saving ? 'Salvando...' : 'Salvar'}
+          </button>
+        )}
       </div>
     </div>
   );
