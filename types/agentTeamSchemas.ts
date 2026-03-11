@@ -249,39 +249,49 @@ export function performanceJsonSchema() {
 // ============================================
 
 export const OptimizationOutputSchema = z.object({
+  optimization_summary: z.string(),
   actions: z.array(z.object({
     action: z.string(),
-    brand: z.string(),
     target_line: z.string(),
+    target_tag01: z.string(),
     expected_impact_brl: z.number(),
     priority: z.enum(['high', 'medium', 'low']),
     is_real_gain: z.boolean(),
+    timeline: z.string(),
+    difficulty: z.string(),
   })),
   total_expected_impact: z.object({
     ebitda_impact_brl: z.number(),
     margin_impact_pct: z.number(),
+    quick_wins_brl: z.number(),
   }),
   constraints: z.array(z.object({
     description: z.string(),
+    affected_actions: z.string(),
+    mitigation: z.string(),
   })),
+  executive_recommendation: z.string(),
 });
 
 export function optimizationJsonSchema() {
   return {
     type: 'object' as const, additionalProperties: false,
     properties: {
+      optimization_summary: { type: 'string' as const },
       actions: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
           properties: {
             action: { type: 'string' as const },
-            brand: { type: 'string' as const },
             target_line: { type: 'string' as const },
+            target_tag01: { type: 'string' as const },
             expected_impact_brl: { type: 'number' as const },
             priority: { type: 'string' as const, enum: ['high', 'medium', 'low'] },
             is_real_gain: { type: 'boolean' as const },
+            timeline: { type: 'string' as const },
+            difficulty: { type: 'string' as const },
           },
-          required: ['action', 'brand', 'target_line', 'expected_impact_brl', 'priority', 'is_real_gain'] as const,
+          required: ['action', 'target_line', 'target_tag01', 'expected_impact_brl', 'priority', 'is_real_gain', 'timeline', 'difficulty'] as const,
         },
       },
       total_expected_impact: {
@@ -289,18 +299,24 @@ export function optimizationJsonSchema() {
         properties: {
           ebitda_impact_brl: { type: 'number' as const },
           margin_impact_pct: { type: 'number' as const },
+          quick_wins_brl: { type: 'number' as const },
         },
-        required: ['ebitda_impact_brl', 'margin_impact_pct'] as const,
+        required: ['ebitda_impact_brl', 'margin_impact_pct', 'quick_wins_brl'] as const,
       },
       constraints: {
         type: 'array' as const, items: {
           type: 'object' as const, additionalProperties: false,
-          properties: { description: { type: 'string' as const } },
-          required: ['description'] as const,
+          properties: {
+            description: { type: 'string' as const },
+            affected_actions: { type: 'string' as const },
+            mitigation: { type: 'string' as const },
+          },
+          required: ['description', 'affected_actions', 'mitigation'] as const,
         },
       },
+      executive_recommendation: { type: 'string' as const },
     },
-    required: ['actions', 'total_expected_impact', 'constraints'] as const,
+    required: ['optimization_summary', 'actions', 'total_expected_impact', 'constraints', 'executive_recommendation'] as const,
   };
 }
 

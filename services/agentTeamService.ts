@@ -803,7 +803,7 @@ async function callClaudeViaProxy(
   // Consolidação e review executivo usam Sonnet (boa qualidade)
   // Demais agentes usam Haiku (rápido + barato)
   const useOpus = agentCode === 'alex' && !isConsolidation;
-  const useSonnet = isConsolidation || ['executivo', 'diretor', 'bruna', 'carlos'].includes(agentCode);
+  const useSonnet = isConsolidation || ['executivo', 'diretor', 'bruna', 'carlos', 'denilson'].includes(agentCode);
   const model = useOpus ? 'claude-opus-4-20250514' : useSonnet ? defaultModel : 'claude-haiku-4-5-20251001';
   const maxTokens = isConsolidation ? 16384 : 8192;
 

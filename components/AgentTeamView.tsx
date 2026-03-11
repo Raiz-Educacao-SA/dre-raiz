@@ -598,12 +598,12 @@ const AgentTeamView: React.FC = () => {
             Iniciar Análise
           </button>
           <button
-            onClick={() => handleTestPipeline('carlos')}
+            onClick={() => handleTestPipeline('denilson')}
             disabled={!objective.trim() || isStarting || isRunning || isTesting}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-blue-50 text-blue-700 border-blue-300 hover:bg-blue-100"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border transition-all disabled:opacity-40 bg-green-50 text-green-700 border-green-300 hover:bg-green-100"
           >
             {isTesting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-            {isTesting && testingStep ? testingStep : 'Testar até Carlos'}
+            {isTesting && testingStep ? testingStep : 'Testar até Denilson'}
           </button>
           {snapshotAt && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
@@ -825,6 +825,78 @@ const AgentTeamView: React.FC = () => {
                                 ))}
                               </div>
                             )}
+                          </div>
+                        )}
+                        {/* Denilson — Optimization Summary */}
+                        {out.optimization_summary && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-green-700 uppercase tracking-wide mb-1.5">Diagnóstico de Otimização</h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.optimization_summary}</p>
+                          </div>
+                        )}
+                        {/* Denilson — Actions */}
+                        {out.actions?.length > 0 && out.actions[0]?.target_tag01 && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Plano de Ações ({out.actions.length})</h4>
+                            {out.actions.map((a: any, i: number) => (
+                              <div key={i} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-1.5">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-green-500 text-white text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${a.priority === 'high' ? 'bg-red-100 text-red-700' : a.priority === 'medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600'}`}>
+                                    {a.priority}
+                                  </span>
+                                  <span className="text-[9px] text-gray-400">{a.target_line} → {a.target_tag01}</span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${a.is_real_gain ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {a.is_real_gain ? 'Ganho Real' : 'Enquadramento'}
+                                  </span>
+                                  <span className="text-[9px] text-gray-400">{a.timeline} · {a.difficulty}</span>
+                                </div>
+                                <p className="text-[11px] text-gray-700">{a.action}</p>
+                                <p className="text-[10px] text-green-600 font-medium mt-0.5">Impacto: R$ {Number(a.expected_impact_brl).toLocaleString('pt-BR')}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Denilson — Total Impact */}
+                        {out.total_expected_impact?.ebitda_impact_brl && (
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-4">
+                            <div>
+                              <span className="text-[10px] text-gray-500">Impacto Total EBITDA</span>
+                              <p className="text-sm font-bold text-emerald-700">R$ {Number(out.total_expected_impact.ebitda_impact_brl).toLocaleString('pt-BR')}</p>
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-gray-500">Margem</span>
+                              <p className="text-sm font-bold text-emerald-700">+{out.total_expected_impact.margin_impact_pct} pp</p>
+                            </div>
+                            {out.total_expected_impact.quick_wins_brl > 0 && (
+                              <div>
+                                <span className="text-[10px] text-gray-500">Quick Wins</span>
+                                <p className="text-sm font-bold text-amber-600">R$ {Number(out.total_expected_impact.quick_wins_brl).toLocaleString('pt-BR')}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* Denilson — Constraints */}
+                        {out.constraints?.length > 0 && out.constraints[0]?.mitigation && (
+                          <div>
+                            <h4 className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-1.5">Restrições ({out.constraints.length})</h4>
+                            {out.constraints.map((c: any, i: number) => (
+                              <div key={i} className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-1.5">
+                                <p className="text-[11px] text-gray-700">{c.description}</p>
+                                <p className="text-[10px] text-gray-400 mt-0.5">Afeta: {c.affected_actions}</p>
+                                <p className="text-[10px] text-green-600 mt-0.5">Mitigação: {c.mitigation}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Denilson — Executive Recommendation */}
+                        {out.executive_recommendation && (
+                          <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3">
+                            <h4 className="text-xs font-bold text-green-700 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
+                              <Target size={12} />
+                              Recomendação Executiva
+                            </h4>
+                            <p className="text-[11px] text-gray-800 leading-relaxed whitespace-pre-line">{out.executive_recommendation}</p>
                           </div>
                         )}
                         {out.priority_areas?.length > 0 && (
