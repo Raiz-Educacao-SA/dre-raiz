@@ -1231,11 +1231,17 @@ const VarianceJustificationsView: React.FC = () => {
     const mandatory = isOrc ? row.orcMandatory : row.a1Mandatory;
     const borderCls = isOrc ? 'border-l-2 border-emerald-200/60' : 'border-l-2 border-purple-200/60';
 
+    // Quem pode justificar/editar: criador (se não aprovado) ou admin (sempre)
+    const isOwner = row.ownerEmail === user?.email;
     const canJustify = !row.hasChildren && row.depth >= 2 && dbItem &&
       (status === 'pending' || status === 'notified' || status === 'rejected') &&
-      (isAdminOrManager || row.ownerEmail === user?.email);
+      (isAdmin || isOwner);
+    // Criador pode editar se status = justified (antes de aprovação)
+    const canEditJustified = !row.hasChildren && row.depth >= 2 && dbItem &&
+      status === 'justified' && isOwner && !isAdmin;
     const canSynthesis = row.depth <= 1 && isAdminOrManager && dbItem;
-    const canReview = isAdminOrManager && dbItem && status === 'justified';
+    // Só admin pode aprovar/rejeitar
+    const canReview = isAdmin && dbItem && status === 'justified';
     const synthLevel = row.depth === 0 ? 'tag0' : 'tag01';
     const isSynth = dbItem ? synthesizing === `${synthLevel}-${dbItem.id}` : false;
     const hasData = dbItem || compare !== 0;
@@ -1285,6 +1291,18 @@ const VarianceJustificationsView: React.FC = () => {
                 >
                   {isSynth ? <Loader2 size={8} className="animate-spin" /> : <Sparkles size={8} />}
                   IA
+                </button>
+              )}
+              {canEditJustified && dbItem && (
+                <button
+                  onClick={() => {
+                    setJustifyItem(dbItem);
+                    setJustifyText(dbItem.justification || '');
+                    setJustifyPlan(dbItem.action_plan || '');
+                  }}
+                  className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-amber-100 text-amber-700 hover:bg-amber-200 whitespace-nowrap"
+                >
+                  Editar
                 </button>
               )}
               {canReview && dbItem && (
@@ -1545,7 +1563,7 @@ const VarianceJustificationsView: React.FC = () => {
 
           <div className="flex-1 min-w-[8px]" />
 
-          {/* Admin actions */}
+          {/* Admin/Manager actions */}
           {isAdminOrManager && (
             <>
               <div className="h-5 w-px bg-blue-200 shrink-0" />
@@ -1557,24 +1575,25 @@ const VarianceJustificationsView: React.FC = () => {
                 {notifying ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
                 Cobranças
               </button>
-              {selectedIds.size > 0 && (
-                <>
-                  <button
-                    onClick={() => handleBulkReview('approved')}
-                    className="flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-sm shrink-0"
-                  >
-                    <CheckCircle2 size={11} />
-                    Aprovar ({selectedIds.size})
-                  </button>
-                  <button
-                    onClick={() => handleBulkReview('rejected')}
-                    className="flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-rose-600 to-rose-500 text-white shadow-sm shrink-0"
-                  >
-                    <XCircle size={11} />
-                    Rejeitar ({selectedIds.size})
-                  </button>
-                </>
-              )}
+            </>
+          )}
+          {/* Aprovar/Rejeitar em massa — só admin */}
+          {isAdmin && selectedIds.size > 0 && (
+            <>
+              <button
+                onClick={() => handleBulkReview('approved')}
+                className="flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-sm shrink-0"
+              >
+                <CheckCircle2 size={11} />
+                Aprovar ({selectedIds.size})
+              </button>
+              <button
+                onClick={() => handleBulkReview('rejected')}
+                className="flex items-center gap-1 px-2 py-1 text-[9px] font-black uppercase rounded-lg bg-gradient-to-r from-rose-600 to-rose-500 text-white shadow-sm shrink-0"
+              >
+                <XCircle size={11} />
+                Rejeitar ({selectedIds.size})
+              </button>
             </>
           )}
 
@@ -1888,8 +1907,10 @@ const VarianceJustificationsView: React.FC = () => {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-black uppercase tracking-tight" style={{ color: 'var(--color-primary-500)' }}>
                   {justifyItem.status === 'approved'
-                    ? (isAdmin ? 'Editar Justificativa (Admin)' : 'Justificativa')
-                    : justifyItem.status === 'justified' ? 'Justificativa' : 'Justificar Desvio'}
+                    ? (isAdmin ? 'Editar Justificativa (Admin)' : 'Justificativa (Aprovada)')
+                    : justifyItem.status === 'justified'
+                      ? (isAdmin || justifyItem.owner_email === user?.email ? 'Editar Justificativa' : 'Justificativa')
+                      : 'Justificar Desvio'}
                 </h3>
               </div>
 
@@ -1918,7 +1939,12 @@ const VarianceJustificationsView: React.FC = () => {
                 }}
                 userName={user?.display_name || user?.email || ''}
                 userEmail={user?.email || ''}
-                readOnly={justifyItem.status === 'approved' && !isAdmin}
+                readOnly={
+                  // Aprovado: só admin pode editar
+                  (justifyItem.status === 'approved' && !isAdmin) ||
+                  // Justified por outro usuário: só leitura (exceto admin)
+                  (justifyItem.status === 'justified' && justifyItem.owner_email !== user?.email && !isAdmin)
+                }
                 onSave={async (data) => {
                   // 1. Save justification to variance_justifications
                   if (data.justification && data.justification.trim().length >= 20) {
