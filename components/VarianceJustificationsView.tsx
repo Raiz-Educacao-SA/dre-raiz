@@ -26,6 +26,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   getVarianceJustifications,
   getVarianceYtdItems,
+  getVarianceAvailableMonths,
   submitJustification,
   reviewJustification,
   bulkReviewJustifications,
@@ -76,17 +77,6 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-red-100 text-red-700',
 };
 
-const MONTHS_OPTIONS = (() => {
-  const now = new Date();
-  const months: { value: string; label: string }[] = [];
-  for (let i = -12; i <= 2; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleString('pt-BR', { month: 'short', year: 'numeric' });
-    months.push({ value: val, label });
-  }
-  return months.reverse();
-})();
 
 // ── Types ──
 
@@ -110,15 +100,11 @@ const VarianceJustificationsView: React.FC = () => {
   const isAdminOrManager = isAdmin || user?.role === 'manager';
   const { allowedMarcas, hasPermissions } = usePermissions();
 
+  // Meses disponíveis (da tabela variance_justifications)
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+
   // Filters
-  // Default: mês anterior (último fechado) — índice 3 após reverse (0=+2, 1=+1, 2=current, 3=prev)
-  const [yearMonth, setYearMonth] = useState(() => {
-    const now = new Date();
-    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevVal = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
-    const match = MONTHS_OPTIONS.find(m => m.value === prevVal);
-    return match?.value || MONTHS_OPTIONS[3]?.value || '';
-  });
+  const [yearMonth, setYearMonth] = useState('');
   const [filterMarcas, setFilterMarcas] = useState<string[]>([]);
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [filterType, setFilterType] = useState('');
@@ -167,6 +153,16 @@ const VarianceJustificationsView: React.FC = () => {
   const [ytdSynthKey, setYtdSynthKey] = useState<string | null>(null);
   const [ytdExpandedSummaries, setYtdExpandedSummaries] = useState<Set<string>>(new Set());
   const [ytdExpandedNodes, setYtdExpandedNodes] = useState<Set<string>>(new Set());
+
+  // ── Carregar meses disponíveis ──
+  useEffect(() => {
+    getVarianceAvailableMonths().then(months => {
+      setAvailableMonths(months);
+      if (months.length > 0 && !yearMonth) {
+        setYearMonth(months[0]); // mais recente
+      }
+    }).catch(err => console.error('Erro ao carregar meses:', err));
+  }, []);
 
   // ── Fetch data ──
 
@@ -1491,7 +1487,7 @@ const VarianceJustificationsView: React.FC = () => {
           <MultiSelectFilter
             label="MÊS"
             icon={<CalendarDays size={12} />}
-            options={MONTHS_OPTIONS.map(m => m.value)}
+            options={availableMonths}
             selected={yearMonth ? [yearMonth] : []}
             onChange={sel => setYearMonth(sel.length > 0 ? sel[sel.length - 1] : '')}
             colorScheme="purple"
