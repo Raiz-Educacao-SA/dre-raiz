@@ -24,6 +24,12 @@ interface UsePermissionsReturn {
   allowedTag03: string[];
 }
 
+// Referências estáveis para evitar re-renders infinitos em useCallback/useMemo deps
+const EMPTY_PERMS: Permission[] = [];
+const EMPTY_STRINGS: string[] = [];
+const IDENTITY_FILTER = (transactions: Transaction[]) => transactions;
+const ALWAYS_TRUE = () => true as const;
+
 /**
  * Hook que lê permissões do singleton global (já carregado pelo AuthContext).
  * NÃO faz chamadas ao Supabase — elimina roundtrips duplicados.
@@ -77,33 +83,33 @@ export const usePermissions = (): UsePermissionsReturn => {
 
   if (isAdmin) {
     return {
-      permissions: [],
+      permissions: EMPTY_PERMS,
       loading,
-      canAccess: () => true,
-      filterTransactions: (transactions) => transactions,
+      canAccess: ALWAYS_TRUE,
+      filterTransactions: IDENTITY_FILTER,
       hasPermissions: false,
-      allowedMarcas: [],
-      allowedFiliais: [],
-      allowedCategories: [],
-      allowedTag01: [],
-      allowedTag02: [],
-      allowedTag03: []
+      allowedMarcas: EMPTY_STRINGS,
+      allowedFiliais: EMPTY_STRINGS,
+      allowedCategories: EMPTY_STRINGS,
+      allowedTag01: EMPTY_STRINGS,
+      allowedTag02: EMPTY_STRINGS,
+      allowedTag03: EMPTY_STRINGS
     };
   }
 
   if (!hasPermissions) {
     return {
-      permissions: [],
+      permissions: EMPTY_PERMS,
       loading,
-      canAccess: () => true,
-      filterTransactions: (transactions) => transactions,
+      canAccess: ALWAYS_TRUE,
+      filterTransactions: IDENTITY_FILTER,
       hasPermissions: false,
-      allowedMarcas: [],
-      allowedFiliais: [],
-      allowedCategories: [],
-      allowedTag01: [],
-      allowedTag02: [],
-      allowedTag03: []
+      allowedMarcas: EMPTY_STRINGS,
+      allowedFiliais: EMPTY_STRINGS,
+      allowedCategories: EMPTY_STRINGS,
+      allowedTag01: EMPTY_STRINGS,
+      allowedTag02: EMPTY_STRINGS,
+      allowedTag03: EMPTY_STRINGS
     };
   }
 
