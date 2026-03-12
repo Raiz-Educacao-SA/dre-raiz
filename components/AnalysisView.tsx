@@ -21,6 +21,7 @@ import type { VariancePptData } from '../services/variancePptTypes';
 import MultiSelectFilter from './MultiSelectFilter';
 import VariancePptPreview from './VariancePptPreview';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuth } from '../contexts/AuthContext';
 
 const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
 const AgentTeamView = React.lazy(() => import('./AgentTeamView'));
@@ -40,11 +41,14 @@ const MONTHS_OPTIONS = (() => {
 type TabType = 'justificativas' | 'summary' | 'actions' | 'slides' | 'agentes';
 
 export default function AnalysisView() {
+  const { isAdmin } = useAuth();
   const { allowedMarcas, allowedFiliais, hasPermissions } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabType>(() => {
-    const saved = localStorage.getItem('analysisActiveTab');
-    return (saved as TabType) || 'summary';
+    const saved = localStorage.getItem('analysisActiveTab') as TabType | null;
+    // Se aba salva é 'agentes' mas usuário não é admin, fallback para justificativas
+    if (saved === 'agentes' && !isAdmin) return 'justificativas';
+    return saved || 'justificativas';
   });
 
   // Filtros
@@ -268,7 +272,7 @@ export default function AnalysisView() {
 
   const tabs = [
     { id: 'justificativas', label: 'Corte DRE - (Justificativas)', icon: ClipboardCheck },
-    { id: 'agentes', label: 'Agentes Financeiros', icon: Brain },
+    ...(isAdmin ? [{ id: 'agentes', label: 'Agentes Financeiros', icon: Brain }] : []),
     { id: 'summary', label: 'Sumário Executivo', icon: FileText },
     { id: 'actions', label: 'Plano de Ação', icon: ListChecks },
     { id: 'slides', label: 'Slides de Análise', icon: Presentation },
@@ -460,8 +464,8 @@ export default function AnalysisView() {
           </Suspense>
         )}
 
-        {/* ==================== ABA AGENTES FINANCEIROS ==================== */}
-        {activeTab === 'agentes' && (
+        {/* ==================== ABA AGENTES FINANCEIROS (admin only) ==================== */}
+        {activeTab === 'agentes' && isAdmin && (
           <Suspense fallback={<div className="flex items-center justify-center py-20"><RefreshCw size={32} className="text-gray-400 animate-spin" /></div>}>
             <AgentTeamView />
           </Suspense>
