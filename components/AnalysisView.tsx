@@ -14,7 +14,7 @@ import {
   Brain
 } from 'lucide-react';
 import { ExecutiveSummary } from '../analysisPack';
-import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown } from '../services/supabaseService';
+import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown, getVarianceAvailableMonths } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
 import type { AnalysisContext } from '../analysisPack/types/schema';
 import type { VariancePptData } from '../services/variancePptTypes';
@@ -27,17 +27,6 @@ const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificat
 const AgentTeamView = React.lazy(() => import('./AgentTeamView'));
 const ActionPlansConsolidatedView = React.lazy(() => import('./ActionPlansConsolidatedView'));
 
-const MONTHS_OPTIONS = (() => {
-  const now = new Date();
-  const months: string[] = [];
-  for (let i = -12; i <= 2; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    months.push(val);
-  }
-  return months.reverse();
-})();
-
 type TabType = 'justificativas' | 'summary' | 'actions' | 'slides' | 'agentes';
 
 export default function AnalysisView() {
@@ -46,18 +35,17 @@ export default function AnalysisView() {
 
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem('analysisActiveTab') as TabType | null;
-    // Se aba salva é 'agentes' mas usuário não é admin, fallback para justificativas
     if (saved === 'agentes' && !isAdmin) return 'justificativas';
     return saved || 'justificativas';
   });
 
+  // Meses disponíveis (carregados da tabela variance_justifications)
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+
   // Filtros
   const [selectedMarcas, setSelectedMarcas] = useState<string[]>([]);
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+  const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [isYtd, setIsYtd] = useState(false);
 
   // Opções de marca/filial (carregadas via RPC leve)
@@ -72,6 +60,17 @@ export default function AnalysisView() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [slidesLoading, setSlidesLoading] = useState(false);
   const [variancePptLoading, setVariancePptLoading] = useState(false);
+
+  // Carregar meses disponíveis da tabela variance_justifications
+  useEffect(() => {
+    getVarianceAvailableMonths().then(months => {
+      setAvailableMonths(months);
+      // Selecionar o mês mais recente por default (primeiro do array, já vem desc)
+      if (months.length > 0 && !selectedMonth) {
+        setSelectedMonth(months[0]);
+      }
+    }).catch(err => console.error('Erro ao carregar meses disponíveis:', err));
+  }, []);
 
   // Carregar marcas/filiais via RPC leve (SELECT DISTINCT — dezenas de rows)
   useEffect(() => {
@@ -298,7 +297,7 @@ export default function AnalysisView() {
               <MultiSelectFilter
                 label="MÊS"
                 icon={<CalendarDays size={12} />}
-                options={MONTHS_OPTIONS}
+                options={availableMonths}
                 selected={selectedMonth ? [selectedMonth] : []}
                 onChange={sel => setSelectedMonth(sel.length > 0 ? sel[sel.length - 1] : '')}
                 colorScheme="purple"

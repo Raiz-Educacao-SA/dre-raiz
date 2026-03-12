@@ -3032,6 +3032,18 @@ export const getVarianceJustifications = async (
  * Retorna a versão mais recente de variance_justifications para um year_month.
  * Se marcas fornecidas, filtra por marca. Retorna 0 se nenhuma foto existe.
  */
+/**
+ * Retorna os year_month distintos que possuem registros em variance_justifications.
+ */
+export const getVarianceAvailableMonths = async (): Promise<string[]> => {
+  const { data, error } = await supabase
+    .from('variance_justifications')
+    .select('year_month')
+    .order('year_month', { ascending: false });
+  if (error || !data) return [];
+  return [...new Set(data.map((d: any) => d.year_month))].sort().reverse();
+};
+
 export const getLatestVarianceVersion = async (
   yearMonth: string,
   marcas?: string[],
