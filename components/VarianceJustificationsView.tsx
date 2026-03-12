@@ -402,10 +402,10 @@ const VarianceJustificationsView: React.FC = () => {
       }
     }
 
-    // ── Recalcular pais quando filtro de marca ativo (YTD) ──
-    // Agrega diretamente dos ytdItems fonte (marca=filterMarcas) — independe de drill-down
-    if (filterMarcas.length > 0) {
-      const marcaYtd = ytdItems.filter(i => filterMarcas.includes(i.marca || '') && isDrePrefix(i.tag0));
+    // ── Recalcular pais quando filtro de marca ativo (YTD — seleção ou permissão) ──
+    // Agrega diretamente dos ytdItems fonte (marca=effectiveMarcas) — independe de drill-down
+    if (effectiveMarcas.length > 0) {
+      const marcaYtd = ytdItems.filter(i => effectiveMarcas.includes(i.marca || '') && isDrePrefix(i.tag0));
 
       // Indexar por (tag0, tag01, tag02) — somar real por mês (dedup) e compares
       type YtdMarcaAgg = { realByMonth: Map<string, number>; orc: number; a1: number };
@@ -496,7 +496,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterYtd('03.', makeYtdCalc('MARGEM DE CONTRIBUIÇÃO', mRy, mOy, mAy));
 
     return rows;
-  }, [ytdItems, ytdExpandedNodes, filterMarcas]);
+  }, [ytdItems, ytdExpandedNodes, filterMarcas, effectiveMarcas]);
 
   // YTD stats
   const ytdStats = useMemo(() => {
@@ -537,7 +537,7 @@ const VarianceJustificationsView: React.FC = () => {
 
       const summary = await generateVarianceSummary('ytd', summaryItems, {
         parentLabel: `${tag0} > ${tag01}`,
-        marca: filterMarcas.length > 0 ? filterMarcas[0] : undefined,
+        marca: effectiveMarcas.length > 0 ? effectiveMarcas[0] : undefined,
       });
 
       setYtdSummaries(prev => ({ ...prev, [key]: summary }));
@@ -732,10 +732,10 @@ const VarianceJustificationsView: React.FC = () => {
       }
     }
 
-    // ── Recalcular pais quando filtro de marca ativo ──
-    // Agrega diretamente dos items fonte (marca=filterMarcas) — independe de drill-down aberto
-    if (filterMarcas.length > 0) {
-      const marcaItems = dreItems.filter(i => filterMarcas.includes(i.marca || ''));
+    // ── Recalcular pais quando filtro de marca ativo (seleção ou permissão) ──
+    // Agrega diretamente dos items fonte (marca=effectiveMarcas) — independe de drill-down aberto
+    if (effectiveMarcas.length > 0) {
+      const marcaItems = dreItems.filter(i => effectiveMarcas.includes(i.marca || ''));
 
       // Indexar marcaItems por (tag0, tag01, tag02, compType)
       type MarcaAgg = { real: number; orc: number; a1: number };
@@ -832,7 +832,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterPrefix('03.', makeCalc('MARGEM DE CONTRIBUIÇÃO', mR, mO, mA));
 
     return rows;
-  }, [items, expandedNodes, filterMarcas]);
+  }, [items, expandedNodes, filterMarcas, effectiveMarcas]);
 
   // ── Stats ──
 
@@ -865,7 +865,7 @@ const VarianceJustificationsView: React.FC = () => {
       const response = await fetch('/api/agent-team/notifications?action=variance-notify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ yearMonth, marca: filterMarcas.length > 0 ? filterMarcas[0] : undefined }),
+        body: JSON.stringify({ yearMonth, marca: effectiveMarcas.length > 0 ? effectiveMarcas[0] : undefined }),
       });
       const result = await response.json();
       if (result.sent) {
