@@ -12,16 +12,35 @@ interface MultiSelectFilterProps {
   onChange: (newSelection: string[]) => void;
   colorScheme: 'blue' | 'orange' | 'purple';
   compact?: boolean;
+  /** Quando fornecido, busca remota sob demanda (digitar + Enter/botão) */
+  onSearch?: (term: string) => Promise<string[]>;
+  /** Placeholder customizado para o campo de busca */
+  searchPlaceholder?: string;
 }
 
 const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
-  ({ label, icon, options, selected, onChange, colorScheme, compact = false }) => {
+  ({ label, icon, options, selected, onChange, colorScheme, compact = false, onSearch, searchPlaceholder }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
     const [search, setSearch] = useState('');
+    const [remoteOptions, setRemoteOptions] = useState<string[]>([]);
+    const [searching, setSearching] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const buttonRef   = useRef<HTMLDivElement>(null);
     const searchRef   = useRef<HTMLInputElement>(null);
+
+    const isRemote = !!onSearch;
+
+    const doRemoteSearch = async () => {
+      if (!onSearch || search.trim().length < 2) return;
+      setSearching(true);
+      try {
+        const results = await onSearch(search.trim());
+        setRemoteOptions(results);
+      } finally {
+        setSearching(false);
+      }
+    };
 
     const colors = {
       blue: {
@@ -74,9 +93,11 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
       setIsOpen(v => !v);
     };
 
-    const filteredOptions = search.trim()
-      ? options.filter(o => o.toLowerCase().includes(search.toLowerCase()))
-      : options;
+    const filteredOptions = isRemote
+      ? (remoteOptions.length > 0 ? remoteOptions : (selected.length > 0 ? selected : []))
+      : (search.trim()
+        ? options.filter(o => o.toLowerCase().includes(search.toLowerCase()))
+        : options);
 
     return (
       <div ref={dropdownRef} className="relative">
@@ -144,7 +165,7 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
             </div>
 
             {/* Busca */}
-            {options.length > 6 && (
+            {(isRemote || options.length > 6) && (
               <div className="px-2 py-1.5 border-b border-gray-100 bg-white">
                 <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded px-2 py-1">
                   <Search size={11} className="text-gray-400 shrink-0" />
@@ -153,11 +174,24 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
                     type="text"
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    placeholder="Buscar..."
+                    onKeyDown={e => { if (isRemote && e.key === 'Enter') doRemoteSearch(); }}
+                    placeholder={searchPlaceholder || (isRemote ? 'Digite e pressione Enter...' : 'Buscar...')}
                     className="flex-1 bg-transparent text-[11px] text-gray-700 outline-none placeholder-gray-400 min-w-0"
                   />
-                  {search && (
+                  {isRemote && (
+                    <button
+                      onClick={doRemoteSearch}
+                      disabled={searching || search.trim().length < 2}
+                      className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                    >
+                      {searching ? '...' : 'Buscar'}
+                    </button>
+                  )}
+                  {search && !isRemote && (
                     <button onClick={() => setSearch('')} className="text-gray-400 hover:text-gray-600 text-[10px] leading-none">✕</button>
+                  )}
+                  {search && isRemote && (
+                    <button onClick={() => { setSearch(''); setRemoteOptions([]); }} className="text-gray-400 hover:text-gray-600 text-[10px] leading-none">✕</button>
                   )}
                 </div>
               </div>
@@ -183,7 +217,9 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
               })}
               {filteredOptions.length === 0 && (
                 <div className="px-3 py-4 text-xs text-gray-400 text-center">
-                  {search ? `Nenhum resultado para "${search}"` : 'Nenhuma opção'}
+                  {isRemote
+                    ? (searching ? 'Buscando...' : search.trim().length < 2 ? 'Digite ao menos 2 letras e clique Buscar' : `Nenhum resultado para "${search}"`)
+                    : (search ? `Nenhum resultado para "${search}"` : 'Nenhuma opção')}
                 </div>
               )}
             </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Suspense } from 'react';
 import {
   FileText,
   ListChecks,
@@ -31,7 +31,7 @@ type TabType = 'justificativas' | 'summary' | 'actions' | 'slides' | 'agentes';
 
 export default function AnalysisView() {
   const { isAdmin } = useAuth();
-  const { allowedMarcas, allowedFiliais, hasPermissions } = usePermissions();
+  const { allowedMarcas, allowedFiliais, allowedTag01, hasPermissions } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const saved = localStorage.getItem('analysisActiveTab') as TabType | null;
@@ -115,17 +115,39 @@ export default function AnalysisView() {
     return [];
   }, [selectedMarcas, allowedMarcas, hasPermissions]);
 
+  // Tag01 efetivas (permissões — sem seletor manual nesta view)
+  const effectiveTag01 = useMemo(() => {
+    if (hasPermissions && allowedTag01.length > 0) return allowedTag01;
+    return [];
+  }, [allowedTag01, hasPermissions]);
+
+  // Helper: filtrar items por tag01 (permissões).
+  // REMOVE rows tag0-level (tag01 vazio) para forçar prepareVariancePptData a
+  // recalcular os totais a partir dos filhos filtrados (evita totais consolidados
+  // de todas tag01 aparecendo nos slides de CUSTOS, SG&A etc.)
+  const filterByTag01 = useCallback((items: any[]) => {
+    if (effectiveTag01.length === 0) return items;
+    return items.filter(i =>
+      i.tag01 && effectiveTag01.includes(i.tag01)
+    );
+  }, [effectiveTag01]);
+
   // Helper: buscar snapshot do variance_justifications e montar contexto
   const fetchSnapshotContext = async () => {
     const marca = effectiveMarcas.length > 0 ? effectiveMarcas[0] : undefined;
-    const items = await getVarianceJustifications({
+    const rawItems = await getVarianceJustifications({
       year_month: selectedMonth,
       marca,
     });
+    const items = filterByTag01(rawItems);
     if (!items || items.length === 0) {
       throw new Error(`Nenhum snapshot encontrado para ${selectedMonth}${marca ? ` / ${marca}` : ''}. Gere os desvios primeiro na aba Justificativas.`);
     }
-    return buildContextFromSnapshot(items, { year_month: selectedMonth, marca });
+    return buildContextFromSnapshot(items, {
+      year_month: selectedMonth,
+      marca,
+      filteredTag01: effectiveTag01.length > 0 ? effectiveTag01 : undefined,
+    });
   };
 
   // Helper: chamar API de IA com contexto
@@ -167,9 +189,11 @@ export default function AnalysisView() {
     try {
       // Step 1: Fetch data — live RPCs when marca selected, snapshot otherwise
       const hasMarca = effectiveMarcas.length > 0;
-      const items = hasMarca
+      const rawItems = hasMarca
         ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0])
         : await getVarianceJustifications({ year_month: selectedMonth });
+      // Step 1b: Apply tag01 permissions filter
+      const items = filterByTag01(rawItems);
       if (!items || items.length === 0) {
         alert(hasMarca
           ? 'Nenhum dado encontrado para essa marca/periodo. Verifique se existem lancamentos.'
@@ -194,8 +218,8 @@ export default function AnalysisView() {
         })(),
         (async () => {
           try {
-            if (allMarcas.length === 0) return null;
-            return await fetchMarcaBreakdown(selectedMonth, allMarcas, selectedMarcas.length > 0 ? selectedMarcas : null);
+            if (permittedMarcas.length === 0) return null;
+            return await fetchMarcaBreakdown(selectedMonth, permittedMarcas, effectiveMarcas.length > 0 ? effectiveMarcas : null, effectiveTag01.length > 0 ? effectiveTag01 : null);
           } catch (err) {
             console.warn('Marca breakdown skipped:', err);
             return null;
@@ -224,16 +248,17 @@ export default function AnalysisView() {
 
       // If no preview loaded, run full pipeline
       if (!data) {
-        const hasMarca = selectedMarcas.length > 0;
-        const items = hasMarca
-          ? await fetchLiveDreForPpt(selectedMonth, selectedMarcas[0])
+        const hasMarca = effectiveMarcas.length > 0;
+        const rawItems = hasMarca
+          ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0])
           : await getVarianceJustifications({ year_month: selectedMonth });
+        const items = filterByTag01(rawItems);
         if (!items || items.length === 0) {
           alert('Nenhum dado encontrado para o periodo selecionado.');
           return;
         }
         const { prepareVariancePptData } = await import('../services/variancePptDataService');
-        data = prepareVariancePptData(items, selectedMonth, selectedMarcas.length > 0 ? selectedMarcas.join(', ') : null);
+        data = prepareVariancePptData(items, selectedMonth, effectiveMarcas.length > 0 ? effectiveMarcas.join(', ') : null);
 
         const [, breakdown] = await Promise.all([
           (async () => {
@@ -248,7 +273,7 @@ export default function AnalysisView() {
           (async () => {
             try {
               if (permittedMarcas.length === 0) return null;
-              return await fetchMarcaBreakdown(selectedMonth, permittedMarcas, effectiveMarcas.length > 0 ? effectiveMarcas : null);
+              return await fetchMarcaBreakdown(selectedMonth, permittedMarcas, effectiveMarcas.length > 0 ? effectiveMarcas : null, effectiveTag01.length > 0 ? effectiveTag01 : null);
             } catch (err) {
               console.warn('Marca breakdown skipped:', err);
               return null;

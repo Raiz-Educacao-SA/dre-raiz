@@ -394,6 +394,16 @@ export const getTag03OptionsForTag01s = async (tags01: string[]): Promise<string
   return (data as string[]) || [];
 };
 
+/**
+ * Busca fornecedores por texto (ILIKE) — retorna até 50 resultados
+ */
+export const searchVendors = async (search: string): Promise<string[]> => {
+  if (!search || search.trim().length < 2) return [];
+  const { data, error } = await supabase.rpc('search_vendors', { p_search: search.trim() });
+  if (error || !data) return [];
+  return data as string[];
+};
+
 export const getFiliais = async (): Promise<FilialOption[]> => {
   debug('🔍 [MARCA] getFiliais() CHAMADO');
 
@@ -679,6 +689,7 @@ export const getSomaTags = async (
   tags01?: string[],
   recurring?: string,
   tags03?: string[],
+  vendor?: string[],
 ): Promise<SomaTagsRow[]> => {
   // Validar parâmetros antes de enviar ao RPC
   const parsed = somaTagsParamsSchema.safeParse({ monthFrom, monthTo, marcas, nomeFiliais, tags02, tags01, recurring, tags03 });
@@ -687,7 +698,7 @@ export const getSomaTags = async (
     return [];
   }
   // Cache: gerar chave determinística a partir dos params
-  const cacheKey = JSON.stringify([monthFrom, monthTo, marcas?.sort(), nomeFiliais?.sort(), tags02?.sort(), tags01?.sort(), recurring, tags03?.sort()]);
+  const cacheKey = JSON.stringify([monthFrom, monthTo, marcas?.sort(), nomeFiliais?.sort(), tags02?.sort(), tags01?.sort(), recurring, tags03?.sort(), vendor?.sort()]);
   const cached = _somaTagsCache[cacheKey];
   if (cached && Date.now() - cached.ts < SOMA_TAGS_TTL) {
     return cached.data;
@@ -696,8 +707,10 @@ export const getSomaTags = async (
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s para evitar abort prematuro
   try {
-    const { data, error } = await supabase
-      .rpc('get_soma_tags', {
+    // Usar função separada quando vendor está ativo para não alterar get_soma_tags original
+    const hasVendor = vendor && vendor.length > 0;
+    const rpcName = hasVendor ? 'get_soma_tags_by_vendor' : 'get_soma_tags';
+    const rpcParams: Record<string, any> = {
         p_month_from:   monthFrom   || null,
         p_month_to:     monthTo     || null,
         p_marcas:       marcas      && marcas.length      > 0 ? marcas      : null,
@@ -706,7 +719,12 @@ export const getSomaTags = async (
         p_tags01:       tags01      && tags01.length      > 0 ? tags01      : null,
         p_recurring:    recurring   || null,
         p_tags03:       tags03      && tags03.length      > 0 ? tags03      : null,
-      })
+    };
+    if (hasVendor) {
+      rpcParams.p_vendor = vendor;
+    }
+    const { data, error } = await supabase
+      .rpc(rpcName, rpcParams)
       .abortSignal(controller.signal);
     clearTimeout(timeoutId);
     if (error) {
@@ -4259,6 +4277,7 @@ export async function fetchMarcaBreakdown(
   yearMonth: string,
   allMarcas: string[],
   filterMarcas?: string[] | null,
+  filterTag01?: string[] | null,
 ): Promise<Record<string, VariancePptMarcaEntry[]>> {
   const marcas = filterMarcas && filterMarcas.length > 0 ? filterMarcas : allMarcas;
   if (marcas.length === 0) return {};
@@ -4267,6 +4286,7 @@ export async function fetchMarcaBreakdown(
     p_month: yearMonth,
     p_marcas: marcas,
     p_recurring: 'Sim',
+    ...(filterTag01 && filterTag01.length > 0 ? { p_tags01: filterTag01 } : {}),
   });
 
   if (error) {

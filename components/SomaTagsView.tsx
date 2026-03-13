@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { getSomaTags, invalidateSomaTagsCache, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow, generateSnapshotFromDre } from '../services/supabaseService';
-import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator, ChevronsDown, ChevronsUp, GripVertical, Camera } from 'lucide-react';
+import { getSomaTags, invalidateSomaTagsCache, getDREFilterOptions, getTag02Options, getTag02OptionsForTag01s, getTag01sForTag02s, getTag03Options, getTag03OptionsForTag02s, searchVendors, SomaTagsRow, DREFilterOptions, getDREDimension, DREDimensionRow, generateSnapshotFromDre } from '../services/supabaseService';
+import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, Square, Flag, Building2, FilterX, CalendarDays, Columns, Activity, Layers, X, ArrowDownAZ, Table2, LayoutGrid, Maximize2, Minimize2, Calculator, ChevronsDown, ChevronsUp, GripVertical, Camera, Store } from 'lucide-react';
 // ExcelJS carregado sob demanda em exportExcel() via dynamic import
 import type ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
@@ -184,6 +184,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [selectedTags03,  setSelectedTags03]  = useState<string[]>([]);
   const [tag03Options,    setTag03Options]    = useState<string[]>([]);
   const allTag03OptionsRef = useRef<string[]>([]);
+  const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
   const [selectedFiliais, setSelectedFiliais] = useState<string[]>([]);
   const [selectedTags01,  setSelectedTags01]  = useState<string[]>([]);
   const filialCleanupRef = useRef(false);
@@ -249,6 +250,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const filiaisRef        = useRef(selectedFiliais);
   const tags02Ref     = useRef(selectedTags02);
   const tags03Ref     = useRef(selectedTags03);
+  const vendorsRef    = useRef(selectedVendors);
   const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
   const allowedMarcasRef = useRef<string[] | undefined>(allowedMarcas);
   useEffect(() => { yearRef.current           = year;            }, [year]);
@@ -257,6 +259,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   useEffect(() => { filiaisRef.current   = selectedFiliais; }, [selectedFiliais]);
   useEffect(() => { tags02Ref.current    = selectedTags02;  }, [selectedTags02]);
   useEffect(() => { tags03Ref.current    = selectedTags03;  }, [selectedTags03]);
+  useEffect(() => { vendorsRef.current   = selectedVendors; }, [selectedVendors]);
   useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
   useEffect(() => { allowedMarcasRef.current = allowedMarcas; }, [allowedMarcas]);
 
@@ -391,9 +394,10 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       const filiais  = selectedFiliais.length > 0 ? selectedFiliais : undefined;
       const tags02   = selectedTags02.length  > 0 ? selectedTags02  : undefined;
       const tags03   = selectedTags03.length  > 0 ? selectedTags03  : undefined;
+      const vendors  = selectedVendors.length > 0 ? selectedVendors : undefined;
       const tags01Perm = allowedTag01 && allowedTag01.length > 0 ? allowedTag01 : undefined;
       const [data, opts, t02, t03] = await Promise.all([
-        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm, recurring ?? undefined, tags03),
+        getSomaTags(mFrom, mTo, marcas, filiais, tags02, tags01Perm, recurring ?? undefined, tags03, vendors),
         getDREFilterOptions({ monthFrom: mFrom, monthTo: mTo }),
         allTag02OptionsRef.current.length === 0 ? getTag02Options() : Promise.resolve(allTag02OptionsRef.current),
         allTag03OptionsRef.current.length === 0 ? getTag03Options() : Promise.resolve(allTag03OptionsRef.current),
@@ -413,7 +417,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     } finally {
       setLoading(false);
     }
-  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, allowedTag01, allowedMarcas, recurring]);
+  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, selectedVendors, allowedTag01, allowedMarcas, recurring]);
 
   // Efeito único: fetchData é recriado via useCallback sempre que qualquer filtro muda.
   // filialCleanupRef evita double-fetch quando marca limpa filiais automaticamente.
@@ -449,7 +453,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // Limpa cache de drill ao trocar filtros (mantém abertura das linhas)
   useEffect(() => {
     setDimensionCache({});
-  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, recurring]);
+  }, [year, selectedMonths, selectedMarcas, selectedFiliais, selectedTags02, selectedTags03, selectedVendors, recurring]);
 
   // ── Filtro client-side por Tag01 e meses selecionados ───────────────────
   const filteredRows = useMemo(() => {
@@ -1125,7 +1129,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // ── Render helpers ────────────────────────────────────────────────────────
   const tag01Count   = displayedGroups.reduce((s, g) => s + g.items.length, 0);
   const hasOrcado    = displayedGroups.some(g => g.orcado !== 0);
-  const hasAnyFilter = selectedMarcas.length > 0 || selectedFiliais.length > 0 || selectedTags01.length > 0 || selectedTags02.length > 0 || selectedTags03.length > 0;
+  const hasAnyFilter = selectedMarcas.length > 0 || selectedFiliais.length > 0 || selectedTags01.length > 0 || selectedTags02.length > 0 || selectedTags03.length > 0 || selectedVendors.length > 0;
   const scenarioCount = [showReal, showOrcado, showA1].filter(Boolean).length;
   // Contagem para Mês: inclui deltas quando ativos
   const mesColCount = [showReal, showOrcado, showDeltaAbsOrcado, showDeltaPercOrcado, showA1, showDeltaAbsA1, showDeltaPercA1].filter(Boolean).length;
@@ -1827,6 +1831,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         <MultiSelectFilter compact label="Tag01"  icon={<Layers    size={12} />} options={filterOptions.tags01} selected={selectedTags01}  onChange={setSelectedTags01}  colorScheme="purple" />
         <MultiSelectFilter compact label="Tag02"  icon={<Layers    size={12} />} options={tag02Options}          selected={selectedTags02}  onChange={setSelectedTags02}  colorScheme="purple" />
         <MultiSelectFilter compact label="Tag03"  icon={<Layers    size={12} />} options={tag03Options}          selected={selectedTags03}  onChange={setSelectedTags03}  colorScheme="blue"   />
+        <MultiSelectFilter compact label="Fornecedor" icon={<Store size={12} />} options={[]} selected={selectedVendors} onChange={setSelectedVendors} colorScheme="orange" onSearch={searchVendors} searchPlaceholder="Digite o fornecedor..." />
 
         <div className="h-5 w-px bg-blue-200 shrink-0" />
 
@@ -1854,7 +1859,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
         {/* Limpar filtros — ícone apenas */}
         {hasAnyFilter && (
-          <button onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); setSelectedTags01([]); setSelectedTags02([]); setSelectedTags03([]); }}
+          <button onClick={() => { setSelectedMarcas([]); setSelectedFiliais([]); setSelectedTags01([]); setSelectedTags02([]); setSelectedTags03([]); setSelectedVendors([]); }}
             className="p-1.5 bg-rose-50 text-rose-500 rounded-lg border border-rose-200 hover:bg-rose-100 transition-all shadow-sm shrink-0"
             title="Limpar filtros de dimensão">
             <FilterX size={13} />
