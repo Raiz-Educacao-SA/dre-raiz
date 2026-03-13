@@ -367,6 +367,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
     const tags02  = accFilters.tag02 ? [accFilters.tag02] : (tags02Ref.current.length > 0 ? tags02Ref.current : undefined);
     const tags03  = accFilters.tag03 ? [accFilters.tag03] : (tags03Ref.current.length > 0 ? tags03Ref.current : undefined);
+    const vendors = vendorsRef.current.length > 0 ? vendorsRef.current : undefined;
     const rows = await getDREDimension({
       monthFrom: mf, monthTo: mt,
       scenario, dimension: dim,
@@ -374,6 +375,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       marcas, nomeFiliais: filiais,
       tags02, tags03,
       recurring: recurringRef.current ?? undefined,
+      vendor: vendors,
     });
     setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
   }, []);

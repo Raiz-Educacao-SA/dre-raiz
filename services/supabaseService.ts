@@ -851,6 +851,7 @@ export const getDREDimension = async (params: {
   tags03?: string[];
   tag0?: string;  // fallback: inclui contas vazias do mesmo tag0 no A-1
   recurring?: string;
+  vendor?: string[];
 }): Promise<DREDimensionRow[]> => {
   debug('📊 getDREDimension: Buscando dimensão', params.dimension, {
     tags01: params.tags01,
@@ -872,6 +873,7 @@ export const getDREDimension = async (params: {
     p_tags03: params.tags03 && params.tags03.length > 0 ? params.tags03 : null,
     p_tag0: params.tag0 || null,
     p_recurring: params.recurring || null,
+    p_vendor: params.vendor && params.vendor.length > 0 ? params.vendor : null,
   });
 
   if (error) {
