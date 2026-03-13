@@ -798,6 +798,8 @@ const VarianceJustificationsView: React.FC = () => {
       const marcaByTag01 = new Map<string, MarcaAgg>();
       const marcaByTag0 = new Map<string, MarcaAgg>();
 
+      // Agrupar por (tag0|tag01|tag02|marca) para evitar double-counting do real
+      const realAdded = new Set<string>();
       for (const item of marcaItems) {
         const val = Number(item.real_value);
         const cmp = Number(item.compare_value);
@@ -807,8 +809,14 @@ const VarianceJustificationsView: React.FC = () => {
         if (item.tag02) {
           const k2 = `${item.tag0}|${item.tag01}|${item.tag02}`;
           const cur2 = marcaByTag02.get(k2) || { real: 0, orc: 0, a1: 0 };
-          if (isOrc) { cur2.real = val; cur2.orc = cmp; }
-          else { cur2.real = val; cur2.a1 = cmp; }
+          // Acumular real apenas 1x por (tag0|tag01|tag02|marca) para não duplicar
+          const realKey = `${k2}|${item.marca}`;
+          if (!realAdded.has(realKey)) {
+            cur2.real += val;
+            realAdded.add(realKey);
+          }
+          if (isOrc) { cur2.orc += cmp; }
+          else { cur2.a1 += cmp; }
           marcaByTag02.set(k2, cur2);
         }
       }
