@@ -1681,19 +1681,25 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                 </div>
               )}
               <div className="flex items-center gap-0.5 bg-white/5 rounded px-1 py-0.5">
-                {(['todos', 'novos', 'revisados'] as const).map(f => (
-                  <button
-                    key={f}
-                    onClick={() => setReviewFilter(f)}
-                    className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest transition-colors ${
-                      reviewFilter === f
-                        ? 'bg-white text-[#152e55]'
-                        : 'text-white/50 hover:text-white/80'
-                    }`}
-                  >
-                    {f === 'novos' && newCount.unseen > 0 ? `Novos (${newCount.unseen})` : f.charAt(0).toUpperCase() + f.slice(1)}
-                  </button>
-                ))}
+                {(['todos', 'novos', 'revisados'] as const).map(f => {
+                  const disabled = (f === 'novos' && newCount.unseen === 0) || (f === 'revisados' && newCount.unseen === newCount.total_new && newCount.total_new === 0);
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => !disabled && setReviewFilter(prev => prev === f ? 'todos' : f)}
+                      disabled={disabled}
+                      className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest transition-colors ${
+                        reviewFilter === f
+                          ? 'bg-white text-[#152e55]'
+                          : disabled
+                            ? 'text-white/20 cursor-not-allowed'
+                            : 'text-white/50 hover:text-white/80'
+                      }`}
+                    >
+                      {f === 'novos' ? `Novos${newCount.unseen > 0 ? ` (${newCount.unseen})` : ''}` : f.charAt(0).toUpperCase() + f.slice(1)}
+                    </button>
+                  );
+                })}
               </div>
               <button
                 onClick={handleAdvanceWatermark}
