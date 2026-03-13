@@ -98,7 +98,7 @@ interface AggValues {
 const VarianceJustificationsView: React.FC = () => {
   const { user, isAdmin } = useAuth();
   const isAdminOrManager = isAdmin || user?.role === 'manager';
-  const { allowedMarcas, hasPermissions } = usePermissions();
+  const { allowedMarcas, allowedTag01, hasPermissions } = usePermissions();
 
   // Meses disponíveis (da tabela variance_justifications)
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
@@ -173,6 +173,12 @@ const VarianceJustificationsView: React.FC = () => {
     return [];
   }, [filterMarcas, allowedMarcas, hasPermissions]);
 
+  // Tag01 efetivas (permissões)
+  const effectiveTag01 = useMemo(() => {
+    if (hasPermissions && allowedTag01.length > 0) return allowedTag01;
+    return [];
+  }, [allowedTag01, hasPermissions]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -186,10 +192,14 @@ const VarianceJustificationsView: React.FC = () => {
       console.log('📋 Justificativas — fetchData com filtros:', filters);
       const data = await getVarianceJustifications(filters);
       console.log('📋 Justificativas — retornou', data.length, 'items. Primeiro:', data[0]);
+      // Client-side filter for tag01 permissions (keep tag0-level rows for reaggregation)
+      const tag01Filtered = effectiveTag01.length > 0
+        ? data.filter(d => !d.tag01 || effectiveTag01.includes(d.tag01))
+        : data;
       // Client-side filter for multi-status
       const filtered = filterStatuses.length > 1
-        ? data.filter(d => filterStatuses.includes(d.status))
-        : data;
+        ? tag01Filtered.filter(d => filterStatuses.includes(d.status))
+        : tag01Filtered;
       setItems(filtered);
 
       // Extract unique marcas (always from unfiltered data for dropdown options)
@@ -207,7 +217,7 @@ const VarianceJustificationsView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [yearMonth, effectiveMarcas, filterStatuses, filterType, isAdminOrManager, user?.email, hasPermissions, allowedMarcas]);
+  }, [yearMonth, effectiveMarcas, effectiveTag01, filterStatuses, filterType, isAdminOrManager, user?.email, hasPermissions, allowedMarcas]);
 
   useEffect(() => {
     fetchData();
@@ -402,6 +412,27 @@ const VarianceJustificationsView: React.FC = () => {
       }
     }
 
+    // ── Recalcular tag0 quando filtro de tag01 ativo (YTD — permissões) ──
+    if (effectiveTag01.length > 0) {
+      const ytdTag0Agg = new Map<string, { real: number; orc: number; a1: number }>();
+      for (const row of rows) {
+        if (row.depth !== 1) continue;
+        const cur = ytdTag0Agg.get(row.tag0) || { real: 0, orc: 0, a1: 0 };
+        cur.real += row.ytdReal; cur.orc += row.orcCompare; cur.a1 += row.a1Compare;
+        ytdTag0Agg.set(row.tag0, cur);
+      }
+      for (const row of rows) {
+        if (row.depth !== 0) continue;
+        const agg = ytdTag0Agg.get(row.tag0);
+        if (!agg) continue;
+        row.ytdReal = agg.real;
+        row.orcCompare = agg.orc;
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.ytdReal - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1Compare = agg.a1;
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.ytdReal - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+    }
+
     // ── Recalcular pais quando filtro de marca ativo (YTD — seleção ou permissão) ──
     // Agrega diretamente dos ytdItems fonte (marca=effectiveMarcas) — independe de drill-down
     if (effectiveMarcas.length > 0) {
@@ -496,7 +527,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterYtd('03.', makeYtdCalc('MARGEM DE CONTRIBUIÇÃO', mRy, mOy, mAy));
 
     return rows;
-  }, [ytdItems, ytdExpandedNodes, filterMarcas, effectiveMarcas]);
+  }, [ytdItems, ytdExpandedNodes, filterMarcas, effectiveMarcas, effectiveTag01]);
 
   // YTD stats
   const ytdStats = useMemo(() => {
@@ -732,6 +763,30 @@ const VarianceJustificationsView: React.FC = () => {
       }
     }
 
+    // ── Recalcular tag0 quando filtro de tag01 ativo (permissões) ──
+    if (effectiveTag01.length > 0) {
+      // Agregar tag0 a partir das rows de depth=1 (tag01) que passaram o filtro
+      const tag0Agg = new Map<string, { real: number; orc: number; a1: number }>();
+      for (const row of rows) {
+        if (row.depth !== 1) continue;
+        const cur = tag0Agg.get(row.tag0) || { real: 0, orc: 0, a1: 0 };
+        cur.real += row.real; cur.orc += row.orcCompare; cur.a1 += row.a1Compare;
+        tag0Agg.set(row.tag0, cur);
+      }
+      for (const row of rows) {
+        if (row.depth !== 0) continue;
+        const agg = tag0Agg.get(row.tag0);
+        if (!agg) continue;
+        row.real = agg.real;
+        row.orcCompare = agg.orc;
+        row.orcVarAbs = row.real - row.orcCompare;
+        row.orcVarPct = row.orcCompare !== 0 ? Math.round(((row.real - row.orcCompare) / Math.abs(row.orcCompare)) * 1000) / 10 : null;
+        row.a1Compare = agg.a1;
+        row.a1VarAbs = row.real - row.a1Compare;
+        row.a1VarPct = row.a1Compare !== 0 ? Math.round(((row.real - row.a1Compare) / Math.abs(row.a1Compare)) * 1000) / 10 : null;
+      }
+    }
+
     // ── Recalcular pais quando filtro de marca ativo (seleção ou permissão) ──
     // Agrega diretamente dos items fonte (marca=effectiveMarcas) — independe de drill-down aberto
     if (effectiveMarcas.length > 0) {
@@ -832,7 +887,7 @@ const VarianceJustificationsView: React.FC = () => {
     insertAfterPrefix('03.', makeCalc('MARGEM DE CONTRIBUIÇÃO', mR, mO, mA));
 
     return rows;
-  }, [items, expandedNodes, filterMarcas, effectiveMarcas]);
+  }, [items, expandedNodes, filterMarcas, effectiveMarcas, effectiveTag01]);
 
   // ── Stats ──
 

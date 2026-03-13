@@ -18,7 +18,7 @@ import type { VarianceJustification } from "../../services/supabaseService";
  */
 export function buildContextFromSnapshot(
   items: VarianceJustification[],
-  params?: { org_name?: string; year_month?: string; marca?: string },
+  params?: { org_name?: string; year_month?: string; marca?: string; filteredTag01?: string[] },
 ): AnalysisContext {
   const prefix = (tag0: string) => (tag0 || '').slice(0, 3);
 
@@ -71,6 +71,10 @@ export function buildContextFromSnapshot(
       // Fallback para items consolidados (sem marca) — melhor que nada
       aggregateConsolidated(allOrcItems, allA1Items, prefixMap, prefix);
     }
+  } else if (params?.filteredTag01 && params.filteredTag01.length > 0) {
+    // ═══ MODO TAG01 FILTRADO ═══
+    // Agregar a partir de depth-1 items (com tag01, sem tag02) que passaram o filtro
+    aggregateFromTag01(allOrcItems, allA1Items, prefixMap, prefix);
   } else {
     // ═══ MODO CONSOLIDADO ═══
     aggregateConsolidated(allOrcItems, allA1Items, prefixMap, prefix);
@@ -222,7 +226,13 @@ export function buildContextFromSnapshot(
   const [y, m] = ym.split('-').map(Number);
   const period_label = y && m ? `${monthNames[m - 1]}/${y}` : ym;
 
-  const scope_label = params?.marca ? `Marca: ${params.marca}` : 'Consolidado';
+  // Build scope label: marca + tag01 restrictions
+  const scopeParts: string[] = [];
+  if (params?.marca) scopeParts.push(`Marca: ${params.marca}`);
+  if (params?.filteredTag01 && params.filteredTag01.length > 0) {
+    scopeParts.push(`Centro(s) de Custo: ${params.filteredTag01.join(', ')}`);
+  }
+  const scope_label = scopeParts.length > 0 ? scopeParts.join(' | ') : 'Consolidado';
 
   return {
     org_name: params?.org_name || 'RAIZ EDUCAÇÃO',
@@ -304,5 +314,38 @@ function aggregateConsolidated(
       existing.a1 += i.compare_value || 0;
       prefixMap.set(p, existing);
     }
+  }
+}
+
+/**
+ * Agrega items depth-1 (com tag01, sem tag02/tag03) — usado quando filtro de tag01 ativo.
+ * Ignora depth-0 (consolidado de todas tag01) pois contém dados fora da permissão.
+ */
+function aggregateFromTag01(
+  orcItems: VarianceJustification[],
+  a1Items: VarianceJustification[],
+  prefixMap: Map<string, { real: number; orc: number; a1: number }>,
+  prefix: (tag0: string) => string,
+) {
+  // Orçado: depth-1 (tag01 preenchido, sem tag02/tag03)
+  const depth1Orc = orcItems.filter(i => i.tag01 && !i.tag02 && !i.tag03);
+  for (const i of depth1Orc) {
+    const p = prefix(i.tag0);
+    if (!p.match(/^\d{2}\./)) continue;
+    const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+    existing.real += i.real_value || 0;
+    existing.orc += i.compare_value || 0;
+    prefixMap.set(p, existing);
+  }
+
+  // A-1: depth-1
+  const depth1A1 = a1Items.filter(i => i.tag01 && !i.tag02 && !i.tag03);
+  for (const i of depth1A1) {
+    const p = prefix(i.tag0);
+    if (!p.match(/^\d{2}\./)) continue;
+    const existing = prefixMap.get(p) || { real: 0, orc: 0, a1: 0 };
+    if (existing.real === 0) existing.real = i.real_value || 0;
+    existing.a1 += i.compare_value || 0;
+    prefixMap.set(p, existing);
   }
 }

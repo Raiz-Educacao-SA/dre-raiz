@@ -37,12 +37,23 @@ export function buildUserPrompt(ctx: AnalysisContext) {
     }
   }
 
+  // Detect if this is a partial/filtered view
+  const isPartialScope = ctx.scope_label !== 'Consolidado';
+  const scopeInstruction = isPartialScope
+    ? `\nATENÇÃO: Este é um recorte parcial da DRE (escopo: ${ctx.scope_label}).
+- Foque APENAS no que está no escopo — NÃO mencione marcas, centros de custo ou dados fora do filtro.
+- Se o escopo é um centro de custo específico (tag01), NÃO fale de EBITDA consolidado, margem geral ou outras marcas.
+- Adapte a linguagem ao nível do recorte: se é "Alimentação dos Alunos", fale de custos de alimentação, fornecedores, sazonalidade escolar, etc.
+- Os KPIs e datasets já estão filtrados para este escopo — use-os diretamente sem extrapolar para o consolidado.`
+    : '';
+
   return `
 Crie um pacote de análise e slides para:
 - Organização: ${ctx.org_name}
 - Escopo: ${ctx.scope_label}
 - Período: ${ctx.period_label}
 - Moeda: ${ctx.currency}
+${scopeInstruction}
 
 KPIs (já calculados):
 ${JSON.stringify(ctx.kpis, null, 2)}
@@ -60,7 +71,7 @@ Instruções:
 1) Gere de 5 a 12 slides.
 2) Use pelo menos: 1 waterfall/bridge, 1 linha R12 e 1 pareto.
 3) Escreva bullets curtos (1 linha) com números quando fizer sentido.
-4) Traga ações recomendadas (com dono/ETA/impacto).
+4) Traga ações recomendadas (com dono/ETA/impacto).${isPartialScope ? '\n5) Mantenha toda a análise dentro do escopo filtrado — não extrapole para dados que o usuário não tem acesso.' : ''}
 
 Schema JSON esperado:
 {

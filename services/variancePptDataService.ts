@@ -73,7 +73,10 @@ export function prepareVariancePptData(
     else if (item.comparison_type === 'a1') a1Map.set(pk, item);
   }
 
-  // Build node from direct DB rows or aggregated children
+  // Build node from direct DB rows, children aggregation, or leaf-level items.
+  // IMPORTANT: When items have a specific marca but this node is a parent (marca=null),
+  // direct lookup may fail. In that case, prefer aggregating from already-computed
+  // children to avoid double-counting parent + child rows.
   function buildNode(
     depth: number,
     label: string,
@@ -89,25 +92,31 @@ export function prepareVariancePptData(
     const orcDirect = orcMap.get(pk) || null;
     const a1Direct = a1Map.get(pk) || null;
 
-    // Aggregate from children if no direct row
-    const aggOrc = allItems.filter(i => i.comparison_type === 'orcado');
-    const aggA1 = allItems.filter(i => i.comparison_type === 'a1');
+    let realVal: number;
+    let orcCompare: number;
+    let a1Compare: number;
 
-    const realVal = orcDirect
-      ? Number(orcDirect.real_value)
-      : a1Direct
-      ? Number(a1Direct.real_value)
-      : aggOrc.length > 0
-      ? aggOrc.reduce((s, i) => s + Number(i.real_value), 0)
-      : aggA1.reduce((s, i) => s + Number(i.real_value), 0);
-
-    const orcCompare = orcDirect
-      ? Number(orcDirect.compare_value)
-      : aggOrc.reduce((s, i) => s + Number(i.compare_value), 0);
-
-    const a1Compare = a1Direct
-      ? Number(a1Direct.compare_value)
-      : aggA1.reduce((s, i) => s + Number(i.compare_value), 0);
+    if (orcDirect || a1Direct) {
+      // Path 1: Direct match from DB/items map
+      realVal = orcDirect ? Number(orcDirect.real_value) : Number(a1Direct!.real_value);
+      orcCompare = orcDirect ? Number(orcDirect.compare_value) : 0;
+      a1Compare = a1Direct ? Number(a1Direct.compare_value) : 0;
+    } else if (children.length > 0) {
+      // Path 2: Aggregate from already-computed children (avoids double-counting
+      // parent+child rows when allItems contains multiple hierarchy levels)
+      realVal = children.reduce((s, c) => s + c.real, 0);
+      orcCompare = children.reduce((s, c) => s + c.orcCompare, 0);
+      a1Compare = children.reduce((s, c) => s + c.a1Compare, 0);
+    } else {
+      // Path 3: Leaf level — aggregate from filtered items (one comparison_type only)
+      const aggOrc = allItems.filter(i => i.comparison_type === 'orcado');
+      const aggA1 = allItems.filter(i => i.comparison_type === 'a1');
+      realVal = aggOrc.length > 0
+        ? aggOrc.reduce((s, i) => s + Number(i.real_value), 0)
+        : aggA1.reduce((s, i) => s + Number(i.real_value), 0);
+      orcCompare = aggOrc.reduce((s, i) => s + Number(i.compare_value), 0);
+      a1Compare = aggA1.reduce((s, i) => s + Number(i.compare_value), 0);
+    }
 
     return {
       depth,
@@ -192,8 +201,10 @@ export function prepareVariancePptData(
   // Calc rows: prefer DB-stored MARGEM/EBITDA items, fallback to computed
   const calcRows = computeCalcRows(sections, items, orcMap, a1Map);
 
-  // Stats: count leaves (tag02) from the original items (excluding calc rows)
-  const leaves = items.filter(i => i.tag02 !== null && !CALC_TAG0S.has(i.tag0));
+  // Stats: count leaves (tag02) from the original items (excluding calc rows).
+  // IMPORTANT: filter to ONE comparison_type only (orcado preferred) to avoid
+  // double-counting — each account has 2 rows (orcado + a1) with same real_value.
+  const leaves = items.filter(i => i.tag02 !== null && !CALC_TAG0S.has(i.tag0) && i.comparison_type === 'orcado');
   const stats = computeStats(leaves);
 
   // Version + snapshotAt

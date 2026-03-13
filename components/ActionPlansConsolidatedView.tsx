@@ -54,7 +54,7 @@ const STATUS_SORT_ORDER: Record<PlanStatus, number> = { atrasado: 0, aberto: 1, 
 // ── Component ──────────────────────────────────────────────────────────────────
 const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = ({ selectedMonth, selectedMarcas }) => {
   const { user, isAdmin } = useAuth();
-  const { allowedMarcas, hasPermissions } = usePermissions();
+  const { allowedMarcas, allowedTag01, hasPermissions } = usePermissions();
   const [plans, setPlans] = useState<ActionPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -82,13 +82,17 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
         : (hasPermissions && allowedMarcas.length > 0 ? allowedMarcas : []);
       if (effMarcas.length > 0) filters.marcas = effMarcas;
       const data = await getActionPlans(filters);
-      setPlans(data);
+      // Client-side filter by tag01 permissions
+      const tag01Filtered = (hasPermissions && allowedTag01.length > 0)
+        ? data.filter(p => !p.tag01 || allowedTag01.includes(p.tag01))
+        : data;
+      setPlans(tag01Filtered);
     } catch (err) {
       console.error('Erro ao carregar planos de ação:', err);
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, selectedMarcas, hasPermissions, allowedMarcas]);
+  }, [selectedMonth, selectedMarcas, hasPermissions, allowedMarcas, allowedTag01]);
 
   useEffect(() => { loadPlans(); }, [loadPlans]);
   useEffect(() => {
@@ -179,6 +183,8 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
       { header: 'Como', key: 'how', width: 30 },
       { header: 'Responsável', key: 'who_responsible', width: 22 },
       { header: 'Prazo', key: 'deadline', width: 14 },
+      { header: 'Real (R$)', key: 'real_value', width: 16 },
+      { header: 'Orçado (R$)', key: 'compare_value', width: 16 },
       { header: 'Desvio (R$)', key: 'variance_abs', width: 16 },
       { header: 'Desvio (%)', key: 'variance_pct', width: 12 },
       { header: 'Impacto Esperado', key: 'expected_impact', width: 30 },
@@ -196,11 +202,14 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
         status: STATUS_CONFIG[p.status].label, year_month: p.year_month, marca: p.marca || '',
         tag0: p.tag0 || '', tag01: p.tag01 || '', what: p.what, why: p.why, how: p.how || '',
         who_responsible: p.who_responsible, deadline: fmtDate(p.deadline),
+        real_value: p.real_value ?? 0, compare_value: p.compare_value ?? 0,
         variance_abs: p.variance_abs ?? 0, variance_pct: p.variance_pct ?? 0,
         expected_impact: p.expected_impact || '', justification: p.justification || '',
         progress_note: p.progress_note || '', created_at: fmtDate(p.created_at),
       });
     });
+    ws.getColumn('real_value').numFmt = '#,##0';
+    ws.getColumn('compare_value').numFmt = '#,##0';
     ws.getColumn('variance_abs').numFmt = '#,##0';
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -248,8 +257,27 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
     const cfg = STATUS_CONFIG[p.status];
     return (
       <tr>
-        <td colSpan={9} className="p-0">
+        <td colSpan={11} className="p-0">
           <div className={`mx-2 my-2 rounded-xl border ${cfg.border} ${cfg.bg} p-4`}>
+            {/* Financial Summary */}
+            <div className="flex items-center gap-3 mb-3 flex-wrap">
+              <div className="flex items-center gap-2 bg-white/90 rounded-lg border border-gray-200 px-3 py-2">
+                <span className="text-[10px] font-bold uppercase text-gray-400">Real</span>
+                <span className="text-sm font-bold text-gray-800">{p.real_value != null ? fmtBRL.format(p.real_value) : '—'}</span>
+              </div>
+              <div className="flex items-center gap-2 bg-white/90 rounded-lg border border-gray-200 px-3 py-2">
+                <span className="text-[10px] font-bold uppercase text-gray-400">{p.comparison_type === 'a1' ? 'A-1' : 'Orçado'}</span>
+                <span className="text-sm font-bold text-gray-500">{p.compare_value != null ? fmtBRL.format(p.compare_value) : '—'}</span>
+              </div>
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${(p.variance_abs ?? 0) < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                <span className="text-[10px] font-bold uppercase text-gray-400">Desvio</span>
+                <span className={`text-sm font-bold ${(p.variance_abs ?? 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {p.variance_abs != null ? fmtBRL.format(p.variance_abs) : '—'}
+                  {p.variance_pct != null && <span className="opacity-70 ml-1 text-xs">({p.variance_pct > 0 ? '+' : ''}{p.variance_pct.toFixed(1)}%)</span>}
+                </span>
+              </div>
+            </div>
+
             {/* 5W1H Cards Grid */}
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
               {/* What */}
@@ -520,8 +548,8 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
           <table className={`w-full ${dc.textSize}`}>
             <thead>
               <tr className="bg-gray-50/80 border-b border-gray-200">
-                {['Status', 'Mês', 'Marca', 'Conta / Linha', 'O que', 'Responsável', 'Prazo', 'Desvio', ''].map((h, i) => (
-                  <th key={i} className={`${dc.cellPx} ${dc.cellPy} text-left font-semibold text-gray-500 uppercase tracking-wider ${dc.kpiLabel} ${i === 7 ? 'text-right' : ''} ${i === 8 ? 'text-center w-16' : ''}`}>
+                {['Status', 'Mês', 'Marca', 'Conta / Linha', 'O que', 'Responsável', 'Prazo', 'Real', 'Orçado', 'Desvio', ''].map((h, i) => (
+                  <th key={i} className={`${dc.cellPx} ${dc.cellPy} text-left font-semibold text-gray-500 uppercase tracking-wider ${dc.kpiLabel} ${i >= 7 && i <= 9 ? 'text-right' : ''} ${i === 10 ? 'text-center w-16' : ''}`}>
                     {h}
                   </th>
                 ))}
@@ -552,6 +580,12 @@ const ActionPlansConsolidatedView: React.FC<ActionPlansConsolidatedViewProps> = 
                       <td className={`${dc.cellPx} ${dc.cellPy} text-gray-600 whitespace-nowrap`}>{p.who_responsible}</td>
                       <td className={`${dc.cellPx} ${dc.cellPy} whitespace-nowrap ${overdue ? 'text-red-600 font-bold' : 'text-gray-500'}`}>
                         {fmtDate(p.deadline)}
+                      </td>
+                      <td className={`${dc.cellPx} ${dc.cellPy} text-right whitespace-nowrap text-gray-700 font-medium`}>
+                        {p.real_value != null ? fmtBRL.format(p.real_value) : <span className="text-gray-300">—</span>}
+                      </td>
+                      <td className={`${dc.cellPx} ${dc.cellPy} text-right whitespace-nowrap text-gray-500`}>
+                        {p.compare_value != null ? fmtBRL.format(p.compare_value) : <span className="text-gray-300">—</span>}
                       </td>
                       <td className={`${dc.cellPx} ${dc.cellPy} text-right whitespace-nowrap`}>
                         {p.variance_abs != null ? (
