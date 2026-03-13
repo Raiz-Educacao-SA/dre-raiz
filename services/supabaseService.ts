@@ -3056,12 +3056,27 @@ export const getVarianceJustifications = async (
  * Retorna os year_month distintos que possuem registros em variance_justifications.
  */
 export const getVarianceAvailableMonths = async (): Promise<string[]> => {
-  const { data, error } = await supabase
-    .from('variance_justifications')
-    .select('year_month')
-    .order('year_month', { ascending: false });
-  if (error || !data) return [];
-  return [...new Set(data.map((d: any) => d.year_month))].sort().reverse();
+  // Paginar para não perder meses quando há >1000 rows na tabela
+  const PAGE = 1000;
+  const seen = new Set<string>();
+  let offset = 0;
+  let keepGoing = true;
+
+  while (keepGoing) {
+    const { data, error } = await supabase
+      .from('variance_justifications')
+      .select('year_month')
+      .order('year_month', { ascending: false })
+      .range(offset, offset + PAGE - 1);
+    if (error || !data || data.length === 0) {
+      keepGoing = false;
+    } else {
+      for (const d of data) seen.add(d.year_month);
+      keepGoing = data.length === PAGE;
+      offset += PAGE;
+    }
+  }
+  return [...seen].sort().reverse();
 };
 
 export const getLatestVarianceVersion = async (
@@ -3272,8 +3287,9 @@ export async function fetchLiveDreForPpt(
 }
 
 /**
- * Gera snapshot de desvios a partir dos dados EXATOS exibidos na DRE Gerencial.
- * Chamado pelo botão "Gerar Foto" no SomaTagsView — garante foto = tela.
+ * Gera snapshot de desvios buscando dados DIRETAMENTE das RPCs para o mês exato.
+ * Cada foto grava SOMENTE o mês informado (nunca YTD).
+ * Chamado pelo botão "Foto" no SomaTagsView.
  */
 export interface DreSnapshotGroup {
   tag0: string;
@@ -3285,7 +3301,7 @@ export interface DreSnapshotGroup {
 
 export const generateSnapshotFromDre = async (
   yearMonth: string,
-  groups: DreSnapshotGroup[],
+  _groups: DreSnapshotGroup[],
   opts: {
     marca?: string;
     depth?: 1 | 2 | 3;
@@ -3301,25 +3317,48 @@ export const generateSnapshotFromDre = async (
     const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.', '06.']);
     const isDrePrefix = (tag0: string) => DRE_PREFIXES.has((tag0 || '').slice(0, 3));
 
-    // 1. Converter groups da DRE → formato unificado (tag0+tag01, sem tag02)
-    // Estes valores SÃO os da tela — zero chance de divergência
-    const allAggData: any[] = [];
-    for (const g of groups) {
-      if (!isDrePrefix(g.tag0)) continue;
-      for (const item of g.items) {
-        // Real
-        allAggData.push({ tag0: g.tag0, tag01: item.tag01, tag02: null, tag03: null, scenario: 'Real', total_amount: item.real, marca: marca || '' });
-        // Orçado
-        if (item.orcado !== 0) allAggData.push({ tag0: g.tag0, tag01: item.tag01, tag02: null, tag03: null, scenario: 'Orçado', total_amount: item.orcado, marca: marca || '' });
-        // A-1
-        if (item.a1 !== 0) allAggData.push({ tag0: g.tag0, tag01: item.tag01, tag02: null, tag03: null, scenario: 'A-1', total_amount: item.a1, marca: marca || '' });
-      }
+    // 1. Buscar dados DIRETAMENTE da RPC get_soma_tags para o mês EXATO
+    // Garante foto isolada do mês — nunca YTD
+    const { data: somaData, error: somaError } = await supabase
+      .rpc('get_soma_tags', {
+        p_month_from: yearMonth,
+        p_month_to: yearMonth,
+        p_marcas: marca ? [marca] : null,
+        p_nome_filiais: null,
+        p_tags02: null,
+        p_tags01: null,
+        p_recurring: 'Sim',
+        p_tags03: null,
+      });
+
+    if (somaError) {
+      return { created: 0, updated: 0, version: 0, error: `get_soma_tags falhou: ${somaError.message}` };
     }
 
-    debug(`📸 DRE groups: ${allAggData.length} linhas de ${groups.length} tag0s`);
+    // Agregar soma por (tag0, tag01, scenario) — get_soma_tags retorna UNION ALL
+    // pode ter 2 rows p/ mesmo tag0+tag01+scenario (transactions + transactions_manual)
+    const somaAggMap = new Map<string, number>();
+    for (const row of (somaData || [])) {
+      if (!isDrePrefix(row.tag0)) continue;
+      // Filtrar apenas rows do mês exato (segurança extra)
+      if (row.month !== yearMonth) continue;
+      const key = `${row.tag0}|${row.tag01}|${row.scenario}`;
+      somaAggMap.set(key, (somaAggMap.get(key) || 0) + Number(row.total || 0));
+    }
+
+    // Converter mapa agregado → formato allAggData
+    const allAggData: any[] = [];
+    const seenCombos = new Set<string>();
+    for (const [key, total] of somaAggMap) {
+      const [tag0, tag01, scenario] = key.split('|');
+      allAggData.push({ tag0, tag01, tag02: null, tag03: null, scenario, total_amount: total, marca: marca || '' });
+      seenCombos.add(`${tag0}|${tag01}`);
+    }
+
+    debug(`📸 get_soma_tags (${yearMonth}): ${allAggData.length} linhas de ${seenCombos.size} combos tag0+tag01`);
 
     if (allAggData.length === 0) {
-      return { created: 0, updated: 0, version: 0, error: 'Nenhum dado na DRE para gerar foto.' };
+      return { created: 0, updated: 0, version: 0, error: `Nenhum dado retornado por get_soma_tags para ${yearMonth}. Verifique se existem lançamentos.` };
     }
 
     // 2. DETALHE tag02+marca via get_variance_snapshot (se depth >= 2)
@@ -3494,14 +3533,12 @@ export const generateSnapshotFromDre = async (
       processComparison(a1Val, 'a1');
     }
 
-    // 8. CalcRows: MARGEM, EBITDA, EBITDA TOTAL (dos groups da tela)
+    // 8. CalcRows: MARGEM, EBITDA, EBITDA TOTAL (dos dados da RPC — somaAggMap)
     const prefixTotals = new Map<string, number>();
-    for (const g of groups) {
-      if (!isDrePrefix(g.tag0)) continue;
-      const pfx = g.tag0.slice(0, 3);
-      prefixTotals.set(`${pfx}|Real`, (prefixTotals.get(`${pfx}|Real`) || 0) + g.real);
-      prefixTotals.set(`${pfx}|Orçado`, (prefixTotals.get(`${pfx}|Orçado`) || 0) + g.orcado);
-      prefixTotals.set(`${pfx}|A-1`, (prefixTotals.get(`${pfx}|A-1`) || 0) + g.a1);
+    for (const [key, total] of somaAggMap) {
+      const [tag0, , scenario] = key.split('|');
+      const pfx = tag0.slice(0, 3);
+      prefixTotals.set(`${pfx}|${scenario}`, (prefixTotals.get(`${pfx}|${scenario}`) || 0) + total);
     }
     const get = (pfx: string, sc: string) => prefixTotals.get(`${pfx}|${sc}`) || 0;
     const margemR = get('01.', 'Real') + get('02.', 'Real') + get('03.', 'Real');
