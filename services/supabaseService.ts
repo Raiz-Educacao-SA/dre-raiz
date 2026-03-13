@@ -4834,3 +4834,79 @@ export const subscribeActionPlans = (callback: () => void) => {
 
   return () => { supabase.removeChannel(channel); };
 };
+
+// ============================================
+// Review Tracking — Watermark + Seen
+// ============================================
+
+export interface NewTransactionsCount {
+  watermark: string | null;
+  total_new: number;
+  seen: number;
+  unseen: number;
+}
+
+/** Busca watermark do usuario (ultima revisao) */
+export const getUserWatermark = async (userId: string): Promise<string | null> => {
+  const { data, error } = await supabase.rpc('get_user_watermark', { p_user_id: userId });
+  if (error) {
+    console.error('Error fetching watermark:', error);
+    return null;
+  }
+  return data;
+};
+
+/** Avanca watermark para now() e limpa seen */
+export const advanceWatermark = async (userId: string): Promise<string | null> => {
+  const { data, error } = await supabase.rpc('advance_watermark', { p_user_id: userId });
+  if (error) {
+    console.error('Error advancing watermark:', error);
+    return null;
+  }
+  return data;
+};
+
+/** Marca transacoes como vistas (batch) */
+export const markTransactionsSeen = async (userId: string, transactionIds: string[]): Promise<number> => {
+  if (transactionIds.length === 0) return 0;
+  const { data, error } = await supabase.rpc('mark_transactions_seen', {
+    p_user_id: userId,
+    p_transaction_ids: transactionIds,
+  });
+  if (error) {
+    console.error('Error marking transactions seen:', error);
+    return 0;
+  }
+  return data || 0;
+};
+
+/** Desmarca transacao como vista */
+export const unmarkTransactionSeen = async (userId: string, transactionId: string): Promise<void> => {
+  const { error } = await supabase.rpc('unmark_transaction_seen', {
+    p_user_id: userId,
+    p_transaction_id: transactionId,
+  });
+  if (error) {
+    console.error('Error unmarking transaction seen:', error);
+  }
+};
+
+/** Busca IDs de transacoes ja vistas pelo usuario */
+export const getSeenTransactionIds = async (userId: string): Promise<Set<string>> => {
+  const { data, error } = await supabase.rpc('get_seen_transaction_ids', { p_user_id: userId });
+  if (error) {
+    console.error('Error fetching seen IDs:', error);
+    return new Set();
+  }
+  return new Set((data || []).map((r: { transaction_id: string }) => r.transaction_id));
+};
+
+/** Conta transacoes novas desde watermark */
+export const getNewTransactionsCount = async (userId: string): Promise<NewTransactionsCount> => {
+  const { data, error } = await supabase.rpc('get_new_transactions_count', { p_user_id: userId });
+  if (error) {
+    console.error('Error fetching new count:', error);
+    return { watermark: null, total_new: 0, seen: 0, unseen: 0 };
+  }
+  return data as NewTransactionsCount;
+};
