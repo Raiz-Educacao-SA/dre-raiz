@@ -234,17 +234,30 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     toast.success(`${newOnPage.length} lançamento(s) marcado(s) como visto(s)`);
   }, [user?.supabaseId, watermark, isTransactionNew]);
 
-  // "Revisei tudo"
+  // "Revisei tudo" / "Iniciar rastreio"
   const handleAdvanceWatermark = useCallback(async () => {
-    if (!user?.supabaseId) return;
+    if (!user?.supabaseId) {
+      console.error('Review tracking: user.supabaseId não disponível');
+      toast.error('Erro: usuário não identificado');
+      return;
+    }
+    console.log('Review tracking: avançando watermark para user', user.supabaseId);
     setLoadingReview(true);
-    const newWm = await advanceWatermark(user.supabaseId);
-    if (newWm) {
-      setWatermark(newWm);
-      setSeenIds(new Set());
-      setNewCount({ watermark: newWm, total_new: 0, seen: 0, unseen: 0 });
-      setReviewFilter('todos');
-      toast.success('Todos os lançamentos marcados como revisados');
+    try {
+      const newWm = await advanceWatermark(user.supabaseId);
+      console.log('Review tracking: resultado watermark =', newWm);
+      if (newWm) {
+        setWatermark(newWm);
+        setSeenIds(new Set());
+        setNewCount({ watermark: newWm, total_new: 0, seen: 0, unseen: 0 });
+        setReviewFilter('todos');
+        toast.success('Rastreio ativado! Novos lançamentos serão destacados a partir de agora.');
+      } else {
+        toast.error('Erro ao iniciar rastreio — verifique o console');
+      }
+    } catch (err) {
+      console.error('Review tracking error:', err);
+      toast.error('Erro ao iniciar rastreio');
     }
     setLoadingReview(false);
   }, [user?.supabaseId]);
