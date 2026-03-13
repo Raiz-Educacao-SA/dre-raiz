@@ -1,31 +1,70 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Trophy, TrendingUp, TrendingDown, AlertTriangle, Mail, Loader2, Users, Flame, Star, Eye, ArrowUpDown, Search, CheckCircle2, XCircle, ChevronDown, ChevronUp, Send, Filter } from 'lucide-react';
+import { Trophy, TrendingUp, TrendingDown, AlertTriangle, Mail, Loader2, Users, Flame, Star, Eye, ArrowUpDown, Search, CheckCircle2, XCircle, ChevronDown, ChevronUp, Send, Filter, Settings, X, Save, RotateCcw } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import type { EngagementStat, WeeklyHistory } from '../services/supabaseService';
 
 type SortField = 'name' | 'score' | 'level' | 'total_sessions_7d' | 'total_minutes_7d' | 'days_since_last_access' | 'active_days_7d' | 'last_engagement_email_at';
 type SortDir = 'asc' | 'desc';
 
-function calcWeeklyScore(minutes: number, sessions: number, activeDays: number): number {
+// --- Configuração de Engajamento ---
+interface EngagementConfig {
+  capMinutes: number;
+  capSessions: number;
+  capActiveDays: number;
+  weightMinutes: number;
+  weightSessions: number;
+  weightActiveDays: number;
+  cutCampeao: number;
+  cutEngajado: number;
+  cutModerado: number;
+}
+
+const ENGAGEMENT_CONFIG_KEY = 'engagement_config';
+
+const DEFAULT_CONFIG: EngagementConfig = {
+  capMinutes: 300,
+  capSessions: 12,
+  capActiveDays: 5,
+  weightMinutes: 50,
+  weightSessions: 25,
+  weightActiveDays: 25,
+  cutCampeao: 90,
+  cutEngajado: 60,
+  cutModerado: 35,
+};
+
+function loadConfig(): EngagementConfig {
+  try {
+    const saved = localStorage.getItem(ENGAGEMENT_CONFIG_KEY);
+    if (saved) return { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
+  } catch {}
+  return { ...DEFAULT_CONFIG };
+}
+
+function saveConfig(config: EngagementConfig) {
+  localStorage.setItem(ENGAGEMENT_CONFIG_KEY, JSON.stringify(config));
+}
+
+function calcWeeklyScore(minutes: number, sessions: number, activeDays: number, config: EngagementConfig): number {
   return Math.min(100, Math.round(
-    (Math.min(minutes, 150) / 150) * 50 +
-    (Math.min(sessions, 7) / 7) * 25 +
-    (Math.min(activeDays, 5) / 5) * 25
+    (Math.min(minutes, config.capMinutes) / config.capMinutes) * config.weightMinutes +
+    (Math.min(sessions, config.capSessions) / config.capSessions) * config.weightSessions +
+    (Math.min(activeDays, config.capActiveDays) / config.capActiveDays) * config.weightActiveDays
   ));
 }
 
-function getEngagementLevel(score: number): { level: string; color: string; bgColor: string; icon: React.ReactNode } {
-  if (score >= 75) return { level: 'Campea(o)', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', icon: <Trophy size={14} className="text-amber-500" /> };
-  if (score >= 50) return { level: 'Engajado(a)', color: 'text-green-700', bgColor: 'bg-green-50 border-green-200', icon: <Flame size={14} className="text-green-500" /> };
-  if (score >= 25) return { level: 'Moderado(a)', color: 'text-blue-700', bgColor: 'bg-blue-50 border-blue-200', icon: <Star size={14} className="text-blue-500" /> };
+function getEngagementLevel(score: number, config: EngagementConfig): { level: string; color: string; bgColor: string; icon: React.ReactNode } {
+  if (score >= config.cutCampeao) return { level: 'Campea(o)', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', icon: <Trophy size={14} className="text-amber-500" /> };
+  if (score >= config.cutEngajado) return { level: 'Engajado(a)', color: 'text-green-700', bgColor: 'bg-green-50 border-green-200', icon: <Flame size={14} className="text-green-500" /> };
+  if (score >= config.cutModerado) return { level: 'Moderado(a)', color: 'text-blue-700', bgColor: 'bg-blue-50 border-blue-200', icon: <Star size={14} className="text-blue-500" /> };
   if (score > 0) return { level: 'Iniciante', color: 'text-orange-700', bgColor: 'bg-orange-50 border-orange-200', icon: <Eye size={14} className="text-orange-500" /> };
   return { level: 'Inativo(a)', color: 'text-red-700', bgColor: 'bg-red-50 border-red-200', icon: <AlertTriangle size={14} className="text-red-500" /> };
 }
 
-function getLevelColor(score: number): string {
-  if (score >= 75) return 'bg-amber-500';
-  if (score >= 50) return 'bg-green-500';
-  if (score >= 25) return 'bg-blue-500';
+function getLevelColor(score: number, config: EngagementConfig): string {
+  if (score >= config.cutCampeao) return 'bg-amber-500';
+  if (score >= config.cutEngajado) return 'bg-green-500';
+  if (score >= config.cutModerado) return 'bg-blue-500';
   if (score > 0) return 'bg-orange-500';
   return 'bg-gray-300';
 }
@@ -75,6 +114,11 @@ const EngagementPanel: React.FC = () => {
   const [filterRole, setFilterRole] = useState<string>('all');
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
+  // Config
+  const [config, setConfig] = useState<EngagementConfig>(loadConfig);
+  const [showConfig, setShowConfig] = useState(false);
+  const [draftConfig, setDraftConfig] = useState<EngagementConfig>(config);
+
   // Selecao e envio em lote
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkSending, setBulkSending] = useState(false);
@@ -114,13 +158,13 @@ const EngagementPanel: React.FC = () => {
 
   const statsWithScore: StatWithScore[] = useMemo(() => {
     return stats.map(s => {
-      const score = calcWeeklyScore(s.total_minutes_7d, s.total_sessions_7d, s.active_days_7d);
+      const score = calcWeeklyScore(s.total_minutes_7d, s.total_sessions_7d, s.active_days_7d, config);
       const userHistory = historyByUser[s.user_id] || [];
-      const scores = userHistory.map(h => calcWeeklyScore(h.total_minutes, h.total_sessions, h.active_days));
+      const scores = userHistory.map(h => calcWeeklyScore(h.total_minutes, h.total_sessions, h.active_days, config));
       const trend = scores.length >= 2 ? scores[scores.length - 1] - scores[scores.length - 2] : 0;
       return { ...s, score, trend, weeklyScores: scores };
     });
-  }, [stats, historyByUser]);
+  }, [stats, historyByUser, config]);
 
   const sortedStats = useMemo(() => {
     let filtered = statsWithScore;
@@ -130,7 +174,7 @@ const EngagementPanel: React.FC = () => {
       filtered = filtered.filter(s => s.name?.toLowerCase().includes(term) || s.email.toLowerCase().includes(term));
     }
     if (filterLevel !== 'all') {
-      filtered = filtered.filter(s => getEngagementLevel(s.score).level === filterLevel);
+      filtered = filtered.filter(s => getEngagementLevel(s.score, config).level === filterLevel);
     }
     if (filterRole !== 'all') {
       filtered = filtered.filter(s => s.role === filterRole);
@@ -152,10 +196,10 @@ const EngagementPanel: React.FC = () => {
       if (sortDir === 'asc') return va > vb ? 1 : va < vb ? -1 : 0;
       return va < vb ? 1 : va > vb ? -1 : 0;
     });
-  }, [statsWithScore, sortField, sortDir, searchTerm, filterLevel, filterRole]);
+  }, [statsWithScore, sortField, sortDir, searchTerm, filterLevel, filterRole, config]);
 
   const summary = useMemo(() => {
-    const levels = statsWithScore.map(s => ({ ...getEngagementLevel(s.score), score: s.score }));
+    const levels = statsWithScore.map(s => ({ ...getEngagementLevel(s.score, config), score: s.score }));
     return {
       total: statsWithScore.length,
       campeoes: levels.filter(l => l.level === 'Campea(o)').length,
@@ -165,7 +209,7 @@ const EngagementPanel: React.FC = () => {
       inativos: levels.filter(l => l.level === 'Inativo(a)').length,
       avgScore: levels.length > 0 ? Math.round(levels.reduce((s, l) => s + l.score, 0) / levels.length) : 0,
     };
-  }, [statsWithScore]);
+  }, [statsWithScore, config]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -405,7 +449,7 @@ const EngagementPanel: React.FC = () => {
           </thead>
           <tbody>
             {sortedStats.map((stat) => {
-              const eng = getEngagementLevel(stat.score);
+              const eng = getEngagementLevel(stat.score, config);
               const isInactive = stat.days_since_last_access > 7;
               const isExpanded = expandedUser === stat.user_id;
               const isSelected = selectedIds.has(stat.user_id);
@@ -457,7 +501,7 @@ const EngagementPanel: React.FC = () => {
                     <td className="px-3 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <div className="w-14 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full transition-all ${getLevelColor(stat.score)}`} style={{ width: `${stat.score}%` }} />
+                          <div className={`h-full rounded-full transition-all ${getLevelColor(stat.score, config)}`} style={{ width: `${stat.score}%` }} />
                         </div>
                         <span className="text-xs font-black text-gray-700 w-6">{stat.score}</span>
                         {stat.trend !== 0 && (
@@ -474,7 +518,7 @@ const EngagementPanel: React.FC = () => {
                         {stat.weeklyScores.map((ws, i) => (
                           <div key={i} className="flex flex-col items-center gap-0.5" title={`${weekLabels[i] || `S${i+1}`}: Score ${ws}`}>
                             <div className="w-5 bg-gray-100 rounded-sm overflow-hidden relative" style={{ height: '28px' }}>
-                              <div className={`absolute bottom-0 w-full rounded-sm transition-all ${getLevelColor(ws)}`}
+                              <div className={`absolute bottom-0 w-full rounded-sm transition-all ${getLevelColor(ws, config)}`}
                                 style={{ height: `${Math.max(ws > 0 ? 10 : 0, (ws / 100) * 28)}px` }} />
                             </div>
                             <span className="text-[8px] text-gray-400 font-mono">{weekLabels[i] || ''}</span>
@@ -545,8 +589,8 @@ const EngagementPanel: React.FC = () => {
                           <div className="text-xs font-bold text-gray-500 uppercase tracking-wide pt-1">Historico Semanal</div>
                           <div className="flex gap-3 flex-wrap">
                             {userHist.map((wh, i) => {
-                              const ws = calcWeeklyScore(wh.total_minutes, wh.total_sessions, wh.active_days);
-                              const wEng = getEngagementLevel(ws);
+                              const ws = calcWeeklyScore(wh.total_minutes, wh.total_sessions, wh.active_days, config);
+                              const wEng = getEngagementLevel(ws, config);
                               const isCurrent = i === userHist.length - 1;
                               return (
                                 <div key={i} className={`border rounded-lg p-3 min-w-[120px] transition-all ${isCurrent ? 'ring-2 ring-blue-400 shadow-sm' : ''} ${wEng.bgColor}`}>
@@ -587,14 +631,151 @@ const EngagementPanel: React.FC = () => {
       {/* Legenda */}
       <div className="flex items-center gap-4 text-[10px] text-gray-400 px-1">
         <span className="font-bold uppercase">Criterios semanais (7 dias):</span>
-        <span>Tempo (50%): max 2h30</span>
-        <span>Sessoes (25%): max 7</span>
-        <span>Dias ativos (25%): max 5</span>
-        <span className="ml-auto">Clique na linha para ver historico</span>
+        <span>Tempo ({config.weightMinutes}%): max {config.capMinutes >= 60 ? `${Math.floor(config.capMinutes / 60)}h${config.capMinutes % 60 > 0 ? config.capMinutes % 60 : ''}` : `${config.capMinutes}min`}</span>
+        <span>Sessoes ({config.weightSessions}%): max {config.capSessions}</span>
+        <span>Dias ativos ({config.weightActiveDays}%): max {config.capActiveDays}</span>
+        <span className="ml-auto flex items-center gap-3">
+          <span>Clique na linha para ver historico</span>
+          <button
+            onClick={() => { setDraftConfig({ ...config }); setShowConfig(true); }}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-800 transition-colors"
+            title="Configurar parametros de engajamento"
+          >
+            <Settings size={12} /> Configurar
+          </button>
+        </span>
       </div>
+
+      {/* Modal de Configuracao */}
+      {showConfig && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowConfig(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Settings size={18} className="text-blue-600" />
+                <h3 className="text-sm font-bold text-gray-900">Configuracao de Engajamento</h3>
+              </div>
+              <button onClick={() => setShowConfig(false)} className="p-1 hover:bg-gray-100 rounded-lg transition-colors">
+                <X size={16} className="text-gray-400" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-6">
+              {/* Caps */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">Tetos Semanais (100% do eixo)</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <ConfigInput label="Minutos" value={draftConfig.capMinutes} onChange={(v) => setDraftConfig(d => ({ ...d, capMinutes: v }))} hint={`${Math.floor(draftConfig.capMinutes / 60)}h${draftConfig.capMinutes % 60 > 0 ? draftConfig.capMinutes % 60 + 'min' : ''}/sem`} />
+                  <ConfigInput label="Sessoes" value={draftConfig.capSessions} onChange={(v) => setDraftConfig(d => ({ ...d, capSessions: v }))} hint={`${draftConfig.capSessions} logins/sem`} />
+                  <ConfigInput label="Dias Ativos" value={draftConfig.capActiveDays} onChange={(v) => setDraftConfig(d => ({ ...d, capActiveDays: v }))} hint={`de 7 dias`} min={1} max={7} />
+                </div>
+              </div>
+
+              {/* Pesos */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">
+                  Pesos (soma = {draftConfig.weightMinutes + draftConfig.weightSessions + draftConfig.weightActiveDays}%)
+                  {(draftConfig.weightMinutes + draftConfig.weightSessions + draftConfig.weightActiveDays) !== 100 && (
+                    <span className="text-red-500 ml-2 normal-case">deve somar 100%</span>
+                  )}
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <ConfigInput label="Tempo %" value={draftConfig.weightMinutes} onChange={(v) => setDraftConfig(d => ({ ...d, weightMinutes: v }))} min={0} max={100} />
+                  <ConfigInput label="Sessoes %" value={draftConfig.weightSessions} onChange={(v) => setDraftConfig(d => ({ ...d, weightSessions: v }))} min={0} max={100} />
+                  <ConfigInput label="Dias %" value={draftConfig.weightActiveDays} onChange={(v) => setDraftConfig(d => ({ ...d, weightActiveDays: v }))} min={0} max={100} />
+                </div>
+              </div>
+
+              {/* Cortes de nivel */}
+              <div>
+                <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">Cortes de Nivel (score minimo)</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Trophy size={12} className="text-amber-500" />
+                      <span className="text-[11px] font-bold text-amber-700">Campeao</span>
+                    </div>
+                    <ConfigInput label="" value={draftConfig.cutCampeao} onChange={(v) => setDraftConfig(d => ({ ...d, cutCampeao: v }))} min={1} max={100} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Flame size={12} className="text-green-500" />
+                      <span className="text-[11px] font-bold text-green-700">Engajado</span>
+                    </div>
+                    <ConfigInput label="" value={draftConfig.cutEngajado} onChange={(v) => setDraftConfig(d => ({ ...d, cutEngajado: v }))} min={1} max={99} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Star size={12} className="text-blue-500" />
+                      <span className="text-[11px] font-bold text-blue-700">Moderado</span>
+                    </div>
+                    <ConfigInput label="" value={draftConfig.cutModerado} onChange={(v) => setDraftConfig(d => ({ ...d, cutModerado: v }))} min={1} max={98} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 mt-2 text-[10px] text-gray-400">
+                  <span>Iniciante: score {'>'} 0</span>
+                  <span>Inativo: score = 0</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl">
+              <button
+                onClick={() => setDraftConfig({ ...DEFAULT_CONFIG })}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                <RotateCcw size={12} /> Restaurar padrao
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowConfig(false)}
+                  className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    setConfig(draftConfig);
+                    saveConfig(draftConfig);
+                    setShowConfig(false);
+                  }}
+                  disabled={(draftConfig.weightMinutes + draftConfig.weightSessions + draftConfig.weightActiveDays) !== 100}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save size={12} /> Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+function ConfigInput({ label, value, onChange, hint, min = 1, max = 9999 }: {
+  label: string; value: number; onChange: (v: number) => void; hint?: string; min?: number; max?: number;
+}) {
+  return (
+    <div>
+      {label && <label className="text-[11px] font-semibold text-gray-500 mb-1 block">{label}</label>}
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => {
+          const v = parseInt(e.target.value) || 0;
+          onChange(Math.max(min, Math.min(max, v)));
+        }}
+        className="w-full px-3 py-2 text-sm font-bold border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-center"
+        min={min}
+        max={max}
+      />
+      {hint && <span className="text-[10px] text-gray-400 mt-0.5 block text-center">{hint}</span>}
+    </div>
+  );
+}
 
 function SummaryCard({ label, value, icon, color, onClick, active }: {
   label: string; value: number | string; icon: React.ReactNode; color: string; onClick?: () => void; active?: boolean;
