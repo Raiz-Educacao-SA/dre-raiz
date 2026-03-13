@@ -8,6 +8,7 @@ import { clearAllCache } from '../services/transactionCache';
 
 interface User {
   uid: string;
+  supabaseId: string; // UUID do Supabase users.id (diferente do Firebase uid)
   email: string;
   name: string;
   photoURL: string;
@@ -114,6 +115,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         return {
           uid: firebaseUser.uid,
+          supabaseId: dbUser.id,
           email: dbUser.email,
           name: dbUser.name,
           photoURL: firebaseUser.photoURL || '',
@@ -142,6 +144,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         return {
           uid: firebaseUser.uid,
+          supabaseId: newUser.id,
           email: newUser.email,
           name: newUser.name,
           photoURL: firebaseUser.photoURL || '',

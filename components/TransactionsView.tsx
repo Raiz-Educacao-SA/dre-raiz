@@ -191,19 +191,19 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
   // Carregar watermark e seen ao montar
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.supabaseId) return;
     const loadReviewState = async () => {
       const [wm, seen, counts] = await Promise.all([
-        getUserWatermark(user.uid),
-        getSeenTransactionIds(user.uid),
-        getNewTransactionsCount(user.uid),
+        getUserWatermark(user.supabaseId),
+        getSeenTransactionIds(user.supabaseId),
+        getNewTransactionsCount(user.supabaseId),
       ]);
       setWatermark(wm);
       setSeenIds(seen);
       setNewCount(counts);
     };
     loadReviewState();
-  }, [user?.uid]);
+  }, [user?.supabaseId]);
 
   // Verificar se transacao e "nova" (created_at > watermark E nao vista)
   const isTransactionNew = useCallback((t: Transaction): boolean => {
@@ -213,15 +213,15 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
   // Marcar transacao como vista
   const handleMarkSeen = useCallback(async (transactionId: string) => {
-    if (!user?.uid) return;
+    if (!user?.supabaseId) return;
     setSeenIds(prev => new Set([...prev, transactionId]));
     setNewCount(prev => ({ ...prev, seen: prev.seen + 1, unseen: Math.max(0, prev.unseen - 1) }));
-    await markTransactionsSeen(user.uid, [transactionId]);
-  }, [user?.uid]);
+    await markTransactionsSeen(user.supabaseId, [transactionId]);
+  }, [user?.supabaseId]);
 
   // Marcar pagina inteira como vista
   const handleMarkPageSeen = useCallback(async (transactions: Transaction[]) => {
-    if (!user?.uid || !watermark) return;
+    if (!user?.supabaseId || !watermark) return;
     const newOnPage = transactions.filter(t => isTransactionNew(t)).map(t => t.id);
     if (newOnPage.length === 0) return;
     setSeenIds(prev => {
@@ -230,15 +230,15 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       return next;
     });
     setNewCount(prev => ({ ...prev, seen: prev.seen + newOnPage.length, unseen: Math.max(0, prev.unseen - newOnPage.length) }));
-    await markTransactionsSeen(user.uid, newOnPage);
+    await markTransactionsSeen(user.supabaseId, newOnPage);
     toast.success(`${newOnPage.length} lançamento(s) marcado(s) como visto(s)`);
-  }, [user?.uid, watermark, isTransactionNew]);
+  }, [user?.supabaseId, watermark, isTransactionNew]);
 
   // "Revisei tudo"
   const handleAdvanceWatermark = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!user?.supabaseId) return;
     setLoadingReview(true);
-    const newWm = await advanceWatermark(user.uid);
+    const newWm = await advanceWatermark(user.supabaseId);
     if (newWm) {
       setWatermark(newWm);
       setSeenIds(new Set());
@@ -247,7 +247,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       toast.success('Todos os lançamentos marcados como revisados');
     }
     setLoadingReview(false);
-  }, [user?.uid]);
+  }, [user?.supabaseId]);
 
   // Estado de busca
   const [isSearching, setIsSearching] = useState(false);
