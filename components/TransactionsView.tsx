@@ -1054,6 +1054,12 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     return filteredAndSorted.reduce((sum, t) => sum + t.amount, 0);
   }, [filteredAndSorted]);
 
+  // Contar novos a partir dos dados carregados (não do RPC)
+  const localNewCount = useMemo(() => {
+    if (!watermark) return 0;
+    return transactions.filter(t => isTransactionNew(t)).length;
+  }, [transactions, watermark, isTransactionNew]);
+
 
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -1674,15 +1680,15 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           {watermark && (
             <>
               <div className="mx-2 h-4 w-px bg-white/30" />
-              {newCount.unseen > 0 && (
+              {localNewCount > 0 && (
                 <div className="flex items-center gap-1.5">
                   <Sparkles size={12} className="text-yellow-400" />
-                  <span className="text-yellow-300">{newCount.unseen} NOVO{newCount.unseen > 1 ? 'S' : ''}</span>
+                  <span className="text-yellow-300">{localNewCount} NOVO{localNewCount > 1 ? 'S' : ''}</span>
                 </div>
               )}
               <div className="flex items-center gap-0.5 bg-white/5 rounded px-1 py-0.5">
                 {(['todos', 'novos', 'revisados'] as const).map(f => {
-                  const disabled = (f === 'novos' && newCount.unseen === 0) || (f === 'revisados' && newCount.unseen === newCount.total_new && newCount.total_new === 0);
+                  const disabled = (f === 'novos' && localNewCount === 0) || (f === 'revisados' && localNewCount === newCount.total_new && newCount.total_new === 0);
                   return (
                     <button
                       key={f}
@@ -1696,14 +1702,14 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                             : 'text-white/50 hover:text-white/80'
                       }`}
                     >
-                      {f === 'novos' ? `Novos${newCount.unseen > 0 ? ` (${newCount.unseen})` : ''}` : f.charAt(0).toUpperCase() + f.slice(1)}
+                      {f === 'novos' ? `Novos${localNewCount > 0 ? ` (${localNewCount})` : ''}` : f.charAt(0).toUpperCase() + f.slice(1)}
                     </button>
                   );
                 })}
               </div>
               <button
                 onClick={handleAdvanceWatermark}
-                disabled={loadingReview || newCount.unseen === 0}
+                disabled={loadingReview || localNewCount === 0}
                 className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[9px] font-bold normal-case"
                 title="Marcar todos como revisados"
               >
