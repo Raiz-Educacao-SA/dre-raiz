@@ -100,7 +100,8 @@ const dbToTransaction = (db: DatabaseTransaction): Transaction => ({
   nat_orc: db.nat_orc || undefined,
   chave_id: db.chave_id || undefined,
   nome_filial: db.nome_filial || undefined,
-  updated_at: db.updated_at || new Date().toISOString()  // Campo obrigatório para sync
+  updated_at: db.updated_at || new Date().toISOString(),  // Campo obrigatório para sync
+  created_at: db.created_at || undefined,
 });
 
 // Converter ManualChange para formato do banco
