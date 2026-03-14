@@ -441,7 +441,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     description: '',
     amount: '',
     recurring: ['Sim'] as string[],  // Filtro padrão: apenas "Sim"
-    status: [] as string[]
+    status: [] as string[],
+    createdFrom: '',
+    createdTo: ''
   };
 
   const [colFilters, setColFilters] = useState(() => {
@@ -732,6 +734,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         vendor: colFilters.vendor || undefined,
         description: colFilters.description || undefined,
         amount: colFilters.amount || undefined,
+        createdFrom: colFilters.createdFrom || undefined,
+        createdTo: colFilters.createdTo || undefined,
       };
 
       if (allowedMarcas && allowedMarcas.length > 0) {
@@ -869,6 +873,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         vendor: colFilters.vendor || undefined,
         description: colFilters.description || undefined,
         amount: colFilters.amount || undefined,
+        createdFrom: colFilters.createdFrom || undefined,
+        createdTo: colFilters.createdTo || undefined,
       };
 
       if (allowedMarcas && allowedMarcas.length > 0) {
@@ -1605,6 +1611,29 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                 <MultiSelectFilter id="tag03" label="Tag03" options={dynamicOptions.tag03s} selected={colFilters.tag03} active={isFilterActive('tag03')} isOpen={openDropdown === 'tag03'} onToggle={() => setOpenDropdown(openDropdown === 'tag03' ? null : 'tag03')} onClear={() => setColFilters(prev => ({...prev, tag03: []}))} onToggleItem={(val) => toggleMultiFilter('tag03', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, tag03: [...new Set([...prev.tag03, ...vals])]}))} />
                 <MultiSelectFilter id="marca" label="Marca" options={dynamicOptions.marcas} selected={colFilters.marca} active={isFilterActive('marca')} isOpen={openDropdown === 'marca'} onToggle={() => setOpenDropdown(openDropdown === 'marca' ? null : 'marca')} onClear={() => setColFilters(prev => ({...prev, marca: []}))} onToggleItem={(val) => toggleMultiFilter('marca', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, marca: [...new Set([...prev.marca, ...vals])]}))} />
                 <MultiSelectFilter id="nome_filial" label="Unidade" options={dynamicOptions.filiais} selected={colFilters.nome_filial} active={isFilterActive('nome_filial')} isOpen={openDropdown === 'nome_filial'} onToggle={() => setOpenDropdown(openDropdown === 'nome_filial' ? null : 'nome_filial')} onClear={() => setColFilters(prev => ({...prev, nome_filial: []}))} onToggleItem={(val) => toggleMultiFilter('nome_filial', val)} onSelectMultiple={(vals) => setColFilters(prev => ({...prev, nome_filial: [...new Set([...prev.nome_filial, ...vals])]}))} />
+                <div className="col-span-2 space-y-0.5">
+                  <label className="text-[6.5px] font-black text-blue-500 uppercase tracking-widest leading-none flex items-center gap-1"><Clock size={7} /> Data Lançamento</label>
+                  <div className="flex gap-1">
+                    <div className={`border p-1 rounded-none text-[8px] flex items-center gap-1 flex-1 ${isFilterActive('createdFrom') ? 'bg-blue-50 border-blue-400' : 'bg-blue-50/30 border-blue-200'}`}>
+                      <span className="text-[7px] text-blue-400">De:</span>
+                      <input
+                        type="date"
+                        value={colFilters.createdFrom}
+                        onChange={e => setColFilters({...colFilters, createdFrom: e.target.value})}
+                        className="bg-transparent outline-none text-[8px] font-bold flex-1 min-w-0 text-blue-700"
+                      />
+                    </div>
+                    <div className={`border p-1 rounded-none text-[8px] flex items-center gap-1 flex-1 ${isFilterActive('createdTo') ? 'bg-blue-50 border-blue-400' : 'bg-blue-50/30 border-blue-200'}`}>
+                      <span className="text-[7px] text-blue-400">Até:</span>
+                      <input
+                        type="date"
+                        value={colFilters.createdTo}
+                        onChange={e => setColFilters({...colFilters, createdTo: e.target.value})}
+                        className="bg-transparent outline-none text-[8px] font-bold flex-1 min-w-0 text-blue-700"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Segunda linha de filtros */}

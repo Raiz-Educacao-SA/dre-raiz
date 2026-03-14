@@ -1074,6 +1074,8 @@ export interface TransactionFilters {
   recurring?: string[];
   status?: string[];
   scenario?: string;       // Para filtrar por aba (Real, Orçamento, etc)
+  createdFrom?: string;    // YYYY-MM-DD (data de lançamento de)
+  createdTo?: string;      // YYYY-MM-DD (data de lançamento até)
 }
 
 // Helper para aplicar filtros em uma query (reutilizado em paginação)
@@ -1332,6 +1334,8 @@ export const getFilteredTransactions = async (
     p_description: filters.description || null,
     p_amount: filters.amount ? parseFloat(filters.amount) || null : null,
     p_chave_id: filters.chave_id || null,
+    p_created_from: filters.createdFrom || null,
+    p_created_to: filters.createdTo || null,
     p_offset: offset,
     p_limit: limit,
     p_skip_count: skipCount,
