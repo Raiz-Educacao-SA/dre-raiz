@@ -187,7 +187,7 @@ const VarianceJustificationsView: React.FC = () => {
         marcas: effectiveMarcas.length > 0 ? effectiveMarcas : undefined,
         status: filterStatuses.length === 1 ? filterStatuses[0] : undefined,
         comparison_type: filterType || undefined,
-        owner_email: (!isAdminOrManager && user?.email) ? user.email : undefined,
+        // Não filtrar por owner_email — usuários com permissão na tag01 veem todas as justificativas
       };
       console.log('📋 Justificativas — fetchData com filtros:', filters);
       const data = await getVarianceJustifications(filters);
@@ -217,7 +217,7 @@ const VarianceJustificationsView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [yearMonth, effectiveMarcas, effectiveTag01, filterStatuses, filterType, isAdminOrManager, user?.email, hasPermissions, allowedMarcas]);
+  }, [yearMonth, effectiveMarcas, effectiveTag01, filterStatuses, filterType, hasPermissions, allowedMarcas]);
 
   useEffect(() => {
     fetchData();
@@ -1294,14 +1294,13 @@ const VarianceJustificationsView: React.FC = () => {
     const mandatory = isOrc ? row.orcMandatory : row.a1Mandatory;
     const borderCls = isOrc ? 'border-l-2 border-emerald-200/60' : 'border-l-2 border-purple-200/60';
 
-    // Quem pode justificar/editar: criador (se não aprovado) ou admin (sempre)
+    // Quem pode justificar: qualquer usuário autorizado (tag01 permission) em folhas pendentes; admin sempre
     const isOwner = row.ownerEmail === user?.email;
     const canJustify = !row.hasChildren && row.depth >= 2 && dbItem &&
-      (status === 'pending' || status === 'notified' || status === 'rejected') &&
-      (isAdmin || isOwner);
-    // Criador pode editar se status = justified (antes de aprovação)
+      (status === 'pending' || status === 'notified' || status === 'rejected');
+    // Criador pode editar se status = justified (antes de aprovação); admin também
     const canEditJustified = !row.hasChildren && row.depth >= 2 && dbItem &&
-      status === 'justified' && isOwner && !isAdmin;
+      status === 'justified' && (isOwner || isAdmin);
     const canSynthesis = row.depth <= 1 && isAdminOrManager && dbItem;
     // Só admin pode aprovar/rejeitar
     const canReview = isAdmin && dbItem && status === 'justified';
