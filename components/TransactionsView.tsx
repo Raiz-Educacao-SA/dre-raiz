@@ -26,7 +26,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction, TransactionType, TransactionStatus, ManualChange, PaginationParams, ContaContabilOption } from '../types';
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
-import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0, getManualChangesByTransactionId, getUserWatermark, advanceWatermark, markTransactionsSeen, getSeenTransactionIds, getNewTransactionsCount, type NewTransactionsCount } from '../services/supabaseService';
+import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0, getManualChangesByTransactionId } from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import ContaContabilSelector from './ContaContabilSelector';
 import { toast } from 'sonner';
@@ -42,7 +42,6 @@ import {
   ChevronDown, Check, Square, CheckSquare, TrendingUp, History,
   TrendingDown, ArrowUpRight, ArrowDownRight, AlertCircle, Search, ArrowLeft, TableProperties, Eye,
   FileText, Clock, Building2, Tag, Hash, User, Repeat, Bookmark, CreditCard, Copy,
-  EyeOff, Sparkles, CheckCheck
 } from 'lucide-react';
 
 // ─── Visibilidade de colunas ──────────────────────────────────────────────────
@@ -182,85 +181,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   // Auth para review tracking
   const { user } = useAuth();
 
-  // Review tracking — watermark + seen
-  const [watermark, setWatermark] = useState<string | null>(null);
-  const [seenIds, setSeenIds] = useState<Set<string>>(new Set());
-  const [newCount, setNewCount] = useState<NewTransactionsCount>({ watermark: null, total_new: 0, seen: 0, unseen: 0 });
-  const [reviewFilter, setReviewFilter] = useState<'todos' | 'novos' | 'revisados'>('todos');
-  const [loadingReview, setLoadingReview] = useState(false);
 
-  // Carregar watermark e seen ao montar
-  useEffect(() => {
-    if (!user?.supabaseId) return;
-    const loadReviewState = async () => {
-      const [wm, seen, counts] = await Promise.all([
-        getUserWatermark(user.supabaseId),
-        getSeenTransactionIds(user.supabaseId),
-        getNewTransactionsCount(user.supabaseId),
-      ]);
-      setWatermark(wm);
-      setSeenIds(seen);
-      setNewCount(counts);
-    };
-    loadReviewState();
-  }, [user?.supabaseId]);
-
-  // Verificar se transacao e "nova" (created_at > watermark E nao vista)
-  const isTransactionNew = useCallback((t: Transaction): boolean => {
-    if (!watermark || !t.created_at) return false;
-    return new Date(t.created_at) > new Date(watermark) && !seenIds.has(t.id);
-  }, [watermark, seenIds]);
-
-  // Marcar transacao como vista
-  const handleMarkSeen = useCallback(async (transactionId: string) => {
-    if (!user?.supabaseId) return;
-    setSeenIds(prev => new Set([...prev, transactionId]));
-    setNewCount(prev => ({ ...prev, seen: prev.seen + 1, unseen: Math.max(0, prev.unseen - 1) }));
-    await markTransactionsSeen(user.supabaseId, [transactionId]);
-  }, [user?.supabaseId]);
-
-  // Marcar pagina inteira como vista
-  const handleMarkPageSeen = useCallback(async (transactions: Transaction[]) => {
-    if (!user?.supabaseId || !watermark) return;
-    const newOnPage = transactions.filter(t => isTransactionNew(t)).map(t => t.id);
-    if (newOnPage.length === 0) return;
-    setSeenIds(prev => {
-      const next = new Set(prev);
-      newOnPage.forEach(id => next.add(id));
-      return next;
-    });
-    setNewCount(prev => ({ ...prev, seen: prev.seen + newOnPage.length, unseen: Math.max(0, prev.unseen - newOnPage.length) }));
-    await markTransactionsSeen(user.supabaseId, newOnPage);
-    toast.success(`${newOnPage.length} lançamento(s) marcado(s) como visto(s)`);
-  }, [user?.supabaseId, watermark, isTransactionNew]);
-
-  // "Revisei tudo" / "Iniciar rastreio"
-  const handleAdvanceWatermark = useCallback(async () => {
-    if (!user?.supabaseId) {
-      console.error('Review tracking: user.supabaseId não disponível');
-      toast.error('Erro: usuário não identificado');
-      return;
-    }
-    console.log('Review tracking: avançando watermark para user', user.supabaseId);
-    setLoadingReview(true);
-    try {
-      const newWm = await advanceWatermark(user.supabaseId);
-      console.log('Review tracking: resultado watermark =', newWm);
-      if (newWm) {
-        setWatermark(newWm);
-        setSeenIds(new Set());
-        setNewCount({ watermark: newWm, total_new: 0, seen: 0, unseen: 0 });
-        setReviewFilter('todos');
-        toast.success('Rastreio ativado! Novos lançamentos serão destacados a partir de agora.');
-      } else {
-        toast.error('Erro ao iniciar rastreio — verifique o console');
-      }
-    } catch (err) {
-      console.error('Review tracking error:', err);
-      toast.error('Erro ao iniciar rastreio');
-    }
-    setLoadingReview(false);
-  }, [user?.supabaseId]);
 
   // Estado de busca
   const [isSearching, setIsSearching] = useState(false);
@@ -1037,13 +958,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
           if (scenarioNormalized !== 'real' && scenarioNormalized !== '') return false;
         }
-        // Filtro de revisão (novos/revisados)
-        if (reviewFilter === 'novos') {
-          return isTransactionNew(t);
-        }
-        if (reviewFilter === 'revisados') {
-          return !isTransactionNew(t);
-        }
         return true;
       })
       .sort((a, b) => {
@@ -1054,17 +968,12 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         }
         return sortConfig.direction === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
       });
-  }, [transactions, sortConfig, activeTab, reviewFilter, isTransactionNew]);
+  }, [transactions, sortConfig, activeTab]);
 
   const totalAmount = useMemo(() => {
     return filteredAndSorted.reduce((sum, t) => sum + t.amount, 0);
   }, [filteredAndSorted]);
 
-  // Contar novos a partir dos dados carregados (não do RPC)
-  const localNewCount = useMemo(() => {
-    if (!watermark) return 0;
-    return transactions.filter(t => isTransactionNew(t)).length;
-  }, [transactions, watermark, isTransactionNew]);
 
 
   const parentRef = useRef<HTMLDivElement>(null);
@@ -1705,61 +1614,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
             <Calculator size={14} className="text-[#4AC8F4]" />
             <span>TOTAL: <span className="text-[#4AC8F4]">R$ {totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></span>
           </div>
-          {/* Review tracking — badge novos + filtro + botão revisei tudo */}
-          {watermark && (
-            <>
-              <div className="mx-2 h-4 w-px bg-white/30" />
-              {localNewCount > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <Sparkles size={12} className="text-yellow-400" />
-                  <span className="text-yellow-300">{localNewCount} NOVO{localNewCount > 1 ? 'S' : ''}</span>
-                </div>
-              )}
-              <div className="flex items-center gap-0.5 bg-white/5 rounded px-1 py-0.5">
-                {(['todos', 'novos', 'revisados'] as const).map(f => {
-                  const disabled = (f === 'novos' && localNewCount === 0) || (f === 'revisados' && localNewCount === newCount.total_new && newCount.total_new === 0);
-                  return (
-                    <button
-                      key={f}
-                      onClick={() => !disabled && setReviewFilter(prev => prev === f ? 'todos' : f)}
-                      disabled={disabled}
-                      className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest transition-colors ${
-                        reviewFilter === f
-                          ? 'bg-white text-[#152e55]'
-                          : disabled
-                            ? 'text-white/20 cursor-not-allowed'
-                            : 'text-white/50 hover:text-white/80'
-                      }`}
-                    >
-                      {f === 'novos' ? `Novos${localNewCount > 0 ? ` (${localNewCount})` : ''}` : f.charAt(0).toUpperCase() + f.slice(1)}
-                    </button>
-                  );
-                })}
-              </div>
-              <button
-                onClick={handleAdvanceWatermark}
-                disabled={loadingReview || localNewCount === 0}
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600/80 hover:bg-emerald-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[9px] font-bold normal-case"
-                title="Marcar todos como revisados"
-              >
-                <CheckCheck size={11} />
-                Revisei tudo
-              </button>
-            </>
-          )}
-          {!watermark && hasSearchedTransactions && (
-            <>
-              <div className="mx-2 h-4 w-px bg-white/30" />
-              <button
-                onClick={handleAdvanceWatermark}
-                className="flex items-center gap-1 px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 transition-colors text-[9px] font-bold normal-case"
-                title="Iniciar rastreio de novos lançamentos"
-              >
-                <Eye size={11} />
-                Iniciar rastreio
-              </button>
-            </>
-          )}
           {totalPages > 1 && (
             <>
               <div className="mx-2 h-4 w-px bg-white/30" />
@@ -1964,18 +1818,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                     className="cursor-pointer"
                   />
                 </th>
-                {/* Coluna olhinho — review tracking */}
-                {watermark && (
-                  <th className="sticky top-0 z-[60] bg-[#1B75BB] w-8 px-1 border-b border-white/10 text-center">
-                    <button
-                      onClick={() => handleMarkPageSeen(filteredAndSorted)}
-                      className="text-white/60 hover:text-white transition-colors"
-                      title="Marcar página como vista"
-                    >
-                      <Eye size={12} />
-                    </button>
-                  </th>
-                )}
                 {visibleColDefs.map(colDef => {
                   if (colDef.key === 'acoes') {
                     return (
@@ -2000,7 +1842,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
             <tbody className="bg-white">
               {filteredAndSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={visibleColDefs.length + 1 + (watermark ? 1 : 0)} className="py-20">
+                  <td colSpan={visibleColDefs.length + 1} className="py-20">
                     <div className="text-center">
                       {!hasSearchedTransactions ? (
                         <>
@@ -2043,12 +1885,11 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                   </td>
                 </tr>
               ) : filteredAndSorted.map((t) => {
-                  const tIsNew = isTransactionNew(t);
                   return (
                   <tr
                     key={t.id}
                     onDoubleClick={() => setDetailTransaction(t)}
-                    className={`hover:bg-blue-50/50 transition-colors border-b border-gray-50 cursor-pointer ${tIsNew ? 'bg-blue-50/40' : ''}`}
+                    className="hover:bg-blue-50/50 transition-colors border-b border-gray-50 cursor-pointer"
                     title="Duplo clique para ver detalhes"
                   >
                     <td className="w-8 px-2" onClick={e => e.stopPropagation()}>
@@ -2063,24 +1904,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         className="cursor-pointer"
                       />
                     </td>
-                    {/* Olhinho — review tracking */}
-                    {watermark && (
-                      <td className="w-8 px-1 text-center" onClick={e => e.stopPropagation()}>
-                        {tIsNew ? (
-                          <button
-                            onClick={() => handleMarkSeen(t.id)}
-                            className="text-blue-400 hover:text-blue-600 transition-colors"
-                            title="Marcar como visto"
-                          >
-                            <Sparkles size={12} />
-                          </button>
-                        ) : (
-                          t.created_at && watermark && new Date(t.created_at) > new Date(watermark) ? (
-                            <EyeOff size={12} className="text-gray-300 mx-auto" title="Já visto" />
-                          ) : null
-                        )}
-                      </td>
-                    )}
                     {visibleColDefs.map(colDef => {
                       const tdS = { paddingTop: dc.cellPy, paddingBottom: dc.cellPy, paddingLeft: dc.cellPx, paddingRight: dc.cellPx };
                       const bgS = { paddingTop: dc.badgePy, paddingBottom: dc.badgePy, paddingLeft: dc.badgePx, paddingRight: dc.badgePx };
@@ -2176,7 +1999,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           <table className="w-full border-separate border-spacing-0 text-left table-fixed min-w-[900px]">
             <tfoot className="sticky bottom-0 z-50 bg-[#152e55] text-white">
               <tr className="h-10 border-t border-white/20 whitespace-nowrap">
-                <td colSpan={visibleColDefs.length + 1 + (watermark ? 1 : 0)} className="px-4 text-[10px] font-black uppercase tracking-widest bg-[#152e55]">
+                <td colSpan={visibleColDefs.length + 1} className="px-4 text-[10px] font-black uppercase tracking-widest bg-[#152e55]">
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
                        <ListOrdered size={14} className="text-[#4AC8F4]" />
