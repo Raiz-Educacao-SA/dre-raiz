@@ -119,23 +119,13 @@ const DetailModal: React.FC<DetailModalProps> = ({ change, onClose, approveChang
             </div>
           </div>
 
-          {/* Transação Original */}
+          {/* Justificativa */}
           <div>
-            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Lançamento Original</h4>
-            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-0">
-              <DetailRow label="Descrição" value={orig.description} />
-              <DetailRow label="Valor" value={`R$ ${orig.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
-              <DetailRow label="Data" value={formatDateToMMAAAA(orig.date)} />
-              <DetailRow label="Conta Contábil" value={orig.conta_contabil} />
-              <DetailRow label="Filial" value={orig.filial} />
-              <DetailRow label="Marca" value={orig.marca || '-'} />
-              <DetailRow label="Ticket" value={orig.ticket || '-'} />
-              <DetailRow label="Chave ID" value={orig.chave_id || '-'} />
-              <DetailRow label="Tag0" value={orig.tag0 || '-'} />
-              <DetailRow label="Tag01" value={orig.tag01 || '-'} />
-              <DetailRow label="Tag02" value={orig.tag02 || '-'} />
-              <DetailRow label="Vendor" value={orig.vendor || '-'} />
-              <DetailRow label="Recorrência" value={orig.recurring === 'Não' ? 'Único' : 'Recorrente'} />
+            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Justificativa</h4>
+            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+              <p className="text-xs font-medium text-gray-700 italic leading-relaxed">
+                "{justification || 'Sem justificativa detalhada.'}"
+              </p>
             </div>
           </div>
 
@@ -166,13 +156,23 @@ const DetailModal: React.FC<DetailModalProps> = ({ change, onClose, approveChang
             )}
           </div>
 
-          {/* Justificativa */}
+          {/* Lançamento Original */}
           <div>
-            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Justificativa</h4>
-            <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-              <p className="text-xs font-medium text-gray-700 italic leading-relaxed">
-                "{justification || 'Sem justificativa detalhada.'}"
-              </p>
+            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Lançamento Original</h4>
+            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-0">
+              <DetailRow label="Descrição" value={orig.description} />
+              <DetailRow label="Valor" value={`R$ ${orig.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} />
+              <DetailRow label="Data" value={formatDateToMMAAAA(orig.date)} />
+              <DetailRow label="Conta Contábil" value={orig.conta_contabil} />
+              <DetailRow label="Filial" value={orig.filial} />
+              <DetailRow label="Marca" value={orig.marca || '-'} />
+              <DetailRow label="Ticket" value={orig.ticket || '-'} />
+              <DetailRow label="Chave ID" value={orig.chave_id || '-'} />
+              <DetailRow label="Tag0" value={orig.tag0 || '-'} />
+              <DetailRow label="Tag01" value={orig.tag01 || '-'} />
+              <DetailRow label="Tag02" value={orig.tag02 || '-'} />
+              <DetailRow label="Vendor" value={orig.vendor || '-'} />
+              <DetailRow label="Recorrência" value={orig.recurring === 'Não' ? 'Único' : 'Recorrente'} />
             </div>
           </div>
 
