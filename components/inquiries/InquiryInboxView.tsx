@@ -2,14 +2,16 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Inbox, Send, Search, Filter, Clock, Zap, AlertTriangle,
   CheckCircle2, XCircle, RotateCcw, MessageCircleQuestion,
-  Loader2, ChevronDown, ArrowUpDown, ArrowDown, ArrowUp
+  Loader2, ChevronDown, ArrowUpDown, ArrowDown, ArrowUp,
+  Pencil, Trash2, Save, X
 } from 'lucide-react';
-import { getMyInquiries, getPendingInquiryCount, getAnsweredInquiryCount, subscribeInquiries } from '../../services/inquiryService';
-import type { DreInquiry, DreInquiryFilterContext } from '../../types';
+import { getMyInquiries, getPendingInquiryCount, getAnsweredInquiryCount, subscribeInquiries, deleteInquiry, updateInquiry, getSystemUsers, getAllInquiries } from '../../services/inquiryService';
+import type { DreInquiry, DreInquiryFilterContext, InquiryStatus } from '../../types';
 import InquiryThreadPanel from './InquiryThreadPanel';
 import { useAuth } from '../../contexts/AuthContext';
+import { toast } from 'sonner';
 
-type TabMode = 'recebidas' | 'enviadas';
+type TabMode = 'recebidas' | 'enviadas' | 'todas';
 type SortField = 'created_at' | 'status' | 'priority' | 'subject' | 'sla_deadline_at';
 type SortDir = 'asc' | 'desc';
 
@@ -23,8 +25,14 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   closed:   { label: 'Encerrada',  color: 'text-gray-500',    bg: 'bg-gray-50 border-gray-200',      dot: 'bg-gray-400', order: 7 },
 };
 
+const ALL_STATUSES: InquiryStatus[] = ['pending', 'answered', 'approved', 'rejected', 'reopened', 'expired', 'closed'];
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pendente', answered: 'Respondida', approved: 'Aprovada',
+  rejected: 'Devolvida', reopened: 'Reaberta', expired: 'Expirada', closed: 'Encerrada',
+};
+
 const InquiryInboxView: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const currentUser = useMemo(() => ({
     email: user?.email || '',
     name: user?.name || '',
@@ -39,13 +47,28 @@ const InquiryInboxView: React.FC = () => {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedInquiry, setSelectedInquiry] = useState<DreInquiry | null>(null);
 
+  // Admin edit/delete state
+  const [editingInquiry, setEditingInquiry] = useState<DreInquiry | null>(null);
+  const [editSubject, setEditSubject] = useState('');
+  const [editStatus, setEditStatus] = useState<InquiryStatus>('pending');
+  const [editPriority, setEditPriority] = useState<'normal' | 'urgent'>('normal');
+  const [editAssigneeEmail, setEditAssigneeEmail] = useState('');
+  const [editAssigneeName, setEditAssigneeName] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [systemUsers, setSystemUsers] = useState<Array<{ id: string; email: string; name: string; role: string }>>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
   const loadData = useCallback(async () => {
     if (!currentUser.email) return;
     setLoading(true);
-    const data = await getMyInquiries(currentUser.email);
+    // Admin vê todas, usuário normal vê só as suas
+    const data = isAdmin
+      ? await getAllInquiries()
+      : await getMyInquiries(currentUser.email);
     setAllInquiries(data);
     setLoading(false);
-  }, [currentUser.email]);
+  }, [currentUser.email, isAdmin]);
 
   useEffect(() => {
     loadData();
@@ -68,7 +91,7 @@ const InquiryInboxView: React.FC = () => {
     [allInquiries, currentUser.email]
   );
 
-  const baseList = tab === 'recebidas' ? recebidas : enviadas;
+  const baseList = tab === 'todas' ? allInquiries : tab === 'recebidas' ? recebidas : enviadas;
 
   // Status counts
   const statusCounts = useMemo(() => {
@@ -127,6 +150,65 @@ const InquiryInboxView: React.FC = () => {
   // Contadores para badges das abas
   const recebidasActionCount = recebidas.filter(i => ['pending', 'reopened', 'rejected'].includes(i.status)).length;
   const enviadasActionCount = enviadas.filter(i => i.status === 'answered').length;
+
+  // ── Admin: Edit / Delete handlers ──
+  const openEdit = async (e: React.MouseEvent, inq: DreInquiry) => {
+    e.stopPropagation();
+    setEditingInquiry(inq);
+    setEditSubject(inq.subject);
+    setEditStatus(inq.status);
+    setEditPriority(inq.priority);
+    setEditAssigneeEmail(inq.assignee_email);
+    setEditAssigneeName(inq.assignee_name);
+    if (systemUsers.length === 0) {
+      const users = await getSystemUsers();
+      setSystemUsers(users);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingInquiry) return;
+    setSavingEdit(true);
+    const updates: Record<string, unknown> = {};
+    if (editSubject !== editingInquiry.subject) updates.subject = editSubject;
+    if (editStatus !== editingInquiry.status) updates.status = editStatus;
+    if (editPriority !== editingInquiry.priority) updates.priority = editPriority;
+    if (editAssigneeEmail !== editingInquiry.assignee_email) {
+      updates.assignee_email = editAssigneeEmail;
+      updates.assignee_name = editAssigneeName;
+      updates.original_assignee_email = editingInquiry.original_assignee_email || editingInquiry.assignee_email;
+      updates.reassigned_by = currentUser.email;
+      updates.reassigned_at = new Date().toISOString();
+    }
+    if (Object.keys(updates).length === 0) {
+      toast.info('Nenhuma alteração detectada');
+      setSavingEdit(false);
+      return;
+    }
+    const ok = await updateInquiry(editingInquiry.id, updates as any);
+    if (ok) {
+      toast.success('Solicitação atualizada');
+      setEditingInquiry(null);
+      loadData();
+    } else {
+      toast.error('Erro ao atualizar');
+    }
+    setSavingEdit(false);
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    setDeletingId(id);
+    const ok = await deleteInquiry(id);
+    if (ok) {
+      toast.success('Solicitação excluída');
+      setConfirmDeleteId(null);
+      loadData();
+    } else {
+      toast.error('Erro ao excluir');
+    }
+    setDeletingId(null);
+  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -243,6 +325,24 @@ const InquiryInboxView: React.FC = () => {
             </span>
           )}
         </button>
+        {isAdmin && (
+          <button
+            onClick={() => { setTab('todas'); setFilterStatus(''); }}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+              tab === 'todas'
+                ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow-lg shadow-purple-200'
+                : 'bg-white border border-gray-200 text-gray-600 hover:border-purple-300 hover:bg-purple-50'
+            }`}
+          >
+            <Search size={14} />
+            Todas
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+              tab === 'todas' ? 'bg-white/25 text-white' : 'bg-gray-100 text-gray-500'
+            }`}>
+              {allInquiries.length}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Filters + Search */}
@@ -369,6 +469,11 @@ const InquiryInboxView: React.FC = () => {
                   <th className="px-3 py-2.5 text-center">
                     <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Ação</span>
                   </th>
+                  {isAdmin && (
+                    <th className="px-3 py-2.5 text-center">
+                      <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Admin</span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -444,6 +549,47 @@ const InquiryInboxView: React.FC = () => {
                           </span>
                         )}
                       </td>
+                      {/* Admin actions */}
+                      {isAdmin && (
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center justify-center gap-1">
+                            {confirmDeleteId === inq.id ? (
+                              <>
+                                <button
+                                  onClick={(e) => handleDelete(e, inq.id)}
+                                  disabled={deletingId === inq.id}
+                                  className="text-[8px] font-bold px-2 py-1 rounded bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 transition-all"
+                                >
+                                  {deletingId === inq.id ? <Loader2 size={10} className="animate-spin" /> : 'Sim'}
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                                  className="text-[8px] font-bold px-2 py-1 rounded bg-gray-200 text-gray-600 hover:bg-gray-300 transition-all"
+                                >
+                                  Não
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={(e) => openEdit(e, inq)}
+                                  className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-[#1B75BB] transition-all"
+                                  title="Editar"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(inq.id); }}
+                                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-all"
+                                  title="Excluir"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -485,6 +631,105 @@ const InquiryInboxView: React.FC = () => {
           onClose={() => setSelectedInquiry(null)}
           onUpdated={handleUpdated}
         />
+      )}
+
+      {/* Admin Edit Modal */}
+      {isAdmin && editingInquiry && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div className="bg-gradient-to-r from-[#1B75BB] to-[#152e55] p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Pencil size={16} className="text-white" />
+                <h3 className="text-white font-bold text-sm">Editar Solicitação #{editingInquiry.id}</h3>
+              </div>
+              <button onClick={() => setEditingInquiry(null)} className="text-white/60 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Assunto</label>
+                <input
+                  type="text"
+                  value={editSubject}
+                  onChange={e => setEditSubject(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Status</label>
+                <div className="flex flex-wrap gap-1">
+                  {ALL_STATUSES.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setEditStatus(s)}
+                      className={`text-[9px] font-bold px-2.5 py-1 rounded-full transition-all ${
+                        editStatus === s
+                          ? `${STATUS_CONFIG[s]?.bg || 'bg-gray-100'} ${STATUS_CONFIG[s]?.color || 'text-gray-500'} ring-2 ring-offset-1 ring-blue-300 border`
+                          : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                      }`}
+                    >
+                      {STATUS_LABELS[s]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Prioridade</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setEditPriority('normal')}
+                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all ${
+                      editPriority === 'normal' ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-300' : 'bg-gray-100 text-gray-400'
+                    }`}
+                  >Normal</button>
+                  <button
+                    onClick={() => setEditPriority('urgent')}
+                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
+                      editPriority === 'urgent' ? 'bg-red-100 text-red-700 ring-2 ring-red-300' : 'bg-gray-100 text-gray-400'
+                    }`}
+                  ><Zap size={10} /> Urgente</button>
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wide block mb-1">Responsável</label>
+                <select
+                  value={editAssigneeEmail}
+                  onChange={e => {
+                    const u = systemUsers.find(u => u.email === e.target.value);
+                    if (u) { setEditAssigneeEmail(u.email); setEditAssigneeName(u.name); }
+                  }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-blue-400 focus:ring-1 focus:ring-blue-400 outline-none"
+                >
+                  {!systemUsers.find(u => u.email === editAssigneeEmail) && (
+                    <option value={editAssigneeEmail}>{editAssigneeName} ({editAssigneeEmail})</option>
+                  )}
+                  {systemUsers.map(u => (
+                    <option key={u.email} value={u.email}>{u.name} ({u.email})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3 text-[10px] text-gray-400 space-y-1">
+                <p><strong>Solicitante:</strong> {editingInquiry.requester_name} ({editingInquiry.requester_email})</p>
+                <p><strong>Criação:</strong> {new Date(editingInquiry.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 p-4 flex justify-end gap-2">
+              <button
+                onClick={() => setEditingInquiry(null)}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-all"
+              >Cancelar</button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={savingEdit}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-white bg-[#1B75BB] hover:bg-[#155a90] disabled:opacity-50 transition-all flex items-center gap-1"
+              >
+                {savingEdit ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                Salvar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
