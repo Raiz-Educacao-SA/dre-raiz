@@ -16,7 +16,7 @@
     },
     {
       "path": "/api/inquiry-sla-check",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
