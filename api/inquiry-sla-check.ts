@@ -23,6 +23,7 @@ function buildSlaEmail(params: {
   subject: string;
   deepLink: string;
   hoursLeft?: number;
+  daysOverdue?: number;
 }): string {
   const safeName = escapeHtml(params.recipientName);
   const safeSender = escapeHtml(params.senderName);
@@ -44,13 +45,16 @@ function buildSlaEmail(params: {
       </div>`;
     ctaLabel = 'Responder Agora';
   } else {
-    title = 'Prazo Expirado';
+    const days = params.daysOverdue || 1;
+    const overdueText = days > 1 ? `há ${days} dias` : 'hoje';
+    title = `Prazo Expirado${days > 1 ? ` — ${days} dias` : ''}`;
     body = `
       <p style="font-size:14px;color:#374151;margin:0 0 16px;">
-        O prazo para responder a solicitação de <strong>${safeSender}</strong> expirou: <strong>${safeSubject}</strong>
+        O prazo para responder a solicitação de <strong>${safeSender}</strong> expirou <strong>${overdueText}</strong>: <strong>${safeSubject}</strong>
       </p>
-      <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;margin:0 0 16px;">
-        <p style="font-size:13px;color:#991b1b;margin:0;">Esta solicitação está atrasada. Responda imediatamente.</p>
+      <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:16px;margin:0 0 16px;">
+        <p style="font-size:13px;color:#991b1b;margin:0;font-weight:600;">Esta solicitação está atrasada${days > 1 ? ` há ${days} dias` : ''}. Responda imediatamente.</p>
+        <p style="font-size:11px;color:#991b1b;margin:8px 0 0;opacity:0.7;">Você continuará recebendo este lembrete diariamente até que a solicitação seja respondida.</p>
       </div>`;
     ctaLabel = 'Responder Agora';
   }
@@ -178,35 +182,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const deepLink = buildDeepLink(inq.id, inq.filter_context || {}, BASE_URL);
 
-      // ─── 3a. BREACH: prazo expirou e ainda não notificou ───
-      if (hoursLeft <= 0 && !inq.sla_breached) {
+      // ─── 3a. BREACH: prazo expirou — envia cobrança TODO DIA até resolver ───
+      if (hoursLeft <= 0) {
+        const daysOverdue = Math.ceil(Math.abs(hoursLeft) / 24);
         const html = buildSlaEmail({
           type: 'sla_breach',
           recipientName: inq.assignee_name,
           senderName: inq.requester_name,
           subject: inq.subject,
           deepLink,
+          daysOverdue,
         });
 
         const sent = await sendEmail(
           RESEND_KEY,
           inq.assignee_email,
-          `[DRE Raiz] ⚠️ Prazo expirado: ${inq.subject}`,
+          `[DRE Raiz] ⚠️ Prazo expirado${daysOverdue > 1 ? ` (${daysOverdue} dias)` : ''}: ${inq.subject}`,
           html,
         );
 
-        // Atualizar flag no banco
-        const { error: updateErr } = await supabase
-          .from('dre_inquiries')
-          .update({ sla_breached: true, sla_reminded: true })
-          .eq('id', inq.id);
+        // Marcar flag (primeira vez) — email continua sendo enviado diariamente
+        if (!inq.sla_breached) {
+          await supabase
+            .from('dre_inquiries')
+            .update({ sla_breached: true, sla_reminded: true })
+            .eq('id', inq.id);
+        }
 
-        if (updateErr) {
-          console.error(`Erro ao atualizar sla_breached #${inq.id}:`, updateErr);
-          results.errors++;
-        } else if (sent) {
+        if (sent) {
           results.breaches_sent++;
-          console.log(`Breach email sent to ${inq.assignee_email} for inquiry #${inq.id}`);
+          console.log(`Breach email sent to ${inq.assignee_email} for inquiry #${inq.id} (${daysOverdue}d overdue)`);
         } else {
           results.errors++;
         }
