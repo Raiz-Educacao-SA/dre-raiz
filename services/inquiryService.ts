@@ -344,6 +344,58 @@ export const getAnsweredInquiryCount = async (email: string): Promise<number> =>
   return count || 0;
 };
 
+// ── Admin: Edit & Delete ──
+
+export const deleteInquiry = async (id: number): Promise<boolean> => {
+  // Deletar mensagens primeiro (FK)
+  const { error: msgErr } = await supabase
+    .from('dre_inquiry_messages')
+    .delete()
+    .eq('inquiry_id', id);
+
+  if (msgErr) {
+    console.error('Erro ao deletar mensagens:', msgErr);
+    return false;
+  }
+
+  const { error } = await supabase
+    .from('dre_inquiries')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao deletar solicitação:', error);
+    return false;
+  }
+  return true;
+};
+
+export const updateInquiry = async (
+  id: number,
+  data: Partial<Pick<DreInquiry, 'subject' | 'question' | 'priority' | 'assignee_email' | 'assignee_name' | 'status'>>
+): Promise<boolean> => {
+  const update: Record<string, unknown> = { ...data };
+  // Se mudar status para aprovada/encerrada, setar closed_at
+  if (data.status && ['approved', 'closed'].includes(data.status)) {
+    update.closed_at = new Date().toISOString();
+  }
+  // Se reabrir, limpar closed_at
+  if (data.status && !['approved', 'closed', 'expired'].includes(data.status)) {
+    update.closed_at = null;
+  }
+
+  const { error } = await supabase
+    .from('dre_inquiries')
+    .update(update)
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao editar solicitação:', error);
+    return false;
+  }
+  return true;
+};
+
 // ── Deep Link ──
 
 export const buildInquiryDeepLink = (
