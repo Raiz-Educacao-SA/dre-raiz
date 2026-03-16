@@ -21,10 +21,12 @@ const ExecutiveDashboard = React.lazy(() => import('./components/agentTeam/Execu
 // AgentTeamView agora é aba dentro de AnalysisView
 const CronogramaPopup = React.lazy(() => import('./components/CronogramaPopup'));
 // VarianceJustificationsView agora é aba dentro de AnalysisView
+const InquiryInboxView = React.lazy(() => import('./components/inquiries/InquiryInboxView'));
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
 import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown, FileSpreadsheet } from 'lucide-react';
 import * as supabaseService from './services/supabaseService';
+import { getPendingInquiryCount, getAnsweredInquiryCount, subscribeInquiries } from './services/inquiryService';
 import { getSomaTags, SomaTagsRow } from './services/supabaseService';
 import { useAuth } from './contexts/AuthContext';
 import { usePermissions } from './hooks/usePermissions';
@@ -220,6 +222,21 @@ const App: React.FC = () => {
       .then(count => setPendingCountFast(count))
       .catch(() => {}); // silencioso — badge mostra 0 se falhar
   }, [user?.email, isApprover]);
+
+  // Badge de solicitações pendentes + respondidas (inquiries)
+  const [pendingInquiriesCount, setPendingInquiriesCount] = React.useState(0);
+  const [answeredInquiriesCount, setAnsweredInquiriesCount] = React.useState(0);
+  const refreshInquiryCounts = React.useCallback(() => {
+    if (!user?.email) return;
+    getPendingInquiryCount(user.email).then(setPendingInquiriesCount).catch(() => {});
+    getAnsweredInquiryCount(user.email).then(setAnsweredInquiriesCount).catch(() => {});
+  }, [user?.email]);
+  useEffect(() => {
+    refreshInquiryCounts();
+    if (!user?.email) return;
+    const unsub = subscribeInquiries(user.email, refreshInquiryCounts);
+    return unsub;
+  }, [user?.email, refreshInquiryCounts]);
 
   // Carregar dados completos quando navegar para Aprovações
   useEffect(() => {
@@ -903,6 +920,8 @@ const App: React.FC = () => {
               setCurrentView={setCurrentView}
               selectedBrand={selectedMarca}
               pendingCount={pendingApprovalsCount}
+              pendingInquiriesCount={pendingInquiriesCount}
+              answeredInquiriesCount={answeredInquiriesCount}
             />
           </div>
         ) : (
@@ -921,6 +940,8 @@ const App: React.FC = () => {
                 setCurrentView={setCurrentView}
                 selectedBrand={selectedMarca}
                 pendingCount={pendingApprovalsCount}
+                pendingInquiriesCount={pendingInquiriesCount}
+              answeredInquiriesCount={answeredInquiriesCount}
                 isDrawer={true}
                 onClose={() => setIsDrawerOpen(false)}
               />
@@ -1268,6 +1289,13 @@ const App: React.FC = () => {
             <ErrorBoundary fallbackMessage="Erro ao carregar CEO Dashboard">
               <Suspense fallback={<LoadingSpinner message="Carregando dashboard executivo..." />}>
                 <ExecutiveDashboard />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {currentView === 'inbox' && (
+            <ErrorBoundary fallbackMessage="Erro ao carregar Solicitações">
+              <Suspense fallback={<LoadingSpinner message="Carregando solicitações..." />}>
+                <InquiryInboxView />
               </Suspense>
             </ErrorBoundary>
           )}

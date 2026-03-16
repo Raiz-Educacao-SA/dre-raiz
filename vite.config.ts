@@ -361,6 +361,50 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
+        // Dev middleware for /api/send-inquiry-email
+        {
+          name: 'send-inquiry-email-middleware',
+          configureServer(server) {
+            server.middlewares.use('/api/send-inquiry-email', async (req: IncomingMessage, res: ServerResponse) => {
+              if (req.method === 'OPTIONS') {
+                res.writeHead(200, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' });
+                res.end();
+                return;
+              }
+              if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method not allowed' }));
+                return;
+              }
+              const chunks: Buffer[] = [];
+              for await (const chunk of req) chunks.push(chunk as Buffer);
+              const body = JSON.parse(Buffer.concat(chunks).toString());
+              try {
+                const apiKey = env.EMAIL_API_KEY || process.env.EMAIL_API_KEY || '';
+                process.env.EMAIL_API_KEY = apiKey;
+                process.env.RESEND_API_KEY = apiKey;
+                const mod = await server.ssrLoadModule('./api/send-inquiry-email.ts');
+                const mockReq = { method: 'POST', body } as any;
+                let mockResult: any = null;
+                const mockRes = {
+                  status: (code: number) => ({ json: (data: any) => { mockResult = { code, data }; return mockRes; } }),
+                } as any;
+                await mod.default(mockReq, mockRes);
+                if (mockResult) {
+                  res.writeHead(mockResult.code || 200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify(mockResult.data));
+                } else {
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: 'Handler sem resposta' }));
+                }
+              } catch (err: any) {
+                console.error('send-inquiry-email dev error:', err.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+          },
+        },
         // Dev middleware for /api/test-smtp — testa conexão SMTP
         {
           name: 'test-smtp-middleware',

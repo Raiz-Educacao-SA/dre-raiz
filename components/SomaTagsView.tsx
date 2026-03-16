@@ -4,9 +4,9 @@ import { Loader2, RefreshCw, Download, ChevronDown, ChevronRight, CheckSquare, S
 // ExcelJS carregado sob demanda em exportExcel() via dynamic import
 import type ExcelJS from 'exceljs';
 import MultiSelectFilter from './MultiSelectFilter';
-const DreAnalysisSection = React.lazy(() => import('./DreAnalysisSection'));
+import InquiryListPanel from './inquiries/InquiryListPanel';
 import { useAuth } from '../contexts/AuthContext';
-import { DreAnalysis } from '../types';
+import { DreAnalysis, DreInquiryFilterContext } from '../types';
 import { toast } from 'sonner';
 
 // ── Formatação ────────────────────────────────────────────────────────────────
@@ -2525,19 +2525,18 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         </div>
       )}
 
-      {/* ══ ANÁLISES DO RESULTADO ══ */}
+      {/* ══ SOLICITAÇÕES DE ANÁLISE ══ */}
       {authUser && !isTableFullscreen && (
-        <React.Suspense fallback={<div className="flex items-center justify-center py-8 text-gray-400"><Loader2 className="w-5 h-5 animate-spin mr-2" />Carregando análise...</div>}>
-          <DreAnalysisSection
-            filterHash={filterHash}
-            filterContext={filterContextString}
-            filterContextObj={filterContextObj}
-            somaRows={rows}
-            currentUser={authUser}
-            onRestoreFilters={handleRestoreFilters}
-          />
-        </React.Suspense>
+        <InquiryListPanel
+          filterHash={filterHash}
+          filterContext={filterContextObj as DreInquiryFilterContext}
+          filterContextLabel={filterContextString}
+          dreSnapshot={null}
+          currentUser={{ email: authUser.email, name: authUser.name }}
+          onRestoreFilters={(ctx) => handleRestoreFilters(ctx as DreAnalysis['filter_context'])}
+        />
       )}
+
     </div>
   );
 };

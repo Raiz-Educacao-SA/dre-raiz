@@ -84,7 +84,7 @@ export interface IAInsight {
   category: 'Driver Positivo' | 'Driver Negativo' | 'Ação Recomendada';
 }
 
-export type ViewType = 'dashboard' | 'dre' | 'forecasting' | 'manual_changes' | 'movements' | 'admin' | 'analysis' | 'soma_tags' | 'executive_dashboard' | 'holding_dashboard' | 'agent_team' | 'justificativas';
+export type ViewType = 'dashboard' | 'dre' | 'forecasting' | 'manual_changes' | 'movements' | 'admin' | 'analysis' | 'soma_tags' | 'executive_dashboard' | 'holding_dashboard' | 'agent_team' | 'justificativas' | 'inbox';
 
 // Chart Types for AI-Generated Visualizations
 export type ChartType = 'bar' | 'line' | 'waterfall' | 'composed' | 'heatmap';
@@ -257,4 +257,76 @@ export interface DreAnalysis {
   requested_by_name: string;
   created_at: string;
   updated_at: string;
+}
+
+// ── Solicitações de Análise DRE (Q&A / Accountability) ──
+
+export type InquiryStatus = 'pending' | 'answered' | 'approved' | 'rejected' | 'reopened' | 'expired' | 'closed';
+
+export interface DreInquiryFilterContext {
+  year: string;
+  months: string[];
+  marcas: string[];
+  filiais: string[];
+  tags01: string[];
+  tags02: string[];
+  tags03: string[];
+  recurring: string | null;
+}
+
+export interface DreInquiry {
+  id: number;
+  subject: string;
+  question: string;
+  priority: 'normal' | 'urgent';
+  requester_email: string;
+  requester_name: string;
+  assignee_email: string;
+  assignee_name: string;
+  filter_hash: string;
+  filter_context: DreInquiryFilterContext;
+  dre_snapshot: Record<string, number> | null;
+  status: InquiryStatus;
+  sla_deadline_at: string | null;
+  sla_breached: boolean;
+  sla_reminded: boolean;
+  original_assignee_email: string | null;
+  reassigned_by: string | null;
+  reassigned_at: string | null;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+}
+
+export type InquiryMessageType = 'question' | 'response' | 'counter' | 'approval' | 'rejection' | 'system';
+
+export interface DreInquiryMessage {
+  id: number;
+  inquiry_id: number;
+  author_email: string;
+  author_name: string;
+  message: string;
+  message_type: InquiryMessageType;
+  created_at: string;
+}
+
+export interface InquirySlaConfig {
+  id: number;
+  priority: 'normal' | 'urgent';
+  deadline_hours: number;
+  reminder_hours: number;
+  escalate_to: string | null;
+  active: boolean;
+  updated_at: string;
+}
+
+export interface InquiryStats {
+  total: number;
+  pending: number;
+  answered: number;
+  approved: number;
+  rejected: number;
+  reopened: number;
+  expired: number;
+  closed: number;
 }

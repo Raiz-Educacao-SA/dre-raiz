@@ -12,6 +12,7 @@ import {
   Shield,
   FileText,
   TrendingUp,
+  Inbox,
 } from 'lucide-react';
 import { ViewType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,11 +22,13 @@ interface SidebarProps {
   setCurrentView: (view: ViewType) => void;
   selectedBrand: string;
   pendingCount?: number;
+  pendingInquiriesCount?: number;
+  answeredInquiriesCount?: number;
   isDrawer?: boolean;
   onClose?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selectedBrand, pendingCount = 0, isDrawer = false, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selectedBrand, pendingCount = 0, pendingInquiriesCount = 0, answeredInquiriesCount = 0, isDrawer = false, onClose }) => {
   const { user, signOut, isAdmin } = useAuth();
 
   const menuItems = [
@@ -33,6 +36,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
     { id: 'movements',     label: 'Lançamentos',         icon: ReceiptText },
     { id: 'manual_changes',label: 'Aprovações',          icon: History, badge: pendingCount },
     { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
+    { id: 'inbox',          label: 'Solicitações',        icon: Inbox, badge: pendingInquiriesCount, badgeGreen: answeredInquiriesCount },
     ...(isAdmin ? [
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
       { id: 'forecasting',   label: 'Forecasting',        icon: LineChart },
@@ -92,17 +96,26 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
                 <Icon size={18} style={{ color: isActive ? 'var(--color-primary-500)' : 'var(--color-gray-400)' }} />
                 <span className="text-[11px] uppercase font-black tracking-tight">{item.label}</span>
               </div>
-              {item.badge > 0 && (
-                <span
-                  className="flex h-5 w-5 items-center justify-center text-[10px] font-black text-white animate-pulse"
-                  style={{
-                    backgroundColor: 'var(--color-primary-500)',
-                    borderRadius: 'var(--radius-full)'
-                  }}
-                >
-                  {item.badge}
-                </span>
-              )}
+              <div className="flex items-center gap-1">
+                {item.badgeGreen > 0 && (
+                  <span
+                    className="flex h-5 min-w-[20px] px-1 items-center justify-center text-[10px] font-black text-white animate-pulse rounded-full bg-emerald-500"
+                  >
+                    {item.badgeGreen}
+                  </span>
+                )}
+                {item.badge > 0 && (
+                  <span
+                    className="flex h-5 min-w-[20px] px-1 items-center justify-center text-[10px] font-black text-white animate-pulse"
+                    style={{
+                      backgroundColor: 'var(--color-primary-500)',
+                      borderRadius: 'var(--radius-full)'
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </div>
             </button>
           );
         })}

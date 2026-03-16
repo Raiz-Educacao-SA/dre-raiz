@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2, Calendar, Clock, Copy, Flag, Building2, Layers, CalendarDays, Hash, Trophy } from 'lucide-react';
+import { Shield, Users, X, Plus, Trash2, Save, AlertTriangle, CheckCircle2, User as UserIcon, Database, Search, Upload, Download, FileSpreadsheet, Eye, CheckCircle, Calculator, Pencil, Check, Filter, Tag, ArrowRightLeft, Play, Percent, Mail, Loader2, Calendar, Clock, Copy, Flag, Building2, Layers, CalendarDays, Hash, Trophy, MessageCircleQuestion } from 'lucide-react';
 import EngagementPanel from './EngagementPanel';
 import MultiSelectFilter from './MultiSelectFilter';
 import * as supabaseService from '../services/supabaseService';
@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 // ExcelJS carregado sob demanda via dynamic import
 import type ExcelJS from 'exceljs';
 import { Transaction } from '../types';
+import InquiryAdminDashboard from './inquiries/InquiryAdminDashboard';
 
 interface User {
   id: string;
@@ -55,7 +56,7 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'override'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'override' | 'solicitacoes'>('import');
   const [dadosSubTab, setDadosSubTab] = useState<'importar' | 'exportar'>('importar');
   const [usersSubTab, setUsersSubTab] = useState<'cadastro' | 'engajamento'>('cadastro');
 
@@ -2014,6 +2015,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'override' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-red-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('solicitacoes')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'solicitacoes'
+              ? 'text-blue-700 bg-blue-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <MessageCircleQuestion size={14} />
+            Solicitações
+          </div>
+          {activeTab === 'solicitacoes' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -5396,6 +5413,13 @@ const AdminPanel: React.FC = () => {
             para que o drill-down reflita as mudanças. A DRE Gerencial (get_soma_tags) atualiza em tempo real.
           </div>
         </div>
+      )}
+
+      {/* Aba: Solicitações */}
+      {activeTab === 'solicitacoes' && currentUser && (
+        <InquiryAdminDashboard
+          currentUser={{ email: currentUser.email, name: currentUser.name }}
+        />
       )}
 
     </div>
