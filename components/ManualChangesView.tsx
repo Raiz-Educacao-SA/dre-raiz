@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ManualChange } from '../types';
+import { ManualChange, ContaContabilOption } from '../types';
 import {
   History, CheckCircle2, XCircle, ArrowRight, AlertCircle, GitFork,
   User, Clock, ChevronDown, ShieldCheck, FileText, Shield, Lock, FilterX, X,
   CheckSquare, Square, Loader2, Search, Tag, Building2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { getContaContabilOptions, getFiliais } from '../services/supabaseService';
 import * as XLSX from 'xlsx';
 
 interface ManualChangesViewProps {
@@ -27,6 +28,23 @@ interface DetailModalProps {
 const DetailModal: React.FC<DetailModalProps> = ({ change, onClose, approveChange, rejectChange, canApprove, formatDateToMMAAAA }) => {
   const orig = change.originalTransaction;
   const isRateio = change.type === 'RATEIO';
+
+  // Lookup de contas contábeis para exibir tag03 correto por cod_conta
+  const [contaMap, setContaMap] = useState<Map<string, ContaContabilOption>>(new Map());
+  // Lookup de filiais para exibir nome_filial por código
+  const [filialMap, setFilialMap] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    getContaContabilOptions().then(contas => {
+      const map = new Map<string, ContaContabilOption>();
+      contas.forEach(c => map.set(c.cod_conta, c));
+      setContaMap(map);
+    });
+    getFiliais().then(filiais => {
+      const map = new Map<string, string>();
+      filiais.forEach(f => f.filialCodes.forEach(code => map.set(code, f.nomefilial)));
+      setFilialMap(map);
+    });
+  }, []);
 
   let newValueObj: any = {};
   let rateioTransactions: any[] = [];
@@ -148,8 +166,12 @@ const DetailModal: React.FC<DetailModalProps> = ({ change, onClose, approveChang
               </div>
             ) : (
               <div className="bg-orange-50/30 p-3 rounded-xl border border-orange-100 space-y-0">
-                <CompareRow label="Conta" oldVal={orig.category} newVal={newValueObj.category} />
-                <CompareRow label="Unidade" oldVal={orig.filial} newVal={newValueObj.filial} />
+                <CompareRow
+                  label="Conta"
+                  oldVal={[orig.conta_contabil, contaMap.get(orig.conta_contabil)?.tag03 || orig.tag03].filter(Boolean).join(' - ') || orig.category}
+                  newVal={[newValueObj.category, contaMap.get(newValueObj.category)?.tag03 || newValueObj.tag03].filter(Boolean).join(' - ') || newValueObj.category}
+                />
+                <CompareRow label="Unidade" oldVal={orig.nome_filial || filialMap.get(orig.filial) || orig.filial} newVal={filialMap.get(newValueObj.filial) || newValueObj.filial} />
                 <CompareRow label="Data" oldVal={orig.date} newVal={newValueObj.date} formatter={formatDateToMMAAAA} />
                 <CompareRow label="Recorrência" oldVal={orig.recurring || 'Sim'} newVal={newValueObj.recurring} formatter={(v) => v === 'Não' ? 'Único' : 'Recorrente'} />
               </div>
