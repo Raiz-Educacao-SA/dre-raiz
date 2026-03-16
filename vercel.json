@@ -13,6 +13,10 @@
     {
       "path": "/api/agent-team/run-scheduled",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/inquiry-sla-check",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
