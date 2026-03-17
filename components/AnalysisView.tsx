@@ -11,17 +11,27 @@ import {
   CalendarDays,
   ClipboardCheck,
   Loader2,
-  Brain
+  Brain,
+  History,
+  Pencil,
+  Trash2,
+  Check,
+  Clock,
+  Download,
+  ChevronRight,
 } from 'lucide-react';
 import { ExecutiveSummary } from '../analysisPack';
-import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown, getVarianceAvailableMonths } from '../services/supabaseService';
+import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown, getVarianceAvailableMonths, saveSlideVersion, getSlideVersions, updateSlideVersion, deleteSlideVersion, SlideVersion } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
 import type { AnalysisContext } from '../analysisPack/types/schema';
 import type { VariancePptData } from '../services/variancePptTypes';
 import MultiSelectFilter from './MultiSelectFilter';
 import VariancePptPreview from './VariancePptPreview';
+import SlideInsightEditor from './SlideInsightEditor';
+import SlideEditHistory from './SlideEditHistory';
 import { usePermissions } from '../hooks/usePermissions';
 import { useAuth } from '../contexts/AuthContext';
+import { toast } from 'sonner';
 
 const VarianceJustificationsView = React.lazy(() => import('./VarianceJustificationsView'));
 const AgentTeamView = React.lazy(() => import('./AgentTeamView'));
@@ -29,8 +39,18 @@ const ActionPlansConsolidatedView = React.lazy(() => import('./ActionPlansConsol
 
 type TabType = 'justificativas' | 'summary' | 'actions' | 'slides' | 'agentes';
 
+function computeFilterHash(month: string, marcas: string[]): string {
+  const key = `${month}|${[...marcas].sort().join(',')}`;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = ((hash << 5) - hash) + key.charCodeAt(i);
+    hash |= 0;
+  }
+  return `slides_${Math.abs(hash).toString(36)}`;
+}
+
 export default function AnalysisView() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const { allowedMarcas, allowedFiliais, allowedTag01, hasPermissions } = usePermissions();
 
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -60,6 +80,15 @@ export default function AnalysisView() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [slidesLoading, setSlidesLoading] = useState(false);
   const [variancePptLoading, setVariancePptLoading] = useState(false);
+
+  // Slide versioning
+  const [slideVersions, setSlideVersions] = useState<SlideVersion[]>([]);
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
+  const [editingInsights, setEditingInsights] = useState(false);
+  const [showEditHistory, setShowEditHistory] = useState(false);
+  const [editingLabel, setEditingLabel] = useState<string | null>(null);
+  const [editLabelValue, setEditLabelValue] = useState('');
+  const [deletingVersionId, setDeletingVersionId] = useState<string | null>(null);
 
   // Carregar meses disponíveis da tabela variance_justifications
   useEffect(() => {
@@ -120,6 +149,47 @@ export default function AnalysisView() {
     if (hasPermissions && allowedTag01.length > 0) return allowedTag01;
     return [];
   }, [allowedTag01, hasPermissions]);
+
+  // ── Slide Versioning ──
+  const currentFilterHash = useMemo(() => computeFilterHash(selectedMonth, effectiveMarcas), [selectedMonth, effectiveMarcas]);
+
+  useEffect(() => {
+    if (!selectedMonth) return;
+    getSlideVersions(currentFilterHash).then(versions => {
+      setSlideVersions(versions);
+      if (versions.length > 0 && !variancePreviewData) {
+        setVariancePreviewData(versions[0].ppt_data);
+        setActiveVersionId(versions[0].id);
+      }
+    });
+  }, [currentFilterHash]);
+
+  const loadVersion = (version: SlideVersion) => {
+    setVariancePreviewData(version.ppt_data);
+    setActiveVersionId(version.id);
+  };
+
+  const handleRenameVersion = async (id: string, newLabel: string) => {
+    const ok = await updateSlideVersion(id, { label: newLabel });
+    if (ok) {
+      setSlideVersions(prev => prev.map(v => v.id === id ? { ...v, label: newLabel } : v));
+      toast.success('Nome atualizado');
+    }
+    setEditingLabel(null);
+  };
+
+  const handleDeleteVersion = async (id: string) => {
+    const ok = await deleteSlideVersion(id);
+    if (ok) {
+      setSlideVersions(prev => prev.filter(v => v.id !== id));
+      if (activeVersionId === id) {
+        setActiveVersionId(null);
+        setVariancePreviewData(null);
+      }
+      toast.success('Versão excluída');
+    }
+    setDeletingVersionId(null);
+  };
 
   // Helper: filtrar items por tag01 (permissões).
   // REMOVE rows tag0-level (tag01 vazio) para forçar prepareVariancePptData a
@@ -230,6 +300,32 @@ export default function AnalysisView() {
 
       // Step 4: Set preview data
       setVariancePreviewData(data);
+
+      // Step 5: Auto-save version (apenas admin)
+      if (user && isAdmin) {
+        try {
+          const filterContext = {
+            month: selectedMonth,
+            marcas: effectiveMarcas,
+            tag01: effectiveTag01,
+          };
+          const saved = await saveSlideVersion(
+            currentFilterHash,
+            filterContext,
+            data,
+            user.email,
+            user.name || user.email,
+          );
+          if (saved) {
+            setSlideVersions(prev => [saved, ...prev]);
+            setActiveVersionId(saved.id);
+            toast.success(`Versão ${saved.version} salva`);
+          }
+        } catch (saveErr) {
+          console.error('Erro ao salvar versão:', saveErr);
+          toast.error('Erro ao salvar versão dos slides');
+        }
+      }
     } catch (error: any) {
       console.error('Erro ao gerar slides:', error);
       alert(`${error.message || 'Erro ao gerar slides.'}`);
@@ -543,29 +639,176 @@ export default function AnalysisView() {
 
           {/* ==================== ABA SLIDES ==================== */}
           {activeTab === 'slides' && (
-            <div>
+            <div className="space-y-4">
+              {/* Painel de Versões Salvas */}
+              {slideVersions.length > 0 && (
+                <div className="bg-white rounded-2xl border-2 border-gray-100 p-4 shadow-sm">
+                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                    <History size={12} />
+                    Versões Salvas ({slideVersions.length})
+                  </h3>
+                  <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                    {slideVersions.map(v => {
+                      const isActive = v.id === activeVersionId;
+                      const isDeleting = deletingVersionId === v.id;
+                      const isRenaming = editingLabel === v.id;
+
+                      return (
+                        <div
+                          key={v.id}
+                          className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition-all ${
+                            isActive
+                              ? 'bg-orange-50 border-2 border-orange-200'
+                              : 'bg-gray-50 border-2 border-transparent hover:border-gray-200 hover:bg-gray-100'
+                          }`}
+                          onClick={() => loadVersion(v)}
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {isActive && <ChevronRight size={12} className="text-orange-500 shrink-0" />}
+                            <div className="min-w-0">
+                              {isRenaming ? (
+                                <form
+                                  className="flex items-center gap-1"
+                                  onSubmit={e => { e.preventDefault(); handleRenameVersion(v.id, editLabelValue); }}
+                                  onClick={e => e.stopPropagation()}
+                                >
+                                  <input
+                                    type="text"
+                                    value={editLabelValue}
+                                    onChange={e => setEditLabelValue(e.target.value)}
+                                    className="text-xs font-bold border border-blue-300 rounded px-2 py-0.5 w-40 focus:outline-none"
+                                    autoFocus
+                                  />
+                                  <button type="submit" className="text-emerald-600 hover:text-emerald-700"><Check size={14} /></button>
+                                  <button type="button" onClick={() => setEditingLabel(null)} className="text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                                </form>
+                              ) : (
+                                <p className="text-xs font-black text-gray-800 truncate">
+                                  v{v.version} — {v.label || `Versão ${v.version}`}
+                                </p>
+                              )}
+                              <p className="text-[9px] text-gray-400 font-bold flex items-center gap-1">
+                                <Clock size={9} />
+                                {new Date(v.created_at).toLocaleDateString('pt-BR')} {new Date(v.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                <span className="mx-1">·</span>
+                                {v.created_by_name || v.created_by}
+                                {v.updated_at !== v.created_at && (
+                                  <span className="text-orange-500 ml-1">(editado)</span>
+                                )}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-1 shrink-0 ml-2" onClick={e => e.stopPropagation()}>
+                            {isActive && (
+                              <button
+                                onClick={() => setShowEditHistory(true)}
+                                className="p-1 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                                title="Histórico de edições"
+                              >
+                                <History size={12} />
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <>
+                                <button
+                                  onClick={() => { setEditingLabel(v.id); setEditLabelValue(v.label || `Versão ${v.version}`); }}
+                                  className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  title="Renomear"
+                                >
+                                  <Pencil size={12} />
+                                </button>
+                                {isActive && (
+                                  <button
+                                    onClick={() => setEditingInsights(true)}
+                                    className="p-1 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded transition-colors"
+                                    title="Editar insights"
+                                  >
+                                    <Sparkles size={12} />
+                                  </button>
+                                )}
+                                {isDeleting ? (
+                                  <div className="flex items-center gap-1">
+                                    <button onClick={() => handleDeleteVersion(v.id)} className="text-[9px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded">Sim</button>
+                                    <button onClick={() => setDeletingVersionId(null)} className="text-[9px] font-black text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">Não</button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setDeletingVersionId(v.id)}
+                                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    title="Excluir versão"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Preview */}
               {variancePreviewData ? (
                 <div className="space-y-4">
                   <VariancePptPreview data={variancePreviewData} />
 
-                  {/* Botão para regerar */}
-                  <div className="flex justify-center">
+                  <div className="flex justify-center gap-3">
                     <button
                       onClick={handleGenerateSlides}
                       disabled={slidesLoading}
                       className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 font-bold text-sm"
                     >
                       <RefreshCw size={16} />
-                      Regerar Slides
+                      {isAdmin ? 'Gerar Nova Versão' : 'Regerar Slides'}
                     </button>
+                    {isAdmin && activeVersionId && (
+                      <button
+                        onClick={() => setEditingInsights(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 font-bold text-sm"
+                      >
+                        <Pencil size={16} />
+                        Editar Insights
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (
                 <EmptyState
                   icon={<Presentation size={48} className="text-gray-400" />}
-                  title="Nenhum slide gerado"
-                  description="Clique em Gerar Slides para visualizar a apresentacao com dados de desvios e insights IA."
+                  title={slideVersions.length > 0 ? 'Selecione uma versão acima' : 'Nenhum slide gerado'}
+                  description={slideVersions.length > 0 ? 'Clique em uma versão salva para carregar o preview.' : 'Clique em Gerar Slides para visualizar a apresentacao com dados de desvios e insights IA.'}
                   loading={slidesLoading}
+                />
+              )}
+
+              {/* Modal: Editar Insights */}
+              {editingInsights && activeVersionId && variancePreviewData && (
+                <SlideInsightEditor
+                  versionId={activeVersionId}
+                  data={variancePreviewData}
+                  onClose={() => setEditingInsights(false)}
+                  onSaved={(updatedData) => {
+                    setVariancePreviewData(updatedData);
+                    setSlideVersions(prev => prev.map(v =>
+                      v.id === activeVersionId ? { ...v, ppt_data: updatedData, updated_at: new Date().toISOString() } : v
+                    ));
+                    setEditingInsights(false);
+                  }}
+                  onShowHistory={() => { setEditingInsights(false); setShowEditHistory(true); }}
+                />
+              )}
+
+              {/* Modal: Histórico de Edições */}
+              {showEditHistory && activeVersionId && (
+                <SlideEditHistory
+                  versionId={activeVersionId}
+                  versionLabel={slideVersions.find(v => v.id === activeVersionId)?.label || ''}
+                  onClose={() => setShowEditHistory(false)}
                 />
               )}
             </div>

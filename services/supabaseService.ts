@@ -4915,3 +4915,165 @@ export const getNewTransactionsCount = async (userId: string): Promise<NewTransa
   }
   return data as NewTransactionsCount;
 };
+
+// ============================================
+// Slide Versions — Versionamento de Slides
+// ============================================
+
+export interface SlideVersion {
+  id: string;
+  filter_hash: string;
+  filter_context: Record<string, unknown>;
+  version: number;
+  label: string;
+  ppt_data: any;
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SlideVersionEdit {
+  id: string;
+  slide_version_id: string;
+  field_path: string;
+  old_value: string | null;
+  new_value: string | null;
+  edited_by: string;
+  edited_by_name: string;
+  edited_at: string;
+}
+
+/** Salva nova versão de slides — calcula version auto-incremental por filter_hash */
+export const saveSlideVersion = async (
+  filterHash: string,
+  filterContext: Record<string, unknown>,
+  pptData: any,
+  createdBy: string,
+  createdByName: string,
+): Promise<SlideVersion | null> => {
+  // Buscar próximo version number
+  const { data: existing } = await supabase
+    .from('slide_versions')
+    .select('version')
+    .eq('filter_hash', filterHash)
+    .order('version', { ascending: false })
+    .limit(1);
+
+  const nextVersion = (existing && existing.length > 0 ? existing[0].version : 0) + 1;
+
+  const { data, error } = await supabase
+    .from('slide_versions')
+    .insert({
+      filter_hash: filterHash,
+      filter_context: filterContext,
+      version: nextVersion,
+      label: `Versão ${nextVersion}`,
+      ppt_data: pptData,
+      created_by: createdBy,
+      created_by_name: createdByName,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('❌ Erro ao salvar slide version:', error.message, error.details, error.hint, error);
+    return null;
+  }
+
+  console.log('✅ Slide version salva:', data.id, 'v' + data.version);
+
+  // Registrar criação no audit trail
+  await supabase.from('slide_version_edits').insert({
+    slide_version_id: data.id,
+    field_path: '_created',
+    old_value: null,
+    new_value: `Versão ${nextVersion} gerada`,
+    edited_by: createdBy,
+    edited_by_name: createdByName,
+  });
+
+  return data as SlideVersion;
+};
+
+/** Busca versões de slides por filter_hash, ordenadas por version DESC */
+export const getSlideVersions = async (filterHash: string): Promise<SlideVersion[]> => {
+  const { data, error } = await supabase
+    .from('slide_versions')
+    .select('*')
+    .eq('filter_hash', filterHash)
+    .order('version', { ascending: false });
+
+  if (error) {
+    console.error('Erro ao buscar slide versions:', error);
+    return [];
+  }
+  return (data || []) as SlideVersion[];
+};
+
+/** Atualiza versão (label e/ou ppt_data) */
+export const updateSlideVersion = async (
+  id: string,
+  updates: { label?: string; ppt_data?: any },
+): Promise<boolean> => {
+  const { error } = await supabase
+    .from('slide_versions')
+    .update(updates)
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao atualizar slide version:', error);
+    return false;
+  }
+  return true;
+};
+
+/** Deleta versão (cascade deleta edits) */
+export const deleteSlideVersion = async (id: string): Promise<boolean> => {
+  const { error } = await supabase
+    .from('slide_versions')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Erro ao deletar slide version:', error);
+    return false;
+  }
+  return true;
+};
+
+/** Salva edições no audit trail (bulk) */
+export const saveSlideEdits = async (
+  versionId: string,
+  edits: Array<{
+    field_path: string;
+    old_value: string | null;
+    new_value: string | null;
+    edited_by: string;
+    edited_by_name: string;
+  }>,
+): Promise<boolean> => {
+  if (edits.length === 0) return true;
+  const rows = edits.map(e => ({ slide_version_id: versionId, ...e }));
+  const { error } = await supabase.from('slide_version_edits').insert(rows);
+  if (error) {
+    console.error('Erro ao salvar slide edits:', error);
+    return false;
+  }
+  return true;
+};
+
+/** Busca histórico de edições de uma versão */
+export const getSlideEditHistory = async (versionId: string): Promise<SlideVersionEdit[]> => {
+  const { data, error } = await supabase
+    .from('slide_version_edits')
+    .select('*')
+    .eq('slide_version_id', versionId)
+    .order('edited_at', { ascending: false });
+
+  if (error) {
+    console.error('Erro ao buscar slide edit history:', error);
+    return [];
+  }
+  return (data || []) as SlideVersionEdit[];
+};
