@@ -1158,7 +1158,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       justification: editForm.justification,
       type: 'MULTI' as const,
       oldValue: JSON.stringify(editingTransaction),
-      newValue: JSON.stringify(editForm)
+      newValue: JSON.stringify({ ...editForm, _scenario: editingTransaction.scenario })
     };
 
     console.log('📦 Dados do change (ajuste):', {
@@ -1235,7 +1235,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       justification: rateioJustification,
       type: 'RATEIO' as const,
       oldValue: JSON.stringify(rateioTransaction),
-      newValue: JSON.stringify({ transactions: newTransactions, justification: rateioJustification })
+      newValue: JSON.stringify({ transactions: newTransactions, justification: rateioJustification, _scenario: rateioTransaction.scenario })
     };
 
     console.log('📦 Dados do change (rateio):', {
@@ -1309,7 +1309,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         justification: bulkJustification,
         type:          'MULTI',
         oldValue:      JSON.stringify(t),
-        newValue:      JSON.stringify(newValue),
+        newValue:      JSON.stringify({ ...newValue, _scenario: t.scenario }),
       });
     });
 

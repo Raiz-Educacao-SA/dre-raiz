@@ -550,7 +550,7 @@ const App: React.FC = () => {
     console.log('🔄 Chamando updateTransaction...');
     const successUpdate = original.status === 'Pendente'
       ? true  // já está Pendente, não precisa atualizar status
-      : await supabaseService.updateTransaction(change.transactionId, { status: 'Pendente' });
+      : await supabaseService.updateTransaction(change.transactionId, { status: 'Pendente' }, original.scenario || JSON.parse(change.newValue)?._scenario);
     console.log('🔄 updateTransaction retornou:', successUpdate);
 
     console.log('🔍 Verificando sucesso:', {
@@ -594,6 +594,9 @@ const App: React.FC = () => {
     if (!change) return;
 
     const parsedValue = JSON.parse(change.newValue);
+    // scenario: prioridade 1) originalTransaction, 2) _scenario salvo no newValue, 3) undefined (= transactions)
+    const scenario = change.originalTransaction?.scenario || parsedValue._scenario || undefined;
+    console.log('📋 _applyChange scenario:', scenario, '| source:', change.originalTransaction?.scenario ? 'originalTransaction' : parsedValue._scenario ? '_scenario' : 'default');
     const approvalMeta = {
       status: 'Aplicado' as const,
       approvedAt: new Date().toISOString(),
@@ -617,17 +620,17 @@ const App: React.FC = () => {
       await supabaseService.bulkAddTransactions(newParts as any);
       // deletar original e registrar aprovação em paralelo
       await Promise.all([
-        supabaseService.deleteTransaction(change.transactionId),
+        supabaseService.deleteTransaction(change.transactionId, scenario),
         supabaseService.updateManualChange(changeId, approvalMeta),
       ]);
     } else if (change.type === 'EXCLUSAO') {
       await Promise.all([
-        supabaseService.deleteTransaction(change.transactionId),
+        supabaseService.deleteTransaction(change.transactionId, scenario),
         supabaseService.updateManualChange(changeId, approvalMeta),
       ]);
     } else {
       // MULTI, CONTA, DATA, MARCA, FILIAL
-      const { justification: _j, categoryLabel, filial: filialValue, filial_code: filialCode, category, amount: _amt, ...restData } = parsedValue;
+      const { justification: _j, categoryLabel, filial: filialValue, filial_code: filialCode, category, amount: _amt, _scenario: _sc, ...restData } = parsedValue;
       const updatedData: Record<string, any> = {
         status: 'Ajustado',
       };
@@ -651,7 +654,7 @@ const App: React.FC = () => {
 
       // atualizar transação e registrar aprovação em paralelo
       const [updateSuccess] = await Promise.all([
-        supabaseService.updateTransaction(change.transactionId, updatedData),
+        supabaseService.updateTransaction(change.transactionId, updatedData, scenario),
         supabaseService.updateManualChange(changeId, approvalMeta),
       ]);
       console.log('📋 _applyChange updateSuccess:', updateSuccess);

@@ -1392,9 +1392,12 @@ export const getFilteredTransactions = async (
       debug(`📊 Total: ${totalCount} (${data.length} nesta página, serverCount=${serverCount})`);
 
       const tag0Map = await getTag0Map();
+      const tableScenario = getScenarioForTable(tableName);
       const enriched = data.map((db: any) => {
         const t = dbToTransaction(db);
         if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
+        // Garantir scenario correto baseado na tabela-fonte
+        if (tableScenario) t.scenario = tableScenario;
         return t;
       });
 
@@ -1426,9 +1429,11 @@ export const getFilteredTransactions = async (
     // Se tudo cabe no primeiro lote
     if (firstBatch.length < BATCH_SIZE) {
       const tag0Map = await getTag0Map();
+      const tableScenario = getScenarioForTable(tableName);
       const enriched = firstBatch.map((db: any) => {
         const t = dbToTransaction(db);
         if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
+        if (tableScenario) t.scenario = tableScenario;
         return t;
       });
       return { data: enriched, totalCount: enriched.length, currentPage: 1, totalPages: 1, hasMore: false };
@@ -1461,9 +1466,11 @@ export const getFilteredTransactions = async (
     debug(`✅ ${allData.length} transações carregadas`);
 
     const tag0Map = await getTag0Map();
+    const tableScenario = getScenarioForTable(tableName);
     const enriched = allData.map((db: any) => {
       const t = dbToTransaction(db);
       if (!t.tag0 && t.tag01) t.tag0 = resolveTag0(t.tag01, tag0Map);
+      if (tableScenario && !t.scenario) t.scenario = tableScenario;
       return t;
     });
 
@@ -1492,8 +1499,22 @@ export const addTransaction = async (transaction: Omit<Transaction, 'id'>): Prom
   return dbToTransaction(data);
 };
 
-export const updateTransaction = async (id: string, updates: Partial<Transaction>): Promise<boolean> => {
-  debug('updateTransaction called with:', { id, updates });
+/** Resolve a tabela correta pelo cenário */
+function getTableForScenario(scenario?: string): string {
+  if (scenario === 'Orçado') return 'transactions_orcado';
+  if (scenario === 'A-1') return 'transactions_ano_anterior';
+  return 'transactions';
+}
+
+/** Resolve o cenário correto pela tabela (inverso de getTableForScenario) */
+function getScenarioForTable(tableName: string): string | undefined {
+  if (tableName === 'transactions_orcado') return 'Orçado';
+  if (tableName === 'transactions_ano_anterior') return 'A-1';
+  return undefined; // transactions → mantém o scenario da row
+}
+
+export const updateTransaction = async (id: string, updates: Partial<Transaction>, scenario?: string): Promise<boolean> => {
+  debug('updateTransaction called with:', { id, updates, scenario });
 
   // Remover campos null/undefined e campos vazios
   const cleanedUpdates: any = {};
@@ -1512,15 +1533,25 @@ export const updateTransaction = async (id: string, updates: Partial<Transaction
     return true;
   }
 
-  const { error } = await supabase
-    .from('transactions')
+  const table = getTableForScenario(scenario);
+  console.log(`🔄 updateTransaction: table=${table}, id=${id}, scenario=${scenario}, fields=`, Object.keys(cleanedUpdates));
+
+  const { data, error } = await supabase
+    .from(table)
     .update(cleanedUpdates)
-    .eq('id', id);
+    .eq('id', id)
+    .select('id');
 
   if (error) {
-    console.error('Error updating transaction:', error);
-    console.error('Error message:', error.message);
-    console.error('Error code:', error.code);
+    console.error('❌ Error updating transaction:', error);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error code:', error.code);
+    console.error('❌ Table:', table, '| ID:', id);
+    return false;
+  }
+
+  if (!data || data.length === 0) {
+    console.error(`❌ updateTransaction: 0 rows afetadas! Possível bloqueio RLS ou ID inexistente na tabela ${table}. ID: ${id}`);
     return false;
   }
 
@@ -1546,14 +1577,22 @@ export const bulkUpdateTransactions = async (
   return error ? { updated: 0, error: error.message } : { updated: ids.length };
 };
 
-export const deleteTransaction = async (id: string): Promise<boolean> => {
-  const { error } = await supabase
-    .from('transactions')
+export const deleteTransaction = async (id: string, scenario?: string): Promise<boolean> => {
+  const table = getTableForScenario(scenario);
+  console.log(`🗑️ deleteTransaction: table=${table}, id=${id}, scenario=${scenario}`);
+  const { data, error } = await supabase
+    .from(table)
     .delete()
-    .eq('id', id);
+    .eq('id', id)
+    .select('id');
 
   if (error) {
-    console.error('Error deleting transaction:', error);
+    console.error('❌ Error deleting transaction:', error, '| Table:', table, '| ID:', id);
+    return false;
+  }
+
+  if (!data || data.length === 0) {
+    console.error(`❌ deleteTransaction: 0 rows afetadas! Possível bloqueio RLS. Table: ${table}, ID: ${id}`);
     return false;
   }
 
