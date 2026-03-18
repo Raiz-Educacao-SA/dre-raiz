@@ -250,6 +250,7 @@ export interface DreAnalysis {
     tags02: string[];
     tags03: string[];
     recurring: string | null;
+    vendors?: string[];
   };
   title: string;
   content: string;
@@ -272,6 +273,7 @@ export interface DreInquiryFilterContext {
   tags02: string[];
   tags03: string[];
   recurring: string | null;
+  vendors?: string[];
 }
 
 export interface DreInquiry {

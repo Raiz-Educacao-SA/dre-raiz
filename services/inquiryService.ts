@@ -473,6 +473,7 @@ export const formatFilterContextSummary = (ctx: DreInquiryFilterContext): string
   if (ctx.tags01?.length > 0) parts.push(`Tag01: ${ctx.tags01.join(', ')}`);
   if (ctx.tags02?.length > 0) parts.push(`Tag02: ${ctx.tags02.join(', ')}`);
   if (ctx.tags03?.length > 0) parts.push(`Tag03: ${ctx.tags03.join(', ')}`);
+  if (ctx.vendors?.length) parts.push(`Fornecedor: ${ctx.vendors.join(', ')}`);
   if (ctx.recurring) parts.push(`Recorrente: ${ctx.recurring}`);
   return parts.join(' | ');
 };

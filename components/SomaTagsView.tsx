@@ -105,7 +105,8 @@ const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols, activeE
 
 const computeFilterHash = (
   year: string, months: string[], marcas: string[], filiais: string[],
-  tags01: string[], tags02: string[], tags03: string[], recurring: 'Sim' | 'Não' | null
+  tags01: string[], tags02: string[], tags03: string[], recurring: 'Sim' | 'Não' | null,
+  vendors: string[] = []
 ): string => {
   const canonical = JSON.stringify({
     year,
@@ -113,6 +114,7 @@ const computeFilterHash = (
     filiais: [...filiais].sort(), tags01: [...tags01].sort(),
     tags02:  [...tags02].sort(),  tags03: [...tags03].sort(),
     recurring: recurring ?? 'todos',
+    vendors: [...vendors].sort(),
   });
   let h = 5381;
   for (let i = 0; i < canonical.length; i++) {
@@ -124,7 +126,8 @@ const computeFilterHash = (
 
 const computeFilterContext = (
   year: string, months: string[], marcas: string[], filiais: string[],
-  tags01: string[], tags02: string[], tags03: string[], recurring: 'Sim' | 'Não' | null
+  tags01: string[], tags02: string[], tags03: string[], recurring: 'Sim' | 'Não' | null,
+  vendors: string[] = []
 ): string => {
   const MONTH_LBL: Record<string, string> = {
     '01': 'Jan', '02': 'Fev', '03': 'Mar', '04': 'Abr', '05': 'Mai', '06': 'Jun',
@@ -137,6 +140,7 @@ const computeFilterContext = (
   if (tags01.length)  parts.push(`Tag01: ${tags01.join(', ')}`);
   if (tags02.length)  parts.push(`Tag02: ${tags02.join(', ')}`);
   if (tags03.length)  parts.push(`Tag03: ${tags03.join(', ')}`);
+  if (vendors.length) parts.push(`Fornecedor: ${vendors.join(', ')}`);
   if (recurring !== null) parts.push(`Recorrência: ${recurring}`);
   return parts.join(' | ');
 };
@@ -292,15 +296,15 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // ── Memos de hash e contexto de filtros (para DreAnalysisSection) ─────────
   const filterHash = useMemo(() =>
     computeFilterHash(year, selectedMonths, selectedMarcas, selectedFiliais,
-                      selectedTags01, selectedTags02, selectedTags03, recurring),
+                      selectedTags01, selectedTags02, selectedTags03, recurring, selectedVendors),
     [year, selectedMonths, selectedMarcas, selectedFiliais,
-     selectedTags01, selectedTags02, selectedTags03, recurring]);
+     selectedTags01, selectedTags02, selectedTags03, recurring, selectedVendors]);
 
   const filterContextString = useMemo(() =>
     computeFilterContext(year, selectedMonths, selectedMarcas, selectedFiliais,
-                         selectedTags01, selectedTags02, selectedTags03, recurring),
+                         selectedTags01, selectedTags02, selectedTags03, recurring, selectedVendors),
     [year, selectedMonths, selectedMarcas, selectedFiliais,
-     selectedTags01, selectedTags02, selectedTags03, recurring]);
+     selectedTags01, selectedTags02, selectedTags03, recurring, selectedVendors]);
 
   const filterContextObj = useMemo(() => ({
     year,
@@ -311,8 +315,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     tags02:  [...selectedTags02].sort(),
     tags03:  [...selectedTags03].sort(),
     recurring,
+    vendors: [...selectedVendors].sort(),
   }), [year, selectedMonths, selectedMarcas, selectedFiliais,
-      selectedTags01, selectedTags02, selectedTags03, recurring]);
+      selectedTags01, selectedTags02, selectedTags03, recurring, selectedVendors]);
 
   // ColSpans dinâmicos para grupos do cabeçalho (Consolidado)
   const orcGrpCols = [showOrcado, showDeltaAbsOrcado, showDeltaPercOrcado].filter(Boolean).length;
@@ -1801,6 +1806,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     setSelectedTags01(ctx.tags01);
     setSelectedTags02(ctx.tags02);
     setSelectedTags03(ctx.tags03);
+    setSelectedVendors(ctx.vendors || []);
     setRecurring(
       ctx.recurring === 'Sim' ? 'Sim' :
       ctx.recurring === 'Não' ? 'Não' : null
@@ -2533,6 +2539,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           filterContextLabel={filterContextString}
           dreSnapshot={null}
           currentUser={{ email: authUser.email, name: authUser.name }}
+          isAdmin={isAdmin}
           onRestoreFilters={(ctx) => handleRestoreFilters(ctx as DreAnalysis['filter_context'])}
         />
       )}
