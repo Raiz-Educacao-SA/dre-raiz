@@ -1274,6 +1274,7 @@ const App: React.FC = () => {
                     onDrillDown={handleDrillDown}
                     allowedTag01={allowedTag01.length > 0 ? allowedTag01 : undefined}
                     allowedMarcas={allowedMarcas.length > 0 ? allowedMarcas : undefined}
+                    allowedFiliais={allowedFiliais.length > 0 ? allowedFiliais : undefined}
                     presentationMode={somaTagsPresentationMode}
                     onPresentationModeChange={setSomaTagsPresentationMode}
                   />

@@ -153,11 +153,12 @@ interface SomaTagsViewProps {
   onDrillDown?: (data: { categories: string[]; scenario?: string; filters?: Record<string, any> }) => void;
   allowedTag01?: string[];
   allowedMarcas?: string[];
+  allowedFiliais?: string[];
   presentationMode?: 'executive' | 'detailed';
   onPresentationModeChange?: (mode: 'executive' | 'detailed') => void;
 }
 
-const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01, allowedMarcas, presentationMode: externalPM, onPresentationModeChange }) => {
+const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadingChange, onDataChange, onDrillDown, allowedTag01, allowedMarcas, allowedFiliais, presentationMode: externalPM, onPresentationModeChange }) => {
   const { user: authUser, isAdmin } = useAuth();
   const [rows,      setRows]      = useState<SomaTagsRow[]>([]);
   const [loading,   setLoading]   = useState(false);
@@ -256,7 +257,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const tags03Ref     = useRef(selectedTags03);
   const vendorsRef    = useRef(selectedVendors);
   const recurringRef  = useRef<'Sim' | 'Não' | null>('Sim');
-  const allowedMarcasRef = useRef<string[] | undefined>(allowedMarcas);
+  const allowedMarcasRef  = useRef<string[] | undefined>(allowedMarcas);
+  const allowedFiliaisRef = useRef<string[] | undefined>(allowedFiliais);
   useEffect(() => { yearRef.current           = year;            }, [year]);
   useEffect(() => { selectedMonthsRef.current = selectedMonths;  }, [selectedMonths]);
   useEffect(() => { marcasRef.current         = selectedMarcas;  }, [selectedMarcas]);
@@ -265,7 +267,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   useEffect(() => { tags03Ref.current    = selectedTags03;  }, [selectedTags03]);
   useEffect(() => { vendorsRef.current   = selectedVendors; }, [selectedVendors]);
   useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
-  useEffect(() => { allowedMarcasRef.current = allowedMarcas; }, [allowedMarcas]);
+  useEffect(() => { allowedMarcasRef.current  = allowedMarcas;  }, [allowedMarcas]);
+  useEffect(() => { allowedFiliaisRef.current = allowedFiliais; }, [allowedFiliais]);
 
   const toggleElement = useCallback(
     (element: string, currentState: boolean, setState: (v: boolean) => void) => {
@@ -369,7 +372,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const marcas = marcasPerm
       ? (rawMarcas ? rawMarcas.filter(m => marcasPerm.some(p => p.toUpperCase() === m.toUpperCase())) : marcasPerm)
       : rawMarcas;
-    const filiais = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
+    const filialsPerm = allowedFiliaisRef.current && allowedFiliaisRef.current.length > 0 ? allowedFiliaisRef.current : undefined;
+    const rawFiliais  = accFilters.nome_filial ? [accFilters.nome_filial] : (filiaisRef.current.length > 0 ? filiaisRef.current : undefined);
+    const filiais = filialsPerm
+      ? (rawFiliais ? rawFiliais.filter(f => filialsPerm.includes(f)) : filialsPerm)
+      : rawFiliais;
     const tags02  = accFilters.tag02 ? [accFilters.tag02] : (tags02Ref.current.length > 0 ? tags02Ref.current : undefined);
     const tags03  = accFilters.tag03 ? [accFilters.tag03] : (tags03Ref.current.length > 0 ? tags03Ref.current : undefined);
     const vendors = vendorsRef.current.length > 0 ? vendorsRef.current : undefined;
@@ -398,7 +405,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       const marcas = marcasPerm
         ? (rawMarcas ? rawMarcas.filter(m => marcasPerm.some(p => p.toUpperCase() === m.toUpperCase())) : marcasPerm)
         : rawMarcas;
-      const filiais  = selectedFiliais.length > 0 ? selectedFiliais : undefined;
+      const filialsPerm = allowedFiliais && allowedFiliais.length > 0 ? allowedFiliais : undefined;
+      const rawFiliais  = selectedFiliais.length > 0 ? selectedFiliais : undefined;
+      const filiais = filialsPerm
+        ? (rawFiliais ? rawFiliais.filter(f => filialsPerm.includes(f)) : filialsPerm)
+        : rawFiliais;
       const tags02   = selectedTags02.length  > 0 ? selectedTags02  : undefined;
       const tags03   = selectedTags03.length  > 0 ? selectedTags03  : undefined;
       const vendors  = selectedVendors.length > 0 ? selectedVendors : undefined;
