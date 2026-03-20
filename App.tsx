@@ -1256,7 +1256,7 @@ const App: React.FC = () => {
               </Suspense>
             </ErrorBoundary>
           )}
-          {currentView === 'analysis' && (
+          {currentView === 'analysis' && !(hasPermissions && allowedFiliais.length > 0) && (
             <ErrorBoundary fallbackMessage="Erro ao carregar Análises">
               <Suspense fallback={<LoadingSpinner message="Carregando análises..." />}>
                 <AnalysisView />

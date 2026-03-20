@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { ViewType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface SidebarProps {
   currentView: ViewType;
@@ -30,12 +31,16 @@ interface SidebarProps {
 
 const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selectedBrand, pendingCount = 0, pendingInquiriesCount = 0, answeredInquiriesCount = 0, isDrawer = false, onClose }) => {
   const { user, signOut, isAdmin } = useAuth();
+  const { allowedFiliais, hasPermissions } = usePermissions();
+
+  // Usuários com restrição de filial não acessam Análise Financeira (contém estratégia da empresa)
+  const hasFilialRestriction = hasPermissions && allowedFiliais.length > 0;
 
   const menuItems = [
     { id: 'soma_tags',     label: 'DRE Gerencial',      icon: TableProperties },
     { id: 'movements',     label: 'Lançamentos',         icon: ReceiptText },
     { id: 'manual_changes',label: 'Aprovações',          icon: History, badge: pendingCount },
-    { id: 'analysis',      label: 'Análise Financeira', icon: FileText },
+    ...(!hasFilialRestriction ? [{ id: 'analysis', label: 'Análise Financeira', icon: FileText }] : []),
     { id: 'inbox',          label: 'Solicitações',        icon: Inbox, badge: pendingInquiriesCount, badgeGreen: answeredInquiriesCount },
     ...(isAdmin ? [
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },
