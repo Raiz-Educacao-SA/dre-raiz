@@ -235,6 +235,14 @@ export interface PaginatedResponse<T> {
 }
 
 // ============================================
+// ── Anexos de chat ────────────────────────────────────────────────────────────
+export interface Attachment {
+  name: string;
+  url: string;
+  type: string;
+  size: number;
+}
+
 // DRE Analyses
 // ============================================
 
@@ -258,6 +266,7 @@ export interface DreAnalysis {
   requested_by_name: string;
   created_at: string;
   updated_at: string;
+  attachments?: Attachment[];
 }
 
 // ── Solicitações de Análise DRE (Q&A / Accountability) ──
@@ -310,6 +319,7 @@ export interface DreInquiryMessage {
   message: string;
   message_type: InquiryMessageType;
   created_at: string;
+  attachments?: Attachment[];
 }
 
 export interface InquirySlaConfig {

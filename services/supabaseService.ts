@@ -1,5 +1,5 @@
 import { supabase, DatabaseTransaction, DatabaseManualChange } from '../supabase';
-import { Transaction, ManualChange, PaginationParams, PaginatedResponse, ContaContabilOption, DreAnalysis } from '../types';
+import { Transaction, ManualChange, PaginationParams, PaginatedResponse, ContaContabilOption, DreAnalysis, Attachment } from '../types';
 import { addPermissionFiltersToObject, applyPermissionFilters } from './permissionsService';
 import { debug } from '../utils/logger';
 import { z } from 'zod';
@@ -776,12 +776,34 @@ export const saveDreAnalysis = async (
 };
 
 export const updateDreAnalysis = async (
-  id: string, updates: Pick<DreAnalysis, 'title' | 'content'>
+  id: string, updates: Pick<DreAnalysis, 'title' | 'content'> & { attachments?: Attachment[] }
 ): Promise<boolean> => {
   const { error } = await supabase
     .from('dre_analyses').update(updates).eq('id', id);
   if (error) { console.error('❌ updateDreAnalysis:', error); return false; }
   return true;
+};
+
+// ── Upload de anexos para chat / análises ─────────────────────────────────────
+const CHAT_BUCKET = 'chat-attachments';
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 MB
+
+export const uploadChatAttachment = async (file: File, folder: string): Promise<Attachment | null> => {
+  if (file.size > MAX_ATTACHMENT_SIZE) {
+    console.error(`Arquivo "${file.name}" excede 10 MB`);
+    return null;
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `${folder}/${Date.now()}_${safeName}`;
+  const { error } = await supabase.storage
+    .from(CHAT_BUCKET)
+    .upload(path, file, { cacheControl: '3600', upsert: false });
+  if (error) {
+    console.error('❌ uploadChatAttachment:', error);
+    return null;
+  }
+  const { data: { publicUrl } } = supabase.storage.from(CHAT_BUCKET).getPublicUrl(path);
+  return { name: file.name, url: publicUrl, type: file.type, size: file.size };
 };
 
 export const deleteDreAnalysis = async (id: string): Promise<boolean> => {

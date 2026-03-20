@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Plus, Sparkles, Save, X, Pencil, Trash2, Loader2, FileText, LayoutList } from 'lucide-react';
-import { DreAnalysis } from '../types';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronRight, Plus, Sparkles, Save, X, Pencil, Trash2, Loader2, FileText, LayoutList, Paperclip, FileImage, FileSpreadsheet, Download } from 'lucide-react';
+import { DreAnalysis, Attachment } from '../types';
 import * as supabaseService from '../services/supabaseService';
 import { generateDreNarrativeAnalysis, improveDreNarrativeAnalysis } from '../services/anthropicService';
 import { SomaTagsRow } from '../services/supabaseService';
@@ -9,6 +9,28 @@ interface CurrentUser {
   email: string;
   name: string;
   role: string;
+}
+
+const ANALYSIS_ACCEPTED_EXTENSIONS = '.jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.zip,.xml,.json,.eml,.msg';
+const ANALYSIS_MAX_FILES = 5;
+const ANALYSIS_MAX_FILE_SIZE_MB = 10;
+
+function getAnalysisAttachmentIcon(att: Attachment | File) {
+  const type = att.type || '';
+  const name = att.name.toLowerCase();
+  if (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/.test(name))
+    return <FileImage size={11} className="shrink-0 text-blue-500" />;
+  if (type.includes('spreadsheet') || type.includes('excel') || type === 'text/csv' || /\.(xls|xlsx|xlsm|csv)$/.test(name))
+    return <FileSpreadsheet size={11} className="shrink-0 text-green-600" />;
+  if (type === 'application/pdf' || name.endsWith('.pdf'))
+    return <FileText size={11} className="shrink-0 text-red-500" />;
+  return <FileText size={11} className="shrink-0 text-gray-500" />;
+}
+
+function formatAnalysisFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 interface EditorState {
@@ -20,6 +42,7 @@ interface EditorState {
   isImprovingAI: boolean;
   isSaving: boolean;
   aiError: string;
+  savedAttachments: Attachment[];
 }
 
 const EDITOR_INITIAL: EditorState = {
@@ -31,6 +54,7 @@ const EDITOR_INITIAL: EditorState = {
   isImprovingAI: false,
   isSaving: false,
   aiError: '',
+  savedAttachments: [],
 };
 
 const MONTH_LBL: Record<string, string> = {
@@ -67,13 +91,16 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
   currentUser,
   onRestoreFilters,
 }) => {
-  const [isExpanded,  setIsExpanded]  = useState(false);
-  const [analyses,    setAnalyses]    = useState<DreAnalysis[]>([]);
-  const [isLoading,   setIsLoading]   = useState(false);
-  const [badgeCount,  setBadgeCount]  = useState(0);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [deletingId,  setDeletingId]  = useState<string | null>(null);
-  const [editor,      setEditor]      = useState<EditorState>(EDITOR_INITIAL);
+  const [isExpanded,    setIsExpanded]    = useState(false);
+  const [analyses,      setAnalyses]      = useState<DreAnalysis[]>([]);
+  const [isLoading,     setIsLoading]     = useState(false);
+  const [badgeCount,    setBadgeCount]    = useState(0);
+  const [expandedIds,   setExpandedIds]   = useState<Set<string>>(new Set());
+  const [deletingId,    setDeletingId]    = useState<string | null>(null);
+  const [editor,        setEditor]        = useState<EditorState>(EDITOR_INITIAL);
+  const [pendingFiles,  setPendingFiles]  = useState<File[]>([]);
+  const [uploading,     setUploading]     = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Painel "Ver Todas" ────────────────────────────────────────────────────
   const [isPanelOpen,    setIsPanelOpen]    = useState(false);
@@ -130,6 +157,7 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
     setBadgeCount(data.length);
     setIsLoading(false);
     setEditor(EDITOR_INITIAL);
+    setPendingFiles([]);
     setDeletingId(null);
   }, [filterHash]);
 
@@ -182,10 +210,36 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
     }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const valid = files.filter(f => {
+      if (f.size > ANALYSIS_MAX_FILE_SIZE_MB * 1024 * 1024) return false;
+      return true;
+    });
+    setPendingFiles(prev => {
+      const merged = [...prev, ...valid];
+      return merged.slice(0, ANALYSIS_MAX_FILES);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   // ── Salvar ───────────────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!editor.content.trim()) return;
     setEditor(prev => ({ ...prev, isSaving: true }));
+
+    // Upload de anexos pendentes
+    let newAttachments: Attachment[] = [];
+    if (pendingFiles.length > 0) {
+      setUploading(true);
+      const folder = editor.mode === 'edit' ? `analyses/${editor.editingId}` : `analyses/new_${Date.now()}`;
+      const results = await Promise.all(
+        pendingFiles.map(f => supabaseService.uploadChatAttachment(f, folder))
+      );
+      setUploading(false);
+      newAttachments = results.filter((r): r is Attachment => r !== null);
+    }
+    const allAttachments = [...(editor.savedAttachments || []), ...newAttachments];
 
     if (editor.mode === 'new') {
       const saved = await supabaseService.saveDreAnalysis({
@@ -195,10 +249,12 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
         content: editor.content.trim(),
         requested_by: currentUser.email,
         requested_by_name: currentUser.name,
+        attachments: allAttachments.length > 0 ? allAttachments : undefined,
       });
       if (saved) {
         setAnalyses(prev => [saved, ...prev]);
         setBadgeCount(prev => prev + 1);
+        setPendingFiles([]);
         setEditor(EDITOR_INITIAL);
       } else {
         setEditor(prev => ({ ...prev, isSaving: false, aiError: 'Erro ao salvar. Tente novamente.' }));
@@ -207,13 +263,15 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
       const ok = await supabaseService.updateDreAnalysis(editor.editingId, {
         title: editor.title.trim() || 'Análise sem título',
         content: editor.content.trim(),
+        attachments: allAttachments.length > 0 ? allAttachments : undefined,
       });
       if (ok) {
         setAnalyses(prev => prev.map(a =>
           a.id === editor.editingId
-            ? { ...a, title: editor.title.trim() || 'Análise sem título', content: editor.content.trim() }
+            ? { ...a, title: editor.title.trim() || 'Análise sem título', content: editor.content.trim(), attachments: allAttachments }
             : a
         ));
+        setPendingFiles([]);
         setEditor(EDITOR_INITIAL);
       } else {
         setEditor(prev => ({ ...prev, isSaving: false, aiError: 'Erro ao atualizar. Tente novamente.' }));
@@ -518,10 +576,11 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
                     {canEdit(a) && deletingId !== a.id && (
                       <div className="flex items-center gap-1 shrink-0">
                         <button
-                          onClick={() => setEditor({
+                          onClick={() => { setPendingFiles([]); setEditor({
                             mode: 'edit', editingId: a.id, title: a.title,
-                            content: a.content, isGeneratingAI: false, isSaving: false, aiError: '',
-                          })}
+                            content: a.content, isGeneratingAI: false, isImprovingAI: false, isSaving: false, aiError: '',
+                            savedAttachments: a.attachments || [],
+                          }); }}
                           className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-indigo-600 transition-colors"
                           title="Editar"
                         >
@@ -571,6 +630,34 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
                           {expandedIds.has(a.id) ? 'Ver menos' : 'Ver mais'}
                         </button>
                       )}
+                      {/* Anexos da análise */}
+                      {a.attachments && a.attachments.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {a.attachments.map((att, i) => {
+                            const isImg = att.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(att.name);
+                            if (isImg) {
+                              return (
+                                <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+                                  <img src={att.url} alt={att.name} className="h-16 w-16 object-cover rounded-lg border border-gray-200 hover:opacity-80 transition-opacity" />
+                                </a>
+                              );
+                            }
+                            return (
+                              <a
+                                key={i}
+                                href={att.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md border border-slate-200 hover:bg-slate-100 transition-colors group"
+                              >
+                                {getAnalysisAttachmentIcon(att)}
+                                <span className="text-[10px] text-slate-600 font-medium truncate max-w-[120px]">{att.name}</span>
+                                <Download size={9} className="text-slate-400 group-hover:text-indigo-500 shrink-0" />
+                              </a>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -587,12 +674,22 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
             {/* Editor */}
             {editor.mode !== 'closed' && (
               <div className="mt-2 bg-white rounded-lg border border-indigo-200 shadow-sm p-4">
+                {/* Input oculto de arquivos */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept={ANALYSIS_ACCEPTED_EXTENSIONS}
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[13px] font-bold text-slate-700">
                     {editor.mode === 'new' ? 'Nova Análise' : 'Editar Análise'}
                   </span>
                   <button
-                    onClick={() => setEditor(EDITOR_INITIAL)}
+                    onClick={() => { setPendingFiles([]); setEditor(EDITOR_INITIAL); }}
                     className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700"
                   >
                     <X size={14} />
@@ -613,6 +710,49 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
                   rows={8}
                   className="w-full px-3 py-2 text-[13px] border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-300 placeholder-gray-300 resize-y"
                 />
+
+                {/* Anexos já salvos (modo edit) */}
+                {editor.savedAttachments.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Anexos salvos</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {editor.savedAttachments.map((att, i) => (
+                        <div key={i} className="flex items-center gap-1 px-2 py-1 bg-slate-50 rounded-md border border-slate-200 max-w-[200px]">
+                          {getAnalysisAttachmentIcon(att)}
+                          <span className="text-[10px] text-slate-600 truncate flex-1">{att.name}</span>
+                          <button
+                            onClick={() => setEditor(prev => ({ ...prev, savedAttachments: prev.savedAttachments.filter((_, idx) => idx !== i) }))}
+                            className="text-gray-400 hover:text-red-500 transition-colors shrink-0 ml-0.5"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Arquivos pendentes de upload */}
+                {pendingFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide">Para anexar ao salvar</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {pendingFiles.map((f, i) => (
+                        <div key={i} className="flex items-center gap-1 px-2 py-1 bg-indigo-50 rounded-md border border-indigo-200 max-w-[200px]">
+                          {getAnalysisAttachmentIcon(f)}
+                          <span className="text-[10px] text-indigo-700 truncate flex-1">{f.name}</span>
+                          <span className="text-[9px] text-indigo-400 shrink-0">{formatAnalysisFileSize(f.size)}</span>
+                          <button
+                            onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))}
+                            className="text-indigo-300 hover:text-red-500 transition-colors shrink-0 ml-0.5"
+                          >
+                            <X size={10} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {editor.aiError && (
                   <p className="mt-1 text-[11px] text-rose-600">{editor.aiError}</p>
@@ -636,9 +776,18 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
                     {editor.isImprovingAI ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                     {editor.isImprovingAI ? 'Melhorando...' : 'Melhorar com IA'}
                   </button>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={editor.isSaving || uploading || (pendingFiles.length + editor.savedAttachments.length) >= ANALYSIS_MAX_FILES}
+                    title={`Anexar arquivo (máx. ${ANALYSIS_MAX_FILES}, ${ANALYSIS_MAX_FILE_SIZE_MB}MB cada)`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-bold rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-200 disabled:opacity-40 transition-colors"
+                  >
+                    <Paperclip size={13} />
+                    Anexar
+                  </button>
                   <div className="flex-1" />
                   <button
-                    onClick={() => setEditor(EDITOR_INITIAL)}
+                    onClick={() => { setPendingFiles([]); setEditor(EDITOR_INITIAL); }}
                     disabled={editor.isSaving}
                     className="px-3 py-1.5 text-[12px] font-bold rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
                   >
@@ -646,10 +795,10 @@ const DreAnalysisSection: React.FC<DreAnalysisSectionProps> = ({
                   </button>
                   <button
                     onClick={handleSave}
-                    disabled={!editor.content.trim() || editor.isSaving || editor.isGeneratingAI}
+                    disabled={!editor.content.trim() || editor.isSaving || editor.isGeneratingAI || uploading}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-bold rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {editor.isSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                    {editor.isSaving || uploading ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                     Salvar
                   </button>
                 </div>

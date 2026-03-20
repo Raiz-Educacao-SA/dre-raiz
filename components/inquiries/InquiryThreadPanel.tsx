@@ -1,12 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Send, CheckCircle2, XCircle, RotateCcw, Clock, Zap, AlertTriangle, ChevronDown } from 'lucide-react';
+import { X, Send, CheckCircle2, XCircle, RotateCcw, Clock, Zap, AlertTriangle, ChevronDown, ShieldCheck, Lock, Paperclip, FileText, FileImage, FileSpreadsheet, Download } from 'lucide-react';
 import { getInquiryMessages, addMessage, approveInquiry, rejectInquiry, reopenInquiry, updateInquiryStatus, sendInquiryEmail, buildInquiryDeepLink, formatFilterContextSummary } from '../../services/inquiryService';
-import type { DreInquiry, DreInquiryMessage, InquiryMessageType } from '../../types';
+import { uploadChatAttachment } from '../../services/supabaseService';
+import type { DreInquiry, DreInquiryMessage, InquiryMessageType, Attachment } from '../../types';
 import { toast } from 'sonner';
+
+const ACCEPTED_EXTENSIONS = '.jpg,.jpeg,.png,.gif,.webp,.svg,.pdf,.doc,.docx,.xls,.xlsx,.xlsm,.csv,.ppt,.pptx,.txt,.zip,.xml,.json,.eml,.msg';
+const MAX_FILES = 5;
+const MAX_FILE_SIZE_MB = 10;
+
+function getAttachmentIcon(attachment: Attachment | File) {
+  const type = attachment.type || '';
+  const name = attachment.name.toLowerCase();
+  if (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/.test(name))
+    return <FileImage size={11} className="shrink-0 text-blue-500" />;
+  if (type.includes('spreadsheet') || type.includes('excel') || type === 'text/csv' || /\.(xls|xlsx|xlsm|csv)$/.test(name))
+    return <FileSpreadsheet size={11} className="shrink-0 text-green-600" />;
+  if (type === 'application/pdf' || name.endsWith('.pdf'))
+    return <FileText size={11} className="shrink-0 text-red-500" />;
+  return <FileText size={11} className="shrink-0 text-gray-500" />;
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
 
 interface InquiryThreadPanelProps {
   inquiry: DreInquiry;
   currentUser: { email: string; name: string };
+  isAdmin?: boolean;
   isOpen: boolean;
   onClose: () => void;
   onUpdated: () => void;
@@ -33,17 +57,22 @@ const MSG_TYPE_COLORS: Record<InquiryMessageType, string> = {
 };
 
 const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
-  inquiry, currentUser, isOpen, onClose, onUpdated, onRestoreFilters,
+  inquiry, currentUser, isAdmin = false, isOpen, onClose, onUpdated, onRestoreFilters,
 }) => {
   const [messages, setMessages] = useState<DreInquiryMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isRequester = inquiry.requester_email === currentUser.email;
   const isAssignee = inquiry.assignee_email === currentUser.email;
+  // Admin pode agir como se fosse requester+assignee (para resolver conversas de quem está ausente)
+  const isAdminOverride = isAdmin && !isRequester && !isAssignee;
 
   useEffect(() => {
     if (isOpen && inquiry.id) {
@@ -60,9 +89,44 @@ const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
 
   const statusInfo = STATUS_LABELS[inquiry.status] || STATUS_LABELS.pending;
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const valid = files.filter(f => {
+      if (f.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+        toast.error(`"${f.name}" excede ${MAX_FILE_SIZE_MB}MB`);
+        return false;
+      }
+      return true;
+    });
+    setPendingFiles(prev => {
+      const merged = [...prev, ...valid];
+      if (merged.length > MAX_FILES) {
+        toast.error(`Máximo ${MAX_FILES} arquivos por mensagem`);
+        return merged.slice(0, MAX_FILES);
+      }
+      return merged;
+    });
+    // reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() && pendingFiles.length === 0) return;
     setSending(true);
+
+    // Upload de anexos
+    let attachments: Attachment[] = [];
+    if (pendingFiles.length > 0) {
+      setUploading(true);
+      const results = await Promise.all(
+        pendingFiles.map(f => uploadChatAttachment(f, `inquiries/${inquiry.id}`))
+      );
+      setUploading(false);
+      attachments = results.filter((r): r is Attachment => r !== null);
+      if (attachments.length < pendingFiles.length) {
+        toast.error('Alguns arquivos não puderam ser enviados');
+      }
+    }
 
     // Determinar tipo de mensagem
     let messageType: InquiryMessageType = 'response';
@@ -73,11 +137,13 @@ const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
       author_name: currentUser.name,
       message: newMessage.trim(),
       message_type: messageType,
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
 
     if (msg) {
       setMessages(prev => [...prev, msg]);
       setNewMessage('');
+      setPendingFiles([]);
 
       // Atualizar status
       if (isAssignee && (inquiry.status === 'pending' || inquiry.status === 'reopened' || inquiry.status === 'rejected')) {
@@ -177,17 +243,46 @@ const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
     setActionLoading(null);
   };
 
+  const handleAdminClose = async () => {
+    setActionLoading('close');
+    const note = newMessage.trim() || 'Encerrada pelo administrador.';
+    await addMessage(inquiry.id, {
+      author_email: currentUser.email,
+      author_name: currentUser.name,
+      message: `[Admin] ${note}`,
+      message_type: 'system',
+    });
+    await updateInquiryStatus(inquiry.id, 'closed', new Date().toISOString());
+    toast.success('Solicitação encerrada pelo admin');
+
+    // Notificar ambos os participantes
+    const deepLink = buildInquiryDeepLink(inquiry.id, inquiry.filter_context);
+    const filterSummary = formatFilterContextSummary(inquiry.filter_context);
+    await Promise.all([
+      sendInquiryEmail({ type: 'approval', recipientEmail: inquiry.requester_email, recipientName: inquiry.requester_name, senderName: `${currentUser.name} (Admin)`, subject: inquiry.subject, question: inquiry.question, message: note, filterSummary, deepLink }),
+      sendInquiryEmail({ type: 'approval', recipientEmail: inquiry.assignee_email, recipientName: inquiry.assignee_name, senderName: `${currentUser.name} (Admin)`, subject: inquiry.subject, question: inquiry.question, message: note, filterSummary, deepLink }),
+    ]);
+
+    setNewMessage('');
+    onUpdated();
+    onClose();
+    setActionLoading(null);
+  };
+
   const formatDate = (d: string) => {
     const dt = new Date(d);
     return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
   };
 
   // Quem pode agir
-  const canRespond = isAssignee && ['pending', 'reopened', 'rejected'].includes(inquiry.status);
-  const canApprove = isRequester && inquiry.status === 'answered';
-  const canReply = isRequester && ['answered'].includes(inquiry.status);
+  const canRespond = (isAssignee || isAdminOverride) && ['pending', 'reopened', 'rejected'].includes(inquiry.status);
+  const canApprove = (isRequester || isAdminOverride) && inquiry.status === 'answered';
+  const canReject = (isRequester || isAdminOverride) && inquiry.status === 'answered';
+  const canReply = (isRequester || isAdminOverride) && ['answered'].includes(inquiry.status);
   const isClosed = ['approved', 'closed', 'expired'].includes(inquiry.status);
-  const canChat = (isRequester || isAssignee) && !isClosed;
+  const canChat = (isRequester || isAssignee || isAdminOverride) && !isClosed;
+  // Admin pode encerrar qualquer conversa aberta
+  const canClose = isAdminOverride && !isClosed;
 
   return (
     <div className="fixed inset-0 z-[300] flex justify-end bg-black/30 backdrop-blur-sm">
@@ -201,6 +296,11 @@ const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
                 {inquiry.priority === 'urgent' && (
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-red-500 text-white flex items-center gap-0.5">
                     <Zap size={8} /> Urgente
+                  </span>
+                )}
+                {isAdminOverride && (
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-orange-500 text-white flex items-center gap-0.5">
+                    <ShieldCheck size={8} /> Admin
                   </span>
                 )}
               </div>
@@ -266,7 +366,42 @@ const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
                     <span className="text-[9px] font-bold text-gray-700">{msg.author_name}</span>
                     <span className="text-[8px] text-gray-400">{formatDate(msg.created_at)}</span>
                   </div>
-                  <p className="text-[12px] text-gray-800 whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                  {msg.message && (
+                    <p className="text-[12px] text-gray-800 whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                  )}
+                  {/* Anexos */}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="mt-1.5 space-y-1">
+                      {msg.attachments.map((att, i) => {
+                        const isImage = att.type.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(att.name);
+                        if (isImage) {
+                          return (
+                            <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" className="block">
+                              <img
+                                src={att.url}
+                                alt={att.name}
+                                className="max-w-[220px] max-h-[180px] object-cover rounded-lg border border-white/50 hover:opacity-90 transition-opacity"
+                              />
+                            </a>
+                          );
+                        }
+                        return (
+                          <a
+                            key={i}
+                            href={att.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-2 py-1.5 bg-white/60 rounded-lg border border-gray-200 hover:bg-white/90 transition-colors group"
+                          >
+                            {getAttachmentIcon(att)}
+                            <span className="text-[11px] text-gray-700 font-medium truncate flex-1 max-w-[160px]">{att.name}</span>
+                            <span className="text-[9px] text-gray-400">{formatFileSize(att.size)}</span>
+                            <Download size={9} className="text-gray-400 group-hover:text-blue-500 shrink-0 ml-0.5" />
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -307,6 +442,74 @@ const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
               </button>
             )}
 
+            {/* Admin override: encerrar conversa */}
+            {canClose && (
+              <div className="mb-2">
+                <div className="flex items-center gap-1 mb-1.5">
+                  <ShieldCheck size={10} className="text-orange-500" />
+                  <span className="text-[9px] font-black text-orange-600 uppercase">Ação Admin</span>
+                </div>
+                <div className="flex gap-2">
+                  {inquiry.status === 'answered' && (
+                    <>
+                      <button
+                        onClick={handleApprove}
+                        disabled={!!actionLoading}
+                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-bold hover:bg-emerald-600 disabled:opacity-50 transition-all"
+                      >
+                        <CheckCircle2 size={13} /> Aprovar
+                      </button>
+                      <button
+                        onClick={handleReject}
+                        disabled={!!actionLoading || !newMessage.trim()}
+                        className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-red-500 text-white text-xs font-bold hover:bg-red-600 disabled:opacity-50 transition-all"
+                        title="Escreva o motivo abaixo antes de devolver"
+                      >
+                        <XCircle size={13} /> Devolver
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={handleAdminClose}
+                    disabled={!!actionLoading}
+                    className="flex-1 flex items-center justify-center gap-1 py-2 rounded-lg bg-gray-600 text-white text-xs font-bold hover:bg-gray-700 disabled:opacity-50 transition-all"
+                    title="Encerrar conversa como admin"
+                  >
+                    <Lock size={13} /> Encerrar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Input oculto de arquivos */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_EXTENSIONS}
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+
+            {/* Chips de arquivos pendentes */}
+            {pendingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2 p-2 bg-gray-50 rounded-lg border border-gray-100">
+                {pendingFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-1 px-2 py-1 bg-white rounded-md border border-gray-200 max-w-[160px]">
+                    {getAttachmentIcon(f)}
+                    <span className="text-[10px] text-gray-700 truncate flex-1">{f.name}</span>
+                    <span className="text-[9px] text-gray-400 shrink-0">{formatFileSize(f.size)}</span>
+                    <button
+                      onClick={() => setPendingFiles(prev => prev.filter((_, idx) => idx !== i))}
+                      className="ml-0.5 text-gray-400 hover:text-red-500 transition-colors shrink-0"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Text input */}
             <div className="flex gap-2">
               <textarea
@@ -327,19 +530,31 @@ const InquiryThreadPanel: React.FC<InquiryThreadPanelProps> = ({
                   }
                 }}
               />
-              {canChat && (
-                <button
-                  onClick={handleSendMessage}
-                  disabled={sending || !newMessage.trim()}
-                  className="px-3 rounded-lg bg-gradient-to-r from-[#1B75BB] to-[#152e55] text-white disabled:opacity-40 hover:shadow-lg transition-all"
-                >
-                  {sending ? (
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <Send size={14} />
-                  )}
-                </button>
-              )}
+              <div className="flex flex-col gap-1.5">
+                {canChat && (
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sending || uploading || pendingFiles.length >= MAX_FILES}
+                    title={`Anexar arquivo (máx. ${MAX_FILES} arquivos, ${MAX_FILE_SIZE_MB}MB cada)`}
+                    className="px-2.5 py-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-blue-500 hover:border-blue-300 disabled:opacity-40 transition-all"
+                  >
+                    <Paperclip size={14} />
+                  </button>
+                )}
+                {canChat && (
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={sending || uploading || (!newMessage.trim() && pendingFiles.length === 0)}
+                    className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-[#1B75BB] to-[#152e55] text-white disabled:opacity-40 hover:shadow-lg transition-all flex-1 flex items-center justify-center"
+                  >
+                    {sending || uploading ? (
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Send size={14} />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

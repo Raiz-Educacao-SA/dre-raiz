@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import type { DreInquiry, DreInquiryMessage, InquirySlaConfig, InquiryStatus, InquiryStats, DreInquiryFilterContext } from '../types';
+import type { DreInquiry, DreInquiryMessage, InquirySlaConfig, InquiryStatus, InquiryStats, DreInquiryFilterContext, Attachment } from '../types';
 
 // ── CRUD Inquiries ──
 
@@ -194,6 +194,7 @@ export const addMessage = async (inquiryId: number, data: {
   author_name: string;
   message: string;
   message_type: string;
+  attachments?: Attachment[];
 }): Promise<DreInquiryMessage | null> => {
   const { data: msg, error } = await supabase
     .from('dre_inquiry_messages')
