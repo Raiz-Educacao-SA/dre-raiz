@@ -144,6 +144,13 @@ export default function AnalysisView() {
     return [];
   }, [selectedMarcas, allowedMarcas, hasPermissions]);
 
+  // Filiais efetivas: seleção do usuário, ou permissões se nada selecionado
+  const effectiveFiliais = useMemo(() => {
+    if (selectedFiliais.length > 0) return selectedFiliais;
+    if (hasPermissions && allowedFiliais.length > 0) return allowedFiliais;
+    return [];
+  }, [selectedFiliais, allowedFiliais, hasPermissions]);
+
   // Tag01 efetivas (permissões — sem seletor manual nesta view)
   const effectiveTag01 = useMemo(() => {
     if (hasPermissions && allowedTag01.length > 0) return allowedTag01;
@@ -260,7 +267,7 @@ export default function AnalysisView() {
       // Step 1: Fetch data — live RPCs when marca selected, snapshot otherwise
       const hasMarca = effectiveMarcas.length > 0;
       const rawItems = hasMarca
-        ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0])
+        ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0], effectiveFiliais.length > 0 ? effectiveFiliais : null)
         : await getVarianceJustifications({ year_month: selectedMonth });
       // Step 1b: Apply tag01 permissions filter
       const items = filterByTag01(rawItems);
@@ -346,7 +353,7 @@ export default function AnalysisView() {
       if (!data) {
         const hasMarca = effectiveMarcas.length > 0;
         const rawItems = hasMarca
-          ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0])
+          ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0], effectiveFiliais.length > 0 ? effectiveFiliais : null)
           : await getVarianceJustifications({ year_month: selectedMonth });
         const items = filterByTag01(rawItems);
         if (!items || items.length === 0) {

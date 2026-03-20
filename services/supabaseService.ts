@@ -3218,6 +3218,7 @@ export const getVarianceYtdItems = async (
 export async function fetchLiveDreForPpt(
   yearMonth: string,
   marca: string,
+  filiais?: string[] | null,
 ): Promise<VarianceJustification[]> {
   const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
   const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
@@ -3228,7 +3229,7 @@ export async function fetchLiveDreForPpt(
     p_month_from: yearMonth,
     p_month_to: yearMonth,
     p_marcas: [marca],
-    p_nome_filiais: null,
+    p_nome_filiais: filiais && filiais.length > 0 ? filiais : null,
     p_tags02: null,
     p_tags01: null,
     p_recurring: 'Sim',
