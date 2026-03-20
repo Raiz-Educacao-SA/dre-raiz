@@ -11,6 +11,7 @@ interface InquiryListPanelProps {
   filterContextLabel: string;
   dreSnapshot?: Record<string, number> | null;
   currentUser: { email: string; name: string };
+  isAdmin?: boolean;
   onRestoreFilters?: (ctx: DreInquiryFilterContext) => void;
 }
 
@@ -27,7 +28,7 @@ const STATUS_CONFIG: Record<string, { label: string; dot: string }> = {
 type ViewMode = 'contexto' | 'recebidas' | 'enviadas';
 
 const InquiryListPanel: React.FC<InquiryListPanelProps> = ({
-  filterHash, filterContext, filterContextLabel, dreSnapshot, currentUser, onRestoreFilters,
+  filterHash, filterContext, filterContextLabel, dreSnapshot, currentUser, isAdmin = false, onRestoreFilters,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('contexto');
@@ -310,6 +311,7 @@ const InquiryListPanel: React.FC<InquiryListPanelProps> = ({
         <InquiryThreadPanel
           inquiry={selectedInquiry}
           currentUser={currentUser}
+          isAdmin={isAdmin}
           isOpen={!!selectedInquiry}
           onClose={() => { setSelectedInquiry(null); refreshCounts(); }}
           onUpdated={handleUpdated}

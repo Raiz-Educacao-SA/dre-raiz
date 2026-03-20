@@ -627,6 +627,7 @@ const InquiryInboxView: React.FC = () => {
         <InquiryThreadPanel
           inquiry={selectedInquiry}
           currentUser={currentUser}
+          isAdmin={isAdmin}
           isOpen={!!selectedInquiry}
           onClose={() => setSelectedInquiry(null)}
           onUpdated={handleUpdated}
