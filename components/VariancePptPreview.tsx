@@ -944,13 +944,14 @@ function MarcaSlide({
   const chartOption = {
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const }, textStyle: { fontSize: 12 } },
     legend: {
-      bottom: 4, itemWidth: 12, itemHeight: 8, textStyle: { fontSize: 10, fontWeight: 600, color: '#374151' },
+      bottom: 4, itemWidth: 12, itemHeight: 8,
+      textStyle: { fontSize: 10, fontWeight: 600, color: '#374151' },
     },
-    grid: { left: 12, right: 12, top: 42, bottom: 40 },
+    grid: { left: 6, right: 6, top: 44, bottom: 34 },
     xAxis: {
       type: 'category' as const,
       data: labels,
-      axisLabel: { fontSize: 11, fontWeight: 700, color: '#1F2937' },
+      axisLabel: { fontSize: 12, fontWeight: 800, color: '#1F2937' },
       axisLine: { lineStyle: { color: '#E5E7EB' } },
       axisTick: { show: false },
     },
@@ -960,8 +961,8 @@ function MarcaSlide({
         name: 'Real',
         type: 'bar' as const,
         data: realV,
-        barMaxWidth: 36,
-        barGap: '15%',
+        barMaxWidth: 44,
+        barGap: '12%',
         itemStyle: { color: accentClr, borderRadius: [3, 3, 0, 0] },
         label: {
           show: true,
@@ -989,13 +990,13 @@ function MarcaSlide({
         name: 'Orçado',
         type: 'bar' as const,
         data: orcV,
-        barMaxWidth: 36,
+        barMaxWidth: 44,
         itemStyle: { color: '#D1D5DB', borderRadius: [3, 3, 0, 0] },
         label: {
           show: true,
           position: 'top' as const,
           formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 8,
+          fontSize: 9,
           color: '#9CA3AF',
           fontWeight: 600,
         },
@@ -1004,19 +1005,24 @@ function MarcaSlide({
         name: String(data.a1Year),
         type: 'bar' as const,
         data: a1V,
-        barMaxWidth: 36,
+        barMaxWidth: 44,
         itemStyle: { color: hex(C.teal), borderRadius: [3, 3, 0, 0] },
         label: {
           show: true,
           position: 'top' as const,
           formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 8,
+          fontSize: 9,
           color: hex(C.teal),
           fontWeight: 600,
         },
       },
     ],
   };
+
+  // Sort marcas for ranking: worst to best (most negative orcPct first)
+  const ranked = filtered
+    .map((e, i) => ({ ...e, ...marcaDeltas[i] }))
+    .sort((a, b) => (a.orcPct ?? 0) - (b.orcPct ?? 0));
 
   return (
     <SlideCard>
@@ -1027,67 +1033,96 @@ function MarcaSlide({
         color={section.sectionColor}
         unitLabel={scaleLabel(unit)}
       />
-      <div className="flex gap-3 px-4 pb-8 pt-2" style={{ height: 'calc(100% - 52px)' }}>
-        {/* Chart */}
-        <div className="flex-1 min-w-0 flex flex-col min-h-0">
-          <div className="flex-1 min-h-0">
-            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} />
-          </div>
-          {/* Delta strip */}
-          <div className="mt-1 overflow-x-auto shrink-0">
-            <table className="w-full text-center border-collapse" style={{ fontSize: '9px' }}>
-              <thead>
-                <tr>
-                  <th className="px-1 py-0.5 text-gray-400 font-bold">Marca</th>
-                  <th className="px-1 py-0.5 font-bold text-gray-500">Δ vs Orç (R$)</th>
-                  <th className="px-1 py-0.5 font-bold text-gray-500">Δ vs Orç %</th>
-                  <th className="px-1 py-0.5 font-bold" style={{ color: hex(C.teal) }}>Δ vs A-1 %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((e, i) => {
-                  const d = marcaDeltas[i];
-                  const orcColor = deltaColor(d.orcPct);
-                  const a1Color = deltaColor(d.a1Pct);
-                  return (
-                    <tr key={e.marca} className="border-t border-gray-100">
-                      <td className="px-1 py-0.5 font-bold text-gray-600">{e.marca}</td>
-                      <td className="px-1 py-0.5 font-bold tabular-nums" style={{ color: orcColor }}>{fmtScaled(d.orcAbs, unit)} {suffix}</td>
-                      <td className="px-1 py-0.5 font-bold tabular-nums" style={{ color: orcColor }}>{fmtPct(d.orcPct)}</td>
-                      <td className="px-1 py-0.5 font-bold tabular-nums" style={{ color: a1Color }}>{fmtPct(d.a1Pct)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
+
+        {/* Left 65%: Chart full height */}
+        <div className="flex-1 min-w-0 flex flex-col px-3 pt-2 min-h-0">
+          <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} />
         </div>
 
-        {/* Right: KPIs */}
-        <div className="w-44 shrink-0 flex flex-col gap-2">
-          <KpiCard
-            label="TOTAL REAL"
-            value={`${fmtScaled(Math.abs(totalReal), unit)} ${suffix}`}
-            color={accentClr}
-          />
-          <KpiCard
-            label="TOTAL ORÇADO"
-            value={`${fmtScaled(Math.abs(totalOrc), unit)} ${suffix}`}
-            color="#9CA3AF"
-          />
-          <KpiCard
-            label={deltaAbs >= 0 ? 'ECONOMIA vs ORC' : 'DESVIO vs ORC'}
-            value={fmtPct(deltaPct)}
-            color={favorable ? hex(C.deltaPositivo) : hex(C.deltaNegativo)}
-            sub={`${fmtScaled(Math.abs(deltaAbs), unit)} ${suffix}`}
-          />
-          <KpiCard
-            label={deltaA1Abs >= 0 ? `ECON. vs ${data.a1Year}` : `DESVIO vs ${data.a1Year}`}
-            value={fmtPct(deltaA1Pct)}
-            color={deltaColor(deltaA1Pct)}
-          />
+        {/* Right 35%: KPI summary + per-marca ranking */}
+        <div className="w-[35%] shrink-0 border-l border-gray-100 flex flex-col px-3 pt-2 pb-1 gap-2">
+
+          {/* KPI row — 2 cols */}
+          <div className="grid grid-cols-2 gap-1.5 shrink-0">
+            <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
+              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">TOTAL REAL</div>
+              <div className="text-[13px] font-black tabular-nums" style={{ color: accentClr }}>
+                {fmtScaled(Math.abs(totalReal), unit)}<span className="text-[9px] font-bold ml-0.5 text-gray-400">{suffix}</span>
+              </div>
+            </div>
+            <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
+              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">TOTAL ORÇADO</div>
+              <div className="text-[13px] font-black tabular-nums text-gray-500">
+                {fmtScaled(Math.abs(totalOrc), unit)}<span className="text-[9px] font-bold ml-0.5 text-gray-400">{suffix}</span>
+              </div>
+            </div>
+            <div className="rounded-lg p-2 border" style={{ borderColor: favorable ? '#BBF7D0' : '#FECACA', backgroundColor: favorable ? '#F0FDF4' : '#FFF5F5' }}>
+              <div className="text-[8px] font-bold uppercase tracking-wider mb-0.5" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
+                {deltaAbs >= 0 ? 'ECONOMIA' : 'DESVIO'} vs ORC
+              </div>
+              <div className="text-[13px] font-black tabular-nums" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
+                {fmtPct(deltaPct)}
+              </div>
+              <div className="text-[8px] tabular-nums mt-0.5" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
+                {fmtScaled(Math.abs(deltaAbs), unit)} {suffix}
+              </div>
+            </div>
+            <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
+              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+                {deltaA1Abs >= 0 ? 'ECON.' : 'DESVIO'} vs {data.a1Year}
+              </div>
+              <div className="text-[13px] font-black tabular-nums" style={{ color: deltaColor(deltaA1Pct) }}>
+                {fmtPct(deltaA1Pct)}
+              </div>
+              <div className="text-[8px] tabular-nums mt-0.5 text-gray-400">
+                {fmtScaled(Math.abs(deltaA1Abs), unit)} {suffix}
+              </div>
+            </div>
+          </div>
+
+          {/* Per-marca ranking */}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-1 shrink-0">
+              RANKING POR MARCA — Δ vs Orçado
+            </div>
+            <div className="flex flex-col gap-1 overflow-hidden">
+              {ranked.map((e, i) => {
+                const fav = (e.orcPct ?? 0) >= 0;
+                const barW = Math.min(100, Math.abs(e.orcPct ?? 0) * 2);
+                const barClr = fav ? '#16A34A' : '#DC2626';
+                return (
+                  <div key={e.marca} className="flex items-center gap-1.5 shrink-0">
+                    {/* rank */}
+                    <span className="text-[8px] font-black text-gray-300 w-3 shrink-0 text-right">{i + 1}</span>
+                    {/* marca badge */}
+                    <span className="text-[9px] font-black w-8 shrink-0" style={{ color: accentClr }}>{e.marca}</span>
+                    {/* real value */}
+                    <span className="text-[9px] tabular-nums text-gray-500 w-10 shrink-0 text-right">
+                      {fmtScaled(Math.abs(e.real), unit)}{suffix}
+                    </span>
+                    {/* bar */}
+                    <div className="flex-1 min-w-0 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${barW}%`, backgroundColor: barClr, opacity: 0.8 }}
+                      />
+                    </div>
+                    {/* delta pct */}
+                    <span className="text-[9px] font-bold tabular-nums w-10 shrink-0 text-right" style={{ color: barClr }}>
+                      {e.orcPct !== null ? `${e.orcPct >= 0 ? '+' : ''}${e.orcPct.toFixed(1)}%` : '–'}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* AI insight */}
           {(section.node.enrichedInsight || section.node.orcAiSummary) && (
-            <InsightsBox text={section.node.enrichedInsight || section.node.orcAiSummary || ''} compact />
+            <div className="shrink-0 mt-auto">
+              <InsightsBox text={section.node.enrichedInsight || section.node.orcAiSummary || ''} compact />
+            </div>
           )}
         </div>
       </div>
