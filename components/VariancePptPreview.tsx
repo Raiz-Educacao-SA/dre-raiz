@@ -148,6 +148,30 @@ function SlideHeader({
   filterSlot?: React.ReactNode;
 }) {
   const accentColor = color ? `#${color}` : '#2563EB';
+  const { activePeriod, setActivePeriod, periodLoading, availableMonths } = React.useContext(PeriodContext);
+  const [showPicker, setShowPicker] = React.useState(false);
+  const pickerRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!showPicker) return;
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPicker]);
+
+  // Display: if context has active period, use it; else use prop
+  const displayLabel = activePeriod.month
+    ? (activePeriod.isYtd ? buildYtdShort(activePeriod.month) : monthShortFromYearMonth(activePeriod.month))
+    : monthShort;
+
+  // Detect if period has been changed from original
+  const periodChanged = activePeriod.month
+    ? (activePeriod.isYtd || monthShortFromYearMonth(activePeriod.month) !== monthShort)
+    : false;
+
   return (
     <div className="px-6 pt-3 pb-2.5 border-b border-gray-100 shrink-0 bg-white" style={{ minHeight: 52 }}>
       <div className="flex items-start justify-between gap-4">
@@ -168,15 +192,65 @@ function SlideHeader({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0 mt-0.5">
-          <span className="flex items-center gap-1 px-2 py-1 rounded-md border border-gray-200 bg-gray-50 text-[11px] font-bold text-gray-600">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-            {monthShort}
-          </span>
+          <div className="relative" ref={pickerRef}>
+            <button
+              onClick={e => { e.stopPropagation(); setShowPicker(v => !v); }}
+              disabled={availableMonths.length === 0 || periodLoading}
+              className="flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-bold transition-colors select-none"
+              style={periodChanged
+                ? { borderColor: '#2563EB', backgroundColor: '#EFF6FF', color: '#2563EB' }
+                : { borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', color: '#6B7280' }
+              }
+              title="Trocar período"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              {periodLoading ? '…' : displayLabel}
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+
+            {showPicker && availableMonths.length > 0 && (
+              <div
+                className="absolute right-0 top-full mt-1 z-50 rounded-xl shadow-2xl border overflow-hidden"
+                style={{ backgroundColor: '#111827', borderColor: '#374151', minWidth: 140, maxHeight: 260, overflowY: 'auto' }}
+              >
+                {/* YTD option */}
+                <button
+                  onClick={() => { setActivePeriod({ month: availableMonths[0], isYtd: true }); setShowPicker(false); }}
+                  className="w-full text-left px-3 py-2 text-[11px] font-bold transition-colors flex items-center gap-2"
+                  style={activePeriod.isYtd
+                    ? { backgroundColor: '#2563EB', color: 'white' }
+                    : { color: '#9CA3AF' }
+                  }
+                >
+                  <span>📅</span>
+                  YTD (Jan→atual)
+                </button>
+                <div style={{ borderTop: '1px solid #374151' }} />
+                {/* Monthly options */}
+                {availableMonths.map(m => {
+                  const isActive = !activePeriod.isYtd && activePeriod.month === m;
+                  return (
+                    <button
+                      key={m}
+                      onClick={() => { setActivePeriod({ month: m, isYtd: false }); setShowPicker(false); }}
+                      className="w-full text-left px-3 py-2 text-[11px] font-bold transition-colors"
+                      style={isActive
+                        ? { backgroundColor: '#2563EB', color: 'white' }
+                        : { color: '#D1D5DB' }
+                      }
+                    >
+                      {monthShortFromYearMonth(m)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           {filterSlot}
         </div>
       </div>
@@ -2339,6 +2413,28 @@ const MarcaFilterContext = React.createContext<{
   loading: boolean;
 }>({ activeMarcas: [], setActiveMarcas: () => {}, loading: false });
 
+// ── Global period context ─────────────────────────────────────────────
+type ActivePeriod = { month: string; isYtd: boolean };
+
+const PeriodContext = React.createContext<{
+  activePeriod: ActivePeriod;
+  setActivePeriod: (p: ActivePeriod) => void;
+  periodLoading: boolean;
+  availableMonths: string[];
+}>({ activePeriod: { month: '', isYtd: false }, setActivePeriod: () => {}, periodLoading: false, availableMonths: [] });
+
+// ── Period badge helper functions ─────────────────────────────────────
+function monthShortFromYearMonth(ym: string): string {
+  const [yr, mo] = ym.split('-');
+  const names = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+  return `${names[parseInt(mo, 10) - 1]}/${yr.slice(2)}`;
+}
+function buildYtdShort(ym: string): string {
+  const [yr, mo] = ym.split('-');
+  const names = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+  return `JAN-${names[parseInt(mo, 10) - 1]}/${yr.slice(2)}`;
+}
+
 function filterT01Rows(rows: T01Row[], filters: SlideViewFilters): T01Row[] {
   if (isFiltersEmpty(filters)) return rows;
 
@@ -2453,6 +2549,15 @@ function SlideFilterPanel({
     return !arr || arr.length === 0 || arr.includes(value);
   };
 
+  const allGroupSelected = (groupId: keyof SlideViewFilters): boolean => {
+    const arr = draft[groupId] as string[] | undefined;
+    return !arr || arr.length === 0;
+  };
+
+  const selectAll = (groupId: keyof SlideViewFilters) => {
+    setDraft(prev => ({ ...prev, [groupId]: [] }));
+  };
+
   return (
     <div
       ref={panelRef as React.RefObject<HTMLDivElement>}
@@ -2476,7 +2581,16 @@ function SlideFilterPanel({
         {groups.map((group, gi) => (
           <div key={group.id} className={gi < groups.length - 1 ? 'border-b border-gray-800' : ''}>
             <div className="px-3 py-2">
-              <p className="text-[9px] font-bold text-blue-400 uppercase tracking-wider mb-1.5">{group.label}</p>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[9px] font-bold text-blue-400 uppercase tracking-wider">{group.label}</p>
+                <button
+                  onClick={() => selectAll(group.id)}
+                  className={`text-[8px] font-semibold px-1.5 py-0.5 rounded transition-colors ${allGroupSelected(group.id) ? 'text-gray-500 cursor-default' : 'text-blue-400 hover:text-blue-300 hover:bg-blue-900/30'}`}
+                  disabled={allGroupSelected(group.id)}
+                >
+                  Selecionar tudo
+                </button>
+              </div>
               <div className="space-y-0.5">
                 {group.options.map(opt => (
                   <label key={opt} className="flex items-center gap-2 cursor-pointer py-0.5 px-1 hover:bg-gray-800/60 rounded transition-colors">
@@ -3400,9 +3514,11 @@ function Tag01T02BreakdownSlide({
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════
 
-interface VariancePptPreviewProps {
+export interface VariancePptPreviewProps {
   data: VariancePptData;
   onReloadWithMarcas?: (marcas: string[]) => Promise<VariancePptData>;
+  onReloadWithPeriod?: (month: string, isYtd: boolean) => Promise<VariancePptData>;
+  availableMonths?: string[];
 }
 
 // ─── Slide wrapper with hide toggle ──────────────────────────────────
@@ -3449,7 +3565,7 @@ function HideableSlide({
   );
 }
 
-export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
+export default function VariancePptPreview({ data, onReloadWithPeriod, availableMonths = [] }: VariancePptPreviewProps) {
   const [presenting, setPresenting] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [hiddenSlides, setHiddenSlides] = useState<Set<string>>(new Set());
@@ -3457,26 +3573,56 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
   // ── In-memory marca filter (instant — no DB round-trip) ───────────
   const [activeMarcas, setActiveMarcas] = useState<string[]>([]);
 
-  // Reset selection when parent loads a new snapshot
-  useEffect(() => { setActiveMarcas([]); }, [data]);
+  // ── Base data: updated when period changes (DB re-fetch) or parent passes new data ──
+  const [baseData, setBaseData] = useState<VariancePptData>(data);
+  const [activePeriod, setActivePeriod] = useState<ActivePeriod>({
+    month: data.yearMonth ?? '',
+    isYtd: data.isYtd ?? false,
+  });
+  const [periodLoading, setPeriodLoading] = useState(false);
 
-  // Apply marca filter in-memory: filterVariancePptData uses depth-3 children
-  // (exact) where available and marcaBreakdowns proportional scaling as fallback —
-  // both are already loaded in `data`, so this is synchronous (~0 ms).
+  // Reset when parent loads a new snapshot
+  useEffect(() => {
+    setBaseData(data);
+    setActiveMarcas([]);
+    setActivePeriod({ month: data.yearMonth ?? '', isYtd: data.isYtd ?? false });
+  }, [data]);
+
+  // Period change → re-fetch from DB
+  useEffect(() => {
+    if (!onReloadWithPeriod || !activePeriod.month) return;
+    // Skip if same as parent data (initial mount or data reset)
+    const sameMonth = activePeriod.month === (data.yearMonth ?? '');
+    const sameYtd = (activePeriod.isYtd ?? false) === (data.isYtd ?? false);
+    if (sameMonth && sameYtd) return;
+    setPeriodLoading(true);
+    onReloadWithPeriod(activePeriod.month, activePeriod.isYtd)
+      .then(d => { setBaseData(d); setActiveMarcas([]); })
+      .catch(console.error)
+      .finally(() => setPeriodLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePeriod]);
+
+  // Apply marca filter in-memory on top of baseData
   const localData = useMemo(
-    () => activeMarcas.length > 0 ? filterVariancePptData(data, { marcas: activeMarcas }) : data,
-    [data, activeMarcas],
+    () => activeMarcas.length > 0 ? filterVariancePptData(baseData, { marcas: activeMarcas }) : baseData,
+    [baseData, activeMarcas],
   );
 
-  // All available marcas from the ORIGINAL data (never shrink the option list)
+  // All available marcas from the ORIGINAL baseData (never shrink the option list)
   const allAvailableMarcas = useMemo(
-    () => [...new Set(Object.values(data.marcaBreakdowns ?? {}).flat().map(e => e.marca))].sort(),
-    [data],
+    () => [...new Set(Object.values(baseData.marcaBreakdowns ?? {}).flat().map(e => e.marca))].sort(),
+    [baseData],
   );
 
   const marcaCtxValue = useMemo(
     () => ({ activeMarcas, setActiveMarcas, loading: false }),
     [activeMarcas],
+  );
+
+  const periodCtxValue = useMemo(
+    () => ({ activePeriod, setActivePeriod, periodLoading, availableMonths }),
+    [activePeriod, periodLoading, availableMonths],
   );
 
   const toggleHide = useCallback((key: string) => {
@@ -3866,33 +4012,37 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
         </div>
       </div>
 
-      <MarcaFilterContext.Provider value={marcaCtxValue}>
-        {/* All slides — preview mode */}
-        {allSlideEntries.map((entry, idx) => (
-          <HideableSlide
-            key={entry.key}
-            slideKey={entry.key}
-            hidden={hiddenSlides.has(entry.key)}
-            onToggle={toggleHide}
-            onPresent={() => startPresentation(idx)}
-          >
-            {entry.node}
-          </HideableSlide>
-        ))}
-      </MarcaFilterContext.Provider>
+      <PeriodContext.Provider value={periodCtxValue}>
+        <MarcaFilterContext.Provider value={marcaCtxValue}>
+          {/* All slides — preview mode */}
+          {allSlideEntries.map((entry, idx) => (
+            <HideableSlide
+              key={entry.key}
+              slideKey={entry.key}
+              hidden={hiddenSlides.has(entry.key)}
+              onToggle={toggleHide}
+              onPresent={() => startPresentation(idx)}
+            >
+              {entry.node}
+            </HideableSlide>
+          ))}
+        </MarcaFilterContext.Provider>
+      </PeriodContext.Provider>
 
       {/* Presentation mode overlay */}
       {presenting && (
-        <MarcaFilterContext.Provider value={marcaCtxValue}>
-          <PresentationMode
-            slides={presentationSlides}
-            currentSlide={currentSlide}
-            totalSlides={totalSlides}
-            onPrev={goPrev}
-            onNext={goNext}
-            onExit={exitPresentation}
-          />
-        </MarcaFilterContext.Provider>
+        <PeriodContext.Provider value={periodCtxValue}>
+          <MarcaFilterContext.Provider value={marcaCtxValue}>
+            <PresentationMode
+              slides={presentationSlides}
+              currentSlide={currentSlide}
+              totalSlides={totalSlides}
+              onPrev={goPrev}
+              onNext={goNext}
+              onExit={exitPresentation}
+            />
+          </MarcaFilterContext.Provider>
+        </PeriodContext.Provider>
       )}
     </div>
   );

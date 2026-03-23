@@ -7,6 +7,7 @@ import type {
   VariancePptNode,
   VariancePptMarcaEntry,
   VariancePptData,
+  VariancePptCalcRow,
 } from './variancePptTypes';
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -266,24 +267,32 @@ export function filterVariancePptData(
         : filterSectionByMarcaBreakdowns(s, { marcas: filters.marcas }, breakdowns);
     });
 
-    // Scale calcRows proportionally (only when no section filter — otherwise already [])
-    if (!sectionFiltered && calcRows.length > 0 && data.marcaBreakdowns) {
-      const all = Object.values(data.marcaBreakdowns).flat();
-      const sel = all.filter(e => marcaSet.has(e.marca));
-      const tR = all.reduce((s, e) => s + e.real,   0);
-      const sR = sel.reduce( (s, e) => s + e.real,   0);
-      const tO = all.reduce((s, e) => s + e.orcado, 0);
-      const sO = sel.reduce( (s, e) => s + e.orcado, 0);
-      const tA = all.reduce((s, e) => s + e.a1,     0);
-      const sA = sel.reduce( (s, e) => s + e.a1,     0);
-      const rR = tR !== 0 ? sR / tR : 0;
-      const rO = tO !== 0 ? sO / tO : 0;
-      const rA = tA !== 0 ? sA / tA : 0;
-      calcRows = calcRows.map(c => {
-        const real = c.real * rR;
-        const orc  = c.orcado * rO;
-        const a1   = c.a1 * rA;
-        return { ...c, real, orcado: orc, a1, deltaOrcPct: computeVarPct(real, orc), deltaA1Pct: computeVarPct(real, a1) };
+    // Recompute calcRows directly from filtered section totals (handles marca filter correctly)
+    if (!sectionFiltered && calcRows.length > 0) {
+      const findS = (prefix: string) => sections.find(s => s.tag0.startsWith(prefix));
+      const s01 = findS('01.'), s02 = findS('02.'), s03 = findS('03.');
+      const s04 = findS('04.'), s05 = findS('05.') ?? findS('06.');
+
+      const realM = (s01?.node.real || 0) + (s02?.node.real || 0) + (s03?.node.real || 0);
+      const orcM  = (s01?.node.orcCompare || 0) + (s02?.node.orcCompare || 0) + (s03?.node.orcCompare || 0);
+      const a1M   = (s01?.node.a1Compare || 0) + (s02?.node.a1Compare || 0) + (s03?.node.a1Compare || 0);
+
+      const realE = realM + (s04?.node.real || 0);
+      const orcE  = orcM  + (s04?.node.orcCompare || 0);
+      const a1E   = a1M   + (s04?.node.a1Compare || 0);
+
+      const realET = realE + (s05?.node.real || 0);
+      const orcET  = orcE  + (s05?.node.orcCompare || 0);
+      const a1ET   = a1E   + (s05?.node.a1Compare || 0);
+
+      calcRows = calcRows.map((c): VariancePptCalcRow => {
+        if (c.label === 'MARGEM DE CONTRIBUIÇÃO')
+          return { ...c, real: realM, orcado: orcM, a1: a1M, deltaOrcPct: computeVarPct(realM, orcM), deltaA1Pct: computeVarPct(realM, a1M) };
+        if (c.label === 'EBITDA (S/ RATEIO RAIZ CSC)')
+          return { ...c, real: realE, orcado: orcE, a1: a1E, deltaOrcPct: computeVarPct(realE, orcE), deltaA1Pct: computeVarPct(realE, a1E) };
+        if (c.label === 'EBITDA TOTAL')
+          return { ...c, real: realET, orcado: orcET, a1: a1ET, deltaOrcPct: computeVarPct(realET, orcET), deltaA1Pct: computeVarPct(realET, a1ET) };
+        return c;
       });
     }
 

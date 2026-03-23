@@ -57,19 +57,48 @@ export function prepareVariancePptData(
   yearMonth: string,
   filterMarca: string | null,
   rzItems?: VarianceJustification[], // opcional: itens RZ pré-buscados para o DRE do slide de Rateio
+  isYtd?: boolean,
 ): VariancePptData {
   const { year, month } = parseYearMonth(yearMonth);
   const a1Year = year - 1;
-  const monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
-  const monthShort = `${MONTH_SHORT[month - 1]}/${String(year).slice(2)}`;
+  let monthLabel = `${MONTH_NAMES[month - 1]} ${year}`;
+  let monthShort = `${MONTH_SHORT[month - 1]}/${String(year).slice(2)}`;
+
+  if (isYtd) {
+    monthShort = `JAN-${MONTH_SHORT[month - 1]}/${String(year).slice(2)}`;
+    monthLabel = `Jan-${MONTH_NAMES[month - 1]} ${year}`;
+  }
 
   // Index items by path (5 segments: tag0|tag01|tag02|tag03|marca)
   const pathKey = (i: VarianceJustification) =>
     `${i.tag0}|${i.tag01 || ''}|${i.tag02 || ''}|${i.tag03 || ''}|${i.marca || ''}`;
 
+  // Pre-aggregate by path+type to sum values across months (YTD multi-month support)
+  const aggPkType = new Map<string, VarianceJustification>();
+  for (const item of items) {
+    const key = `${pathKey(item)}|${item.comparison_type}`;
+    const prev = aggPkType.get(key);
+    if (!prev) {
+      aggPkType.set(key, { ...item, real_value: Number(item.real_value), compare_value: Number(item.compare_value) });
+    } else {
+      const nr = Number(prev.real_value) + Number(item.real_value);
+      const nc = Number(prev.compare_value) + Number(item.compare_value);
+      aggPkType.set(key, {
+        ...prev,
+        real_value: nr,
+        compare_value: nc,
+        variance_abs: nr - nc,
+        variance_pct: nc !== 0 ? Math.round(((nr - nc) / Math.abs(nc)) * 1000) / 10 : null,
+        justification: item.justification ?? prev.justification,
+        ai_summary: item.ai_summary ?? prev.ai_summary,
+      });
+    }
+  }
+  const aggItems = [...aggPkType.values()];
+
   const orcMap = new Map<string, VarianceJustification>();
   const a1Map = new Map<string, VarianceJustification>();
-  for (const item of items) {
+  for (const item of aggItems) {
     const pk = pathKey(item);
     if (item.comparison_type === 'orcado') orcMap.set(pk, item);
     else if (item.comparison_type === 'a1') a1Map.set(pk, item);
@@ -148,11 +177,11 @@ export function prepareVariancePptData(
 
   // Collect unique tag0 values and build sections (excluding calc rows)
   const CALC_TAG0S = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
-  const tag0Set = [...new Set(items.map(i => i.tag0))].filter(t => !CALC_TAG0S.has(t)).sort();
+  const tag0Set = [...new Set(aggItems.map(i => i.tag0))].filter(t => !CALC_TAG0S.has(t)).sort();
   const sections: VariancePptSection[] = [];
 
   for (const tag0 of tag0Set) {
-    const tag0Items = items.filter(i => i.tag0 === tag0);
+    const tag0Items = aggItems.filter(i => i.tag0 === tag0);
     const tag01Set = [...new Set(tag0Items.filter(i => i.tag01).map(i => i.tag01))].sort();
     const { color, invertDelta } = getSectionConfig(tag0);
 
@@ -203,18 +232,18 @@ export function prepareVariancePptData(
   }
 
   // Calc rows: prefer DB-stored MARGEM/EBITDA items, fallback to computed
-  const calcRows = computeCalcRows(sections, items, orcMap, a1Map);
+  const calcRows = computeCalcRows(sections, aggItems, orcMap, a1Map);
 
   // RZ DRE: usa rzItems dedicados se fornecidos, senão tenta extrair dos items gerais
-  const rzDre = computeRzDre(rzItems && rzItems.length > 0 ? rzItems : items);
+  const rzDre = computeRzDre(rzItems && rzItems.length > 0 ? rzItems : aggItems);
 
   // Stats: count leaves (tag02) from the original items (excluding calc rows).
   // IMPORTANT: filter to ONE comparison_type only (orcado preferred) to avoid
   // double-counting — each account has 2 rows (orcado + a1) with same real_value.
-  const leaves = items.filter(i => i.tag02 !== null && !CALC_TAG0S.has(i.tag0) && i.comparison_type === 'orcado');
+  const leaves = aggItems.filter(i => i.tag02 !== null && !CALC_TAG0S.has(i.tag0) && i.comparison_type === 'orcado');
   const stats = computeStats(leaves);
 
-  // Version + snapshotAt
+  // Version + snapshotAt (use original items to preserve version metadata across months)
   const version = items.length > 0 ? Math.max(...items.map(i => i.version || 1)) : 0;
   const currentVersionItems = items.filter(i => i.version === version && i.snapshot_at);
   const snapshotAt = currentVersionItems.length > 0
@@ -222,6 +251,8 @@ export function prepareVariancePptData(
     : null;
 
   return {
+    yearMonth,
+    isYtd: isYtd ?? false,
     monthLabel,
     monthShort,
     year,
