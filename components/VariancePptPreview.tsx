@@ -496,8 +496,8 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
         {/* Left: DRE table */}
-        <div className="w-[46%] shrink-0 overflow-auto px-4 pt-3 border-r border-gray-100">
-          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <div className="w-[50%] shrink-0 overflow-hidden px-3 pt-3 border-r border-gray-100">
+          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2">
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <line x1="3" y1="9" x2="21" y2="9" />
@@ -506,14 +506,14 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
             </svg>
             Detalhamento (R$ Milhares)
           </div>
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full border-collapse">
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB' }}>
-                <th className="text-left px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">DESCRIÇÃO</th>
-                <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">REAL</th>
-                <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">ORÇADO</th>
-                <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ R$</th>
-                <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">VAR %</th>
+                <th className="text-left px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">DESCRIÇÃO</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">REAL</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">ORÇADO</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ R$</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">VAR %</th>
               </tr>
             </thead>
             <tbody>
@@ -522,13 +522,13 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                   const { section } = entry;
                   return (
                     <tr key={idx} className="border-b border-gray-50 bg-white">
-                      <td className="px-2 py-1.5 text-[11px] font-medium text-gray-800">{section.tag0}</td>
-                      <td className="text-right px-2 py-1.5 text-[11px] font-semibold text-gray-800 tabular-nums">{fmtK(section.node.real)}</td>
-                      <td className="text-right px-2 py-1.5 text-[11px] text-gray-500 tabular-nums">{fmtK(section.node.orcCompare)}</td>
-                      <td className="text-right px-2 py-1.5 text-[11px] font-semibold tabular-nums" style={{ color: deltaColor(section.node.orcVarPct) }}>
+                      <td className="px-1.5 py-1 text-[10px] font-medium text-gray-800 truncate max-w-0" style={{ width: '40%' }}>{section.tag0}</td>
+                      <td className="text-right px-1.5 py-1 text-[10px] font-semibold text-gray-800 tabular-nums">{fmtK(section.node.real)}</td>
+                      <td className="text-right px-1.5 py-1 text-[10px] text-gray-500 tabular-nums">{fmtK(section.node.orcCompare)}</td>
+                      <td className="text-right px-1.5 py-1 text-[10px] font-semibold tabular-nums" style={{ color: deltaColor(section.node.orcVarPct) }}>
                         {(() => { const v = section.node.real - section.node.orcCompare; return (v >= 0 ? '+' : '') + fmtK(v); })()}
                       </td>
-                      <td className="text-right px-2 py-1.5">
+                      <td className="text-right px-1.5 py-1">
                         <VarBadge pct={section.node.orcVarPct} />
                       </td>
                     </tr>
@@ -539,10 +539,10 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                   const isDark = bg === '1E3A8A' || bg === '374151';
                   return (
                     <tr key={idx} className="border-b border-gray-200" style={{ backgroundColor: `#${bg}` }}>
-                      <td className="px-2 py-2 text-[11px] font-extrabold" style={{ color: baseColor }}>{calc.label}</td>
-                      <td className="text-right px-2 py-2 text-[11px] font-extrabold tabular-nums" style={{ color: baseColor }}>{fmtK(calc.real)}</td>
-                      <td className="text-right px-2 py-2 text-[11px] tabular-nums" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : baseColor }}>{fmtK(calc.orcado)}</td>
-                      <td className="text-right px-2 py-2 text-[11px] font-bold tabular-nums">
+                      <td className="px-1.5 py-1.5 text-[10px] font-extrabold truncate max-w-0" style={{ color: baseColor, width: '40%' }}>{calc.label}</td>
+                      <td className="text-right px-1.5 py-1.5 text-[10px] font-extrabold tabular-nums" style={{ color: baseColor }}>{fmtK(calc.real)}</td>
+                      <td className="text-right px-1.5 py-1.5 text-[10px] tabular-nums" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : baseColor }}>{fmtK(calc.orcado)}</td>
+                      <td className="text-right px-1.5 py-1.5 text-[10px] font-bold tabular-nums">
                         {(() => {
                           const v = calc.real - calc.orcado;
                           const clr = isDark
@@ -551,9 +551,9 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                           return <span style={{ color: clr }}>{v >= 0 ? '+' : ''}{fmtK(v)}</span>;
                         })()}
                       </td>
-                      <td className="text-right px-2 py-2">
+                      <td className="text-right px-1.5 py-1.5">
                         {isDark ? (
-                          <span className="text-[10px] font-bold tabular-nums" style={{ color: (calc.deltaOrcPct ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5' }}>
+                          <span className="text-[9px] font-bold tabular-nums" style={{ color: (calc.deltaOrcPct ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5' }}>
                             {fmtPct(calc.deltaOrcPct)}
                           </span>
                         ) : (
