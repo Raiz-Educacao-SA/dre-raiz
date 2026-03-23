@@ -512,6 +512,7 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                 <th className="text-left px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">DESCRIÇÃO</th>
                 <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">REAL</th>
                 <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">ORÇADO</th>
+                <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ R$</th>
                 <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">VAR %</th>
               </tr>
             </thead>
@@ -524,6 +525,9 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                       <td className="px-2 py-1.5 text-[11px] font-medium text-gray-800">{section.tag0}</td>
                       <td className="text-right px-2 py-1.5 text-[11px] font-semibold text-gray-800 tabular-nums">{fmtK(section.node.real)}</td>
                       <td className="text-right px-2 py-1.5 text-[11px] text-gray-500 tabular-nums">{fmtK(section.node.orcCompare)}</td>
+                      <td className="text-right px-2 py-1.5 text-[11px] font-semibold tabular-nums" style={{ color: deltaColor(section.node.orcVarPct) }}>
+                        {(() => { const v = section.node.real - section.node.orcCompare; return (v >= 0 ? '+' : '') + fmtK(v); })()}
+                      </td>
                       <td className="text-right px-2 py-1.5">
                         <VarBadge pct={section.node.orcVarPct} />
                       </td>
@@ -538,6 +542,15 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
                       <td className="px-2 py-2 text-[11px] font-extrabold" style={{ color: baseColor }}>{calc.label}</td>
                       <td className="text-right px-2 py-2 text-[11px] font-extrabold tabular-nums" style={{ color: baseColor }}>{fmtK(calc.real)}</td>
                       <td className="text-right px-2 py-2 text-[11px] tabular-nums" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : baseColor }}>{fmtK(calc.orcado)}</td>
+                      <td className="text-right px-2 py-2 text-[11px] font-bold tabular-nums">
+                        {(() => {
+                          const v = calc.real - calc.orcado;
+                          const clr = isDark
+                            ? (v >= 0 ? '#86EFAC' : '#FCA5A5')
+                            : deltaColor(calc.deltaOrcPct);
+                          return <span style={{ color: clr }}>{v >= 0 ? '+' : ''}{fmtK(v)}</span>;
+                        })()}
+                      </td>
                       <td className="text-right px-2 py-2">
                         {isDark ? (
                           <span className="text-[10px] font-bold tabular-nums" style={{ color: (calc.deltaOrcPct ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5' }}>
