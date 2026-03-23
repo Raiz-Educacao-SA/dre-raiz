@@ -162,14 +162,14 @@ export default function AnalysisView() {
 
   useEffect(() => {
     if (!selectedMonth) return;
-    getSlideVersions(currentFilterHash).then(versions => {
+    getSlideVersions(selectedMonth).then(versions => {
       setSlideVersions(versions);
       if (versions.length > 0 && !variancePreviewData) {
         setVariancePreviewData(versions[0].ppt_data);
         setActiveVersionId(versions[0].id);
       }
     });
-  }, [currentFilterHash]);
+  }, [selectedMonth]);
 
   const loadVersion = (version: SlideVersion) => {
     setVariancePreviewData(version.ppt_data);

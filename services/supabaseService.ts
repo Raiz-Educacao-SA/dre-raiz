@@ -5096,13 +5096,14 @@ export const saveSlideVersion = async (
   return data as SlideVersion;
 };
 
-/** Busca versões de slides por filter_hash, ordenadas por version DESC */
-export const getSlideVersions = async (filterHash: string): Promise<SlideVersion[]> => {
+/** Busca versões de slides pelo mês (filter_context->>'month'), ordenadas por created_at DESC.
+ *  Usa o mês em vez do filter_hash para que versões salvas pelo admin sejam visíveis a todos. */
+export const getSlideVersions = async (month: string): Promise<SlideVersion[]> => {
   const { data, error } = await supabase
     .from('slide_versions')
     .select('*')
-    .eq('filter_hash', filterHash)
-    .order('version', { ascending: false });
+    .filter('filter_context->>month', 'eq', month)
+    .order('created_at', { ascending: false });
 
   if (error) {
     console.error('Erro ao buscar slide versions:', error);
