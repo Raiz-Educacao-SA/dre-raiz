@@ -1793,7 +1793,9 @@ function buildT01Rows(t01: VariancePptNode): T01Row[] {
   rows.push({ depth: -1, label: t01.label, real: t01.real, orc: t01.orcCompare, orcPct: t01.orcVarPct, a1: t01.a1Compare, a1Pct: t01.a1VarPct });
   for (const t02 of t01.children) {
     rows.push({ depth: 0, label: t02.label, real: t02.real, orc: t02.orcCompare, orcPct: t02.orcVarPct, a1: t02.a1Compare, a1Pct: t02.a1VarPct });
-    for (const marca of t02.children) {
+    // Marcas ordenadas do maior valor real absoluto para o menor
+    const marcasSorted = [...t02.children].sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
+    for (const marca of marcasSorted) {
       rows.push({ depth: 1, label: marca.label, real: marca.real, orc: marca.orcCompare, orcPct: marca.orcVarPct, a1: marca.a1Compare, a1Pct: marca.a1VarPct });
     }
   }
@@ -1871,19 +1873,19 @@ function Tag01DetailSlide({
         monthShort={data.monthShort}
         color={section.sectionColor}
       />
-      <div className="flex flex-col gap-2 p-4 pb-8" style={{ height: 'calc(100% - 52px)' }}>
+      <div className="flex flex-col gap-1.5 p-3 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
-        {/* Table */}
-        <div className="overflow-auto flex-none" style={{ maxHeight: '32%' }}>
+        {/* Table — sem scroll, todas as marcas visíveis, ordenadas por real */}
+        <div className="shrink-0">
           <table className="w-full border-collapse">
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB' }}>
-                <th className="text-left px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">DESCRIÇÃO / MARCA</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">REAL {data.year}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">ORÇADO</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ% Orç</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">{a1Label}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ% {a1Label}</th>
+                <th className="text-left px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">DESCRIÇÃO / MARCA</th>
+                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">REAL {data.year}</th>
+                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">ORÇADO</th>
+                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ% Orç</th>
+                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">{a1Label}</th>
+                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ% {a1Label}</th>
               </tr>
             </thead>
             <tbody>
@@ -1894,27 +1896,27 @@ function Tag01DetailSlide({
                 const bg      = isTotal ? `#${section.sectionColor}` : isT02 ? '#F9FAFB' : 'white';
                 const textClr = isTotal ? 'white' : hex(C.darkText);
                 const bold    = isTotal || isT02;
-                const indent  = isMarca ? '\u00A0\u00A0\u00A0↳ ' : '';
+                const indent  = isMarca ? '\u00A0\u00A0↳ ' : '';
                 return (
                   <tr key={idx} className="border-b border-gray-50" style={{ backgroundColor: bg }}>
-                    <td className="px-2 py-1 text-[10px] truncate max-w-xs" title={row.label}
+                    <td className="px-2 py-0.5 text-[9px] truncate max-w-xs" title={row.label}
                       style={{ color: textClr, fontWeight: bold ? 700 : 400 }}>{indent}{row.label}</td>
-                    <td className="text-right px-2 py-1 text-[10px] tabular-nums"
+                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
                       style={{ color: textClr, fontWeight: bold ? 700 : 400 }}>{fmtK(row.real)}</td>
-                    <td className="text-right px-2 py-1 text-[10px] tabular-nums"
+                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
                       style={{ color: isTotal ? 'rgba(255,255,255,0.8)' : '#6B7280' }}>{fmtK(row.orc)}</td>
-                    <td className="text-right px-2 py-1">
+                    <td className="text-right px-2 py-0.5">
                       {isTotal ? (
-                        <span className="text-[10px] font-bold" style={{ color: 'white' }}>{fmtPct(row.orcPct)}</span>
+                        <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.orcPct)}</span>
                       ) : (
                         <VarBadge pct={row.orcPct} />
                       )}
                     </td>
-                    <td className="text-right px-2 py-1 text-[10px] tabular-nums"
+                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
                       style={{ color: isTotal ? 'rgba(255,255,255,0.8)' : '#6B7280' }}>{fmtK(row.a1)}</td>
-                    <td className="text-right px-2 py-1">
+                    <td className="text-right px-2 py-0.5">
                       {isTotal ? (
-                        <span className="text-[10px] font-bold" style={{ color: 'white' }}>{fmtPct(row.a1Pct)}</span>
+                        <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.a1Pct)}</span>
                       ) : (
                         <VarBadge pct={row.a1Pct} />
                       )}
@@ -1925,7 +1927,7 @@ function Tag01DetailSlide({
             </tbody>
           </table>
           {overflowRowCount > 0 && (
-            <div className="text-[9px] italic text-gray-400 px-2 py-0.5">
+            <div className="text-[8px] italic text-gray-400 px-2 py-0.5">
               … e mais {overflowRowCount} linha(s) no slide seguinte
             </div>
           )}
@@ -1950,7 +1952,7 @@ function Tag01DetailSlide({
         )}
 
         {/* Justification cards — 2-column grid */}
-        <div className="flex flex-col flex-1 min-h-0 overflow-auto gap-1">
+        <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-1">
           {cards.length > 0 ? (
             <>
               <div
