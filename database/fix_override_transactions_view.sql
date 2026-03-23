@@ -5,6 +5,14 @@
 -- transações_manual (substitutas) continuam aparecendo normalmente.
 -- ═══════════════════════════════════════════════════════════════════
 
+-- Dropar TODAS as versões existentes (assinaturas diferentes)
+-- v1: 20 params (sem p_tag0, sem p_skip_count)
+DROP FUNCTION IF EXISTS get_filtered_transactions_page(text, text, text, text, text[], text[], text[], text[], text[], text[], text[], text[], text[], text, text, text, numeric, text, int, int);
+-- v2: 21 params (com p_skip_count, sem p_tag0)
+DROP FUNCTION IF EXISTS get_filtered_transactions_page(text, text, text, text, text[], text[], text[], text[], text[], text[], text[], text[], text[], text, text, text, numeric, text, int, int, boolean);
+-- v3: 22 params (com p_tag0 e p_skip_count)
+DROP FUNCTION IF EXISTS get_filtered_transactions_page(text, text, text, text, text[], text[], text[], text[], text[], text[], text[], text[], text[], text[], text, text, text, numeric, text, int, int, boolean);
+
 CREATE OR REPLACE FUNCTION get_filtered_transactions_page(
   p_table_name    text    DEFAULT 'transactions',
   p_month_from    text    DEFAULT NULL,
