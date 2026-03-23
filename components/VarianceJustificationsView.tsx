@@ -1299,9 +1299,10 @@ const VarianceJustificationsView: React.FC = () => {
     const isOwner = row.ownerEmail === user?.email;
     const canJustify = !row.hasChildren && row.depth >= 2 && dbItem &&
       (status === 'pending' || status === 'notified' || status === 'rejected');
-    // Criador pode editar se status = justified (antes de aprovação); admin também
+    // Criador pode editar se status = justified (antes de aprovação); admin também.
+    // owner_email null = item antigo sem rastreio → qualquer usuário com permissão pode editar
     const canEditJustified = !row.hasChildren && row.depth >= 2 && dbItem &&
-      status === 'justified' && (isOwner || isAdmin);
+      status === 'justified' && (isOwner || !row.ownerEmail || isAdmin);
     const canSynthesis = row.depth <= 1 && isAdminOrManager && dbItem;
     // Só admin pode aprovar/rejeitar
     const canReview = isAdmin && dbItem && status === 'justified';
