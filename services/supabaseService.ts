@@ -3219,6 +3219,7 @@ export async function fetchLiveDreForPpt(
   yearMonth: string,
   marcas: string[],
   filiais?: string[] | null,
+  monthFrom?: string,
 ): Promise<VarianceJustification[]> {
   const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
   const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
@@ -3227,7 +3228,7 @@ export async function fetchLiveDreForPpt(
 
   // 1. get_soma_tags → tag0+tag01 (Real, Orçado, A-1)
   const { data: somaData, error: somaError } = await supabase.rpc('get_soma_tags', {
-    p_month_from: yearMonth,
+    p_month_from: monthFrom ?? yearMonth,
     p_month_to: yearMonth,
     p_marcas: marcas,
     p_nome_filiais: filiais && filiais.length > 0 ? filiais : null,

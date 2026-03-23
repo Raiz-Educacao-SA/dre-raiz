@@ -83,6 +83,8 @@ export interface RzDreRow {
 }
 
 export interface VariancePptData {
+  yearMonth: string;           // 'YYYY-MM' — the reference month
+  isYtd?: boolean;             // true when showing Jan→month cumulative
   monthLabel: string;          // 'Março 2026'
   monthShort: string;          // 'MAR/26'
   year: number;                // 2026

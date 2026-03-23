@@ -21,7 +21,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { ExecutiveSummary } from '../analysisPack';
-import { getMarcasEFiliais, getVarianceJustifications, fetchLiveDreForPpt, fetchMarcaBreakdown, getVarianceAvailableMonths, saveSlideVersion, getSlideVersions, updateSlideVersion, deleteSlideVersion, SlideVersion } from '../services/supabaseService';
+import { getMarcasEFiliais, getVarianceJustifications, getVarianceYtdItems, fetchLiveDreForPpt, fetchMarcaBreakdown, getVarianceAvailableMonths, saveSlideVersion, getSlideVersions, updateSlideVersion, deleteSlideVersion, SlideVersion } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
 import type { AnalysisContext } from '../analysisPack/types/schema';
 import type { VariancePptData } from '../services/variancePptTypes';
@@ -248,6 +248,46 @@ export default function AnalysisView() {
 
     return newData;
   }, [selectedMonth, variancePreviewData, filterByTag01, permittedMarcas, effectiveTag01]);
+
+  // ── Callback: re-fetch real data when user changes period inside preview ──
+  const handleReloadWithPeriod = useCallback(async (month: string, isYtd: boolean): Promise<VariancePptData> => {
+    const hasMarca = effectiveMarcas.length > 0;
+    const yearStart = `${month.slice(0, 4)}-01`;
+    const rzNotSelected = hasMarca && !effectiveMarcas.map(m => m.toUpperCase()).includes('RZ');
+
+    const [rawItems, rzRawItems] = await Promise.all([
+      hasMarca
+        ? fetchLiveDreForPpt(month, effectiveMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, isYtd ? yearStart : undefined)
+        : isYtd
+          ? getVarianceYtdItems(yearStart, month, undefined, undefined)
+          : getVarianceJustifications({ year_month: month }),
+      rzNotSelected
+        ? fetchLiveDreForPpt(month, ['RZ'], null, isYtd ? yearStart : undefined).catch(() => [] as any[])
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const filtered = filterByTag01(rawItems);
+    const { prepareVariancePptData } = await import('../services/variancePptDataService');
+    const newData = prepareVariancePptData(
+      filtered,
+      month,
+      hasMarca ? effectiveMarcas.join(', ') : null,
+      rzRawItems.length > 0 ? rzRawItems : undefined,
+      isYtd,
+    );
+
+    try {
+      const breakdown = await fetchMarcaBreakdown(
+        month,
+        permittedMarcas,
+        hasMarca ? effectiveMarcas : null,
+        effectiveTag01.length > 0 ? effectiveTag01 : null,
+      );
+      if (breakdown) newData.marcaBreakdowns = breakdown;
+    } catch {}
+
+    return newData;
+  }, [effectiveMarcas, effectiveFiliais, filterByTag01, permittedMarcas, effectiveTag01]);
 
   // Helper: buscar snapshot do variance_justifications e montar contexto
   const fetchSnapshotContext = async () => {
@@ -815,7 +855,12 @@ export default function AnalysisView() {
               {/* Preview */}
               {variancePreviewData ? (
                 <div className="space-y-4">
-                  <VariancePptPreview data={variancePreviewData} onReloadWithMarcas={handleReloadWithMarcas} />
+                  <VariancePptPreview
+                    data={variancePreviewData}
+                    onReloadWithMarcas={handleReloadWithMarcas}
+                    onReloadWithPeriod={handleReloadWithPeriod}
+                    availableMonths={availableMonths}
+                  />
 
                   <div className="flex justify-center gap-3">
                     <button
