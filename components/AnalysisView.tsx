@@ -209,6 +209,46 @@ export default function AnalysisView() {
     );
   }, [effectiveTag01]);
 
+  // ── Callback: re-fetch real data when user changes marca filter inside preview ──
+  const handleReloadWithMarcas = useCallback(async (marcas: string[]): Promise<VariancePptData> => {
+    if (!variancePreviewData) throw new Error('No base data');
+    const effectiveMarcasForFetch = marcas.length > 0 ? marcas : undefined;
+    const rzNotSelected = effectiveMarcasForFetch != null && !effectiveMarcasForFetch.map(m => m.toUpperCase()).includes('RZ');
+
+    const [rawItems, rzRawItems] = await Promise.all([
+      effectiveMarcasForFetch
+        ? fetchLiveDreForPpt(selectedMonth, effectiveMarcasForFetch, null)
+        : getVarianceJustifications({ year_month: selectedMonth }),
+      rzNotSelected
+        ? fetchLiveDreForPpt(selectedMonth, ['RZ'], null).catch(() => [] as any[])
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const filtered = filterByTag01(rawItems);
+    const { prepareVariancePptData } = await import('../services/variancePptDataService');
+    const newData = prepareVariancePptData(
+      filtered,
+      selectedMonth,
+      marcas.length > 0 ? marcas.join(', ') : null,
+      rzRawItems.length > 0 ? rzRawItems : undefined,
+    );
+
+    // Attach marca breakdowns for the new selection
+    try {
+      const breakdown = await fetchMarcaBreakdown(
+        selectedMonth,
+        permittedMarcas,
+        marcas.length > 0 ? marcas : null,
+        effectiveTag01.length > 0 ? effectiveTag01 : null,
+      );
+      if (breakdown) newData.marcaBreakdowns = breakdown;
+    } catch (err) {
+      console.warn('Marca breakdown skipped on reload:', err);
+    }
+
+    return newData;
+  }, [selectedMonth, variancePreviewData, filterByTag01, permittedMarcas, effectiveTag01]);
+
   // Helper: buscar snapshot do variance_justifications e montar contexto
   const fetchSnapshotContext = async () => {
     const marca = effectiveMarcas.length > 0 ? effectiveMarcas[0] : undefined;
@@ -775,7 +815,7 @@ export default function AnalysisView() {
               {/* Preview */}
               {variancePreviewData ? (
                 <div className="space-y-4">
-                  <VariancePptPreview data={variancePreviewData} />
+                  <VariancePptPreview data={variancePreviewData} onReloadWithMarcas={handleReloadWithMarcas} />
 
                   <div className="flex justify-center gap-3">
                     <button

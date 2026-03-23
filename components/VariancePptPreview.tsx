@@ -2,9 +2,9 @@
 // Renders VariancePptData as visual slide cards (same structure as PPTX)
 // Visual design inspired by Genspark executive presentation quality
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { Play, X, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Play, X, ChevronLeft, ChevronRight, Eye, EyeOff, Filter } from 'lucide-react';
 import type {
   VariancePptData,
   VariancePptSection,
@@ -13,6 +13,17 @@ import type {
   VariancePptMarcaEntry,
 } from '../services/variancePptTypes';
 import { VARIANCE_COLORS } from '../services/variancePptTypes';
+import {
+  type SlideViewFilters,
+  type FilterGroup,
+  isFiltersEmpty,
+  filterSection,
+  filterSectionByMarcaBreakdowns,
+  filterVariancePptData,
+  filterMarcaEntries,
+  extractSectionMarcas,
+  extractNodeMarcas,
+} from '../services/variancePptFilterService';
 
 // ─── Formatting Helpers ──────────────────────────────────────────────
 
@@ -127,12 +138,14 @@ function SlideHeader({
   monthShort,
   color,
   unitLabel,
+  filterSlot,
 }: {
   sectionLabel?: string;
   title: string;
   monthShort: string;
   color?: string;
   unitLabel?: string;
+  filterSlot?: React.ReactNode;
 }) {
   const accentColor = color ? `#${color}` : '#2563EB';
   return (
@@ -154,7 +167,7 @@ function SlideHeader({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+        <div className="flex items-center gap-1 shrink-0 mt-0.5">
           <span className="flex items-center gap-1 px-2 py-1 rounded-md border border-gray-200 bg-gray-50 text-[11px] font-bold text-gray-600">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -164,6 +177,7 @@ function SlideHeader({
             </svg>
             {monthShort}
           </span>
+          {filterSlot}
         </div>
       </div>
     </div>
@@ -489,7 +503,7 @@ function CoverSlide({ data }: { data: VariancePptData }) {
 // SLIDE 2: DRE OVERVIEW — table left + bar chart right (Genspark p2)
 // ═══════════════════════════════════════════════════════════════════════
 
-function OverviewSlide({ data }: { data: VariancePptData }) {
+function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot?: React.ReactNode }) {
   const a1Label = String(data.a1Year);
   const margemCalc = data.calcRows.find(c => c.label === 'MARGEM DE CONTRIBUICAO') || data.calcRows.find(c => c.label.includes('MARGEM'));
   const ebitdaSrCalc = data.calcRows.find(c => c.label.includes('S/ RATEIO'));
@@ -634,6 +648,7 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
         title="DRE – Visão Geral (Snapshot)"
         monthShort={data.monthShort}
         unitLabel="MILHARES (R$)"
+        filterSlot={filterSlot}
       />
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
@@ -727,7 +742,7 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
             COMPARATIVO: REAL VS ORÇADO (R$)
           </div>
           <div className="flex-1 min-h-0">
-            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
+            <ReactECharts option={chartOption} notMerge style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
           </div>
         </div>
       </div>
@@ -740,7 +755,7 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
 // SLIDE: SECTION — Left insight cards + right bar chart (Genspark p4-p6)
 // ═══════════════════════════════════════════════════════════════════════
 
-function SectionSlide({ section, data, pageNum }: { section: VariancePptSection; data: VariancePptData; pageNum?: number }) {
+function SectionSlide({ section, data, pageNum, filterSlot }: { section: VariancePptSection; data: VariancePptData; pageNum?: number; filterSlot?: React.ReactNode }) {
   if (section.tag01Nodes.length === 0) return null;
 
   const [popup, setPopup] = React.useState<{ title: string; text: string; accent: string } | null>(null);
@@ -896,6 +911,7 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
         title={`${section.label} – Análise de Componentes`}
         monthShort={data.monthShort}
         color={section.sectionColor}
+        filterSlot={filterSlot}
       />
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
@@ -1104,7 +1120,7 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
               COMPARATIVO POR COMPONENTE (R$ {scaleLabel(unit)})
             </div>
             <div className="flex-1 min-h-0">
-              <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
+              <ReactECharts option={chartOption} notMerge style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
             </div>
           </div>
         )}
@@ -1229,11 +1245,13 @@ function MarcaSlide({
   data,
   entries,
   pageNum,
+  filterSlot,
 }: {
   section: VariancePptSection;
   data: VariancePptData;
   entries: VariancePptMarcaEntry[];
   pageNum?: number;
+  filterSlot?: React.ReactNode;
 }) {
   if (entries.length === 0) return null;
 
@@ -1381,6 +1399,7 @@ function MarcaSlide({
         monthShort={data.monthShort}
         color={section.sectionColor}
         unitLabel={scaleLabel(unit)}
+        filterSlot={filterSlot}
       />
       <div className="flex flex-col px-4 pt-2 pb-7 gap-2" style={{ height: 'calc(100% - 52px)' }}>
 
@@ -1424,7 +1443,7 @@ function MarcaSlide({
 
         {/* Gráfico full-width */}
         <div className="flex-1 min-h-0">
-          <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
+          <ReactECharts option={chartOption} notMerge style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
         </div>
 
         {/* SÍNTESE IA — faixa horizontal na base, clicável */}
@@ -1456,7 +1475,7 @@ function MarcaSlide({
 // PERFORMANCE SLIDE — Horizontal bar chart + Entendendo os Desvios (Genspark p3)
 // ═══════════════════════════════════════════════════════════════════════
 
-function PerformanceSlide({ data, pageNum }: { data: VariancePptData; pageNum?: number }) {
+function PerformanceSlide({ data, pageNum, filterSlot }: { data: VariancePptData; pageNum?: number; filterSlot?: React.ReactNode }) {
   const margemCalc    = data.calcRows.find(c => c.label.includes('MARGEM'));
   const ebitdaSrCalc  = data.calcRows.find(c => c.label.includes('S/ RATEIO') || c.label.includes('SEM RATEIO'));
   const ebitdaTotalCalc = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
@@ -1549,6 +1568,7 @@ function PerformanceSlide({ data, pageNum }: { data: VariancePptData; pageNum?: 
         sectionLabel="ANÁLISE DE DESVIOS"
         title="Performance vs Orçado"
         monthShort={data.monthShort}
+        filterSlot={filterSlot}
       />
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
@@ -1558,7 +1578,7 @@ function PerformanceSlide({ data, pageNum }: { data: VariancePptData; pageNum?: 
             VARIAÇÃO PERCENTUAL (REAL VS ORÇADO)
           </div>
           <div className="flex-1 min-h-0">
-            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
+            <ReactECharts option={chartOption} notMerge style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
           </div>
           {/* Legend */}
           <div className="flex items-center justify-center gap-6 shrink-0 pb-1">
@@ -1652,7 +1672,7 @@ function PerformanceSlide({ data, pageNum }: { data: VariancePptData; pageNum?: 
 // ANALYTICS SLIDE — DRE Composition Waterfall (Genspark p7)
 // ═══════════════════════════════════════════════════════════════════════
 
-function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: number }) {
+function AnalyticsSlide({ data, pageNum, filterSlot }: { data: VariancePptData; pageNum?: number; filterSlot?: React.ReactNode }) {
   const margemCalc   = data.calcRows.find(c => c.label.includes('MARGEM'));
   const ebitdaSrCalc = data.calcRows.find(c => c.label.includes('S/ RATEIO') || c.label.includes('SEM RATEIO'));
   const ebitdaTotal  = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
@@ -1809,13 +1829,14 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
         title={`EBITDA Bridge – ${data.monthShort}`}
         monthShort={data.monthShort}
         unitLabel={scaleLabel(unit)}
+        filterSlot={filterSlot}
       />
       <div className="flex gap-3 px-4 pb-8 pt-2" style={{ height: 'calc(100% - 52px)' }}>
 
         {/* Chart + legend */}
         <div className="flex-1 min-w-0 flex flex-col min-h-0">
           <div className="flex-1 min-h-0">
-            <ReactECharts option={waterfallOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
+            <ReactECharts option={waterfallOption} notMerge style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
           </div>
           {/* Compact legend */}
           <div className="flex items-center justify-center gap-4 pt-1 shrink-0">
@@ -1902,7 +1923,7 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
 // FINAL SLIDE: RESUMO EXECUTIVO (Genspark p8 — 3 cards + next steps)
 // ═══════════════════════════════════════════════════════════════════════
 
-function SummarySlide({ data, pageNum }: { data: VariancePptData; pageNum?: number }) {
+function SummarySlide({ data, pageNum, filterSlot }: { data: VariancePptData; pageNum?: number; filterSlot?: React.ReactNode }) {
   const { stats } = data;
 
   const ebitda = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
@@ -1948,6 +1969,7 @@ function SummarySlide({ data, pageNum }: { data: VariancePptData; pageNum?: numb
         sectionLabel="BOOK DE RESULTADOS"
         title="Resumo Executivo"
         monthShort={data.monthShort}
+        filterSlot={filterSlot}
       />
       <div className="flex flex-col gap-3 px-5 pt-3 pb-8" style={{ height: 'calc(100% - 52px)' }}>
 
@@ -2301,6 +2323,303 @@ function buildT01JustCards(t01: VariancePptNode): T01JustCard[] {
 
 const JUST_STATUS_PRIORITY = ['approved', 'justified', 'notified', 'pending', 'rejected'];
 
+// ── Per-slide filter helpers (local types) ────────────────────────────
+
+function pct(real: number, cmp: number): number | null {
+  if (cmp === 0) return null;
+  return Math.round(((real - cmp) / Math.abs(cmp)) * 1000) / 10;
+}
+
+// ── Global marca filter context ───────────────────────────────────────
+// Shared across all FilterableSlide instances so any slide can drive
+// a DB re-fetch that updates the entire presentation.
+const MarcaFilterContext = React.createContext<{
+  activeMarcas: string[];
+  setActiveMarcas: (m: string[]) => void;
+  loading: boolean;
+}>({ activeMarcas: [], setActiveMarcas: () => {}, loading: false });
+
+function filterT01Rows(rows: T01Row[], filters: SlideViewFilters): T01Row[] {
+  if (isFiltersEmpty(filters)) return rows;
+
+  // ── 1. Filter rows ────────────────────────────────────────────────
+  let result = [...rows];
+
+  if (filters.tag02s?.length) {
+    const allowed = new Set(filters.tag02s);
+    let inAllowed = false;
+    result = result.filter(row => {
+      if (row.depth === -1) return true;
+      if (row.depth === 0) { inAllowed = allowed.has(row.label); return inAllowed; }
+      if (row.depth === 1) return inAllowed;
+      return true;
+    });
+  }
+
+  if (filters.marcas?.length) {
+    const marcaSet = new Set(filters.marcas);
+    result = result.filter(row => row.depth !== 1 || marcaSet.has(row.label));
+  }
+
+  // ── 2. Recalculate tag02 subtotals from remaining marca rows ──────
+  if (filters.marcas?.length && result.some(r => r.depth === 1)) {
+    const rebuilt: T01Row[] = [];
+    let pendingT02: T01Row | null = null;
+    let pendingMarcas: T01Row[] = [];
+
+    const flushT02 = () => {
+      if (!pendingT02) return;
+      if (pendingMarcas.length > 0) {
+        const real = pendingMarcas.reduce((s, r) => s + r.real, 0);
+        const orc  = pendingMarcas.reduce((s, r) => s + r.orc,  0);
+        const a1   = pendingMarcas.reduce((s, r) => s + r.a1,   0);
+        rebuilt.push({ ...pendingT02, real, orc, a1, orcPct: pct(real, orc), a1Pct: pct(real, a1) });
+        rebuilt.push(...pendingMarcas);
+      }
+      pendingT02 = null;
+      pendingMarcas = [];
+    };
+
+    for (const row of result) {
+      if (row.depth === -1)      rebuilt.push(row);               // placeholder, updated below
+      else if (row.depth === 0)  { flushT02(); pendingT02 = row; pendingMarcas = []; }
+      else if (row.depth === 1)  pendingMarcas.push(row);
+    }
+    flushT02();
+    result = rebuilt;
+  }
+
+  // ── 3. Recalculate grand total from remaining tag02/marca rows ────
+  const t02Rows  = result.filter(r => r.depth === 0);
+  const t01Marca = result.filter(r => r.depth === 1);
+  const src = t02Rows.length > 0 ? t02Rows : t01Marca;
+  const totalIdx = result.findIndex(r => r.depth === -1);
+
+  if (totalIdx >= 0 && src.length > 0) {
+    const real = src.reduce((s, r) => s + r.real, 0);
+    const orc  = src.reduce((s, r) => s + r.orc,  0);
+    const a1   = src.reduce((s, r) => s + r.a1,   0);
+    result = [...result];
+    result[totalIdx] = { ...result[totalIdx], real, orc, a1, orcPct: pct(real, orc), a1Pct: pct(real, a1) };
+  }
+
+  return result;
+}
+
+function filterJustCards(cards: T01JustCard[], filters: SlideViewFilters): T01JustCard[] {
+  if (!filters.statuses?.length) return cards;
+  const set = new Set(filters.statuses);
+  return cards.filter(c => set.has(c.status));
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  approved:  'Aprovada',
+  justified: 'Justificada',
+  pending:   'Pendente',
+  notified:  'Notificada',
+  rejected:  'Rejeitada',
+};
+
+// ── SlideFilterPanel ─────────────────────────────────────────────────
+
+function SlideFilterPanel({
+  groups,
+  current,
+  onApply,
+  onClear,
+  onClose,
+  panelRef,
+}: {
+  groups: FilterGroup[];
+  current: SlideViewFilters;
+  onApply: (f: SlideViewFilters) => void;
+  onClear: () => void;
+  onClose: () => void;
+  panelRef?: React.RefObject<HTMLDivElement | null>;
+}) {
+  const [draft, setDraft] = useState<SlideViewFilters>({ ...current });
+
+  const toggle = (groupId: keyof SlideViewFilters, value: string) => {
+    setDraft(prev => {
+      const curr = (prev[groupId] as string[] | undefined) ?? [];
+      const has = curr.includes(value);
+      return { ...prev, [groupId]: has ? curr.filter(v => v !== value) : [...curr, value] };
+    });
+  };
+
+  // Unchecked = NOT in filter array (empty = all selected)
+  const isChecked = (groupId: keyof SlideViewFilters, value: string): boolean => {
+    const arr = draft[groupId] as string[] | undefined;
+    return !arr || arr.length === 0 || arr.includes(value);
+  };
+
+  return (
+    <div
+      ref={panelRef as React.RefObject<HTMLDivElement>}
+      className="absolute top-[52px] right-6 z-50 w-56 rounded-xl shadow-2xl border border-gray-600 overflow-hidden"
+      style={{ backgroundColor: '#111827' }}
+      onClick={e => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-700" style={{ backgroundColor: '#1F2937' }}>
+        <div className="flex items-center gap-1.5">
+          <Filter size={10} className="text-blue-400" />
+          <span className="text-[10px] font-bold text-white uppercase tracking-wide">Filtrar slide</span>
+        </div>
+        <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+          <X size={12} />
+        </button>
+      </div>
+
+      {/* Groups */}
+      <div className="max-h-60 overflow-y-auto">
+        {groups.map((group, gi) => (
+          <div key={group.id} className={gi < groups.length - 1 ? 'border-b border-gray-800' : ''}>
+            <div className="px-3 py-2">
+              <p className="text-[9px] font-bold text-blue-400 uppercase tracking-wider mb-1.5">{group.label}</p>
+              <div className="space-y-0.5">
+                {group.options.map(opt => (
+                  <label key={opt} className="flex items-center gap-2 cursor-pointer py-0.5 px-1 hover:bg-gray-800/60 rounded transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={isChecked(group.id, opt)}
+                      onChange={() => toggle(group.id, opt)}
+                      className="w-3 h-3 rounded accent-blue-500 cursor-pointer"
+                    />
+                    <span className="text-[10px] text-gray-200 truncate leading-tight">
+                      {group.id === 'statuses' ? (STATUS_LABEL[opt] ?? opt) : opt}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 px-3 py-2 border-t border-gray-700" style={{ backgroundColor: '#1F2937' }}>
+        <button
+          onClick={() => { onClear(); }}
+          className="flex-1 py-1 text-[10px] font-bold text-gray-300 hover:text-white border border-gray-600 hover:border-gray-500 rounded-lg transition-colors"
+        >
+          Limpar
+        </button>
+        <button
+          onClick={() => onApply(draft)}
+          className="flex-1 py-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
+        >
+          Aplicar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── FilterableSlide wrapper ───────────────────────────────────────────
+// Wraps any slide with a per-slide filter button + panel.
+// Marca filters are routed to MarcaFilterContext (DB re-fetch).
+// All other filters remain local in-memory per slide.
+
+function FilterableSlide({
+  groups,
+  children,
+}: {
+  groups: FilterGroup[];
+  children: (filters: SlideViewFilters, filterButton: React.ReactNode) => React.ReactNode;
+}) {
+  const { activeMarcas, setActiveMarcas, loading } = React.useContext(MarcaFilterContext);
+  const [localFilters, setLocalFilters] = useState<SlideViewFilters>({});
+  const [showPanel, setShowPanel] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // Separate marca group from local groups
+  const marcaGroup  = groups.find(g => g.id === 'marcas');
+  const localGroups = groups.filter(g => g.id !== 'marcas');
+
+  const hasLocalFilters = !isFiltersEmpty(localFilters);
+  const hasMarcaFilter  = activeMarcas.length > 0;
+  const hasActive = hasLocalFilters || hasMarcaFilter;
+  const activeCount =
+    Object.values(localFilters).filter(v => Array.isArray(v) && (v as string[]).length > 0).length +
+    (hasMarcaFilter ? 1 : 0);
+
+  // Close panel on outside click
+  useEffect(() => {
+    if (!showPanel) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowPanel(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPanel]);
+
+  // All visible groups in the panel: local groups first, then marca
+  const panelGroups: FilterGroup[] = marcaGroup
+    ? [...localGroups, marcaGroup]
+    : localGroups;
+
+  // Current state for the panel (merges local + global marcas)
+  const panelCurrent: SlideViewFilters = { ...localFilters, marcas: activeMarcas };
+
+  const filterButton = panelGroups.length === 0 ? null : (
+    <button
+      onClick={e => { e.stopPropagation(); setShowPanel(v => !v); }}
+      className="flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-all select-none"
+      style={hasActive
+        ? { borderColor: '#2563EB', backgroundColor: '#EFF6FF', color: '#2563EB' }
+        : { borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', color: '#6B7280' }
+      }
+      title="Filtrar este slide"
+    >
+      <Filter size={10} />
+      {hasActive ? `Filtros (${activeCount})` : 'Filtrar'}
+    </button>
+  );
+
+  if (panelGroups.length === 0) return <>{children(localFilters, null)}</>;
+
+  return (
+    <div className="relative">
+      {loading && hasMarcaFilter && (
+        <div className="absolute inset-0 z-30 bg-white/60 flex items-center justify-center rounded-2xl pointer-events-none">
+          <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+          </svg>
+        </div>
+      )}
+      {children(localFilters, filterButton)}
+
+      {showPanel && (
+        <SlideFilterPanel
+          groups={panelGroups}
+          current={panelCurrent}
+          panelRef={panelRef}
+          onApply={draft => {
+            // Route: marcas → global DB re-fetch; others → local in-memory
+            const { marcas, ...local } = draft;
+            setLocalFilters(local as SlideViewFilters);
+            const newMarcas = (marcas as string[]) ?? [];
+            if (JSON.stringify(newMarcas.sort()) !== JSON.stringify([...activeMarcas].sort())) {
+              setActiveMarcas(newMarcas);
+            }
+            setShowPanel(false);
+          }}
+          onClear={() => {
+            setLocalFilters({});
+            setActiveMarcas([]);
+            setShowPanel(false);
+          }}
+          onClose={() => setShowPanel(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 // Agrega cards pelo label (marca) — soma real/orc, sintetiza textos, escolhe status de maior prioridade
 function aggregateJustCardsByMarca(cards: T01JustCard[]): T01JustCard[] {
   const map = new Map<string, T01JustCard[]>();
@@ -2332,14 +2651,6 @@ function aggregateJustCardsByMarca(cards: T01JustCard[]): T01JustCard[] {
     };
   }).sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  approved:  'Aprovada',
-  justified: 'Justificada',
-  pending:   'Pendente',
-  notified:  'Notificada',
-  rejected:  'Rejeitada',
-};
 
 const JUST_PREVIEW_LEN = 180;
 
@@ -2461,7 +2772,7 @@ function buildTableInsight(rows: T01Row[], t01Label: string, year: number): stri
 
 // SLIDE 1 DE 2: Tabela + Síntese IA
 function Tag01DetailSlide({
-  section, t01, data, rows, pageNum, titleOverride,
+  section, t01, data, rows, pageNum, titleOverride, filterSlot,
 }: {
   section: VariancePptSection;
   t01: VariancePptNode;
@@ -2469,6 +2780,7 @@ function Tag01DetailSlide({
   rows: T01Row[];
   pageNum?: number;
   titleOverride?: string;
+  filterSlot?: React.ReactNode;
 }) {
   const [showPopup, setShowPopup] = React.useState(false);
 
@@ -2537,6 +2849,7 @@ function Tag01DetailSlide({
         title={title}
         monthShort={data.monthShort}
         color={section.sectionColor}
+        filterSlot={filterSlot}
       />
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
@@ -2645,15 +2958,16 @@ function Tag01DetailSlide({
 
 // SLIDE 2+: Justificativas (paginado)
 function Tag01JustificativasSlide({
-  section, t01, data, cards, pageNum, slideLabel, titleOverride,
+  section, t01, data, cards, pageNum, slideLabel, titleOverride, filterSlot,
 }: {
   section: VariancePptSection;
   t01: VariancePptNode;
   data: VariancePptData;
   cards: T01JustCard[];
   pageNum?: number;
-  slideLabel?: string;   // ex: "(1/2)" para paginação
+  slideLabel?: string;
   titleOverride?: string;
+  filterSlot?: React.ReactNode;
 }) {
   const [popup, setPopup] = React.useState<{ title: string; text: string; accent: string } | null>(null);
 
@@ -2682,6 +2996,7 @@ function Tag01JustificativasSlide({
         title={title}
         monthShort={data.monthShort}
         color={section.sectionColor}
+        filterSlot={filterSlot}
       />
       <div className="flex flex-col px-4 pt-3 pb-7 gap-2" style={{ height: 'calc(100% - 52px)' }}>
         {/* Cabeçalho com stats */}
@@ -2849,12 +3164,13 @@ function PresentationMode({
 // ═══════════════════════════════════════════════════════════════════════
 
 function Tag01T02BreakdownSlide({
-  section, t01, data, pageNum,
+  section, t01, data, pageNum, filterSlot,
 }: {
   section: VariancePptSection;
   t01: VariancePptNode;
   data: VariancePptData;
   pageNum?: number;
+  filterSlot?: React.ReactNode;
 }) {
   const accentClr = `#${section.sectionColor}`;
 
@@ -2970,6 +3286,7 @@ function Tag01T02BreakdownSlide({
         monthShort={data.monthShort}
         unitLabel="MILHARES (R$)"
         color={section.sectionColor}
+        filterSlot={filterSlot}
       />
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
@@ -3044,6 +3361,7 @@ function Tag01T02BreakdownSlide({
               <div className="flex-1 min-h-0 border border-red-100 rounded-lg overflow-hidden bg-red-50/30">
                 <ReactECharts
                   option={desviosOption}
+                  notMerge
                   style={{ height: '100%', width: '100%' }}
                   opts={{ renderer: 'canvas', devicePixelRatio: 2 }}
                 />
@@ -3063,6 +3381,7 @@ function Tag01T02BreakdownSlide({
               <div className="flex-1 min-h-0 border border-emerald-100 rounded-lg overflow-hidden bg-emerald-50/30">
                 <ReactECharts
                   option={savingsOption}
+                  notMerge
                   style={{ height: '100%', width: '100%' }}
                   opts={{ renderer: 'canvas', devicePixelRatio: 2 }}
                 />
@@ -3083,6 +3402,7 @@ function Tag01T02BreakdownSlide({
 
 interface VariancePptPreviewProps {
   data: VariancePptData;
+  onReloadWithMarcas?: (marcas: string[]) => Promise<VariancePptData>;
 }
 
 // ─── Slide wrapper with hide toggle ──────────────────────────────────
@@ -3134,6 +3454,31 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [hiddenSlides, setHiddenSlides] = useState<Set<string>>(new Set());
 
+  // ── In-memory marca filter (instant — no DB round-trip) ───────────
+  const [activeMarcas, setActiveMarcas] = useState<string[]>([]);
+
+  // Reset selection when parent loads a new snapshot
+  useEffect(() => { setActiveMarcas([]); }, [data]);
+
+  // Apply marca filter in-memory: filterVariancePptData uses depth-3 children
+  // (exact) where available and marcaBreakdowns proportional scaling as fallback —
+  // both are already loaded in `data`, so this is synchronous (~0 ms).
+  const localData = useMemo(
+    () => activeMarcas.length > 0 ? filterVariancePptData(data, { marcas: activeMarcas }) : data,
+    [data, activeMarcas],
+  );
+
+  // All available marcas from the ORIGINAL data (never shrink the option list)
+  const allAvailableMarcas = useMemo(
+    () => [...new Set(Object.values(data.marcaBreakdowns ?? {}).flat().map(e => e.marca))].sort(),
+    [data],
+  );
+
+  const marcaCtxValue = useMemo(
+    () => ({ activeMarcas, setActiveMarcas, loading: false }),
+    [activeMarcas],
+  );
+
   const toggleHide = useCallback((key: string) => {
     setHiddenSlides(prev => {
       const next = new Set(prev);
@@ -3147,24 +3492,77 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
     const entries: { key: string; label: string; node: React.ReactNode }[] = [];
     let pageCounter = 1;
 
-    entries.push({ key: 'cover', label: 'Capa', node: <CoverSlide key="cover" data={data} /> });
+    entries.push({ key: 'cover', label: 'Capa', node: <CoverSlide key="cover" data={localData} /> });
     pageCounter++;
 
-    entries.push({ key: 'overview', label: 'Visão Geral', node: <OverviewSlide key="overview" data={data} /> });
+    // ── Global slides — filterable by Seções (tag0) + Marcas ─────────
+    const globalSectionNames = localData.sections.map(s => s.tag0);
+    const globalMarcas = allAvailableMarcas;
+    const globalFilterGroups: FilterGroup[] = [
+      ...(globalSectionNames.length > 1 ? [{ id: 'tag01s' as const, label: 'Seções', options: globalSectionNames }] : []),
+      ...(globalMarcas.length > 0 ? [{ id: 'marcas' as const, label: 'Marcas', options: globalMarcas }] : []),
+    ];
+
+    const overviewPn = pageCounter;
+    entries.push({
+      key: 'overview', label: 'Visão Geral',
+      node: (
+        <FilterableSlide key="fs-overview" groups={globalFilterGroups}>
+          {(filters, filterButton) => <OverviewSlide data={filterVariancePptData(localData, filters)} filterSlot={filterButton} />}
+        </FilterableSlide>
+      ),
+    });
     pageCounter++;
 
-    entries.push({ key: 'performance', label: 'Performance vs Orçado', node: <PerformanceSlide key="performance" data={data} pageNum={pageCounter} /> });
+    const performancePn = pageCounter;
+    entries.push({
+      key: 'performance', label: 'Performance vs Orçado',
+      node: (
+        <FilterableSlide key="fs-performance" groups={globalFilterGroups}>
+          {(filters, filterButton) => <PerformanceSlide data={filterVariancePptData(localData, filters)} pageNum={performancePn} filterSlot={filterButton} />}
+        </FilterableSlide>
+      ),
+    });
     pageCounter++;
 
-    entries.push({ key: 'analytics', label: 'Análise', node: <AnalyticsSlide key="analytics" data={data} pageNum={pageCounter} /> });
+    const analyticsPn = pageCounter;
+    entries.push({
+      key: 'analytics', label: 'Análise',
+      node: (
+        <FilterableSlide key="fs-analytics" groups={globalFilterGroups}>
+          {(filters, filterButton) => <AnalyticsSlide data={filterVariancePptData(localData, filters)} pageNum={analyticsPn} filterSlot={filterButton} />}
+        </FilterableSlide>
+      ),
+    });
     pageCounter++;
 
-    for (const section of data.sections) {
+    for (const section of localData.sections) {
       if (section.tag01Nodes.length > 0) {
+        // ── SectionSlide — filterable by tag01 + marca ──────────────────
+        const sectionTag01s  = section.tag01Nodes.map(n => n.label);
+        const depth3Marcas   = extractSectionMarcas(section);
+        const breakdownEntries = localData.marcaBreakdowns?.[section.tag0] ?? [];
+        const sectionMarcas  = depth3Marcas.length > 0
+          ? depth3Marcas
+          : [...new Set(breakdownEntries.map(e => e.marca))].sort();
+        const sectionFilterGroups: FilterGroup[] = [
+          ...(sectionTag01s.length > 1 ? [{ id: 'tag01s' as const, label: 'Sub-contas', options: sectionTag01s }] : []),
+          ...(sectionMarcas.length > 0  ? [{ id: 'marcas' as const, label: 'Marcas',    options: sectionMarcas }] : []),
+        ];
+        const sectionPn = pageCounter;
         entries.push({
           key: `section-${section.tag0}`,
           label: section.label,
-          node: <SectionSlide key={`section-${section.tag0}`} section={section} data={data} pageNum={pageCounter} />,
+          node: (
+            <FilterableSlide key={`fs-section-${section.tag0}`} groups={sectionFilterGroups}>
+              {(filters, filterButton) => {
+                const filteredSection = depth3Marcas.length > 0
+                  ? filterSection(section, filters)
+                  : filterSectionByMarcaBreakdowns(filterSection(section, filters), filters, breakdownEntries);
+                return <SectionSlide section={filteredSection} data={localData} pageNum={sectionPn} filterSlot={filterButton} />;
+              }}
+            </FilterableSlide>
+          ),
         });
         pageCounter++;
 
@@ -3185,23 +3583,36 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
           for (let i = 0; i < aggregated.length; i += CARDS_PER_JUST_SLIDE) {
             pages.push(aggregated.slice(i, i + CARDS_PER_JUST_SLIDE));
           }
+          const allStatuses = [...new Set(aggregated.map(c => c.status))].sort();
+          const justFilterGroups: FilterGroup[] = allStatuses.length > 1
+            ? [{ id: 'statuses' as const, label: 'Status', options: allStatuses }]
+            : [];
           pages.forEach((pageCards, pi) => {
             const slideLabel = pages.length > 1 ? `(${pi + 1}/${pages.length})` : undefined;
             const fullLabel = `${labelBase} — Justificativas${slideLabel ? ` ${slideLabel}` : ''}`;
+            const justPn = pageCounter;
             entries.push({
               key: `${keyBase}-p${pi}`,
               label: fullLabel,
               node: (
-                <Tag01JustificativasSlide
-                  key={`${keyBase}-p${pi}`}
-                  section={section}
-                  t01={t01Node}
-                  data={data}
-                  cards={pageCards}
-                  pageNum={pageCounter}
-                  slideLabel={slideLabel}
-                  titleOverride={fullLabel}
-                />
+                <FilterableSlide key={`fs-${keyBase}-p${pi}`} groups={justFilterGroups}>
+                  {(filters, filterButton) => {
+                    const filteredCards = filterJustCards(pageCards, filters);
+                    return (
+                      <Tag01JustificativasSlide
+                        key={`${keyBase}-p${pi}`}
+                        section={section}
+                        t01={t01Node}
+                        data={localData}
+                        cards={filteredCards}
+                        pageNum={justPn}
+                        slideLabel={slideLabel}
+                        titleOverride={fullLabel}
+                        filterSlot={filterButton}
+                      />
+                    );
+                  }}
+                </FilterableSlide>
               ),
             });
             pageCounter++;
@@ -3220,7 +3631,7 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
               const tag02Rows = buildTag02AsT01Rows(tag02);
               const overrideTitle = `${section.label} — ${tag02.label}`;
 
-              // Detail slide for this tag02
+              // Detail slide for this tag02 (no per-slide filter — already narrowed to one tag02)
               entries.push({
                 key: `tag01detail-${section.tag0}-${t01.label}-${tag02.label}`,
                 label: overrideTitle,
@@ -3229,7 +3640,7 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
                     key={`tag01detail-${section.tag0}-${t01.label}-${tag02.label}`}
                     section={section}
                     t01={t01}
-                    data={data}
+                    data={localData}
                     rows={tag02Rows}
                     pageNum={pageCounter}
                     titleOverride={overrideTitle}
@@ -3251,36 +3662,68 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
             const allRows  = buildT01Rows(t01);
             const allCards = buildT01JustCards(t01);
 
-            // Detail slide
+            // ── Tag01DetailSlide — filterable by tag02 + marca ────────
+            const detailTag02s  = t01.children.map(c => c.label);
+            const detailMarcas  = extractNodeMarcas(t01);
+            const detailFilterGroups: FilterGroup[] = [
+              ...(detailTag02s.length > 1 ? [{ id: 'tag02s' as const, label: 'Categorias', options: detailTag02s }] : []),
+              ...(detailMarcas.length > 0  ? [{ id: 'marcas' as const, label: 'Marcas',    options: detailMarcas }] : []),
+            ];
+            const detailPn = pageCounter;
             entries.push({
               key: `tag01detail-${section.tag0}-${t01.label}`,
               label: `${section.label} — ${t01.label}`,
               node: (
-                <Tag01DetailSlide
-                  key={`tag01detail-${section.tag0}-${t01.label}`}
-                  section={section}
-                  t01={t01}
-                  data={data}
-                  rows={allRows}
-                  pageNum={pageCounter}
-                />
+                <FilterableSlide key={`fs-detail-${section.tag0}-${t01.label}`} groups={detailFilterGroups}>
+                  {(filters, filterButton) => (
+                    <Tag01DetailSlide
+                      section={section}
+                      t01={t01}
+                      data={localData}
+                      rows={filterT01Rows(allRows, filters)}
+                      pageNum={detailPn}
+                      filterSlot={filterButton}
+                    />
+                  )}
+                </FilterableSlide>
               ),
             });
             pageCounter++;
 
             // Tag02 breakdown slide (ex: Folha de Funcionários → categorias)
             if (shouldBreakdown) {
+              const breakdownTag02s = t01.children.map(c => c.label);
+              const breakdownMarcas = extractNodeMarcas(t01);
+              const breakdownFilterGroups: FilterGroup[] = [
+                ...(breakdownTag02s.length > 1 ? [{ id: 'tag02s' as const, label: 'Categorias', options: breakdownTag02s }] : []),
+                ...(breakdownMarcas.length > 0  ? [{ id: 'marcas' as const, label: 'Marcas',    options: breakdownMarcas }] : []),
+              ];
+              const breakdownPn = pageCounter;
               entries.push({
                 key: `tag01breakdown-${section.tag0}-${t01.label}`,
                 label: `${section.label} — ${t01.label} — Categorias`,
                 node: (
-                  <Tag01T02BreakdownSlide
-                    key={`tag01breakdown-${section.tag0}-${t01.label}`}
-                    section={section}
-                    t01={t01}
-                    data={data}
-                    pageNum={pageCounter}
-                  />
+                  <FilterableSlide key={`fs-breakdown-${section.tag0}-${t01.label}`} groups={breakdownFilterGroups}>
+                    {(filters, filterButton) => {
+                      const filtT01 = filters.tag02s?.length || filters.marcas?.length
+                        ? { ...t01, children: t01.children
+                            .filter(c => !filters.tag02s?.length || filters.tag02s.includes(c.label))
+                            .map(c => filters.marcas?.length
+                              ? { ...c, children: c.children.filter(m => filters.marcas!.includes(m.label)) }
+                              : c)
+                          }
+                        : t01;
+                      return (
+                        <Tag01T02BreakdownSlide
+                          section={section}
+                          t01={filtT01}
+                          data={localData}
+                          pageNum={breakdownPn}
+                          filterSlot={filterButton}
+                        />
+                      );
+                    }}
+                  </FilterableSlide>
                 ),
               });
               pageCounter++;
@@ -3297,20 +3740,46 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
         }
       }
 
-      const marcaEntries = data.marcaBreakdowns?.[section.tag0];
+      // ── MarcaSlide — filterable by marca ──────────────────────────────
+      const marcaEntries = localData.marcaBreakdowns?.[section.tag0];
       if (marcaEntries && marcaEntries.length > 0) {
+        const marcaOptions = [...new Set(marcaEntries.map(e => e.marca))].sort();
+        const marcaFilterGroups: FilterGroup[] = marcaOptions.length > 1
+          ? [{ id: 'marcas' as const, label: 'Marcas', options: marcaOptions }]
+          : [];
+        const marcaPn = pageCounter;
         entries.push({
           key: `marca-${section.tag0}`,
           label: `${section.label} Marcas`,
-          node: <MarcaSlide key={`marca-${section.tag0}`} section={section} data={data} entries={marcaEntries} pageNum={pageCounter} />,
+          node: (
+            <FilterableSlide key={`fs-marca-${section.tag0}`} groups={marcaFilterGroups}>
+              {(filters, filterButton) => (
+                <MarcaSlide
+                  section={section}
+                  data={localData}
+                  entries={filterMarcaEntries(marcaEntries, filters)}
+                  pageNum={marcaPn}
+                  filterSlot={filterButton}
+                />
+              )}
+            </FilterableSlide>
+          ),
         });
         pageCounter++;
       }
     }
 
-    entries.push({ key: 'summary', label: 'Resumo', node: <SummarySlide key="summary" data={data} pageNum={pageCounter} /> });
+    const summaryPn = pageCounter;
+    entries.push({
+      key: 'summary', label: 'Resumo',
+      node: (
+        <FilterableSlide key="fs-summary" groups={globalFilterGroups}>
+          {(filters, filterButton) => <SummarySlide data={filterVariancePptData(localData, filters)} pageNum={summaryPn} filterSlot={filterButton} />}
+        </FilterableSlide>
+      ),
+    });
     return entries;
-  }, [data]);
+  }, [localData, allAvailableMarcas]);
 
   const presentationSlides = useMemo(
     () => allSlideEntries.filter(e => !hiddenSlides.has(e.key)).map(e => e.node),
@@ -3397,29 +3866,33 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
         </div>
       </div>
 
-      {/* All slides — preview mode */}
-      {allSlideEntries.map((entry, idx) => (
-        <HideableSlide
-          key={entry.key}
-          slideKey={entry.key}
-          hidden={hiddenSlides.has(entry.key)}
-          onToggle={toggleHide}
-          onPresent={() => startPresentation(idx)}
-        >
-          {entry.node}
-        </HideableSlide>
-      ))}
+      <MarcaFilterContext.Provider value={marcaCtxValue}>
+        {/* All slides — preview mode */}
+        {allSlideEntries.map((entry, idx) => (
+          <HideableSlide
+            key={entry.key}
+            slideKey={entry.key}
+            hidden={hiddenSlides.has(entry.key)}
+            onToggle={toggleHide}
+            onPresent={() => startPresentation(idx)}
+          >
+            {entry.node}
+          </HideableSlide>
+        ))}
+      </MarcaFilterContext.Provider>
 
       {/* Presentation mode overlay */}
       {presenting && (
-        <PresentationMode
-          slides={presentationSlides}
-          currentSlide={currentSlide}
-          totalSlides={totalSlides}
-          onPrev={goPrev}
-          onNext={goNext}
-          onExit={exitPresentation}
-        />
+        <MarcaFilterContext.Provider value={marcaCtxValue}>
+          <PresentationMode
+            slides={presentationSlides}
+            currentSlide={currentSlide}
+            totalSlides={totalSlides}
+            onPrev={goPrev}
+            onNext={goNext}
+            onExit={exitPresentation}
+          />
+        </MarcaFilterContext.Provider>
       )}
     </div>
   );

@@ -172,14 +172,16 @@ export function prepareVariancePptData(
 
         let marcaChildren: VariancePptNode[] = [];
         if (marcasInTag02.length > 1) {
-          // Multiple marcas → create depth=3 children
+          // Multiple marcas → create depth=3 children for exact per-marca filtering
           for (const m of marcasInTag02) {
             const marcaItems = tag02Items.filter(i => i.marca === m);
             marcaChildren.push(buildNode(3, m, tag0, tag01, tag02, null, m, marcaItems, []));
           }
         }
 
-        tag02Children.push(buildNode(2, tag02, tag0, tag01, tag02, null, null, tag02Items, marcaChildren));
+        // Single-marca: record the marca on the node so filterNodeByMarcas can filter correctly
+        const singleMarca = marcasInTag02.length === 1 ? marcasInTag02[0] : null;
+        tag02Children.push(buildNode(2, tag02, tag0, tag01, tag02, null, singleMarca, tag02Items, marcaChildren));
       }
 
       tag01Nodes.push(buildNode(1, tag01, tag0, tag01, null, null, null, tag01Items, tag02Children));
