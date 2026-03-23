@@ -1883,6 +1883,7 @@ function Tag01DetailSlide({
                 <th className="text-left px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">DESCRIÇÃO / MARCA</th>
                 <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">REAL {data.year}</th>
                 <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">ORÇADO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ R$ Orç</th>
                 <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ% Orç</th>
                 <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">{a1Label}</th>
                 <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ% {a1Label}</th>
@@ -1905,6 +1906,15 @@ function Tag01DetailSlide({
                       style={{ color: textClr, fontWeight: bold ? 700 : 400 }}>{fmtK(row.real)}</td>
                     <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
                       style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.orc)}</td>
+                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums font-semibold tabular-nums">
+                      {(() => {
+                        const varAbs = row.real - row.orc;
+                        const clr = isTotal
+                          ? (varAbs >= 0 ? '#86EFAC' : '#FCA5A5')
+                          : deltaColor(row.orcPct);
+                        return <span style={{ color: clr }}>{varAbs >= 0 ? '+' : ''}{fmtK(varAbs)}</span>;
+                      })()}
+                    </td>
                     <td className="text-right px-2 py-0.5">
                       {isTotal
                         ? <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.orcPct)}</span>
