@@ -861,11 +861,15 @@ function addTag01DetailSlides(
     }
   }
 
-  // ── Build justification cards (all leaf nodes of this tag01) ──────
+  // ── Build justification cards (tag02 level only) ─────────────────
+  // depth=2 = tag02, depth=3 = marca breakdown.
+  // Justificativas são gravadas no nível tag02 no snapshot; os nós de marca
+  // (depth=3) herdam o mesmo texto, então coletar depth>=2 duplica os cards.
+  // Coletamos apenas depth===2 (tag02) para exibir um card por subconta.
   const allCards: JustCard[] = [];
   const collectJust = (node: VariancePptNode) => {
     const text = node.orcJustification || node.orcAiSummary;
-    if (text && node.depth >= 2) {
+    if (text && node.depth === 2) {
       allCards.push({
         label: node.label,
         varPct: node.orcVarPct,
