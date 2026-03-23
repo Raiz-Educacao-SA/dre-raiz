@@ -9,6 +9,7 @@ import {
   VariancePptNode,
   VariancePptCalcRow,
   VariancePptStats,
+  RzDreRow,
 } from './variancePptTypes';
 
 // ── Month helpers ────────────────────────────────────────────────
@@ -55,6 +56,7 @@ export function prepareVariancePptData(
   items: VarianceJustification[],
   yearMonth: string,
   filterMarca: string | null,
+  rzItems?: VarianceJustification[], // opcional: itens RZ pré-buscados para o DRE do slide de Rateio
 ): VariancePptData {
   const { year, month } = parseYearMonth(yearMonth);
   const a1Year = year - 1;
@@ -201,6 +203,9 @@ export function prepareVariancePptData(
   // Calc rows: prefer DB-stored MARGEM/EBITDA items, fallback to computed
   const calcRows = computeCalcRows(sections, items, orcMap, a1Map);
 
+  // RZ DRE: usa rzItems dedicados se fornecidos, senão tenta extrair dos items gerais
+  const rzDre = computeRzDre(rzItems && rzItems.length > 0 ? rzItems : items);
+
   // Stats: count leaves (tag02) from the original items (excluding calc rows).
   // IMPORTANT: filter to ONE comparison_type only (orcado preferred) to avoid
   // double-counting — each account has 2 rows (orcado + a1) with same real_value.
@@ -228,7 +233,76 @@ export function prepareVariancePptData(
     executiveSummary: null,
     closingSummary: null,
     marcaBreakdowns: null,
+    rzDre,
   };
+}
+
+// ── RZ DRE ───────────────────────────────────────────────────────
+
+function computeRzDre(items: VarianceJustification[]): RzDreRow[] | null {
+  const CALC_TAG0S = new Set(['MARGEM DE CONTRIBUIÇÃO', 'EBITDA (S/ RATEIO RAIZ CSC)', 'EBITDA TOTAL']);
+  const isRateioTag = (t: string) => t.startsWith('05.') || t.startsWith('06.');
+  const baseFilter = (i: VarianceJustification) =>
+    i.marca?.toUpperCase() === 'RZ' && !CALC_TAG0S.has(i.tag0) && !isRateioTag(i.tag0);
+
+  const orcItems = items.filter(i => baseFilter(i) && i.comparison_type === 'orcado');
+  if (orcItems.length === 0) return null;
+  const a1Items  = items.filter(i => baseFilter(i) && i.comparison_type === 'a1');
+
+  // Group by tag0 → tag01 for orc AND a1 separately
+  type Vals = { real: number; orc: number; a1: number };
+  const tag0Map = new Map<string, Map<string, Vals>>();
+
+  const addItem = (item: VarianceJustification, field: 'orc' | 'a1') => {
+    const tag01 = item.tag01 || '(sem tag01)';
+    if (!tag0Map.has(item.tag0)) tag0Map.set(item.tag0, new Map());
+    const t01Map = tag0Map.get(item.tag0)!;
+    if (!t01Map.has(tag01)) t01Map.set(tag01, { real: 0, orc: 0, a1: 0 });
+    const entry = t01Map.get(tag01)!;
+    if (field === 'orc') {
+      entry.real += Number(item.real_value);
+      entry.orc  += Number(item.compare_value);
+    } else {
+      entry.a1 += Number(item.compare_value);
+    }
+  };
+
+  for (const item of orcItems) addItem(item, 'orc');
+  for (const item of a1Items)  addItem(item, 'a1');
+
+  const tag0s = [...tag0Map.keys()].sort();
+  const rows: RzDreRow[] = [];
+  const sectionTotals = new Map<string, Vals>();
+
+  for (const tag0 of tag0s) {
+    const t01Map = tag0Map.get(tag0)!;
+    const cleanLabel = tag0.replace(/^\d+\.\s*/, '');
+
+    let secReal = 0, secOrc = 0, secA1 = 0;
+    for (const v of t01Map.values()) { secReal += v.real; secOrc += v.orc; secA1 += v.a1; }
+
+    sectionTotals.set(tag0.slice(0, 3), { real: secReal, orc: secOrc, a1: secA1 });
+
+    const secOrcPct = secOrc !== 0 ? ((secReal - secOrc) / Math.abs(secOrc)) * 100 : null;
+    const secA1Pct  = secA1  !== 0 ? ((secReal - secA1)  / Math.abs(secA1))  * 100 : null;
+    rows.push({ type: 'section', label: cleanLabel, real: secReal, orc: secOrc, orcPct: secOrcPct, a1: secA1, a1Pct: secA1Pct });
+
+    for (const [tag01Label, v] of [...t01Map.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const t01OrcPct = v.orc !== 0 ? ((v.real - v.orc) / Math.abs(v.orc)) * 100 : null;
+      const t01A1Pct  = v.a1  !== 0 ? ((v.real - v.a1)  / Math.abs(v.a1))  * 100 : null;
+      rows.push({ type: 't01', label: tag01Label, real: v.real, orc: v.orc, orcPct: t01OrcPct, a1: v.a1, a1Pct: t01A1Pct });
+    }
+  }
+
+  // EBITDA = soma de todas as seções (sem rateio — RZ não recebe)
+  const sum = (f: keyof Vals) =>
+    ['01.','02.','03.','04.'].reduce((acc, k) => acc + (sectionTotals.get(k)?.[f] ?? 0), 0);
+  const eR = sum('real'), eO = sum('orc'), eA = sum('a1');
+  rows.push({ type: 'calc', label: 'EBITDA', real: eR, orc: eO,
+    orcPct: eO !== 0 ? ((eR - eO) / Math.abs(eO)) * 100 : null,
+    a1: eA, a1Pct: eA !== 0 ? ((eR - eA) / Math.abs(eA)) * 100 : null });
+
+  return rows;
 }
 
 // ── Calc rows ────────────────────────────────────────────────────

@@ -85,6 +85,25 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) + '...' : text;
 }
 
+// Remove markdown formatting and leading label prefixes so AI text reads as natural prose
+function cleanInsight(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/#{1,6}\s+/g, '')                        // ## Headers
+    .replace(/\*{1,2}([^*\n]+)\*{1,2}/g, '$1')        // **bold** / *italic*
+    .replace(/_{1,2}([^_\n]+)_{1,2}/g, '$1')           // __bold__ / _italic_
+    .replace(/`[^`]+`/g, (m) => m.slice(1, -1))        // `code`
+    .replace(/^[-*•]\s+/gm, '')                        // bullet points
+    .replace(/^\d+\.\s+/gm, '')                        // numbered lists
+    // Strip leading label prefix: "Consolidação - Centro de Custo: Nome - " etc.
+    .replace(/^(?:[^:]{3,60}:\s*)?[^:]{3,60}\s*[-–]\s+/i, '')
+    .replace(/^[^:]{3,60}:\s+/, '')                    // fallback: "Label: " prefix
+    .replace(/\n{2,}/g, ' ')                           // multiple newlines → space
+    .replace(/\n/g, ' ')                               // single newlines → space
+    .replace(/\s{2,}/g, ' ')                           // extra spaces
+    .trim();
+}
+
 // ─── Slide Base Card ─────────────────────────────────────────────────
 
 // SlideCard: em preview usa aspectRatio 16:9 para definir altura.
@@ -216,25 +235,78 @@ function KpiCard({
   );
 }
 
-// ─── AI Insights Box ─────────────────────────────────────────────────
+// ─── Insight Full-Text Popup ─────────────────────────────────────────
 
-function InsightsBox({ text, compact }: { text: string; compact?: boolean }) {
+function InsightPopup({ title, text, accent, onClose }: {
+  title: string;
+  text: string;
+  accent: string;
+  onClose: () => void;
+}) {
   return (
     <div
-      className="rounded-xl p-3"
-      style={{ background: `linear-gradient(135deg, #${C.headerBg} 0%, #${C.headerBg}ee 100%)` }}
+      className="fixed inset-0 z-[99999] flex items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-5 flex flex-col gap-3"
+        style={{ maxHeight: '80vh', borderTop: `4px solid ${accent}` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-bold text-[13px] leading-snug" style={{ color: accent }}>
+            {title}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        {/* Full text */}
+        <p className="text-[12px] text-gray-700 leading-relaxed overflow-y-auto" style={{ maxHeight: 'calc(80vh - 100px)' }}>
+          {text}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── AI Insights Box ─────────────────────────────────────────────────
+
+function InsightsBox({ text, compact, onExpand }: { text: string; compact?: boolean; onExpand?: () => void }) {
+  const accentColor = hex(C.accent);
+  const cleaned = cleanInsight(text);
+  const PREVIEW_LEN = compact ? 120 : 300;
+  const isLong = cleaned.length > PREVIEW_LEN;
+  const preview = isLong ? cleaned.slice(0, PREVIEW_LEN).trimEnd() + '…' : cleaned;
+
+  return (
+    <div
+      className="rounded-xl p-3 border"
+      style={{ backgroundColor: `${accentColor}0D`, borderColor: `${accentColor}25`, borderLeft: `3px solid ${accentColor}` }}
     >
       <div className="flex items-center gap-1.5 mb-1.5">
-        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex(C.accent) }} />
-        <span className="text-[9px] font-bold tracking-widest" style={{ color: hex(C.accent) }}>
+        <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accentColor }} />
+        <span className="text-[9px] font-bold tracking-widest" style={{ color: accentColor }}>
           SÍNTESE IA
         </span>
       </div>
-      <p
-        className={compact ? 'text-[9px] line-clamp-2 leading-snug' : 'text-[11px] leading-relaxed'}
-        style={{ color: text ? '#D1D5DB' : '#6B728080' }}
-      >
-        {text || 'Síntese pendente'}
+      <p className={compact ? 'text-[9px] leading-snug' : 'text-[11px] leading-relaxed'}
+        style={{ color: cleaned ? '#374151' : '#9CA3AF' }}>
+        {preview || 'Síntese pendente'}
+        {isLong && onExpand && (
+          <button
+            className="ml-1 text-[8px] font-semibold underline underline-offset-1 bg-transparent border-none p-0 cursor-pointer"
+            style={{ color: accentColor }}
+            onClick={e => { e.stopPropagation(); onExpand(); }}
+          >
+            ver mais →
+          </button>
+        )}
       </p>
     </div>
   );
@@ -246,116 +318,166 @@ function InsightsBox({ text, compact }: { text: string; compact?: boolean }) {
 
 function CoverSlide({ data }: { data: VariancePptData }) {
   const snapLabel = data.snapshotAt
-    ? `Atualizado em ${new Date(data.snapshotAt).toLocaleDateString('pt-BR')} ${new Date(data.snapshotAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    ? `${new Date(data.snapshotAt).toLocaleDateString('pt-BR')} ${new Date(data.snapshotAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
     : null;
   const marcaList = data.marca ? data.marca.split(',').map(m => m.trim()).filter(Boolean) : [];
 
   return (
     <SlideCard>
-      {/* Full blue background */}
-      <div className="absolute inset-0" style={{ backgroundColor: '#1D4ED8' }} />
+      {/* ── LEFT PANEL: dark navy ── */}
+      <div className="absolute inset-0 flex">
+        <div className="flex flex-col justify-between h-full px-9 py-7 shrink-0" style={{ width: '57%', backgroundColor: '#0F172A' }}>
 
-      {/* Diagonal geometric right element */}
-      <div className="absolute right-0 top-0 bottom-0 overflow-hidden pointer-events-none" style={{ width: '38%' }}>
-        <div
-          className="absolute inset-0"
-          style={{ background: 'linear-gradient(148deg, transparent 32%, #2563EB 32%)', opacity: 0.8 }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{ background: 'linear-gradient(160deg, transparent 50%, #1E40AF 50%)', opacity: 0.5 }}
-        />
-      </div>
-
-      {/* Content */}
-      <div className="relative z-10 flex flex-col justify-between h-full px-10 py-7">
-        {/* Top: Logo */}
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center border border-white/30 bg-white/15">
-            <div className="w-5 h-5 rounded bg-white/70" />
-          </div>
-          <div>
-            <div className="text-[20px] font-black text-white tracking-widest leading-none">RAIZ</div>
-            <div className="text-[8px] font-bold tracking-[0.2em] text-blue-200 uppercase">
-              Inteligência Financeira
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            {/* Icon: mini bar chart — same pattern as app sidebar */}
+            <div className="flex items-end gap-[3px] h-7">
+              <div className="w-2 rounded-sm" style={{ height: '45%', backgroundColor: '#F59E0B' }} />
+              <div className="w-2 rounded-sm" style={{ height: '70%', backgroundColor: '#10B981' }} />
+              <div className="w-2 rounded-sm" style={{ height: '100%', backgroundColor: '#2563EB' }} />
+              <div className="w-2 rounded-sm" style={{ height: '55%', backgroundColor: '#10B981' }} />
             </div>
-          </div>
-        </div>
-
-        {/* Center: Title */}
-        <div>
-          <div className="flex items-start gap-1 mb-2">
-            <div className="w-[3px] rounded bg-white/80 self-stretch mr-2" />
             <div>
-              <span
-                className="inline-flex items-center px-2.5 py-0.5 rounded border border-white/30 text-[9px] font-bold tracking-widest text-white/80 uppercase"
-              >
-                FINANCEIRO
-              </span>
-              {marcaList.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap mt-1.5">
-                  {marcaList.map(m => (
-                    <span
-                      key={m}
-                      className="px-2 py-0.5 rounded border border-white/25 text-[9px] font-bold text-white/75"
-                    >
-                      {m}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <div className="text-[18px] font-black text-white tracking-[0.15em] leading-none">RAIZ</div>
+              <div className="text-[7px] font-semibold tracking-[0.22em] uppercase" style={{ color: '#64748B' }}>
+                Inteligência Financeira
+              </div>
             </div>
           </div>
-          <div className="flex items-start gap-3">
-            <div className="w-[4px] rounded-full bg-white self-stretch shrink-0" />
-            <div>
-              <h1 className="text-[50px] font-black text-white leading-none tracking-tight">Book de</h1>
-              <h1 className="text-[50px] font-black text-white leading-none tracking-tight">Resultados</h1>
-              <p className="text-[18px] font-semibold mt-3" style={{ color: '#93C5FD' }}>
-                DRE Gerencial •{' '}
-                <strong className="text-white">{data.monthLabel}</strong>
-              </p>
-            </div>
-          </div>
-        </div>
 
-        {/* Bottom: Metadata */}
-        <div className="flex items-end justify-between">
+          {/* Main title block */}
           <div>
-            <div className="text-[9px] font-bold tracking-widest text-blue-300 uppercase mb-1.5">
-              INFORMAÇÕES DO DOCUMENTO
-            </div>
-            <div className="flex items-center gap-5">
-              <span className="flex items-center gap-1 text-[11px] text-blue-200">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14,2 14,8 20,8" />
-                </svg>
-                Versão {data.version}
+            {/* Section label */}
+            <div className="flex items-center gap-2 mb-4">
+              <div className="h-[2px] w-6 rounded" style={{ backgroundColor: '#10B981' }} />
+              <span className="text-[9px] font-bold tracking-[0.25em] uppercase" style={{ color: '#10B981' }}>
+                DRE Gerencial
               </span>
-              {snapLabel && (
-                <span className="flex items-center gap-1 text-[11px] text-blue-200">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <circle cx="12" cy="12" r="10" />
-                    <polyline points="12,6 12,12 16,14" />
+            </div>
+
+            {/* Title */}
+            <h1 className="font-black text-white leading-none tracking-tight" style={{ fontSize: 46 }}>
+              Book de
+            </h1>
+            <h1 className="font-black leading-none tracking-tight" style={{ fontSize: 46, color: '#2563EB' }}>
+              Resultados
+            </h1>
+
+            {/* Month */}
+            <div className="flex items-center gap-3 mt-4">
+              <div className="w-[3px] h-8 rounded-full" style={{ backgroundColor: '#2563EB' }} />
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: '#64748B' }}>Período de Referência</div>
+                <div className="text-[22px] font-black text-white leading-tight">{data.monthLabel}</div>
+              </div>
+            </div>
+
+            {/* Marca chips */}
+            {marcaList.length > 0 && (
+              <div className="flex gap-1.5 flex-wrap mt-4">
+                {marcaList.map(m => (
+                  <span
+                    key={m}
+                    className="px-2.5 py-0.5 rounded text-[9px] font-bold text-white"
+                    style={{ backgroundColor: 'rgba(37,99,235,0.35)', border: '1px solid rgba(37,99,235,0.5)' }}
+                  >
+                    {m}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Bottom metadata */}
+          <div>
+            {/* Divider */}
+            <div className="h-px w-full mb-3" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }} />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14,2 14,8 20,8" />
                   </svg>
-                  {snapLabel}
-                </span>
-              )}
+                  <span className="text-[9px]" style={{ color: '#64748B' }}>Versão {data.version}</span>
+                </div>
+                {snapLabel && (
+                  <div className="flex items-center gap-1.5">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5">
+                      <circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" />
+                    </svg>
+                    <span className="text-[9px]" style={{ color: '#64748B' }}>{snapLabel}</span>
+                  </div>
+                )}
+              </div>
+              <span className="text-[8px] font-semibold tracking-widest uppercase" style={{ color: '#334155' }}>
+                Uso Interno
+              </span>
             </div>
           </div>
-          <div
-            className="rounded-xl border border-white/20 px-4 py-2.5 text-right"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          >
-            <div className="text-[9px] font-bold tracking-widest text-blue-300 uppercase mb-0.5">
-              STATUS DE PROCESSO
+        </div>
+
+        {/* ── RIGHT PANEL: blue gradient ── */}
+        <div className="flex-1 relative overflow-hidden" style={{ background: 'linear-gradient(145deg, #1D4ED8 0%, #1E3A8A 55%, #0F172A 100%)' }}>
+
+          {/* Decorative circles */}
+          <div className="absolute rounded-full" style={{ width: 260, height: 260, top: -60, right: -60, background: 'rgba(255,255,255,0.04)' }} />
+          <div className="absolute rounded-full" style={{ width: 180, height: 180, top: 80, right: 20, background: 'rgba(255,255,255,0.06)' }} />
+          <div className="absolute rounded-full" style={{ width: 320, height: 320, bottom: -100, right: -80, background: 'rgba(16,185,129,0.08)' }} />
+          <div className="absolute rounded-full" style={{ width: 140, height: 140, bottom: 60, right: 80, background: 'rgba(16,185,129,0.1)' }} />
+
+          {/* Grid lines */}
+          <div className="absolute inset-0" style={{
+            backgroundImage: 'linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
+          }} />
+
+          {/* KPI cards stack */}
+          <div className="absolute inset-0 flex flex-col justify-center px-8 gap-3">
+            {/* Coverage card */}
+            <div className="rounded-xl p-4" style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}>
+              <div className="text-[8px] font-bold tracking-[0.2em] uppercase mb-1" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                Cobertura de Justificativas
+              </div>
+              <div className="flex items-end gap-2">
+                <span className="text-[32px] font-black text-white leading-none">{data.stats.coveragePct}%</span>
+                <span className="text-[10px] font-semibold mb-1" style={{ color: data.stats.coveragePct >= 80 ? '#34D399' : data.stats.coveragePct >= 50 ? '#FCD34D' : '#F87171' }}>
+                  {data.stats.coveragePct >= 80 ? '● Em dia' : data.stats.coveragePct >= 50 ? '● Parcial' : '● Pendente'}
+                </span>
+              </div>
+              {/* Progress bar */}
+              <div className="mt-2 h-1.5 rounded-full w-full" style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}>
+                <div className="h-full rounded-full transition-all" style={{ width: `${data.stats.coveragePct}%`, backgroundColor: data.stats.coveragePct >= 80 ? '#10B981' : data.stats.coveragePct >= 50 ? '#F59E0B' : '#EF4444' }} />
+              </div>
             </div>
-            <div
-              className="text-[15px] font-black text-white"
-            >
-              {data.stats.coveragePct}% das contas justificadas
+
+            {/* Stats row */}
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Justificadas', value: data.stats.justified + data.stats.approved, color: '#34D399' },
+                { label: 'Pendentes', value: data.stats.pending + data.stats.notified, color: '#FCD34D' },
+                { label: 'Total Contas', value: data.stats.totalLeaves, color: 'rgba(255,255,255,0.7)' },
+                { label: 'Rejeitadas', value: data.stats.rejected, color: '#F87171' },
+              ].map(item => (
+                <div key={item.label} className="rounded-lg px-3 py-2" style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <div className="text-[7px] font-semibold uppercase tracking-wider mb-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>{item.label}</div>
+                  <div className="text-[18px] font-black leading-none" style={{ color: item.color }}>{item.value}</div>
+                </div>
+              ))}
             </div>
+
+            {/* A1 year badge */}
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="text-[9px] font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>Comparativo Ano Anterior</span>
+              <span className="text-[11px] font-black text-white">{data.a1Year}</span>
+            </div>
+          </div>
+
+          {/* Bottom label */}
+          <div className="absolute bottom-5 left-0 right-0 flex justify-center">
+            <span className="text-[8px] font-bold tracking-[0.3em] uppercase" style={{ color: 'rgba(255,255,255,0.2)' }}>
+              Raiz Educação S.A. — Documento Confidencial
+            </span>
           </div>
         </div>
       </div>
@@ -420,8 +542,11 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
     ...(ebitda ? [ebitda.real - ebitda.orcado] : []),
   ];
 
+  // Phantom heights: max(real, orc) so variance label appears above both bars
+  const phantomV = realV.map((r, i) => Math.max(r, orcV[i]));
+
   const chartOption = {
-    grid: { left: 8, right: 8, top: 38, bottom: 32 },
+    grid: { left: 8, right: 8, top: 62, bottom: 46 },
     xAxis: {
       type: 'category' as const,
       data: chartLabels,
@@ -432,6 +557,7 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
     yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
     legend: {
       bottom: 2,
+      data: [`Real ${data.year}`, 'Orçado'],
       itemWidth: 10,
       itemHeight: 8,
       textStyle: { fontSize: 9, color: '#6B7280', fontWeight: 600 },
@@ -447,23 +573,39 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
         label: {
           show: true,
           position: 'top' as const,
+          formatter: (p: any) => fmtChartLabel(p.value, unit),
+          fontSize: 8,
+          fontWeight: 700,
+          color: '#2563EB',
+        },
+      },
+      {
+        // Phantom series: invisible bar centered between Real and Orçado, carries variance label
+        name: '__var__',
+        type: 'bar' as const,
+        data: phantomV,
+        barWidth: 1,
+        silent: true,
+        itemStyle: { color: 'transparent', borderRadius: 0 },
+        label: {
+          show: true,
+          position: 'top' as const,
+          offset: [0, -4],
           formatter: (p: any) => {
             const idx = p.dataIndex;
             const pct = overviewVarPcts[idx];
             const abs = overviewVarAbs[idx];
-            const val = fmtChartLabel(p.value, unit);
-            if (pct === null || pct === undefined) return `{val|${val}}`;
+            if (pct === null || pct === undefined) return '';
             const fav = pct >= 0;
             const tag = fav ? 'pos' : 'neg';
-            const sign = pct >= 0 ? '+' : '-';
-            const absLabel = `${sign}${fmtChartLabel(Math.abs(toChartVal(abs, unit)), unit)}`;
+            const sign = pct >= 0 ? '+' : '';
+            const absLabel = `${sign}${fmtChartLabel(toChartVal(abs, unit), unit)}`;
             const pctLabel = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-            return `{${tag}|${absLabel} | ${pctLabel}}\n{val|${val}}`;
+            return `{${tag}|${absLabel} | ${pctLabel}}`;
           },
           rich: {
             pos: { fontSize: 7, fontWeight: 800, color: '#16A34A', lineHeight: 13 },
             neg: { fontSize: 7, fontWeight: 800, color: '#DC2626', lineHeight: 13 },
-            val: { fontSize: 8, fontWeight: 700, color: '#2563EB', lineHeight: 11 },
           },
         },
       },
@@ -585,7 +727,7 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
             COMPARATIVO: REAL VS ORÇADO (R$)
           </div>
           <div className="flex-1 min-h-0">
-            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} />
+            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
           </div>
         </div>
       </div>
@@ -600,6 +742,8 @@ function OverviewSlide({ data }: { data: VariancePptData }) {
 
 function SectionSlide({ section, data, pageNum }: { section: VariancePptSection; data: VariancePptData; pageNum?: number }) {
   if (section.tag01Nodes.length === 0) return null;
+
+  const [popup, setPopup] = React.useState<{ title: string; text: string; accent: string } | null>(null);
 
   const { node } = section;
   const insightText = node.enrichedInsight || node.orcAiSummary || '';
@@ -621,19 +765,47 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
   const worstBorder = worstFav ? '#BBF7D0' : '#FECACA';
   const worstType = worstFav ? 'DESTAQUE' : 'PONTO DE ATENÇÃO';
 
-  // Bar chart
-  const allRaw = section.tag01Nodes.flatMap(n => [Math.abs(n.real), Math.abs(n.orcCompare)]);
+  // Custom sort orders por seção
+  const RECEITA_ORDER       = ['mensalidade', 'material', 'integral', 'extras', 'tributo'];
+  const CUSTOS_FIXOS_ORDER  = ['folha', 'professor', 'material did', 'consumo', 'concess', 'alimenta'];
+
+  const getSortOrder = (label: string, order: string[]) => {
+    const l = label.toLowerCase();
+    const i = order.findIndex(k => l.includes(k));
+    return i === -1 ? 999 : i;
+  };
+
+  const sortedNodes = section.tag0.startsWith('01.')
+    ? [...section.tag01Nodes].sort((a, b) =>
+        getSortOrder(a.label, RECEITA_ORDER) - getSortOrder(b.label, RECEITA_ORDER))
+    : section.tag0.startsWith('02.')
+    ? [...section.tag01Nodes].sort((a, b) =>
+        getSortOrder(a.label, CUSTOS_FIXOS_ORDER) - getSortOrder(b.label, CUSTOS_FIXOS_ORDER))
+    : [...section.tag01Nodes].sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
+
+  const allRaw = sortedNodes.flatMap(n => [Math.abs(n.real), Math.abs(n.orcCompare)]);
   const unit = detectScale(...allRaw);
-  const labels = section.tag01Nodes.map(n => n.label.length > 14 ? n.label.slice(0, 13) + '…' : n.label);
-  const realV = section.tag01Nodes.map(n => Math.abs(toChartVal(n.real, unit)));
-  const orcV = section.tag01Nodes.map(n => Math.abs(toChartVal(n.orcCompare, unit)));
-  const sectionVarPcts = section.tag01Nodes.map(n => n.orcVarPct);
-  const sectionVarAbs = section.tag01Nodes.map(n => n.real - n.orcCompare);
+  const labels = sortedNodes.map(n => n.label.length > 14 ? n.label.slice(0, 13) + '…' : n.label);
+  const realV = sortedNodes.map(n => Math.abs(toChartVal(n.real, unit)));
+  const orcV = sortedNodes.map(n => Math.abs(toChartVal(n.orcCompare, unit)));
+  const sectionVarPcts = sortedNodes.map(n => n.orcVarPct);
+  const sectionVarAbs = sortedNodes.map(n => n.real - n.orcCompare);
 
   const accentClr = `#${section.sectionColor}`;
+  const isRateio = section.label.toUpperCase().includes('RATEIO');
+
+  // ── RZ DRE table (apenas para seção Rateio) ──────────────────────────
+  // Computed in variancePptDataService from items filtered to marca=RZ, sem 06.
+  type RzRow = { type: 'section' | 't01' | 'calc'; label: string; real: number; orc: number; a1: number; orcPct: number | null; a1Pct: number | null };
+  const rzTableRows: RzRow[] = isRateio && data.rzDre
+    ? data.rzDre.map(r => ({ ...r }))
+    : [];
+
+  // Phantom heights: max(real, orc) so variance label appears above both bars
+  const sectionPhantomV = realV.map((r, i) => Math.max(r, orcV[i]));
 
   const chartOption = {
-    grid: { left: 8, right: 8, top: 42, bottom: 32 },
+    grid: { left: 8, right: 8, top: 72, bottom: 46 },
     xAxis: {
       type: 'category' as const,
       data: labels,
@@ -644,6 +816,7 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
     yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
     legend: {
       bottom: 2,
+      data: [`Real ${data.year}`, 'Orçado'],
       itemWidth: 10,
       itemHeight: 8,
       textStyle: { fontSize: 9, color: '#6B7280' },
@@ -658,24 +831,41 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
         itemStyle: { color: accentClr, borderRadius: [3, 3, 0, 0] },
         label: {
           show: true,
+          position: 'inside' as const,
+          formatter: (p: any) => fmtChartLabel(p.value, unit),
+          fontSize: 8,
+          fontWeight: 700,
+          color: '#fff',
+        },
+      },
+      {
+        // Phantom: invisible bar, carries 2-line variance label (R$ + %)
+        name: '__var__',
+        type: 'bar' as const,
+        data: sectionPhantomV,
+        barWidth: 1,
+        silent: true,
+        itemStyle: { color: 'transparent', borderRadius: 0 },
+        label: {
+          show: true,
           position: 'top' as const,
+          offset: [0, -4],
           formatter: (p: any) => {
             const idx = p.dataIndex;
             const pct = sectionVarPcts[idx];
             const abs = sectionVarAbs[idx];
-            const val = fmtChartLabel(p.value, unit);
-            if (pct === null || pct === undefined) return `{val|${val}}`;
-            const fav = pct >= 0;
-            const tag = fav ? 'pos' : 'neg';
-            const sign = pct >= 0 ? '+' : '-';
-            const absLabel = `${sign}${fmtChartLabel(Math.abs(toChartVal(abs, unit)), unit)}`;
-            const pctLabel = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-            return `{${tag}|${absLabel} | ${pctLabel}}\n{val|${val}}`;
+            if (pct === null || pct === undefined) return '';
+            const tag = pct >= 0 ? 'pos' : 'neg';
+            const sign = pct >= 0 ? '+' : '';
+            const absLabel = `${sign}${fmtChartLabel(toChartVal(abs, unit), unit)}`;
+            const pctLabel = `${sign}${pct.toFixed(1)}%`;
+            return `{${tag}|${absLabel}}\n{${tag}2|${pctLabel}}`;
           },
           rich: {
-            pos: { fontSize: 7, fontWeight: 800, color: '#16A34A', lineHeight: 13 },
-            neg: { fontSize: 7, fontWeight: 800, color: '#DC2626', lineHeight: 13 },
-            val: { fontSize: 9, fontWeight: 700, color: accentClr, lineHeight: 11 },
+            pos:  { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
+            neg:  { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
+            pos2: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
+            neg2: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
           },
         },
       },
@@ -687,10 +877,10 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
         itemStyle: { color: '#D1D5DB', borderRadius: [3, 3, 0, 0] },
         label: {
           show: true,
-          position: 'top' as const,
+          position: 'inside' as const,
           formatter: (p: any) => fmtChartLabel(p.value, unit),
           fontSize: 7,
-          color: '#9CA3AF',
+          color: '#6B7280',
           fontWeight: 600,
         },
       },
@@ -698,6 +888,8 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
   };
 
   return (
+    <>
+    {popup && <InsightPopup title={popup.title} text={popup.text} accent={popup.accent} onClose={() => setPopup(null)} />}
     <SlideCard>
       <SlideHeader
         sectionLabel={section.tag0}
@@ -708,75 +900,97 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
         {/* Left panel: insight cards */}
-        <div className="w-[33%] shrink-0 flex flex-col gap-2 px-4 py-3 border-r border-gray-100">
-          {/* Card 1: Worst/Attention */}
-          {worstNode && (
-            <div
-              className="flex-1 rounded-xl p-3 border flex flex-col gap-1 overflow-hidden"
-              style={{ backgroundColor: worstBg, borderColor: worstBorder }}
-            >
-              <div className="flex items-center gap-1 shrink-0">
-                {!worstFav && (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill={worstAccent}>
-                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                  </svg>
-                )}
-                {worstFav && (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill={worstAccent}>
-                    <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" />
-                    <polyline points="16,7 22,7 22,13" />
-                  </svg>
-                )}
-                <span className="text-[9px] font-bold tracking-wider uppercase" style={{ color: worstAccent }}>
-                  {worstType}
-                </span>
-              </div>
-              <div className="text-[15px] font-black leading-tight shrink-0" style={{ color: worstAccent }}>
-                {truncate(worstNode.label, 22)}
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] text-gray-500">Real vs Orçado</span>
-                <span className="text-[11px] font-bold tabular-nums" style={{ color: worstAccent }}>
-                  {fmtPct(worstNode.orcVarPct)}
-                </span>
-              </div>
-              {(worstNode.orcAiSummary || worstNode.orcJustification) && (
-                <p className="text-[9px] text-gray-500 leading-snug line-clamp-3 mt-0.5">
-                  {(worstNode.orcAiSummary || worstNode.orcJustification || '').slice(0, 130)}
-                </p>
-              )}
-            </div>
-          )}
+        <div className="w-[36%] shrink-0 flex flex-col gap-2.5 px-4 py-3 border-r border-gray-100">
 
-          {/* Card 2: Biggest component */}
-          {biggestNode && biggestNode !== worstNode ? (
-            <div className="flex-1 rounded-xl p-3 border border-blue-100 bg-blue-50 flex flex-col gap-1 overflow-hidden">
-              <span className="text-[9px] font-bold tracking-wider uppercase text-blue-600 shrink-0">
-                MAIOR COMPONENTE
-              </span>
-              <div className="text-[15px] font-black text-blue-700 leading-tight shrink-0">
-                {truncate(biggestNode.label, 22)}
+          {/* Card 1: Destaque / Ponto de Atenção */}
+          {worstNode && (() => {
+            const worstText = cleanInsight(worstNode.orcAiSummary || worstNode.orcJustification || '');
+            const hasText = worstText.length > 0;
+            const isLong = worstText.length > 160;
+            const preview = isLong ? worstText.slice(0, 160).trimEnd() + '…' : worstText;
+            return (
+              <div
+                className="rounded-xl p-3 border flex flex-col gap-2 cursor-pointer transition-shadow hover:shadow-md"
+                style={{ backgroundColor: worstBg, borderColor: worstBorder }}
+                onClick={() => hasText && setPopup({ title: worstNode.label, text: worstText, accent: worstAccent })}
+                title={hasText ? 'Clique para ler a análise completa' : undefined}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[8px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full" style={{ color: worstAccent, backgroundColor: `${worstAccent}18` }}>
+                    {worstType}
+                  </span>
+                  <span className="text-[18px] font-black tabular-nums leading-none" style={{ color: worstAccent }}>
+                    {fmtPct(worstNode.orcVarPct)}
+                  </span>
+                </div>
+                <div className="text-[12px] font-black leading-tight" style={{ color: worstAccent }}>
+                  {truncate(worstNode.label, 28)}
+                </div>
+                <div className="text-[8px] text-gray-400 -mt-1">vs Orçado</div>
+                {hasText && (
+                  <p className="text-[9px] leading-snug text-gray-500">
+                    {preview}
+                    {isLong && (
+                      <button className="ml-1 text-[8px] font-semibold underline underline-offset-1 bg-transparent border-none p-0 cursor-pointer"
+                        style={{ color: worstAccent }}
+                        onClick={e => { e.stopPropagation(); setPopup({ title: worstNode.label, text: worstText, accent: worstAccent }); }}>
+                        ver mais →
+                      </button>
+                    )}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] text-gray-500">Representatividade</span>
-                <span className="text-[11px] font-bold text-blue-700">{biggestRep}%</span>
+            );
+          })()}
+
+          {/* Card 2: Maior componente */}
+          {biggestNode && biggestNode !== worstNode ? (() => {
+            const bigText = cleanInsight(biggestNode.orcAiSummary || biggestNode.orcJustification || '');
+            const hasText = bigText.length > 0;
+            const isLong = bigText.length > 160;
+            const preview = isLong ? bigText.slice(0, 160).trimEnd() + '…' : bigText;
+            return (
+              <div
+                className="rounded-xl p-3 border border-blue-100 bg-blue-50/70 flex flex-col gap-2 cursor-pointer transition-shadow hover:shadow-md"
+                onClick={() => hasText && setPopup({ title: biggestNode.label, text: bigText, accent: '#1D4ED8' })}
+                title={hasText ? 'Clique para ler a análise completa' : undefined}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[8px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full text-blue-600 bg-blue-100">
+                    MAIOR COMPONENTE
+                  </span>
+                  <span className="text-[18px] font-black tabular-nums leading-none text-blue-700">
+                    {biggestRep}%
+                  </span>
+                </div>
+                <div className="text-[12px] font-black leading-tight text-blue-800">
+                  {truncate(biggestNode.label, 28)}
+                </div>
+                <div className="text-[8px] text-gray-400 -mt-1">do total da seção</div>
+                {hasText && (
+                  <p className="text-[9px] leading-snug text-gray-500">
+                    {preview}
+                    {isLong && (
+                      <button className="ml-1 text-[8px] font-semibold underline underline-offset-1 bg-transparent border-none p-0 cursor-pointer text-blue-600"
+                        onClick={e => { e.stopPropagation(); setPopup({ title: biggestNode.label, text: bigText, accent: '#1D4ED8' }); }}>
+                        ver mais →
+                      </button>
+                    )}
+                  </p>
+                )}
               </div>
-              {(biggestNode.orcAiSummary || biggestNode.orcJustification) && (
-                <p className="text-[9px] text-gray-500 leading-snug line-clamp-3 mt-0.5">
-                  {(biggestNode.orcAiSummary || biggestNode.orcJustification || '').slice(0, 130)}
-                </p>
-              )}
-            </div>
-          ) : insightText ? (
-            <div className="flex-1">
-              <InsightsBox text={insightText} compact />
-            </div>
+            );
+          })() : insightText ? (
+            <InsightsBox
+              text={insightText}
+              compact
+              onExpand={() => setPopup({ title: section.label, text: cleanInsight(insightText), accent: accentClr })}
+            />
           ) : null}
 
-          {/* Legend */}
-          <div className="shrink-0 mt-auto pt-1">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">LEGENDA DO GRÁFICO</div>
-            <div className="flex gap-3">
+          {/* Spacer + Legend */}
+          <div className="mt-auto pt-1 shrink-0">
+            <div className="flex gap-4">
               <div className="flex items-center gap-1">
                 <div className="w-3 h-2 rounded-sm" style={{ backgroundColor: accentClr }} />
                 <span className="text-[9px] text-gray-500">Real {data.year}</span>
@@ -789,18 +1003,115 @@ function SectionSlide({ section, data, pageNum }: { section: VariancePptSection;
           </div>
         </div>
 
-        {/* Right panel: Chart */}
-        <div className="flex-1 min-w-0 flex flex-col px-3 pt-3">
-          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1 shrink-0">
-            COMPARATIVO POR COMPONENTE (R$ {scaleLabel(unit)})
+        {/* Right panel: Chart ou DRE RZ */}
+        {isRateio ? (
+          <div className="flex-1 min-w-0 flex flex-col px-3 pt-3 overflow-hidden">
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 shrink-0 flex items-center gap-1.5">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="3" y1="9" x2="21" y2="9" />
+                <line x1="3" y1="15" x2="21" y2="15" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+              </svg>
+              DRE MARCA RZ (R$ Milhares)
+            </div>
+            <div className="overflow-hidden">
+              <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '26%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '9%' }} />
+                </colgroup>
+                <thead>
+                  <tr style={{ backgroundColor: '#F9FAFB' }}>
+                    <th className="text-left px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">DESCRIÇÃO</th>
+                    <th className="text-right px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">REAL</th>
+                    <th className="text-right px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">ORC</th>
+                    <th className="text-right px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ ORC</th>
+                    <th className="text-right px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">%ORC</th>
+                    <th className="text-right px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">A-1</th>
+                    <th className="text-right px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ A-1</th>
+                    <th className="text-right px-1 py-0.5 font-bold text-[8px] text-gray-500 border-b border-gray-200">%A-1</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rzTableRows.map((row, idx) => {
+                    const deltaOrc = row.real - row.orc;
+                    const deltaA1  = row.real - row.a1;
+                    const isSection = row.type === 'section';
+                    const isCalc    = row.type === 'calc';
+                    const isT01     = row.type === 't01';
+                    const bg = isCalc ? '#1E3A8A' : isSection ? '#F3F4F6' : 'white';
+                    const textClr = isCalc ? 'white' : '#374151';
+                    const fw = isSection || isCalc ? 700 : 400;
+                    return (
+                      <tr key={idx} className="border-b border-gray-50" style={{ backgroundColor: bg }}>
+                        <td
+                          className="px-1 py-0.5 text-[8.5px] truncate"
+                          style={{ color: textClr, fontWeight: fw, paddingLeft: isT01 ? 12 : undefined }}
+                          title={row.label}
+                        >
+                          {isT01 ? '↳ ' : ''}{row.label}
+                        </td>
+                        <td className="text-right px-1 py-0.5 text-[8.5px] tabular-nums" style={{ color: textClr, fontWeight: fw }}>
+                          {fmtK(row.real)}
+                        </td>
+                        <td className="text-right px-1 py-0.5 text-[8.5px] tabular-nums" style={{ color: isCalc ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
+                          {fmtK(row.orc)}
+                        </td>
+                        <td className="text-right px-1 py-0.5 text-[8.5px] tabular-nums font-semibold">
+                          <span style={{ color: isCalc ? (deltaOrc >= 0 ? '#86EFAC' : '#FCA5A5') : deltaColor(row.orcPct) }}>
+                            {(deltaOrc >= 0 ? '+' : '') + fmtK(deltaOrc)}
+                          </span>
+                        </td>
+                        <td className="text-right px-1 py-0.5">
+                          {isCalc
+                            ? <span className="text-[8px] font-bold" style={{ color: (row.orcPct ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5' }}>{fmtPct(row.orcPct)}</span>
+                            : <VarBadge pct={row.orcPct} />}
+                        </td>
+                        <td className="text-right px-1 py-0.5 text-[8.5px] tabular-nums" style={{ color: isCalc ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
+                          {row.a1 !== 0 ? fmtK(row.a1) : '—'}
+                        </td>
+                        <td className="text-right px-1 py-0.5 text-[8.5px] tabular-nums font-semibold">
+                          {row.a1 !== 0
+                            ? <span style={{ color: isCalc ? (deltaA1 >= 0 ? '#86EFAC' : '#FCA5A5') : deltaColor(row.a1Pct) }}>
+                                {(deltaA1 >= 0 ? '+' : '') + fmtK(deltaA1)}
+                              </span>
+                            : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="text-right px-1 py-0.5">
+                          {row.a1 !== 0
+                            ? isCalc
+                              ? <span className="text-[8px] font-bold" style={{ color: (row.a1Pct ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5' }}>{fmtPct(row.a1Pct)}</span>
+                              : <VarBadge pct={row.a1Pct} />
+                            : <span className="text-[8px] text-gray-300">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="flex-1 min-h-0">
-            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} />
+        ) : (
+          <div className="flex-1 min-w-0 flex flex-col px-3 pt-3">
+            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1 shrink-0">
+              COMPARATIVO POR COMPONENTE (R$ {scaleLabel(unit)})
+            </div>
+            <div className="flex-1 min-h-0">
+              <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <SlideFooter page={pageNum} />
     </SlideCard>
+    </>
   );
 }
 
@@ -954,50 +1265,75 @@ function MarcaSlide({
     return { orcAbs: e.real - e.orcado, orcPct: dOrc, a1Abs: e.real - e.a1, a1Pct: dA1 };
   });
 
+  const [popup, setPopup] = React.useState<{ text: string; accent: string } | null>(null);
   const accentClr = `#${section.sectionColor}`;
+  const aiText = section.node.enrichedInsight || section.node.orcAiSummary || '';
+
+  // Phantom: posicionado no máximo das 3 barras → label de Δ% aparece acima de tudo
+  const phantomV = realV.map((r, i) => Math.max(r, orcV[i], a1V[i]));
 
   const chartOption = {
-    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const }, textStyle: { fontSize: 12 } },
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const }, textStyle: { fontSize: 10 } },
     legend: {
-      bottom: 4, itemWidth: 12, itemHeight: 8,
-      textStyle: { fontSize: 10, fontWeight: 600, color: '#374151' },
+      bottom: 0, itemWidth: 12, itemHeight: 8,
+      data: [`Real ${data.year}`, 'Orçado', String(data.a1Year)],
+      textStyle: { fontSize: 9, fontWeight: 600, color: '#374151' },
     },
-    grid: { left: 6, right: 6, top: 44, bottom: 34 },
+    grid: { left: 6, right: 6, top: 68, bottom: 48 },
     xAxis: {
       type: 'category' as const,
       data: labels,
-      axisLabel: { fontSize: 12, fontWeight: 800, color: '#1F2937' },
+      axisLabel: { fontSize: 9, fontWeight: 700, color: '#374151' },
       axisLine: { lineStyle: { color: '#E5E7EB' } },
       axisTick: { show: false },
     },
     yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
     series: [
       {
-        name: 'Real',
+        name: `Real ${data.year}`,
         type: 'bar' as const,
         data: realV,
-        barMaxWidth: 44,
-        barGap: '12%',
+        barMaxWidth: 100,
+        barGap: '6%',
+        barCategoryGap: '12%',
         itemStyle: { color: accentClr, borderRadius: [3, 3, 0, 0] },
+        label: {
+          show: true, position: 'inside' as const,
+          formatter: (p: any) => fmtChartLabel(p.value, unit),
+          fontSize: 9, fontWeight: 700, color: 'white',
+        },
+      },
+      {
+        // Phantom: 2 linhas de variação acima de tudo (sem seta, sem R$)
+        name: '__delta__',
+        type: 'bar' as const,
+        data: phantomV,
+        barWidth: 1,
+        silent: true,
+        itemStyle: { color: 'transparent' },
         label: {
           show: true,
           position: 'top' as const,
+          offset: [0, -4],
           formatter: (p: any) => {
-            const idx = p.dataIndex;
-            const d = marcaDeltas[idx];
-            const val = fmtChartLabel(p.value, unit);
-            if (d.orcPct === null) return `{val|${val}}`;
-            const fav = d.orcPct >= 0;
-            const tag = fav ? 'pos' : 'neg';
-            const sign = d.orcPct >= 0 ? '+' : '-';
-            const absLabel = `${sign}${fmtChartLabel(Math.abs(toChartVal(d.orcAbs, unit)), unit)}`;
-            const pctLabel = `${d.orcPct >= 0 ? '+' : ''}${d.orcPct.toFixed(1)}%`;
-            return `{${tag}|${absLabel} | ${pctLabel}}\n{val|${val}}`;
+            const d = marcaDeltas[p.dataIndex];
+            // Linha 1: vs Orçado
+            const orcFav = (d.orcPct ?? 0) >= 0;
+            const orcAbs = `${orcFav ? '+' : ''}${fmtChartLabel(toChartVal(d.orcAbs, unit), unit)}`;
+            const orcPct = d.orcPct !== null ? ` ${d.orcPct >= 0 ? '+' : ''}${d.orcPct.toFixed(1)}% Orç` : '';
+            const line1 = `{${orcFav ? 'pos' : 'neg'}|${orcAbs}${orcPct}}`;
+            // Linha 2: vs A-1
+            const a1Fav = (d.a1Pct ?? 0) >= 0;
+            const a1Abs = `${a1Fav ? '+' : ''}${fmtChartLabel(toChartVal(d.a1Abs, unit), unit)}`;
+            const a1Pct = d.a1Pct !== null ? ` ${d.a1Pct >= 0 ? '+' : ''}${d.a1Pct.toFixed(1)}% A-1` : '';
+            const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1Abs}${a1Pct}}`;
+            return `${line1}\n${line2}`;
           },
           rich: {
-            pos: { fontSize: 8, fontWeight: 800, color: '#16A34A', lineHeight: 14 },
-            neg: { fontSize: 8, fontWeight: 800, color: '#DC2626', lineHeight: 14 },
-            val: { fontSize: 10, fontWeight: 700, color: accentClr, lineHeight: 12 },
+            pos:   { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
+            neg:   { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
+            posA1: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
+            negA1: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
           },
         },
       },
@@ -1005,41 +1341,39 @@ function MarcaSlide({
         name: 'Orçado',
         type: 'bar' as const,
         data: orcV,
-        barMaxWidth: 44,
+        barMaxWidth: 100,
         itemStyle: { color: '#D1D5DB', borderRadius: [3, 3, 0, 0] },
         label: {
-          show: true,
-          position: 'top' as const,
+          show: true, position: 'inside' as const,
           formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 9,
-          color: '#9CA3AF',
-          fontWeight: 600,
+          fontSize: 8, color: '#4B5563', fontWeight: 600,
         },
       },
       {
         name: String(data.a1Year),
         type: 'bar' as const,
         data: a1V,
-        barMaxWidth: 44,
+        barMaxWidth: 100,
         itemStyle: { color: hex(C.teal), borderRadius: [3, 3, 0, 0] },
         label: {
-          show: true,
-          position: 'top' as const,
+          show: true, position: 'inside' as const,
           formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 9,
-          color: hex(C.teal),
-          fontWeight: 600,
+          fontSize: 8, color: 'white', fontWeight: 600,
         },
       },
     ],
   };
 
-  // Sort marcas for ranking: worst to best (most negative orcPct first)
-  const ranked = filtered
-    .map((e, i) => ({ ...e, ...marcaDeltas[i] }))
-    .sort((a, b) => (a.orcPct ?? 0) - (b.orcPct ?? 0));
-
   return (
+    <>
+    {popup && (
+      <InsightPopup
+        title={`${section.label} por Marca`}
+        text={popup.text}
+        accent={accentClr}
+        onClose={() => setPopup(null)}
+      />
+    )}
     <SlideCard>
       <SlideHeader
         sectionLabel={section.tag0}
@@ -1048,101 +1382,73 @@ function MarcaSlide({
         color={section.sectionColor}
         unitLabel={scaleLabel(unit)}
       />
-      <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
+      <div className="flex flex-col px-4 pt-2 pb-7 gap-2" style={{ height: 'calc(100% - 52px)' }}>
 
-        {/* Left 65%: Chart full height */}
-        <div className="flex-1 min-w-0 flex flex-col px-3 pt-2 min-h-0">
-          <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} />
-        </div>
-
-        {/* Right 35%: KPI summary + per-marca ranking */}
-        <div className="w-[35%] shrink-0 border-l border-gray-100 flex flex-col px-3 pt-2 pb-1 gap-2">
-
-          {/* KPI row — 2 cols */}
-          <div className="grid grid-cols-2 gap-1.5 shrink-0">
-            <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
-              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">TOTAL REAL</div>
-              <div className="text-[13px] font-black tabular-nums" style={{ color: accentClr }}>
-                {fmtScaled(Math.abs(totalReal), unit)}<span className="text-[9px] font-bold ml-0.5 text-gray-400">{suffix}</span>
-              </div>
-            </div>
-            <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
-              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">TOTAL ORÇADO</div>
-              <div className="text-[13px] font-black tabular-nums text-gray-500">
-                {fmtScaled(Math.abs(totalOrc), unit)}<span className="text-[9px] font-bold ml-0.5 text-gray-400">{suffix}</span>
-              </div>
-            </div>
-            <div className="rounded-lg p-2 border" style={{ borderColor: favorable ? '#BBF7D0' : '#FECACA', backgroundColor: favorable ? '#F0FDF4' : '#FFF5F5' }}>
-              <div className="text-[8px] font-bold uppercase tracking-wider mb-0.5" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
-                {deltaAbs >= 0 ? 'ECONOMIA' : 'DESVIO'} vs ORC
-              </div>
-              <div className="text-[13px] font-black tabular-nums" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
-                {fmtPct(deltaPct)}
-              </div>
-              <div className="text-[8px] tabular-nums mt-0.5" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
-                {fmtScaled(Math.abs(deltaAbs), unit)} {suffix}
-              </div>
-            </div>
-            <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
-              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
-                {deltaA1Abs >= 0 ? 'ECON.' : 'DESVIO'} vs {data.a1Year}
-              </div>
-              <div className="text-[13px] font-black tabular-nums" style={{ color: deltaColor(deltaA1Pct) }}>
-                {fmtPct(deltaA1Pct)}
-              </div>
-              <div className="text-[8px] tabular-nums mt-0.5 text-gray-400">
-                {fmtScaled(Math.abs(deltaA1Abs), unit)} {suffix}
-              </div>
+        {/* KPIs em linha — 4 cards compactos full-width */}
+        <div className="grid grid-cols-4 gap-2 shrink-0">
+          <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
+            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">TOTAL REAL</div>
+            <div className="text-[13px] font-black tabular-nums" style={{ color: accentClr }}>
+              {fmtScaled(Math.abs(totalReal), unit)}<span className="text-[9px] font-bold ml-0.5 text-gray-400">{suffix}</span>
             </div>
           </div>
-
-          {/* Per-marca ranking */}
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-1 shrink-0">
-              RANKING POR MARCA — Δ vs Orçado
-            </div>
-            <div className="flex flex-col gap-1 overflow-hidden">
-              {ranked.map((e, i) => {
-                const fav = (e.orcPct ?? 0) >= 0;
-                const barW = Math.min(100, Math.abs(e.orcPct ?? 0) * 2);
-                const barClr = fav ? '#16A34A' : '#DC2626';
-                return (
-                  <div key={e.marca} className="flex items-center gap-1.5 shrink-0">
-                    {/* rank */}
-                    <span className="text-[8px] font-black text-gray-300 w-3 shrink-0 text-right">{i + 1}</span>
-                    {/* marca badge */}
-                    <span className="text-[9px] font-black w-8 shrink-0" style={{ color: accentClr }}>{e.marca}</span>
-                    {/* real value */}
-                    <span className="text-[9px] tabular-nums text-gray-500 w-10 shrink-0 text-right">
-                      {fmtScaled(Math.abs(e.real), unit)}{suffix}
-                    </span>
-                    {/* bar */}
-                    <div className="flex-1 min-w-0 h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${barW}%`, backgroundColor: barClr, opacity: 0.8 }}
-                      />
-                    </div>
-                    {/* delta pct */}
-                    <span className="text-[9px] font-bold tabular-nums w-10 shrink-0 text-right" style={{ color: barClr }}>
-                      {e.orcPct !== null ? `${e.orcPct >= 0 ? '+' : ''}${e.orcPct.toFixed(1)}%` : '–'}
-                    </span>
-                  </div>
-                );
-              })}
+          <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
+            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">TOTAL ORÇADO</div>
+            <div className="text-[13px] font-black tabular-nums text-gray-500">
+              {fmtScaled(Math.abs(totalOrc), unit)}<span className="text-[9px] font-bold ml-0.5 text-gray-400">{suffix}</span>
             </div>
           </div>
-
-          {/* AI insight */}
-          {(section.node.enrichedInsight || section.node.orcAiSummary) && (
-            <div className="shrink-0 mt-auto">
-              <InsightsBox text={section.node.enrichedInsight || section.node.orcAiSummary || ''} compact />
+          <div className="rounded-lg p-2 border" style={{ borderColor: favorable ? '#BBF7D0' : '#FECACA', backgroundColor: favorable ? '#F0FDF4' : '#FFF5F5' }}>
+            <div className="text-[8px] font-bold uppercase tracking-wider mb-0.5" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
+              {deltaAbs >= 0 ? 'ECONOMIA' : 'DESVIO'} vs ORC
             </div>
-          )}
+            <div className="text-[13px] font-black tabular-nums" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
+              {fmtPct(deltaPct)}
+              <span className="text-[8px] font-semibold ml-1" style={{ color: favorable ? '#16A34A' : '#DC2626' }}>
+                {fmtScaled(Math.abs(deltaAbs), unit)}{suffix}
+              </span>
+            </div>
+          </div>
+          <div className="rounded-lg p-2 border border-gray-100 bg-gray-50">
+            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">
+              {deltaA1Abs >= 0 ? 'ECON.' : 'DESVIO'} vs {data.a1Year}
+            </div>
+            <div className="text-[13px] font-black tabular-nums" style={{ color: deltaColor(deltaA1Pct) }}>
+              {fmtPct(deltaA1Pct)}
+              <span className="text-[8px] font-semibold ml-1 text-gray-400">
+                {fmtScaled(Math.abs(deltaA1Abs), unit)}{suffix}
+              </span>
+            </div>
+          </div>
         </div>
+
+        {/* Gráfico full-width */}
+        <div className="flex-1 min-h-0">
+          <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
+        </div>
+
+        {/* SÍNTESE IA — faixa horizontal na base, clicável */}
+        {aiText && (
+          <div
+            className="shrink-0 flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer border transition-shadow hover:shadow-md"
+            style={{ backgroundColor: `${accentClr}0D`, borderColor: `${accentClr}30`, borderLeft: `3px solid ${accentClr}` }}
+            onClick={() => setPopup({ text: cleanInsight(aiText), accent: accentClr })}
+          >
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accentClr }} />
+              <span className="text-[9px] font-bold tracking-widest uppercase whitespace-nowrap" style={{ color: accentClr }}>SÍNTESE IA</span>
+            </div>
+            <p className="text-[10px] leading-snug text-gray-700 flex-1 min-w-0 overflow-hidden"
+              style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>
+              {cleanInsight(aiText)}
+            </p>
+            <span className="text-[8px] font-semibold shrink-0" style={{ color: accentClr }}>ver mais →</span>
+          </div>
+        )}
       </div>
       <SlideFooter page={pageNum} />
     </SlideCard>
+    </>
   );
 }
 
@@ -1252,7 +1558,7 @@ function PerformanceSlide({ data, pageNum }: { data: VariancePptData; pageNum?: 
             VARIAÇÃO PERCENTUAL (REAL VS ORÇADO)
           </div>
           <div className="flex-1 min-h-0">
-            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} />
+            <ReactECharts option={chartOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
           </div>
           {/* Legend */}
           <div className="flex items-center justify-center gap-6 shrink-0 pb-1">
@@ -1358,6 +1664,11 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
   const margemPct   = receitaReal !== 0 ? (margemReal / Math.abs(receitaReal)) * 100 : null;
   const ebitdaMgPct = receitaReal !== 0 ? (ebitdaReal / Math.abs(receitaReal)) * 100 : null;
 
+  // Δ% vs Orçado for each KPI
+  const receitaOrcPct = receitaSection?.node.orcVarPct ?? null;
+  const margemOrcPct  = margemCalc?.deltaOrcPct ?? null;
+  const ebitdaOrcPct  = ebitdaTotal?.deltaOrcPct ?? null;
+
   const allVals = [
     ...data.sections.map(s => Math.abs(s.node.real)),
     Math.abs(margemReal), Math.abs(ebitdaReal),
@@ -1407,11 +1718,12 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
   }
   pushMilestone(ebitdaTotal, colorFinal, 'EBITDA TOTAL');
 
-  const wfLabels  = bars.map(b => b.label);
-  const wfBase    = bars.map(b => b.base);
-  const wfDelta   = bars.map(b => ({ value: b.delta, itemStyle: { color: b.color, borderRadius: [4, 4, 0, 0] } }));
+  const wfLabels   = bars.map(b => b.label);
+  const wfBase     = bars.map(b => b.base);
+  const wfDelta    = bars.map(b => ({ value: b.delta, itemStyle: { color: b.color, borderRadius: [4, 4, 0, 0] } }));
   const connectorY = bars.map(b => b.connY);
 
+  // Labels outside bars (top), avoiding clipping on small bars
   const labelFmt = (p: any) => {
     const idx: number = p.dataIndex;
     const b = bars[idx];
@@ -1434,11 +1746,11 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
         return `<b>${b.label}</b><br/>${b.rawV < 0 ? '− ' : ''}${fmtV}`;
       },
     },
-    grid: { left: 8, right: 8, top: 24, bottom: 56 },
+    grid: { left: 8, right: 8, top: 30, bottom: 56 },
     xAxis: {
       type: 'category' as const,
       data: wfLabels,
-      axisLabel: { fontSize: 10, fontWeight: 700, color: '#374151', interval: 0, overflow: 'truncate' as const, width: 72 },
+      axisLabel: { fontSize: 9, fontWeight: 700, color: '#374151', interval: 0, overflow: 'truncate' as const, width: 68 },
       axisLine: { lineStyle: { color: '#E5E7EB' } },
       axisTick: { show: false },
     },
@@ -1452,11 +1764,15 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
         data: wfBase,
       },
       {
-        name: 'delta', type: 'bar' as const, stack: 'wf', barMaxWidth: 64,
+        name: 'delta', type: 'bar' as const, stack: 'wf', barMaxWidth: 60,
         data: wfDelta,
         label: {
-          show: true, position: 'inside' as const,
-          fontSize: 11, fontWeight: 700, color: '#FFFFFF',
+          show: true,
+          position: 'top' as const,
+          distance: 4,
+          fontSize: 10,
+          fontWeight: 700,
+          color: '#374151',
           formatter: labelFmt,
         },
       },
@@ -1464,12 +1780,27 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
         name: 'connector', type: 'line' as const, silent: true,
         step: 'end' as const,
         data: connectorY,
-        lineStyle: { color: '#9CA3AF', type: 'dashed' as const, width: 1.5 },
+        lineStyle: { color: '#CBD5E1', type: 'dashed' as const, width: 1.5 },
         symbol: 'none',
-        z: 2,
+        z: 0,
       },
     ],
   };
+
+  // Helper: delta badge style
+  const deltaBadge = (pct: number | null) => {
+    if (pct === null) return null;
+    const fav = pct >= 0;
+    return {
+      color: fav ? '#16A34A' : '#DC2626',
+      bg: fav ? '#DCFCE7' : '#FEE2E2',
+      label: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`,
+    };
+  };
+
+  const receitaBadge = deltaBadge(receitaOrcPct);
+  const margemBadge  = deltaBadge(margemOrcPct);
+  const ebitdaBadge  = deltaBadge(ebitdaOrcPct);
 
   return (
     <SlideCard>
@@ -1481,70 +1812,85 @@ function AnalyticsSlide({ data, pageNum }: { data: VariancePptData; pageNum?: nu
       />
       <div className="flex gap-3 px-4 pb-8 pt-2" style={{ height: 'calc(100% - 52px)' }}>
 
-        {/* Chart — main area */}
+        {/* Chart + legend */}
         <div className="flex-1 min-w-0 flex flex-col min-h-0">
           <div className="flex-1 min-h-0">
-            <ReactECharts option={waterfallOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas' }} />
+            <ReactECharts option={waterfallOption} style={{ height: '100%', width: '100%' }} opts={{ renderer: 'canvas', devicePixelRatio: 2 }} />
           </div>
-          {/* Legend */}
-          <div className="flex items-center justify-center gap-5 pt-1 shrink-0">
+          {/* Compact legend */}
+          <div className="flex items-center justify-center gap-4 pt-1 shrink-0">
             {[
               { color: colorReceita,   label: 'Receita' },
-              { color: colorCost,      label: 'Custos/Despesas' },
+              { color: colorCost,      label: 'Custos/Desp.' },
               { color: colorMilestone, label: 'Resultado Parcial' },
-              { color: colorFinal,     label: 'Resultado Final' },
+              { color: colorFinal,     label: 'EBITDA Final' },
             ].map(item => (
-              <div key={item.label} className="flex items-center gap-1.5">
-                <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: item.color }} />
-                <span className="text-[10px] text-gray-500 font-medium">{item.label}</span>
+              <div key={item.label} className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: item.color }} />
+                <span className="text-[9px] text-gray-500 font-medium">{item.label}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Right: KPI panel */}
-        <div className="w-44 shrink-0 flex flex-col gap-2.5">
-          <KpiCard
-            label={`RECEITA ${data.year}`}
-            value={`${fmtScaled(Math.abs(receitaReal), unit)} ${suffix}`}
-            color={colorReceita}
-          />
-          {margemReal !== 0 && (
-            <KpiCard
-              label="MARGEM CONTRIB."
-              value={`${fmtScaled(Math.abs(margemReal), unit)} ${suffix}`}
-              color={colorMilestone}
-              sub={margemPct !== null ? `${margemPct.toFixed(1)}% da Receita` : undefined}
-            />
-          )}
-          <KpiCard
-            label="EBITDA TOTAL"
-            value={`${fmtScaled(Math.abs(ebitdaReal), unit)} ${suffix}`}
-            color={colorFinal}
-            sub={ebitdaMgPct !== null ? `Margem: ${ebitdaMgPct.toFixed(1)}%` : undefined}
-          />
+        <div className="w-44 shrink-0 flex flex-col gap-2">
 
-          {/* Section values */}
-          <div className="rounded-xl border border-gray-100 bg-gray-50/80 p-2.5 flex flex-col gap-1 flex-1 min-h-0 overflow-auto">
-            <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Seções</div>
-            {data.sections.map((s, i) => {
-              const isReceita = s.tag0.startsWith('01.');
-              const color = isReceita ? colorReceita : colorCost;
-              return (
-                <div key={i} className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <div className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: color }} />
-                    <span className="text-[9px] text-gray-600 truncate font-medium">
-                      {s.label.replace(/^\d+\.\s*/, '').slice(0, 14)}
-                    </span>
-                  </div>
-                  <span className="text-[9px] font-bold tabular-nums shrink-0" style={{ color }}>
-                    {s.node.real < 0 ? '−' : ''}{fmtChartLabel(Math.abs(toChartVal(Math.abs(s.node.real), unit)), unit)}
-                  </span>
-                </div>
-              );
-            })}
+          {/* Receita */}
+          <div style={{ borderLeft: '3px solid #2563EB' }} className="rounded-lg border border-gray-100 bg-white px-2.5 py-2 flex flex-col gap-0.5 shrink-0">
+            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Receita {data.year}</div>
+            <div className="flex items-baseline justify-between gap-1">
+              <span className="text-[14px] font-extrabold text-blue-600">{fmtScaled(Math.abs(receitaReal), unit)}<span className="text-[10px] font-semibold ml-0.5">{suffix}</span></span>
+              {receitaBadge && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ color: receitaBadge.color, backgroundColor: receitaBadge.bg }}>
+                  {receitaBadge.label}
+                </span>
+              )}
+            </div>
+            <div className="text-[8px] text-gray-400">vs Orçado</div>
           </div>
+
+          {/* Margem */}
+          {margemReal !== 0 && (
+            <div style={{ borderLeft: '3px solid #10B981' }} className="rounded-lg border border-gray-100 bg-white px-2.5 py-2 flex flex-col gap-0.5 shrink-0">
+              <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">Margem Contrib.</div>
+              <div className="flex items-baseline justify-between gap-1">
+                <span className="text-[14px] font-extrabold text-emerald-600">{fmtScaled(Math.abs(margemReal), unit)}<span className="text-[10px] font-semibold ml-0.5">{suffix}</span></span>
+                {margemBadge && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ color: margemBadge.color, backgroundColor: margemBadge.bg }}>
+                    {margemBadge.label}
+                  </span>
+                )}
+              </div>
+              {margemPct !== null && <div className="text-[8px] text-gray-400">{margemPct.toFixed(1)}% da Receita</div>}
+            </div>
+          )}
+
+          {/* EBITDA */}
+          <div style={{ borderLeft: '3px solid #065F46' }} className="rounded-lg border border-gray-100 bg-white px-2.5 py-2 flex flex-col gap-0.5 shrink-0">
+            <div className="text-[8px] font-bold text-gray-400 uppercase tracking-wider">EBITDA Total</div>
+            <div className="flex items-baseline justify-between gap-1">
+              <span className="text-[14px] font-extrabold" style={{ color: '#065F46' }}>{fmtScaled(Math.abs(ebitdaReal), unit)}<span className="text-[10px] font-semibold ml-0.5">{suffix}</span></span>
+              {ebitdaBadge && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ color: ebitdaBadge.color, backgroundColor: ebitdaBadge.bg }}>
+                  {ebitdaBadge.label}
+                </span>
+              )}
+            </div>
+            {ebitdaMgPct !== null && <div className="text-[8px] text-gray-400">Margem {ebitdaMgPct.toFixed(1)}%</div>}
+          </div>
+
+          {/* AI Insight */}
+          {data.executiveSummary ? (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5 flex flex-col gap-1 flex-1 min-h-0 overflow-hidden">
+              <div className="text-[8px] font-bold text-indigo-400 uppercase tracking-wider">IA Insight</div>
+              <p className="text-[9px] text-indigo-900 leading-relaxed overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 8, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>
+                {cleanInsight(data.executiveSummary)}
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
         </div>
       </div>
       <SlideFooter page={pageNum} />
@@ -1712,64 +2058,166 @@ function SummarySlide({ data, pageNum }: { data: VariancePptData; pageNum?: numb
           </div>
         </div>
 
-        {/* Bottom: Próximos Passos */}
+        {/* Bottom: Próximos Passos — layout 3 colunas enriquecido */}
         <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-gray-50 p-3 flex flex-col gap-2 overflow-hidden">
-          <div className="flex items-center gap-2 shrink-0">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2.5">
-              <polygon points="5,3 19,12 5,21 5,3" />
-            </svg>
-            <div className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">
-              PRÓXIMOS PASSOS &amp; RECOMENDAÇÕES
+          {/* Header */}
+          <div className="flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2.5">
+                <polygon points="5,3 19,12 5,21 5,3" />
+              </svg>
+              <div className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">
+                PRÓXIMOS PASSOS &amp; RECOMENDAÇÕES
+              </div>
             </div>
+            <span className="text-[8px] font-semibold text-gray-400 uppercase tracking-wider">
+              {data.monthLabel} → fechamento
+            </span>
           </div>
+
+          {/* 3 cards ricos */}
           <div className="grid grid-cols-3 gap-2 flex-1 min-h-0">
-            {/* Passo 1 */}
-            <div className="rounded-lg bg-white border border-gray-200 p-3 flex gap-2">
-              <div className="w-8 h-8 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2">
-                  <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" />
-                  <polyline points="16,7 22,7 22,13" />
-                </svg>
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-bold text-gray-800">
-                  {attentionItems.length > 0 ? attentionItems[0].label.replace(/^\d+\.\s*/, '') : 'Recuperação de Receita'}
+
+            {/* Card 1: Ação Imediata — dados do pior desvio */}
+            {(() => {
+              const worst = attentionItems[0];
+              const worstSec = worst ? data.sections.find(s => s.tag0 === worst.label) : null;
+              const worstT01s = worstSec ? [...worstSec.tag01Nodes].sort((a, b) => (a.orcVarPct ?? 0) - (b.orcVarPct ?? 0)).slice(0, 3) : [];
+              const label = worst ? worst.label.replace(/^\d+\.\s*/, '') : 'Recuperação';
+              const pct = worst?.varPct;
+              return (
+                <div className="rounded-lg bg-white border-l-4 border border-red-200 p-3 flex flex-col gap-1.5" style={{ borderLeftColor: '#DC2626' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-red-600 text-white tracking-wider">P0 · URGENTE</span>
+                    <span className="text-[8px] text-gray-400 font-semibold">7 dias</span>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-black text-gray-800 leading-tight">{label}</div>
+                    <div className="text-[9px] font-bold mt-0.5" style={{ color: '#DC2626' }}>
+                      Desvio {fmtPct(pct ?? null)} vs Orçado
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 mt-0.5">
+                    {worstT01s.map((t, i) => (
+                      <div key={i} className="flex items-center justify-between bg-red-50 rounded px-1.5 py-0.5">
+                        <span className="text-[8px] text-gray-600 truncate">{t.label.slice(0, 22)}</span>
+                        <span className="text-[8px] font-bold text-red-600 shrink-0 ml-1">{fmtPct(t.orcVarPct)}</span>
+                      </div>
+                    ))}
+                    {worstT01s.length === 0 && (
+                      <div className="text-[8px] text-gray-400 italic">Revisar todas as sub-linhas da seção</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 mt-auto pt-1 border-t border-gray-100">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span className="text-[8px] text-gray-400">Reunião FP&A + Responsáveis da área</span>
+                  </div>
                 </div>
-                <p className="text-[9px] text-gray-500 mt-0.5 leading-snug">
-                  Plano de ação focado nas linhas com maior desvio negativo em relação ao orçado.
-                </p>
+              );
+            })()}
+
+            {/* Card 2: Monitoramento — lista seções com desvio */}
+            {(() => {
+              const toWatch = data.sections
+                .filter(s => Math.abs(s.node.orcVarPct ?? 0) > 5)
+                .sort((a, b) => Math.abs(b.node.orcVarPct ?? 0) - Math.abs(a.node.orcVarPct ?? 0))
+                .slice(0, 4);
+              return (
+                <div className="rounded-lg bg-white border-l-4 border border-blue-200 p-3 flex flex-col gap-1.5" style={{ borderLeftColor: '#2563EB' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-blue-600 text-white tracking-wider">P1 · SEMANAL</span>
+                    <span className="text-[8px] text-gray-400 font-semibold">Recorrente</span>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-black text-gray-800 leading-tight">Monitoramento de Desvios</div>
+                    <div className="text-[9px] text-gray-500 mt-0.5">
+                      {toWatch.length} linha{toWatch.length !== 1 ? 's' : ''} com desvio &gt; 5% — threshold DRE
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1 mt-0.5">
+                    {toWatch.map((s, i) => {
+                      const fav = (s.node.orcVarPct ?? 0) >= 0;
+                      return (
+                        <div key={i} className="flex items-center justify-between rounded px-1.5 py-0.5" style={{ backgroundColor: fav ? '#F0FDF4' : '#FEF2F2' }}>
+                          <span className="text-[8px] text-gray-600 truncate">{s.label.slice(0, 20)}</span>
+                          <span className="text-[8px] font-bold shrink-0 ml-1" style={{ color: fav ? '#16A34A' : '#DC2626' }}>{fmtPct(s.node.orcVarPct)}</span>
+                        </div>
+                      );
+                    })}
+                    {toWatch.length === 0 && (
+                      <div className="text-[8px] text-green-600 font-semibold">✓ Todas linhas dentro do threshold</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 mt-auto pt-1 border-t border-gray-100">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <span className="text-[8px] text-gray-400">Review semanal — Dashboard DRE Gerencial</span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Card 3: Fechamento de Justificativas */}
+            {(() => {
+              const pending = stats.pending + stats.notified;
+              const done = stats.justified + stats.approved;
+              const topPending = unjustified.slice(0, 3);
+              const coverageOk = stats.coveragePct >= 80;
+              return (
+                <div className="rounded-lg bg-white border-l-4 border border-amber-200 p-3 flex flex-col gap-1.5" style={{ borderLeftColor: '#D97706' }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded text-white tracking-wider" style={{ backgroundColor: coverageOk ? '#16A34A' : '#D97706' }}>
+                      {coverageOk ? 'P2 · OK' : 'P1 · ATENÇÃO'}
+                    </span>
+                    <span className="text-[8px] text-gray-400 font-semibold">Próx. fechamento</span>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-black text-gray-800 leading-tight">Cobertura de Justificativas</div>
+                    <div className="text-[9px] mt-0.5 font-semibold" style={{ color: coverageOk ? '#16A34A' : '#D97706' }}>
+                      {done}/{stats.totalLeaves} contas cobertas · Meta: ≥ 90%
+                    </div>
+                  </div>
+                  {/* Progress mini */}
+                  <div className="h-1.5 rounded-full w-full bg-gray-100">
+                    <div className="h-full rounded-full" style={{ width: `${stats.coveragePct}%`, backgroundColor: coverageOk ? '#16A34A' : '#D97706' }} />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    {topPending.length > 0 ? topPending.map((u, i) => (
+                      <div key={i} className="flex items-center justify-between bg-amber-50 rounded px-1.5 py-0.5">
+                        <span className="text-[8px] text-gray-600 truncate">{u.label.slice(0, 22)}</span>
+                        <span className="text-[8px] font-bold text-amber-700 shrink-0 ml-1">{u.tag0} · pendente</span>
+                      </div>
+                    )) : (
+                      <div className="text-[8px] text-green-600 font-semibold">✓ Sem pendências críticas</div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 mt-auto pt-1 border-t border-gray-100">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                    <span className="text-[8px] text-gray-400">{pending} pendentes com pacoteiros responsáveis</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Timeline footer */}
+          <div className="shrink-0 flex items-center gap-0 pt-1">
+            {[
+              { label: 'Hoje', sub: 'Reunião FP&A', color: '#DC2626' },
+              { label: '+7 dias', sub: 'Planos de ação', color: '#D97706' },
+              { label: '+15 dias', sub: 'Review desvios', color: '#2563EB' },
+              { label: '+30 dias', sub: 'Fechamento', color: '#16A34A' },
+            ].map((step, i, arr) => (
+              <div key={i} className="flex items-center flex-1">
+                <div className="flex flex-col items-center shrink-0">
+                  <div className="w-2.5 h-2.5 rounded-full border-2 bg-white" style={{ borderColor: step.color }} />
+                  <div className="text-[7.5px] font-bold mt-0.5 leading-none" style={{ color: step.color }}>{step.label}</div>
+                  <div className="text-[7px] text-gray-400 leading-none mt-0.5">{step.sub}</div>
+                </div>
+                {i < arr.length - 1 && (
+                  <div className="flex-1 h-[1px] mx-1" style={{ backgroundColor: '#E5E7EB' }} />
+                )}
               </div>
-            </div>
-            {/* Passo 2 */}
-            <div className="rounded-lg bg-white border border-gray-200 p-3 flex gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2">
-                  <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" />
-                  <line x1="6" y1="20" x2="6" y2="14" />
-                </svg>
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-bold text-gray-800">Monitoramento</div>
-                <p className="text-[9px] text-gray-500 mt-0.5 leading-snug">
-                  Acompanhar semanalmente as linhas com desvios acima de 5% em relação ao orçamento.
-                </p>
-              </div>
-            </div>
-            {/* Passo 3 */}
-            <div className="rounded-lg bg-white border border-gray-200 p-3 flex gap-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center shrink-0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2">
-                  <polyline points="9,11 12,14 22,4" />
-                  <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-                </svg>
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-bold text-gray-800">Processos</div>
-                <p className="text-[9px] text-gray-500 mt-0.5 leading-snug">
-                  Meta de justificativas {'>'} 90% até o próximo fechamento. {stats.pending + stats.notified} contas pendentes.
-                </p>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1796,6 +2244,8 @@ type T01JustCard = {
   label: string;
   varPct: number | null;
   varAbs: number | null;   // delta absoluto em R$ (real - orcado)
+  real: number;
+  orc: number;
   status: string;
   justText: string;
   owner: string | null;
@@ -1815,6 +2265,18 @@ function buildT01Rows(t01: VariancePptNode): T01Row[] {
   return rows;
 }
 
+function buildTag02AsT01Rows(tag02: VariancePptNode): T01Row[] {
+  const rows: T01Row[] = [];
+  // tag02 itself = total row (depth -1)
+  rows.push({ depth: -1, label: tag02.label, real: tag02.real, orc: tag02.orcCompare, orcPct: tag02.orcVarPct, a1: tag02.a1Compare, a1Pct: tag02.a1VarPct });
+  // its children = marcas (depth 1)
+  const marcasSorted = [...tag02.children].sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
+  for (const marca of marcasSorted) {
+    rows.push({ depth: 1, label: marca.label, real: marca.real, orc: marca.orcCompare, orcPct: marca.orcVarPct, a1: marca.a1Compare, a1Pct: marca.a1VarPct });
+  }
+  return rows;
+}
+
 function buildT01JustCards(t01: VariancePptNode): T01JustCard[] {
   const cards: T01JustCard[] = [];
   const collect = (node: VariancePptNode) => {
@@ -1824,6 +2286,8 @@ function buildT01JustCards(t01: VariancePptNode): T01JustCard[] {
         label: node.label,
         varPct: node.orcVarPct,
         varAbs: node.real - node.orcCompare,
+        real: node.real,
+        orc: node.orcCompare,
         status: node.orcStatus,
         justText: text,
         owner: node.ownerName,
@@ -1835,50 +2299,238 @@ function buildT01JustCards(t01: VariancePptNode): T01JustCard[] {
   return cards;
 }
 
-function JustCardItem({ card }: { card: T01JustCard }) {
-  const dColor = deltaColor(card.varPct);
-  const sColor = statusColor(card.status);
-  const favorable = (card.varPct ?? 0) >= 0;
-  const bgColor = favorable ? '#F0FDF4' : '#FFF5F5';
+const JUST_STATUS_PRIORITY = ['approved', 'justified', 'notified', 'pending', 'rejected'];
+
+// Agrega cards pelo label (marca) — soma real/orc, sintetiza textos, escolhe status de maior prioridade
+function aggregateJustCardsByMarca(cards: T01JustCard[]): T01JustCard[] {
+  const map = new Map<string, T01JustCard[]>();
+  for (const card of cards) {
+    const key = card.label.toLowerCase().trim();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(card);
+  }
+  return [...map.values()].map(grp => {
+    const real   = grp.reduce((s, c) => s + c.real, 0);
+    const orc    = grp.reduce((s, c) => s + c.orc,  0);
+    const varAbs = real - orc;
+    const varPct = orc !== 0 ? ((real - orc) / Math.abs(orc)) * 100 : null;
+    const status = grp
+      .map(c => c.status)
+      .sort((a, b) => JUST_STATUS_PRIORITY.indexOf(a) - JUST_STATUS_PRIORITY.indexOf(b))[0] ?? 'pending';
+    // Textos únicos concatenados (sem repetição)
+    const texts = [...new Set(grp.map(c => c.justText).filter(Boolean))];
+    const justText = texts.join(' | ');
+    return {
+      label: grp[0].label,
+      varPct,
+      varAbs,
+      real,
+      orc,
+      status,
+      justText,
+      owner: grp.find(c => c.owner)?.owner ?? null,
+    };
+  }).sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  approved:  'Aprovada',
+  justified: 'Justificada',
+  pending:   'Pendente',
+  notified:  'Notificada',
+  rejected:  'Rejeitada',
+};
+
+const JUST_PREVIEW_LEN = 180;
+
+function JustCardItem({ card, onExpand }: { card: T01JustCard; onExpand?: () => void }) {
+  const dColor      = deltaColor(card.varPct);
+  const sColor      = statusColor(card.status);
+  const favorable   = (card.varPct ?? 0) >= 0;
+  const bgColor     = favorable ? '#F0FDF4' : '#FFF5F5';
   const borderColor = favorable ? '#BBF7D0' : '#FECACA';
-  const absK = card.varAbs !== null ? fmtK(card.varAbs) : null;
+  const cleanText   = cleanInsight(card.justText);
+  const absLabel    = card.varAbs !== null ? `Δ R$ ${fmtK(card.varAbs)}k` : null;
+
+  // Truncação via JS — confiável em qualquer modo de renderização
+  const isLong      = cleanText.length > JUST_PREVIEW_LEN;
+  const previewText = isLong ? cleanText.slice(0, JUST_PREVIEW_LEN).trimEnd() + '…' : cleanText;
+
   return (
-    <div className="rounded-lg border overflow-hidden flex flex-shrink-0" style={{ backgroundColor: bgColor, borderColor }}>
-      <div className="w-1 shrink-0" style={{ backgroundColor: dColor }} />
-      <div className="px-2.5 py-2 flex-1 min-w-0">
+    <div
+      className="rounded-xl border overflow-hidden flex transition-shadow hover:shadow-md"
+      style={{ backgroundColor: bgColor, borderColor }}
+    >
+      {/* Barra lateral colorida */}
+      <div className="w-1.5 shrink-0" style={{ backgroundColor: dColor }} />
+
+      <div className="px-3 py-2.5 flex-1 min-w-0 flex flex-col gap-1.5">
+        {/* Linha 1: label + Δ% hero */}
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-[10px] font-bold text-gray-800 leading-snug flex-1 min-w-0">
+            {truncate(card.label, 32)}
+          </span>
+          <span className="text-[16px] font-black tabular-nums leading-none shrink-0" style={{ color: dColor }}>
+            {fmtPct(card.varPct)}
+          </span>
+        </div>
+
+        {/* Linha 2: Δ R$ + status + owner */}
         <div className="flex items-center justify-between gap-1">
-          <span className="text-xs font-bold text-gray-800 truncate">{truncate(card.label, 24)}</span>
-          <div className="flex items-center gap-1 shrink-0">
-            <span className="text-xs font-bold tabular-nums" style={{ color: dColor }}>{fmtPct(card.varPct)}</span>
-            {absK && <span className="text-[10px] font-semibold text-gray-400 tabular-nums">{absK}k</span>}
+          <div className="flex items-center gap-1.5">
+            {absLabel && (
+              <span className="text-[9px] font-semibold tabular-nums text-gray-500">{absLabel}</span>
+            )}
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: sColor, backgroundColor: `${sColor}18` }}>
+              {STATUS_LABEL[card.status] ?? card.status}
+            </span>
           </div>
+          {card.owner && (
+            <span className="text-[9px] italic text-gray-400 truncate">{card.owner}</span>
+          )}
         </div>
-        <div className="flex items-center gap-1 mt-0.5">
-          <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sColor }} />
-          {card.owner && <span className="text-[10px] italic text-gray-400 truncate">{card.owner}</span>}
-        </div>
-        <p className="text-[11px] text-gray-600 leading-snug mt-1 line-clamp-3">{card.justText}</p>
+
+        {/* Texto da justificativa — sempre visível, truncado via JS */}
+        {previewText && (
+          <p className="text-[10px] text-gray-600 leading-snug">
+            {previewText}
+            {isLong && (
+              <button
+                className="ml-1 text-[8px] font-semibold underline underline-offset-1 cursor-pointer bg-transparent border-none p-0"
+                style={{ color: dColor }}
+                onClick={(e) => { e.stopPropagation(); onExpand?.(); }}
+              >
+                ver mais →
+              </button>
+            )}
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
+// Gera síntese textual diretamente dos dados da tabela (sempre aderente)
+function buildTableInsight(rows: T01Row[], t01Label: string, year: number): string {
+  const totalRow  = rows.find(r => r.depth === -1);
+  const t02Rows   = rows.filter(r => r.depth === 0);
+  const marcaRows = rows.filter(r => r.depth === 1 && r.orcPct !== null);
+
+  const parts: string[] = [];
+
+  // 1. Performance geral
+  if (totalRow && totalRow.orcPct !== null) {
+    const dir      = totalRow.orcPct >= 0 ? 'acima' : 'abaixo';
+    const varAbsK  = fmtK(Math.abs(totalRow.real - totalRow.orc));
+    const varPctS  = Math.abs(totalRow.orcPct).toFixed(1);
+    parts.push(`${t01Label} encerrou com R$ ${fmtK(totalRow.real)}k realizados — ${varPctS}% ${dir} do orçado (Δ R$ ${varAbsK}k).`);
+  }
+
+  // 2. Maior componente (tag02)
+  const biggestT02 = [...t02Rows].sort((a, b) => Math.abs(b.real) - Math.abs(a.real))[0];
+  if (biggestT02 && totalRow && Math.abs(totalRow.real) > 0) {
+    const rep = Math.round(Math.abs(biggestT02.real) / Math.abs(totalRow.real) * 100);
+    const varNote = biggestT02.orcPct !== null
+      ? `, com variação de ${fmtPct(biggestT02.orcPct)} vs orçado`
+      : '';
+    parts.push(`O maior componente é ${biggestT02.label}, representando ${rep}% do total${varNote}.`);
+  }
+
+  // 3. Melhor desempenho de marca
+  const sorted = [...marcaRows].sort((a, b) => (b.orcPct ?? 0) - (a.orcPct ?? 0));
+  const best  = sorted[0];
+  const worst = sorted[sorted.length - 1];
+
+  if (best && (best.orcPct ?? 0) > 0) {
+    parts.push(`Destaque positivo: ${best.label} com ${fmtPct(best.orcPct)} vs orçado (R$ ${fmtK(best.real)}k realizados).`);
+  }
+
+  // 4. Pior desempenho de marca
+  if (worst && worst !== best && (worst.orcPct ?? 0) < 0) {
+    parts.push(`Ponto de atenção: ${worst.label} com desvio de ${fmtPct(worst.orcPct)} vs orçado (R$ ${fmtK(worst.real)}k realizados).`);
+  }
+
+  // 5. Comparativo vs ano anterior (se disponível no total)
+  if (totalRow && totalRow.a1Pct !== null) {
+    const dir = totalRow.a1Pct >= 0 ? 'superior' : 'inferior';
+    parts.push(`Em relação ao ano anterior, o resultado é ${Math.abs(totalRow.a1Pct).toFixed(1)}% ${dir} (A-1: R$ ${fmtK(totalRow.a1)}k).`);
+  }
+
+  return parts.join(' ');
+}
+
 // SLIDE 1 DE 2: Tabela + Síntese IA
 function Tag01DetailSlide({
-  section, t01, data, rows, pageNum,
+  section, t01, data, rows, pageNum, titleOverride,
 }: {
   section: VariancePptSection;
   t01: VariancePptNode;
   data: VariancePptData;
   rows: T01Row[];
   pageNum?: number;
+  titleOverride?: string;
 }) {
-  const a1Label     = String(data.a1Year);
-  const title       = `${section.label} — ${t01.label}`;
-  const insightText = t01.enrichedInsight || t01.orcAiSummary || '';
-  const accentClr   = `#${section.sectionColor}`;
+  const [showPopup, setShowPopup] = React.useState(false);
+
+  const a1Label   = String(data.a1Year);
+  const title     = titleOverride ?? `${section.label} — ${t01.label}`;
+  const accentClr = `#${section.sectionColor}`;
+
+  // Filter out subtotal rows that duplicate other entries (e.g. "Outras Receitas De Alunos")
+  const EXCLUDE_LABELS = ['outras receitas de alunos'];
+  const _excluded = rows.filter(row =>
+    !EXCLUDE_LABELS.some(ex => row.label.toLowerCase().includes(ex))
+  );
+  // Remove tag02 rows (depth 0) — mostrar apenas total + marcas
+  const noT02 = _excluded.filter(row => row.depth !== 0);
+
+  // Agregar marcas (depth 1) com mesmo label — soma real/orc/a1, recalcula pct
+  const totalRow = noT02.find(r => r.depth === -1);
+  const marcaMap = new Map<string, T01Row>();
+  for (const row of noT02) {
+    if (row.depth !== 1) continue;
+    const key = row.label.toLowerCase().trim();
+    if (!marcaMap.has(key)) {
+      marcaMap.set(key, { ...row });
+    } else {
+      const acc = marcaMap.get(key)!;
+      acc.real += row.real;
+      acc.orc  += row.orc;
+      acc.a1   += row.a1;
+    }
+  }
+  // Recalcular pct após agregação
+  for (const row of marcaMap.values()) {
+    row.orcPct = row.orc !== 0 ? ((row.real - row.orc) / Math.abs(row.orc)) * 100 : null;
+    row.a1Pct  = row.a1  !== 0 ? ((row.real - row.a1)  / Math.abs(row.a1))  * 100 : null;
+  }
+  // Ordenar marcas por |real| desc
+  const marcasSorted = [...marcaMap.values()].sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
+  const filteredRows: T01Row[] = [
+    ...(totalRow ? [totalRow] : []),
+    ...marcasSorted,
+  ];
+
+  // Síntese gerada dos dados reais da tabela (sempre aderente ao conteúdo)
+  const tableInsight = buildTableInsight(filteredRows, t01.label, data.year);
+  // Texto IA original como complemento no popup
+  const aiComplement = cleanInsight(t01.enrichedInsight || t01.orcAiSummary || '');
+  const popupText = [tableInsight, aiComplement].filter(Boolean).join('\n\n');
+
+  const INSIGHT_PREVIEW_LEN = 520;
+  const insightIsLong = tableInsight.length > INSIGHT_PREVIEW_LEN;
+  const insightPreview = insightIsLong ? tableInsight.slice(0, INSIGHT_PREVIEW_LEN).trimEnd() + '…' : tableInsight;
 
   return (
+    <>
+    {showPopup && popupText && (
+      <InsightPopup
+        title={title}
+        text={popupText}
+        accent={accentClr}
+        onClose={() => setShowPopup(false)}
+      />
+    )}
     <SlideCard>
       <SlideHeader
         sectionLabel={section.tag0}
@@ -1886,112 +2538,144 @@ function Tag01DetailSlide({
         monthShort={data.monthShort}
         color={section.sectionColor}
       />
-      <div className="flex flex-col gap-2 px-4 pt-3 pb-7" style={{ height: 'calc(100% - 52px)' }}>
+      <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
-        {/* Tabela completa — todas as marcas, sem scroll */}
-        <div className="shrink-0 rounded-lg border border-gray-100 overflow-hidden">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr style={{ backgroundColor: '#F3F4F6' }}>
-                <th className="text-left px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">DESCRIÇÃO / MARCA</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">REAL {data.year}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">ORÇADO</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ R$ Orç</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ% Orç</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">{a1Label}</th>
-                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ% {a1Label}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => {
-                const isTotal = row.depth === -1;
-                const isT02   = row.depth === 0;
-                const isMarca = row.depth === 1;
-                const bg      = isTotal ? accentClr : isT02 ? '#F9FAFB' : 'white';
-                const textClr = isTotal ? 'white' : hex(C.darkText);
-                const bold    = isTotal || isT02;
-                const indent  = isMarca ? '\u00A0\u00A0↳ ' : '';
-                return (
-                  <tr key={idx} className="border-b border-gray-50" style={{ backgroundColor: bg }}>
-                    <td className="px-2 py-0.5 text-[9px] truncate max-w-xs" title={row.label}
-                      style={{ color: textClr, fontWeight: bold ? 700 : 400 }}>{indent}{row.label}</td>
-                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
-                      style={{ color: textClr, fontWeight: bold ? 700 : 400 }}>{fmtK(row.real)}</td>
-                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
-                      style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.orc)}</td>
-                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums font-semibold tabular-nums">
-                      {(() => {
-                        const varAbs = row.real - row.orc;
-                        const clr = isTotal
-                          ? (varAbs >= 0 ? '#86EFAC' : '#FCA5A5')
-                          : deltaColor(row.orcPct);
-                        return <span style={{ color: clr }}>{varAbs >= 0 ? '+' : ''}{fmtK(varAbs)}</span>;
-                      })()}
-                    </td>
-                    <td className="text-right px-2 py-0.5">
-                      {isTotal
-                        ? <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.orcPct)}</span>
-                        : <VarBadge pct={row.orcPct} />}
-                    </td>
-                    <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
-                      style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.a1)}</td>
-                    <td className="text-right px-2 py-0.5">
-                      {isTotal
-                        ? <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.a1Pct)}</span>
-                        : <VarBadge pct={row.a1Pct} />}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        {/* Esquerda: Tabela */}
+        <div className="w-[58%] shrink-0 px-4 pt-3 border-r border-gray-100 overflow-hidden">
+          <div className="rounded-lg border border-gray-100 overflow-hidden">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr style={{ backgroundColor: '#F3F4F6' }}>
+                  <th className="text-left px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">DESCRIÇÃO / MARCA</th>
+                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">REAL</th>
+                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">ORÇADO</th>
+                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">Δ R$</th>
+                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">Δ% Orç</th>
+                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">{a1Label}</th>
+                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">Δ% {a1Label}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row, idx) => {
+                  const isTotal = row.depth === -1;
+                  const isT02   = row.depth === 0;
+                  const isMarca = row.depth === 1;
+                  const bg      = isTotal ? accentClr : isT02 ? '#F9FAFB' : 'white';
+                  const textClr = isTotal ? 'white' : hex(C.darkText);
+                  const bold    = isTotal || isT02;
+                  const indent  = isMarca ? '\u00A0\u00A0↳ ' : '';
+                  const varAbs  = row.real - row.orc;
+                  return (
+                    <tr key={idx} className="border-b border-gray-50" style={{ backgroundColor: bg }}>
+                      <td className="px-2 py-0.5 text-[10px] truncate" style={{ maxWidth: 120, color: textClr, fontWeight: bold ? 700 : 400 }} title={row.label}>
+                        {indent}{row.label}
+                      </td>
+                      <td className="text-right px-2 py-0.5 text-[10px] tabular-nums"
+                        style={{ color: textClr, fontWeight: bold ? 700 : 400 }}>{fmtK(row.real)}</td>
+                      <td className="text-right px-2 py-0.5 text-[10px] tabular-nums"
+                        style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.orc)}</td>
+                      <td className="text-right px-2 py-0.5 text-[10px] tabular-nums font-semibold">
+                        <span style={{ color: isTotal ? (varAbs >= 0 ? '#86EFAC' : '#FCA5A5') : deltaColor(row.orcPct) }}>
+                          {varAbs >= 0 ? '+' : ''}{fmtK(varAbs)}
+                        </span>
+                      </td>
+                      <td className="text-right px-2 py-0.5">
+                        {isTotal
+                          ? <span className="text-[10px] font-bold text-white">{fmtPct(row.orcPct)}</span>
+                          : <VarBadge pct={row.orcPct} />}
+                      </td>
+                      <td className="text-right px-2 py-0.5 text-[10px] tabular-nums"
+                        style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.a1)}</td>
+                      <td className="text-right px-2 py-0.5">
+                        {isTotal
+                          ? <span className="text-[10px] font-bold text-white">{fmtPct(row.a1Pct)}</span>
+                          : <VarBadge pct={row.a1Pct} />}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        {/* Síntese IA — bloco expandido com mais texto */}
-        {insightText ? (
-          <div
-            className="flex-1 min-h-0 flex flex-col gap-1.5 px-3 py-2.5 rounded-xl"
-            style={{ background: `#${C.headerBg}` }}
-          >
-            <div className="flex items-center gap-1.5 shrink-0">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: hex(C.accent) }} />
-              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: hex(C.accent) }}>
-                Síntese IA
-              </span>
+        {/* Direita: Síntese dos dados */}
+        <div className="flex-1 min-w-0 px-4 pt-3 flex flex-col gap-2">
+          {tableInsight ? (
+            <div
+              className="flex-1 min-h-0 flex flex-col gap-2 px-3 py-3 rounded-xl cursor-pointer border transition-shadow hover:shadow-md"
+              style={{ backgroundColor: `${accentClr}0D`, borderColor: `${accentClr}30`, borderLeft: `3px solid ${accentClr}` }}
+              onClick={() => setShowPopup(true)}
+              title="Clique para mais detalhes"
+            >
+              <div className="flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: accentClr }} />
+                  <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: accentClr }}>
+                    Análise
+                  </span>
+                </div>
+                {popupText && <span className="text-[8px] font-semibold" style={{ color: accentClr }}>ver mais →</span>}
+              </div>
+              <p className="text-[10px] leading-relaxed text-gray-700">
+                {insightPreview}
+                {insightIsLong && (
+                  <button
+                    className="ml-1 text-[9px] font-semibold underline underline-offset-1 bg-transparent border-none p-0 cursor-pointer"
+                    style={{ color: accentClr }}
+                    onClick={e => { e.stopPropagation(); setShowPopup(true); }}
+                  >
+                    ver mais →
+                  </button>
+                )}
+              </p>
             </div>
-            <p className="text-[11px] leading-relaxed overflow-hidden" style={{ color: '#E5E7EB' }}>
-              {insightText.slice(0, 600)}
-            </p>
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 flex items-center justify-center rounded-xl border border-dashed border-gray-200">
-            <span className="text-[10px] text-gray-400 italic">Síntese IA não disponível</span>
-          </div>
-        )}
+          ) : (
+            <div className="flex-1 min-h-0 flex items-center justify-center rounded-xl border border-dashed border-gray-200">
+              <span className="text-[10px] text-gray-400 italic">Dados insuficientes para análise</span>
+            </div>
+          )}
+        </div>
       </div>
       <SlideFooter page={pageNum} />
     </SlideCard>
+    </>
   );
 }
 
-// SLIDE 2 DE 2: Justificativas
+// SLIDE 2+: Justificativas (paginado)
 function Tag01JustificativasSlide({
-  section, t01, data, cards, pageNum,
+  section, t01, data, cards, pageNum, slideLabel, titleOverride,
 }: {
   section: VariancePptSection;
   t01: VariancePptNode;
   data: VariancePptData;
   cards: T01JustCard[];
   pageNum?: number;
+  slideLabel?: string;   // ex: "(1/2)" para paginação
+  titleOverride?: string;
 }) {
-  const title     = `${section.label} — ${t01.label} — Justificativas`;
+  const [popup, setPopup] = React.useState<{ title: string; text: string; accent: string } | null>(null);
+
+  const titleBase = titleOverride ?? `${section.label} — ${t01.label} — Justificativas`;
+  const title = (titleOverride || !slideLabel) ? titleBase : `${titleBase} ${slideLabel}`;
   const accentClr = `#${section.sectionColor}`;
 
-  // Determina número de colunas: <= 4 cards → 2 cols, 5-6 → 3 cols, 7+ → 3 cols
-  const cols = cards.length <= 4 ? 2 : 3;
-  const colClass = cols === 2 ? 'grid-cols-2' : 'grid-cols-3';
+  // Stats de cobertura
+  const justified = cards.filter(c => c.status === 'justified' || c.status === 'approved').length;
+  const pending    = cards.filter(c => c.status === 'pending' || c.status === 'notified').length;
+  const coverPct   = cards.length > 0 ? Math.round(justified / cards.length * 100) : 0;
 
   return (
+    <>
+    {popup && (
+      <InsightPopup
+        title={popup.title}
+        text={popup.text}
+        accent={popup.accent}
+        onClose={() => setPopup(null)}
+      />
+    )}
     <SlideCard>
       <SlideHeader
         sectionLabel={section.tag0}
@@ -2000,26 +2684,52 @@ function Tag01JustificativasSlide({
         color={section.sectionColor}
       />
       <div className="flex flex-col px-4 pt-3 pb-7 gap-2" style={{ height: 'calc(100% - 52px)' }}>
-        {/* Cabeçalho da seção */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-1 h-4 rounded-full" style={{ backgroundColor: accentClr }} />
-          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accentClr }}>
-            Justificativas dos Desvios
-          </span>
-          <span className="text-[9px] text-gray-400 font-medium">
-            ({cards.length} {cards.length === 1 ? 'item' : 'itens'})
-          </span>
+        {/* Cabeçalho com stats */}
+        <div className="flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-1 h-4 rounded-full" style={{ backgroundColor: accentClr }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accentClr }}>
+              Justificativas dos Desvios
+            </span>
+            <span className="text-[9px] text-gray-400 font-medium">
+              ({cards.length} {cards.length === 1 ? 'item' : 'itens'})
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold"
+              style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>
+              {justified} justificado{justified !== 1 ? 's' : ''}
+            </span>
+            {pending > 0 && (
+              <span className="text-[9px] px-2 py-0.5 rounded-full font-semibold"
+                style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                {pending} pendente{pending !== 1 ? 's' : ''}
+              </span>
+            )}
+            <span className="text-[9px] font-bold tabular-nums" style={{ color: accentClr }}>
+              {coverPct}% cobertos
+            </span>
+          </div>
         </div>
 
-        {/* Grid de cards */}
-        <div className={`flex-1 min-h-0 grid ${colClass} gap-2 content-start`}>
+        {/* Grid de cards — sempre 2 colunas */}
+        <div className="flex-1 min-h-0 grid grid-cols-2 gap-2 content-start overflow-hidden">
           {cards.map((card, idx) => (
-            <JustCardItem key={idx} card={card} />
+            <JustCardItem
+              key={idx}
+              card={card}
+              onExpand={() => setPopup({
+                title: card.label,
+                text: cleanInsight(card.justText) || 'Sem justificativa registrada.',
+                accent: accentClr,
+              })}
+            />
           ))}
         </div>
       </div>
       <SlideFooter page={pageNum} />
     </SlideCard>
+    </>
   );
 }
 
@@ -2077,6 +2787,8 @@ function PresentationMode({
             transform: `scale(${scale})`,
             transformOrigin: 'center center',
             flexShrink: 0,
+            position: 'relative',
+            zIndex: 2,
           }}
         >
           {slides[currentSlide]}
@@ -2116,18 +2828,252 @@ function PresentationMode({
         <div className="w-14" />
       </div>
 
-      {/* Zonas de clique para navegar */}
+      {/* Zonas de clique nas bordas pretas (fora do slide) para navegar */}
       <div
-        className="absolute top-0 left-0 w-1/3 cursor-pointer"
-        style={{ height: `calc(100% - ${NAV_H}px)` }}
+        className="absolute top-0 left-0 cursor-pointer"
+        style={{ height: `calc(100% - ${NAV_H}px)`, width: `calc(50% - ${DESIGN_W * scale / 2}px)`, zIndex: 1 }}
         onClick={onPrev}
       />
       <div
-        className="absolute top-0 right-0 w-1/3 cursor-pointer"
-        style={{ height: `calc(100% - ${NAV_H}px)` }}
+        className="absolute top-0 right-0 cursor-pointer"
+        style={{ height: `calc(100% - ${NAV_H}px)`, width: `calc(50% - ${DESIGN_W * scale / 2}px)`, zIndex: 1 }}
         onClick={onNext}
       />
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAG01 → TAG02 BREAKDOWN SLIDE (tabela + gráfico de barras por tag02)
+// Estilo slide 2 (OverviewSlide): tabela à esquerda, barras à direita
+// ═══════════════════════════════════════════════════════════════════════
+
+function Tag01T02BreakdownSlide({
+  section, t01, data, pageNum,
+}: {
+  section: VariancePptSection;
+  t01: VariancePptNode;
+  data: VariancePptData;
+  pageNum?: number;
+}) {
+  const accentClr = `#${section.sectionColor}`;
+
+  // tag02s sorted by |real| desc
+  const tag02s = [...t01.children].sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
+
+  // Table rows: total + tag02s
+  const tableRows = [
+    { label: t01.label, real: t01.real, orc: t01.orcCompare, orcPct: t01.orcVarPct, isTotal: true },
+    ...tag02s.map(n => ({ label: n.label, real: n.real, orc: n.orcCompare, orcPct: n.orcVarPct, isTotal: false })),
+  ];
+
+  // Top 5 estouros: orcVarPct < 0, ordenado pelo maior gap R$ (real - orc mais negativo primeiro)
+  const top5Desvios = [...tag02s]
+    .filter(n => (n.orcVarPct ?? 0) < 0)
+    .sort((a, b) => (a.real - a.orcCompare) - (b.real - b.orcCompare))
+    .slice(0, 5);
+
+  // Top 5 savings: orcVarPct > 0, ordenado pelo maior saving R$ (real - orc mais positivo primeiro)
+  const top5Savings = [...tag02s]
+    .filter(n => (n.orcVarPct ?? 0) > 0)
+    .sort((a, b) => (b.real - b.orcCompare) - (a.real - a.orcCompare))
+    .slice(0, 5);
+
+  // Helper: build a Real vs Orçado mini chart option for a subset of nodes
+  const buildMiniChart = (nodes: typeof tag02s, accentColor: string, orcColor: string) => {
+    const raw = nodes.flatMap(n => [Math.abs(n.real), Math.abs(n.orcCompare)]);
+    const u = detectScale(...raw);
+    const labels = nodes.map(n => n.label.length > 13 ? n.label.slice(0, 12) + '…' : n.label);
+    const rV = nodes.map(n => Math.abs(toChartVal(n.real, u)));
+    const oV = nodes.map(n => Math.abs(toChartVal(n.orcCompare, u)));
+    const vPcts = nodes.map(n => n.orcVarPct);
+    const vAbs  = nodes.map(n => n.real - n.orcCompare);
+    const phV = rV.map((r, i) => Math.max(r, oV[i]));
+
+    return {
+      grid: { left: 6, right: 6, top: 38, bottom: 36 },
+      xAxis: {
+        type: 'category' as const,
+        data: labels,
+        axisLabel: { fontSize: 8, fontWeight: 600, color: '#374151', interval: 0, overflow: 'truncate' as const, width: 60 },
+        axisLine: { lineStyle: { color: '#E5E7EB' } },
+        axisTick: { show: false },
+      },
+      yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
+      legend: {
+        bottom: 0,
+        data: [`Real ${data.year}`, 'Orçado'],
+        itemWidth: 8,
+        itemHeight: 6,
+        textStyle: { fontSize: 8, color: '#6B7280' },
+      },
+      series: [
+        {
+          name: `Real ${data.year}`,
+          type: 'bar' as const,
+          data: rV,
+          barMaxWidth: 30,
+          barGap: '10%',
+          itemStyle: { color: accentColor, borderRadius: [2, 2, 0, 0] },
+          label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, u), fontSize: 7, fontWeight: 700, color: '#fff' },
+        },
+        {
+          name: '__var__',
+          type: 'bar' as const,
+          data: phV,
+          barWidth: 1,
+          silent: true,
+          itemStyle: { color: 'transparent' },
+          label: {
+            show: true,
+            position: 'top' as const,
+            offset: [0, -2],
+            formatter: (p: any) => {
+              const idx = p.dataIndex;
+              const pct = vPcts[idx];
+              const abs = vAbs[idx];
+              if (pct === null || pct === undefined) return '';
+              const tag = pct >= 0 ? 'pos' : 'neg';
+              const sign = pct >= 0 ? '+' : '';
+              const absLabel = `${sign}${fmtChartLabel(toChartVal(abs, u), u)}`;
+              const pctLabel = `${sign}${pct.toFixed(1)}%`;
+              return `{${tag}|${absLabel}}\n{${tag}2|${pctLabel}}`;
+            },
+            rich: {
+              pos:  { fontSize: 7, fontWeight: 800, color: '#34D399', lineHeight: 11 },
+              neg:  { fontSize: 7, fontWeight: 800, color: '#FB7185', lineHeight: 11 },
+              pos2: { fontSize: 6, fontWeight: 700, color: '#34D399', lineHeight: 10 },
+              neg2: { fontSize: 6, fontWeight: 700, color: '#FB7185', lineHeight: 10 },
+            },
+          },
+        },
+        {
+          name: 'Orçado',
+          type: 'bar' as const,
+          data: oV,
+          barMaxWidth: 30,
+          itemStyle: { color: orcColor, borderRadius: [2, 2, 0, 0] },
+          label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, u), fontSize: 6, color: '#fff', fontWeight: 600 },
+        },
+      ],
+    };
+  };
+
+  const desviosOption = buildMiniChart(top5Desvios, '#FB7185', '#FECDD3');
+  const savingsOption = buildMiniChart(top5Savings, '#34D399', '#A7F3D0');
+
+  return (
+    <SlideCard>
+      <SlideHeader
+        sectionLabel={section.label}
+        title={`${t01.label} — Detalhamento por Categoria`}
+        monthShort={data.monthShort}
+        unitLabel="MILHARES (R$)"
+        color={section.sectionColor}
+      />
+      <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
+
+        {/* Left: table */}
+        <div className="w-[48%] shrink-0 overflow-hidden px-3 pt-3 border-r border-gray-100">
+          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="3" y1="15" x2="21" y2="15" />
+              <line x1="9" y1="3" x2="9" y2="21" />
+            </svg>
+            Detalhamento por Categoria (R$ Milhares)
+          </div>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr style={{ backgroundColor: '#F9FAFB' }}>
+                <th className="text-left px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">CATEGORIA</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">REAL</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">ORÇADO</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ R$</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">VAR %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((row, idx) => {
+                const delta = row.real - row.orc;
+                return (
+                  <tr
+                    key={idx}
+                    className="border-b border-gray-50"
+                    style={{ backgroundColor: row.isTotal ? `${accentClr}12` : 'white' }}
+                  >
+                    <td
+                      className={`px-1.5 py-1 text-[10px] truncate max-w-0 ${row.isTotal ? 'font-extrabold' : 'font-medium text-gray-800'}`}
+                      style={{ width: '38%', color: row.isTotal ? accentClr : undefined }}
+                    >
+                      {row.label}
+                    </td>
+                    <td
+                      className={`text-right px-1.5 py-1 text-[10px] tabular-nums ${row.isTotal ? 'font-extrabold' : 'font-semibold text-gray-800'}`}
+                      style={{ color: row.isTotal ? accentClr : undefined }}
+                    >
+                      {fmtK(row.real)}
+                    </td>
+                    <td className="text-right px-1.5 py-1 text-[10px] text-gray-500 tabular-nums">{fmtK(row.orc)}</td>
+                    <td className="text-right px-1.5 py-1 text-[10px] font-semibold tabular-nums" style={{ color: deltaColor(row.orcPct) }}>
+                      {(delta >= 0 ? '+' : '') + fmtK(delta)}
+                    </td>
+                    <td className="text-right px-1.5 py-1">
+                      <VarBadge pct={row.orcPct} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Right: dois gráficos Top5 */}
+        <div className="flex-1 min-w-0 flex flex-col px-2 pt-2 gap-1.5">
+
+          {/* Top 5 Desvios */}
+          {top5Desvios.length > 0 && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex items-center gap-1 px-1 mb-0.5 shrink-0">
+                <div className="w-2 h-2 rounded-full bg-red-400 shrink-0" />
+                <span className="text-[9px] font-extrabold uppercase tracking-wider text-red-500">
+                  Top {top5Desvios.length} Estouros
+                </span>
+              </div>
+              <div className="flex-1 min-h-0 border border-red-100 rounded-lg overflow-hidden bg-red-50/30">
+                <ReactECharts
+                  option={desviosOption}
+                  style={{ height: '100%', width: '100%' }}
+                  opts={{ renderer: 'canvas', devicePixelRatio: 2 }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Top 5 Savings */}
+          {top5Savings.length > 0 && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex items-center gap-1 px-1 mb-0.5 shrink-0">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                <span className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-600">
+                  Top {top5Savings.length} Savings
+                </span>
+              </div>
+              <div className="flex-1 min-h-0 border border-emerald-100 rounded-lg overflow-hidden bg-emerald-50/30">
+                <ReactECharts
+                  option={savingsOption}
+                  style={{ height: '100%', width: '100%' }}
+                  opts={{ renderer: 'canvas', devicePixelRatio: 2 }}
+                />
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+      <SlideFooter page={pageNum} />
+    </SlideCard>
   );
 }
 
@@ -2223,44 +3169,130 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
         pageCounter++;
 
         // Slide 1: Tabela + Síntese IA / Slide 2: Justificativas (se existirem)
-        for (const t01 of section.tag01Nodes) {
-          const allRows  = buildT01Rows(t01);
-          const allCards = buildT01JustCards(t01);
+        const TAG01_SPLIT_BY_TAG02 = ['concess'];
+        const CARDS_PER_JUST_SLIDE = 6;
 
-          // Slide 1 — tabela completa + IA
-          entries.push({
-            key: `tag01detail-${section.tag0}-${t01.label}`,
-            label: `${section.label} — ${t01.label}`,
-            node: (
-              <Tag01DetailSlide
-                key={`tag01detail-${section.tag0}-${t01.label}`}
-                section={section}
-                t01={t01}
-                data={data}
-                rows={allRows}
-                pageNum={pageCounter}
-              />
-            ),
-          });
-          pageCounter++;
-
-          // Slide 2 — justificativas (só se existirem cards)
-          if (allCards.length > 0) {
+        // Helper: push paginated justificativas slides for a set of cards
+        const pushJustSlides = (
+          cards: T01JustCard[],
+          keyBase: string,
+          labelBase: string,
+          t01Node: VariancePptNode,
+        ) => {
+          const aggregated = aggregateJustCardsByMarca(cards);
+          if (aggregated.length === 0) return;
+          const pages: T01JustCard[][] = [];
+          for (let i = 0; i < aggregated.length; i += CARDS_PER_JUST_SLIDE) {
+            pages.push(aggregated.slice(i, i + CARDS_PER_JUST_SLIDE));
+          }
+          pages.forEach((pageCards, pi) => {
+            const slideLabel = pages.length > 1 ? `(${pi + 1}/${pages.length})` : undefined;
+            const fullLabel = `${labelBase} — Justificativas${slideLabel ? ` ${slideLabel}` : ''}`;
             entries.push({
-              key: `tag01just-${section.tag0}-${t01.label}`,
-              label: `${section.label} — ${t01.label} — Justificativas`,
+              key: `${keyBase}-p${pi}`,
+              label: fullLabel,
               node: (
                 <Tag01JustificativasSlide
-                  key={`tag01just-${section.tag0}-${t01.label}`}
+                  key={`${keyBase}-p${pi}`}
+                  section={section}
+                  t01={t01Node}
+                  data={data}
+                  cards={pageCards}
+                  pageNum={pageCounter}
+                  slideLabel={slideLabel}
+                  titleOverride={fullLabel}
+                />
+              ),
+            });
+            pageCounter++;
+          });
+        };
+
+        const TAG01_WITH_T02_BREAKDOWN = ['folha'];
+
+        for (const t01 of section.tag01Nodes) {
+          const shouldSplit = TAG01_SPLIT_BY_TAG02.some(k => t01.label.toLowerCase().includes(k)) && t01.children.length > 0;
+          const shouldBreakdown = TAG01_WITH_T02_BREAKDOWN.some(k => t01.label.toLowerCase().includes(k)) && t01.children.length > 0;
+
+          if (shouldSplit) {
+            // Per-tag02: detail slide immediately followed by its own justificativas
+            for (const tag02 of t01.children) {
+              const tag02Rows = buildTag02AsT01Rows(tag02);
+              const overrideTitle = `${section.label} — ${tag02.label}`;
+
+              // Detail slide for this tag02
+              entries.push({
+                key: `tag01detail-${section.tag0}-${t01.label}-${tag02.label}`,
+                label: overrideTitle,
+                node: (
+                  <Tag01DetailSlide
+                    key={`tag01detail-${section.tag0}-${t01.label}-${tag02.label}`}
+                    section={section}
+                    t01={t01}
+                    data={data}
+                    rows={tag02Rows}
+                    pageNum={pageCounter}
+                    titleOverride={overrideTitle}
+                  />
+                ),
+              });
+              pageCounter++;
+
+              // Justificativas only for this tag02's subtree
+              const tag02Cards = buildT01JustCards(tag02);
+              pushJustSlides(
+                tag02Cards,
+                `tag01just-${section.tag0}-${t01.label}-${tag02.label}`,
+                overrideTitle,
+                t01,
+              );
+            }
+          } else {
+            const allRows  = buildT01Rows(t01);
+            const allCards = buildT01JustCards(t01);
+
+            // Detail slide
+            entries.push({
+              key: `tag01detail-${section.tag0}-${t01.label}`,
+              label: `${section.label} — ${t01.label}`,
+              node: (
+                <Tag01DetailSlide
+                  key={`tag01detail-${section.tag0}-${t01.label}`}
                   section={section}
                   t01={t01}
                   data={data}
-                  cards={allCards}
+                  rows={allRows}
                   pageNum={pageCounter}
                 />
               ),
             });
             pageCounter++;
+
+            // Tag02 breakdown slide (ex: Folha de Funcionários → categorias)
+            if (shouldBreakdown) {
+              entries.push({
+                key: `tag01breakdown-${section.tag0}-${t01.label}`,
+                label: `${section.label} — ${t01.label} — Categorias`,
+                node: (
+                  <Tag01T02BreakdownSlide
+                    key={`tag01breakdown-${section.tag0}-${t01.label}`}
+                    section={section}
+                    t01={t01}
+                    data={data}
+                    pageNum={pageCounter}
+                  />
+                ),
+              });
+              pageCounter++;
+            }
+
+            // Justificativas
+            pushJustSlides(
+              allCards,
+              `tag01just-${section.tag0}-${t01.label}`,
+              `${section.label} — ${t01.label}`,
+              t01,
+            );
           }
         }
       }

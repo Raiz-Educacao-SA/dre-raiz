@@ -72,6 +72,16 @@ export interface VariancePptMarcaEntry {
   a1: number;
 }
 
+export interface RzDreRow {
+  type: 'section' | 't01' | 'calc';
+  label: string;
+  real: number;
+  orc: number;
+  orcPct: number | null;
+  a1: number;
+  a1Pct: number | null;
+}
+
 export interface VariancePptData {
   monthLabel: string;          // 'Março 2026'
   monthShort: string;          // 'MAR/26'
@@ -86,6 +96,7 @@ export interface VariancePptData {
   executiveSummary: string | null;
   closingSummary: string | null;
   marcaBreakdowns: Record<string, VariancePptMarcaEntry[]> | null;
+  rzDre: RzDreRow[] | null;
 }
 
 export interface VarianceAiInsights {

@@ -266,9 +266,16 @@ export default function AnalysisView() {
     try {
       // Step 1: Fetch data — live RPCs when marca selected, snapshot otherwise
       const hasMarca = effectiveMarcas.length > 0;
-      const rawItems = hasMarca
-        ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0], effectiveFiliais.length > 0 ? effectiveFiliais : null)
-        : await getVarianceJustifications({ year_month: selectedMonth });
+      const rzNotSelected = hasMarca && !effectiveMarcas.map(m => m.toUpperCase()).includes('RZ');
+      const [rawItems, rzRawItems] = await Promise.all([
+        hasMarca
+          ? fetchLiveDreForPpt(selectedMonth, effectiveMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null)
+          : getVarianceJustifications({ year_month: selectedMonth }),
+        // Sempre buscar RZ separado para o slide de Rateio (exceto se RZ já está incluído)
+        rzNotSelected
+          ? fetchLiveDreForPpt(selectedMonth, ['RZ'], null).catch(() => [] as any[])
+          : Promise.resolve([] as any[]),
+      ]);
       // Step 1b: Apply tag01 permissions filter
       const items = filterByTag01(rawItems);
       if (!items || items.length === 0) {
@@ -278,9 +285,9 @@ export default function AnalysisView() {
         return;
       }
 
-      // Step 2: Transform to PPT structure
+      // Step 2: Transform to PPT structure (rzRawItems alimenta o DRE-RZ no slide de Rateio)
       const { prepareVariancePptData } = await import('../services/variancePptDataService');
-      const data = prepareVariancePptData(items, selectedMonth, effectiveMarcas.length > 0 ? effectiveMarcas.join(', ') : null);
+      const data = prepareVariancePptData(items, selectedMonth, effectiveMarcas.length > 0 ? effectiveMarcas.join(', ') : null, rzRawItems.length > 0 ? rzRawItems : undefined);
 
       // Step 3: Marca breakdown (parallel with AI) — ambos com fallback silencioso
       const [, breakdown] = await Promise.all([
@@ -352,16 +359,22 @@ export default function AnalysisView() {
       // If no preview loaded, run full pipeline
       if (!data) {
         const hasMarca = effectiveMarcas.length > 0;
-        const rawItems = hasMarca
-          ? await fetchLiveDreForPpt(selectedMonth, effectiveMarcas[0], effectiveFiliais.length > 0 ? effectiveFiliais : null)
-          : await getVarianceJustifications({ year_month: selectedMonth });
-        const items = filterByTag01(rawItems);
+        const rzNotSelected2 = hasMarca && !effectiveMarcas.map(m => m.toUpperCase()).includes('RZ');
+        const [rawItems2, rzRawItems2] = await Promise.all([
+          hasMarca
+            ? fetchLiveDreForPpt(selectedMonth, effectiveMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null)
+            : getVarianceJustifications({ year_month: selectedMonth }),
+          rzNotSelected2
+            ? fetchLiveDreForPpt(selectedMonth, ['RZ'], null).catch(() => [] as any[])
+            : Promise.resolve([] as any[]),
+        ]);
+        const items = filterByTag01(rawItems2);
         if (!items || items.length === 0) {
           alert('Nenhum dado encontrado para o periodo selecionado.');
           return;
         }
         const { prepareVariancePptData } = await import('../services/variancePptDataService');
-        data = prepareVariancePptData(items, selectedMonth, effectiveMarcas.length > 0 ? effectiveMarcas.join(', ') : null);
+        data = prepareVariancePptData(items, selectedMonth, effectiveMarcas.length > 0 ? effectiveMarcas.join(', ') : null, rzRawItems2.length > 0 ? rzRawItems2 : undefined);
 
         const [, breakdown] = await Promise.all([
           (async () => {

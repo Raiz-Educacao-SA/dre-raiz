@@ -3217,18 +3217,19 @@ export const getVarianceYtdItems = async (
  */
 export async function fetchLiveDreForPpt(
   yearMonth: string,
-  marca: string,
+  marcas: string[],
   filiais?: string[] | null,
 ): Promise<VarianceJustification[]> {
   const DRE_PREFIXES = new Set(['01.', '02.', '03.', '04.', '05.']);
   const isDre = (t: string) => DRE_PREFIXES.has((t || '').slice(0, 3));
   const now = new Date().toISOString();
+  const marcaField = marcas.length === 1 ? marcas[0] : null;
 
   // 1. get_soma_tags → tag0+tag01 (Real, Orçado, A-1)
   const { data: somaData, error: somaError } = await supabase.rpc('get_soma_tags', {
     p_month_from: yearMonth,
     p_month_to: yearMonth,
-    p_marcas: [marca],
+    p_marcas: marcas,
     p_nome_filiais: filiais && filiais.length > 0 ? filiais : null,
     p_tags02: null,
     p_tags01: null,
@@ -3246,7 +3247,7 @@ export async function fetchLiveDreForPpt(
     const { data: snapPage, error: snapError } = await supabase
       .rpc('get_variance_snapshot', {
         p_year_month: yearMonth,
-        p_marcas: [marca],
+        p_marcas: marcas,
         p_recurring: 'Sim',
       })
       .range(snapOffset, snapOffset + PAGE_SIZE - 1);
@@ -3258,9 +3259,17 @@ export async function fetchLiveDreForPpt(
     snapOffset += PAGE_SIZE;
   }
 
-  // 3. Aggregate all data by (tag0, tag01, tag02, scenario)
+  // 3. Aggregate data:
+  //   - somaData (get_soma_tags): tag0+tag01 totals, no marca → aggMap with key tag0|tag01||scenario
+  //   - snapRows (get_variance_snapshot): tag02+marca detail
+  //     * single brand: aggregate without marca (preserve old behavior)
+  //     * multi-brand: keep per-marca so prepareVariancePptData can build depth=3 nodes
   const aggMap = new Map<string, number>();
-  const combos = new Set<string>();
+  const combos = new Set<string>();           // tag0|tag01|(tag02) — no marca
+  const marcaAggMap = new Map<string, number>();
+  const marcaCombos = new Set<string>();      // tag0|tag01|tag02|marca — only when multi-brand
+
+  const multiMarca = marcas.length > 1;
 
   for (const r of (somaData as any[]).filter((r: any) => isDre(r.tag0))) {
     const key = `${r.tag0}|${r.tag01 || ''}||${r.scenario}`;
@@ -3268,9 +3277,18 @@ export async function fetchLiveDreForPpt(
     combos.add(`${r.tag0}|${r.tag01 || ''}|`);
   }
   for (const r of snapRows) {
-    const key = `${r.tag0}|${r.tag01 || ''}|${r.tag02}|${r.scenario}`;
-    aggMap.set(key, (aggMap.get(key) || 0) + Number(r.total || 0));
-    combos.add(`${r.tag0}|${r.tag01 || ''}|${r.tag02}`);
+    const rm = (r.marca || '') as string;
+    if (multiMarca && rm) {
+      // Multi-brand: keep per-marca breakdown for tag02 level
+      const key = `${r.tag0}|${r.tag01 || ''}|${r.tag02}|${rm}|${r.scenario}`;
+      marcaAggMap.set(key, (marcaAggMap.get(key) || 0) + Number(r.total || 0));
+      marcaCombos.add(`${r.tag0}|${r.tag01 || ''}|${r.tag02}|${rm}`);
+    } else {
+      // Single brand: aggregate without marca (legacy behavior)
+      const key = `${r.tag0}|${r.tag01 || ''}|${r.tag02}|${r.scenario}`;
+      aggMap.set(key, (aggMap.get(key) || 0) + Number(r.total || 0));
+      combos.add(`${r.tag0}|${r.tag01 || ''}|${r.tag02}`);
+    }
   }
 
   // 4. Build VarianceJustification items
@@ -3278,13 +3296,14 @@ export async function fetchLiveDreForPpt(
   let id = 1;
 
   const base: Omit<VarianceJustification, 'id' | 'tag0' | 'tag01' | 'tag02' | 'tag03' | 'comparison_type' | 'real_value' | 'compare_value' | 'variance_abs' | 'variance_pct'> = {
-    year_month: yearMonth, marca, status: 'pending' as const,
+    year_month: yearMonth, marca: marcaField, status: 'pending' as const,
     owner_email: null, owner_name: null, justification: null, action_plan: null,
     ai_summary: null, ai_summary_at: null, justified_at: null,
     reviewed_by: null, reviewed_at: null, review_note: null, notified_at: null,
     version: 1, snapshot_at: now, created_at: now, updated_at: now,
   };
 
+  // Aggregated combos (tag01-level from soma + tag02-level single-brand from snap)
   for (const combo of combos) {
     const [tag0, tag01, tag02] = combo.split('|');
     const real = aggMap.get(`${combo}|Real`) || 0;
@@ -3296,6 +3315,24 @@ export async function fetchLiveDreForPpt(
       const varAbs = real - compareVal;
       const varPct = compareVal !== 0 ? Math.round(((real - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
       items.push({ ...base, id: id++, tag0, tag01: tag01 || '', tag02: tag02 || null, tag03: null, comparison_type: compType, real_value: real, compare_value: compareVal, variance_abs: varAbs, variance_pct: varPct });
+    };
+    addComp(orc, 'orcado');
+    addComp(a1, 'a1');
+  }
+
+  // Per-marca combos (tag02-level, multi-brand only)
+  for (const combo of marcaCombos) {
+    const parts = combo.split('|');
+    const [tag0, tag01, tag02, cm] = parts;
+    const real = marcaAggMap.get(`${combo}|Real`) || 0;
+    const orc = marcaAggMap.get(`${combo}|Orçado`) || 0;
+    const a1 = marcaAggMap.get(`${combo}|A-1`) || 0;
+
+    const addComp = (compareVal: number, compType: 'orcado' | 'a1') => {
+      if (real === 0 && compareVal === 0) return;
+      const varAbs = real - compareVal;
+      const varPct = compareVal !== 0 ? Math.round(((real - compareVal) / Math.abs(compareVal)) * 1000) / 10 : null;
+      items.push({ ...base, marca: cm, id: id++, tag0, tag01: tag01 || '', tag02: tag02 || null, tag03: null, comparison_type: compType, real_value: real, compare_value: compareVal, variance_abs: varAbs, variance_pct: varPct });
     };
     addComp(orc, 'orcado');
     addComp(a1, 'a1');
@@ -3329,12 +3366,13 @@ export async function fetchLiveDreForPpt(
   addCalc('EBITDA (S/ RATEIO RAIZ CSC)', eR, eO, eA);
   addCalc('EBITDA TOTAL', eR + g('05.','Real'), eO + g('05.','Orçado'), eA + g('05.','A-1'));
 
-  // 6. Merge justifications from snapshot (if any exist for this marca)
+  // 6. Merge justifications from snapshot (if any exist for these marcas)
+  const marcaOrFilter = [...marcas.map(m => `marca.eq.${m}`), 'marca.is.null', 'marca.eq.'].join(',');
   const { data: justData } = await supabase
     .from('variance_justifications')
     .select('tag0,tag01,tag02,comparison_type,justification,ai_summary,status,owner_name')
     .eq('year_month', yearMonth)
-    .or(`marca.eq.${marca},marca.is.null,marca.eq.`)
+    .or(marcaOrFilter)
     .in('status', ['justified', 'approved']);
   if (justData) {
     const justMap = new Map<string, typeof justData[0]>();
