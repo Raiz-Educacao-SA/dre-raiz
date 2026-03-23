@@ -89,24 +89,27 @@ Regras:
 function buildUserPromptVariance(data: VariancePptData): string {
   const context = buildVarianceContext(data);
 
-  // Build exact keys expected in sections
-  const sectionKeys = data.sections.map(s => `"${s.tag0}"`).join(', ');
+  // Build expected JSON structure dynamically — one entry per section
+  const sectionsExample = data.sections
+    .map(s => `    "${s.tag0}": {\n      "insight": "2-3 frases sobre esta seção",\n      "key_drivers": ["driver principal 1", "driver principal 2"],\n      "risk_flag": null\n    }`)
+    .join(',\n');
 
-  return `Analise os dados abaixo e retorne um JSON com a seguinte estrutura:
+  return `Analise os dados abaixo e retorne um JSON com a seguinte estrutura EXATA (uma entrada por seção):
 
 {
   "executive_summary": "1-2 frases resumindo o resultado geral do mês",
   "sections": {
-    ${sectionKeys.replace(/"/g, '"')}: {
-      "insight": "2-3 frases sobre esta seção",
-      "key_drivers": ["driver 1", "driver 2"],
-      "risk_flag": null ou "frase curta sobre risco"
-    }
+${sectionsExample}
   },
   "closing_summary": "1-2 frases de conclusão e próximos passos"
 }
 
-Use EXATAMENTE estas chaves em sections: ${sectionKeys}
+REGRAS:
+- Mantenha EXATAMENTE as chaves mostradas acima em "sections" (sem alterar nomes)
+- insight: 2-3 frases sobre a seção
+- key_drivers: máximo 3 itens curtos (ex: "Receita editorial +12% vs orçado")
+- risk_flag: null se sem risco relevante, senão 1 frase curta
+- Responda APENAS com JSON válido, sem markdown
 
 DADOS:
 ${context}`;
