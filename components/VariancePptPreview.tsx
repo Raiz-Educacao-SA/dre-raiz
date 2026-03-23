@@ -87,10 +87,12 @@ function truncate(text: string, max: number): string {
 
 // ─── Slide Base Card ─────────────────────────────────────────────────
 
+// SlideCard: em preview usa aspectRatio 16:9 para definir altura.
+// Em apresentação, o pai tem 960×540 fixo → h-full=540px (aspectRatio confirma o mesmo valor).
 function SlideCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
     <section
-      className={`relative bg-white rounded-2xl border border-gray-200/80 overflow-hidden w-full ${className}`}
+      className={`relative bg-white rounded-2xl border border-gray-200/80 overflow-hidden w-full h-full ${className}`}
       style={{ aspectRatio: '16 / 9', boxShadow: '0 4px 24px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)' }}
     >
       {children}
@@ -2055,6 +2057,13 @@ function Tag01DetailSlideComplement({
 // PRESENTATION MODE — Fullscreen slide-by-slide
 // ═══════════════════════════════════════════════════════════════════════
 
+// Tamanho de design fixo: os slides são desenhados para 960×540.
+// Na apresentação, aplicamos transform:scale para preencher a tela
+// sem distorcer nada — fontes, espaçamentos e gráficos escalam juntos.
+const DESIGN_W = 960;
+const DESIGN_H = 540;
+const NAV_H    = 44;
+
 function PresentationMode({
   slides,
   currentSlide,
@@ -2070,22 +2079,45 @@ function PresentationMode({
   onNext: () => void;
   onExit: () => void;
 }) {
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const compute = () => {
+      const availW = window.innerWidth;
+      const availH = window.innerHeight - NAV_H;
+      setScale(Math.min(availW / DESIGN_W, availH / DESIGN_H));
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    return () => window.removeEventListener('resize', compute);
+  }, []);
+
   return (
     <div className="fixed inset-0 z-[9999] bg-black flex flex-col select-none">
-      <div className="flex-1 min-h-0 flex items-center justify-center">
+      {/* Área de exibição do slide */}
+      <div
+        className="flex-1 min-h-0 flex items-center justify-center overflow-hidden"
+        style={{ height: `calc(100vh - ${NAV_H}px)` }}
+      >
+        {/* Container fixo no tamanho de design, escalado para a tela */}
         <div
-          className="w-full h-full"
           style={{
-            maxWidth: 'calc((100vh - 40px) * 16 / 9)',
-            maxHeight: 'calc(100vw * 9 / 16)',
-            aspectRatio: '16 / 9',
+            width:  DESIGN_W,
+            height: DESIGN_H,
+            transform: `scale(${scale})`,
+            transformOrigin: 'center center',
+            flexShrink: 0,
           }}
         >
           {slides[currentSlide]}
         </div>
       </div>
 
-      <div className="h-10 shrink-0 flex items-center justify-between px-4 bg-gray-950 border-t border-gray-800">
+      {/* Barra de navegação */}
+      <div
+        className="shrink-0 flex items-center justify-between px-4 bg-gray-950 border-t border-gray-800"
+        style={{ height: NAV_H }}
+      >
         <button onClick={onExit} className="flex items-center gap-1.5 text-gray-400 hover:text-white text-xs transition-colors">
           <X size={14} />
           ESC
@@ -2114,8 +2146,17 @@ function PresentationMode({
         <div className="w-14" />
       </div>
 
-      <div className="absolute top-0 left-0 w-1/3 cursor-pointer" style={{ height: 'calc(100% - 40px)' }} onClick={onPrev} />
-      <div className="absolute top-0 right-0 w-1/3 cursor-pointer" style={{ height: 'calc(100% - 40px)' }} onClick={onNext} />
+      {/* Zonas de clique para navegar */}
+      <div
+        className="absolute top-0 left-0 w-1/3 cursor-pointer"
+        style={{ height: `calc(100% - ${NAV_H}px)` }}
+        onClick={onPrev}
+      />
+      <div
+        className="absolute top-0 right-0 w-1/3 cursor-pointer"
+        style={{ height: `calc(100% - ${NAV_H}px)` }}
+        onClick={onNext}
+      />
     </div>
   );
 }
