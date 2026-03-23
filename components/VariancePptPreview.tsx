@@ -1850,20 +1850,20 @@ function JustCardItem({ card }: { card: T01JustCard }) {
   );
 }
 
+// SLIDE 1 DE 2: Tabela + Síntese IA
 function Tag01DetailSlide({
-  section, t01, data, displayRows, cards, overflowRowCount, pageNum,
+  section, t01, data, rows, pageNum,
 }: {
   section: VariancePptSection;
   t01: VariancePptNode;
   data: VariancePptData;
-  displayRows: T01Row[];
-  cards: T01JustCard[];
-  overflowRowCount: number;
+  rows: T01Row[];
   pageNum?: number;
 }) {
-  const a1Label = String(data.a1Year);
-  const title   = `${section.label} — ${t01.label}`;
+  const a1Label     = String(data.a1Year);
+  const title       = `${section.label} — ${t01.label}`;
   const insightText = t01.enrichedInsight || t01.orcAiSummary || '';
+  const accentClr   = `#${section.sectionColor}`;
 
   return (
     <SlideCard>
@@ -1873,27 +1873,27 @@ function Tag01DetailSlide({
         monthShort={data.monthShort}
         color={section.sectionColor}
       />
-      <div className="flex flex-col gap-1.5 p-3 pb-7" style={{ height: 'calc(100% - 52px)' }}>
+      <div className="flex flex-col gap-2 px-4 pt-3 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
-        {/* Table — sem scroll, todas as marcas visíveis, ordenadas por real */}
-        <div className="shrink-0">
+        {/* Tabela completa — todas as marcas, sem scroll */}
+        <div className="shrink-0 rounded-lg border border-gray-100 overflow-hidden">
           <table className="w-full border-collapse">
             <thead>
-              <tr style={{ backgroundColor: '#F9FAFB' }}>
-                <th className="text-left px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">DESCRIÇÃO / MARCA</th>
-                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">REAL {data.year}</th>
-                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">ORÇADO</th>
-                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ% Orç</th>
-                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">{a1Label}</th>
-                <th className="text-right px-2 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ% {a1Label}</th>
+              <tr style={{ backgroundColor: '#F3F4F6' }}>
+                <th className="text-left px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">DESCRIÇÃO / MARCA</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">REAL {data.year}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">ORÇADO</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ% Orç</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">{a1Label}</th>
+                <th className="text-right px-2 py-1.5 font-bold text-[9px] text-gray-500 uppercase tracking-wide">Δ% {a1Label}</th>
               </tr>
             </thead>
             <tbody>
-              {displayRows.map((row, idx) => {
+              {rows.map((row, idx) => {
                 const isTotal = row.depth === -1;
                 const isT02   = row.depth === 0;
                 const isMarca = row.depth === 1;
-                const bg      = isTotal ? `#${section.sectionColor}` : isT02 ? '#F9FAFB' : 'white';
+                const bg      = isTotal ? accentClr : isT02 ? '#F9FAFB' : 'white';
                 const textClr = isTotal ? 'white' : hex(C.darkText);
                 const bold    = isTotal || isT02;
                 const indent  = isMarca ? '\u00A0\u00A0↳ ' : '';
@@ -1904,93 +1904,69 @@ function Tag01DetailSlide({
                     <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
                       style={{ color: textClr, fontWeight: bold ? 700 : 400 }}>{fmtK(row.real)}</td>
                     <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
-                      style={{ color: isTotal ? 'rgba(255,255,255,0.8)' : '#6B7280' }}>{fmtK(row.orc)}</td>
+                      style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.orc)}</td>
                     <td className="text-right px-2 py-0.5">
-                      {isTotal ? (
-                        <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.orcPct)}</span>
-                      ) : (
-                        <VarBadge pct={row.orcPct} />
-                      )}
+                      {isTotal
+                        ? <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.orcPct)}</span>
+                        : <VarBadge pct={row.orcPct} />}
                     </td>
                     <td className="text-right px-2 py-0.5 text-[9px] tabular-nums"
-                      style={{ color: isTotal ? 'rgba(255,255,255,0.8)' : '#6B7280' }}>{fmtK(row.a1)}</td>
+                      style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.a1)}</td>
                     <td className="text-right px-2 py-0.5">
-                      {isTotal ? (
-                        <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.a1Pct)}</span>
-                      ) : (
-                        <VarBadge pct={row.a1Pct} />
-                      )}
+                      {isTotal
+                        ? <span className="text-[9px] font-bold" style={{ color: 'white' }}>{fmtPct(row.a1Pct)}</span>
+                        : <VarBadge pct={row.a1Pct} />}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-          {overflowRowCount > 0 && (
-            <div className="text-[8px] italic text-gray-400 px-2 py-0.5">
-              … e mais {overflowRowCount} linha(s) no slide seguinte
-            </div>
-          )}
         </div>
 
-        {/* AI synthesis — compact horizontal strip */}
-        {insightText && (
+        {/* Síntese IA — bloco expandido com mais texto */}
+        {insightText ? (
           <div
-            className="flex items-start gap-2 px-3 py-2 rounded-lg flex-none"
-            style={{ background: `#${C.headerBg}ee` }}
+            className="flex-1 min-h-0 flex flex-col gap-1.5 px-3 py-2.5 rounded-xl"
+            style={{ background: `#${C.headerBg}` }}
           >
-            <div className="flex items-center gap-1 shrink-0 mt-0.5">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: hex(C.accent) }} />
-              <span className="text-[9px] font-bold tracking-widest" style={{ color: hex(C.accent) }}>
-                SÍNTESE IA
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: hex(C.accent) }} />
+              <span className="text-[9px] font-bold tracking-widest uppercase" style={{ color: hex(C.accent) }}>
+                Síntese IA
               </span>
             </div>
-            <p className="text-[10px] leading-tight line-clamp-2" style={{ color: '#D1D5DB' }}>
-              {insightText.slice(0, 250)}
+            <p className="text-[11px] leading-relaxed overflow-hidden" style={{ color: '#E5E7EB' }}>
+              {insightText.slice(0, 600)}
             </p>
           </div>
+        ) : (
+          <div className="flex-1 min-h-0 flex items-center justify-center rounded-xl border border-dashed border-gray-200">
+            <span className="text-[10px] text-gray-400 italic">Síntese IA não disponível</span>
+          </div>
         )}
-
-        {/* Justification cards — 2-column grid */}
-        <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-1">
-          {cards.length > 0 ? (
-            <>
-              <div
-                className="text-[9px] font-bold uppercase tracking-wider shrink-0"
-                style={{ color: `#${section.sectionColor}` }}
-              >
-                JUSTIFICATIVAS
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {cards.map((card, idx) => (
-                  <JustCardItem key={idx} card={card} />
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-center">
-              <span className="text-xs italic text-gray-400">Sem justificativas registradas</span>
-            </div>
-          )}
-        </div>
       </div>
       <SlideFooter page={pageNum} />
     </SlideCard>
   );
 }
 
-function Tag01DetailSlideComplement({
-  section, t01, data, overflowRows, cards, pageNum,
+// SLIDE 2 DE 2: Justificativas
+function Tag01JustificativasSlide({
+  section, t01, data, cards, pageNum,
 }: {
   section: VariancePptSection;
   t01: VariancePptNode;
   data: VariancePptData;
-  overflowRows: T01Row[];
   cards: T01JustCard[];
   pageNum?: number;
 }) {
-  const a1Label = String(data.a1Year);
-  const title   = `${section.label} — ${t01.label} — Complemento`;
+  const title     = `${section.label} — ${t01.label} — Justificativas`;
+  const accentClr = `#${section.sectionColor}`;
+
+  // Determina número de colunas: <= 4 cards → 2 cols, 5-6 → 3 cols, 7+ → 3 cols
+  const cols = cards.length <= 4 ? 2 : 3;
+  const colClass = cols === 2 ? 'grid-cols-2' : 'grid-cols-3';
 
   return (
     <SlideCard>
@@ -2000,55 +1976,24 @@ function Tag01DetailSlideComplement({
         monthShort={data.monthShort}
         color={section.sectionColor}
       />
-      <div className="flex flex-col gap-3 p-4 pb-8 overflow-auto" style={{ height: 'calc(100% - 52px)' }}>
+      <div className="flex flex-col px-4 pt-3 pb-7 gap-2" style={{ height: 'calc(100% - 52px)' }}>
+        {/* Cabeçalho da seção */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-1 h-4 rounded-full" style={{ backgroundColor: accentClr }} />
+          <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: accentClr }}>
+            Justificativas dos Desvios
+          </span>
+          <span className="text-[9px] text-gray-400 font-medium">
+            ({cards.length} {cards.length === 1 ? 'item' : 'itens'})
+          </span>
+        </div>
 
-        {overflowRows.length > 0 && (
-          <div className="overflow-auto flex-none" style={{ maxHeight: '40%' }}>
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr style={{ backgroundColor: '#F9FAFB' }}>
-                  <th className="text-left px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">DESCRIÇÃO / MARCA</th>
-                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">REAL {data.year}</th>
-                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">ORÇADO</th>
-                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ% Orç</th>
-                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">{a1Label}</th>
-                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ% {a1Label}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {overflowRows.map((row, idx) => {
-                  const isT02  = row.depth === 0;
-                  const bg     = isT02 ? '#F9FAFB' : 'white';
-                  const indent = row.depth === 1 ? '\u00A0\u00A0\u00A0↳ ' : '';
-                  return (
-                    <tr key={idx} className="border-b border-gray-50" style={{ backgroundColor: bg }}>
-                      <td className="px-2 py-1.5 text-[11px] truncate" title={row.label}
-                        style={{ color: hex(C.darkText), fontWeight: isT02 ? 700 : 400 }}>{indent}{row.label}</td>
-                      <td className="text-right px-2 py-1.5 text-[11px] tabular-nums" style={{ color: hex(C.darkText) }}>{fmtK(row.real)}</td>
-                      <td className="text-right px-2 py-1.5 text-[11px] tabular-nums text-gray-500">{fmtK(row.orc)}</td>
-                      <td className="text-right px-2 py-1.5"><VarBadge pct={row.orcPct} /></td>
-                      <td className="text-right px-2 py-1.5 text-[11px] tabular-nums text-gray-500">{fmtK(row.a1)}</td>
-                      <td className="text-right px-2 py-1.5"><VarBadge pct={row.a1Pct} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {cards.length > 0 && (
-          <>
-            <div className="text-xs font-bold shrink-0" style={{ color: `#${section.sectionColor}` }}>
-              JUSTIFICATIVAS (CONTINUAÇÃO)
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {cards.map((card, idx) => (
-                <JustCardItem key={idx} card={card} />
-              ))}
-            </div>
-          </>
-        )}
+        {/* Grid de cards */}
+        <div className={`flex-1 min-h-0 grid ${colClass} gap-2 content-start`}>
+          {cards.map((card, idx) => (
+            <JustCardItem key={idx} card={card} />
+          ))}
+        </div>
       </div>
       <SlideFooter page={pageNum} />
     </SlideCard>
@@ -2254,16 +2199,12 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
         });
         pageCounter++;
 
-        // All sections: one Tag01DetailSlide per tag01 (table + AI + justification cards)
+        // Slide 1: Tabela + Síntese IA / Slide 2: Justificativas (se existirem)
         for (const t01 of section.tag01Nodes) {
           const allRows  = buildT01Rows(t01);
           const allCards = buildT01JustCards(t01);
-          const s1Rows   = allRows.slice(0, 14);
-          const s2Rows   = allRows.slice(14);
-          const cards1   = allCards.slice(0, 8);
-          const cards2   = allCards.slice(8);
-          const needsComplement = s2Rows.length > 0 || cards2.length > 0;
 
+          // Slide 1 — tabela completa + IA
           entries.push({
             key: `tag01detail-${section.tag0}-${t01.label}`,
             label: `${section.label} — ${t01.label}`,
@@ -2273,27 +2214,25 @@ export default function VariancePptPreview({ data }: VariancePptPreviewProps) {
                 section={section}
                 t01={t01}
                 data={data}
-                displayRows={s1Rows}
-                cards={cards1}
-                overflowRowCount={s2Rows.length}
+                rows={allRows}
                 pageNum={pageCounter}
               />
             ),
           });
           pageCounter++;
 
-          if (needsComplement) {
+          // Slide 2 — justificativas (só se existirem cards)
+          if (allCards.length > 0) {
             entries.push({
-              key: `tag01detail-${section.tag0}-${t01.label}-complement`,
-              label: `${section.label} — ${t01.label} Cont.`,
+              key: `tag01just-${section.tag0}-${t01.label}`,
+              label: `${section.label} — ${t01.label} — Justificativas`,
               node: (
-                <Tag01DetailSlideComplement
-                  key={`tag01detail-${section.tag0}-${t01.label}-complement`}
+                <Tag01JustificativasSlide
+                  key={`tag01just-${section.tag0}-${t01.label}`}
                   section={section}
                   t01={t01}
                   data={data}
-                  overflowRows={s2Rows}
-                  cards={cards2}
+                  cards={allCards}
                   pageNum={pageCounter}
                 />
               ),
