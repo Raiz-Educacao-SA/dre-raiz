@@ -4187,13 +4187,15 @@ export const generateVarianceItems = async (
 export const submitJustification = async (
   id: number,
   justification: string,
-  actionPlan?: string
+  actionPlan?: string,
+  ownerEmail?: string,
 ): Promise<{ ok: boolean; error?: string }> => {
   const updates: any = {
     justification,
     action_plan: actionPlan || null,
     status: 'justified',
     justified_at: new Date().toISOString(),
+    ...(ownerEmail ? { owner_email: ownerEmail } : {}),
   };
   const { data, error } = await supabase
     .from('variance_justifications')

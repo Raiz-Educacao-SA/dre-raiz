@@ -127,6 +127,7 @@ const VarianceJustificationsView: React.FC = () => {
   const [justifyItem, setJustifyItem] = useState<VarianceJustification | null>(null);
   const [justifyText, setJustifyText] = useState('');
   const [justifyPlan, setJustifyPlan] = useState('');
+  const [justifyReadOnly, setJustifyReadOnly] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [aiLoading, setAiLoading] = useState<'analyze' | 'improve' | 'plan-generate' | 'plan-improve' | null>(null);
@@ -1339,6 +1340,7 @@ const VarianceJustificationsView: React.FC = () => {
                     setJustifyItem(dbItem);
                     setJustifyText(dbItem.justification || '');
                     setJustifyPlan(dbItem.action_plan || '');
+                    setJustifyReadOnly(false);
                   }}
                   className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-purple-100 text-purple-700 hover:bg-purple-200 whitespace-nowrap"
                 >
@@ -1361,6 +1363,7 @@ const VarianceJustificationsView: React.FC = () => {
                     setJustifyItem(dbItem);
                     setJustifyText(dbItem.justification || '');
                     setJustifyPlan(dbItem.action_plan || '');
+                    setJustifyReadOnly(false);
                   }}
                   className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-amber-100 text-amber-700 hover:bg-amber-200 whitespace-nowrap"
                 >
@@ -1392,12 +1395,13 @@ const VarianceJustificationsView: React.FC = () => {
                   </button>
                 </>
               )}
-              {dbItem?.justification && !canJustify && (
+              {dbItem?.justification && !canJustify && !canEditJustified && (
                 <button
                   onClick={() => {
                     setJustifyItem(dbItem);
                     setJustifyText(dbItem.justification || '');
                     setJustifyPlan(dbItem.action_plan || '');
+                    setJustifyReadOnly(true);
                   }}
                   className="p-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200"
                   title="Ver justificativa"
@@ -2001,19 +2005,15 @@ const VarianceJustificationsView: React.FC = () => {
                 }}
                 userName={user?.display_name || user?.email || ''}
                 userEmail={user?.email || ''}
-                readOnly={
-                  // Aprovado: só admin pode editar
-                  (justifyItem.status === 'approved' && !isAdmin) ||
-                  // Justified por outro usuário: só leitura (exceto admin)
-                  (justifyItem.status === 'justified' && justifyItem.owner_email !== user?.email && !isAdmin)
-                }
+                readOnly={justifyReadOnly}
                 onSave={async (data) => {
                   // 1. Save justification to variance_justifications
                   if (data.justification && data.justification.trim().length >= 20) {
                     const result = await submitJustification(
                       justifyItem.id,
                       data.justification.trim(),
-                      data.actionPlan ? `${data.actionPlan.what} | ${data.actionPlan.why} | ${data.actionPlan.how}` : undefined
+                      data.actionPlan ? `${data.actionPlan.what} | ${data.actionPlan.why} | ${data.actionPlan.how}` : undefined,
+                      user?.email || undefined,
                     );
                     if (!result.ok) {
                       toast.error(result.error || 'Erro ao enviar justificativa');
@@ -2067,7 +2067,7 @@ const VarianceJustificationsView: React.FC = () => {
                   setJustifyPlan('');
                   fetchData();
                 }}
-                onClose={() => { setJustifyItem(null); setJustifyText(''); setJustifyPlan(''); }}
+                onClose={() => { setJustifyItem(null); setJustifyText(''); setJustifyPlan(''); setJustifyReadOnly(false); }}
               />
             </div>
           </div>
