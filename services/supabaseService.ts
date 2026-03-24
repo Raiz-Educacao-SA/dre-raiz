@@ -3228,7 +3228,7 @@ export async function fetchLiveDreForPpt(
   const marcaField = marcas.length === 1 ? marcas[0] : null;
 
   // 1. get_soma_tags → tag0+tag01 (Real, Orçado, A-1)
-  const { data: somaData, error: somaError } = await supabase.rpc('get_soma_tags', {
+  const rpcParams = {
     p_month_from: monthFrom ?? yearMonth,
     p_month_to: yearMonth,
     p_marcas: marcas,
@@ -3237,7 +3237,12 @@ export async function fetchLiveDreForPpt(
     p_tags01: tag01s && tag01s.length > 0 ? tag01s : null,
     p_recurring: 'Sim',
     p_tags03: null,
-  });
+  };
+  console.log('[fetchLiveDreForPpt] RPC params:', rpcParams);
+  const { data: somaData, error: somaError } = await supabase.rpc('get_soma_tags', rpcParams);
+  const uniqueMonths = somaData ? [...new Set((somaData as any[]).map((r: any) => r.month))].sort() : [];
+  console.log('[fetchLiveDreForPpt] somaData rows:', somaData?.length, '| months:', uniqueMonths);
+  if (somaError) console.error('[fetchLiveDreForPpt] RPC error:', somaError);
   if (somaError || !somaData?.length) return [];
 
   // 2. get_variance_snapshot → tag02 detail
