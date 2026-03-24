@@ -3895,27 +3895,22 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalFilters.month, globalFilters.monthFrom]);
 
-  // ── Unified filter effect (panel Apply → single fetch for all filters) ────────
-  useEffect(() => {
-    if (!onReloadWithFilters || !globalFilters.month) return;
-    // Skip initial state identical to parent data
-    const sameMonth = globalFilters.month === (data.yearMonth ?? '');
-    const sameFrom = (globalFilters.monthFrom ?? '') === (data.monthFrom ?? '');
-    const sameMarcas = JSON.stringify([...globalFilters.marcas].sort()) === JSON.stringify([...(restrictedMarcas ?? [])].sort());
-    const noTag01s = globalFilters.tag01s.length === 0;
-    if (sameMonth && sameFrom && sameMarcas && noTag01s) return;
+  // applyFilters: chamado diretamente pelo painel (sem useEffect intermediário)
+  const applyFilters = useCallback(async (f: GlobalSlideFilters) => {
+    if (!onReloadWithFilters || !f.month) return;
+    setGlobalFilters(f);
     setGlobalLoading(true);
-    onReloadWithFilters({
-      month: globalFilters.month,
-      monthFrom: globalFilters.monthFrom,
-      marcas: globalFilters.marcas,
-      tag01s: globalFilters.tag01s,
-    })
-      .then(d => setBaseData(d))
-      .catch(console.error)
-      .finally(() => setGlobalLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globalFilters]);
+    console.log('[PPT] applyFilters →', f);
+    try {
+      const d = await onReloadWithFilters({ month: f.month, monthFrom: f.monthFrom, marcas: f.marcas, tag01s: f.tag01s });
+      console.log('[PPT] applyFilters ← yearMonth:', d.yearMonth, 'monthFrom:', d.monthFrom, 'sections:', d.sections.length);
+      setBaseData(d);
+    } catch (e) {
+      console.error('[PPT] applyFilters error:', e);
+    } finally {
+      setGlobalLoading(false);
+    }
+  }, [onReloadWithFilters]);
 
   // Apply marca filter in-memory on top of baseData
   const localData = useMemo(
@@ -4391,7 +4386,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
           availableMarcas={allAvailableMarcas}
           availableTag01s={availableTag01s}
           loading={globalLoading}
-          onApply={f => { setGlobalFilters(f); setShowFilterPanel(false); }}
+          onApply={f => { applyFilters(f); setShowFilterPanel(false); }}
           onClose={() => setShowFilterPanel(false)}
         />
       )}
@@ -4433,7 +4428,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
                   availableMarcas={allAvailableMarcas}
                   availableTag01s={availableTag01s}
                   loading={globalLoading}
-                  onApply={f => { setGlobalFilters(f); setShowFilterPanel(false); }}
+                  onApply={f => { applyFilters(f); setShowFilterPanel(false); }}
                   onClose={() => setShowFilterPanel(false)}
                 />
               ) : undefined}

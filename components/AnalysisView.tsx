@@ -298,22 +298,30 @@ export default function AnalysisView() {
   const handleReloadWithFilters = useCallback(async (params: SlideReloadParams): Promise<VariancePptData> => {
     const { month, monthFrom, marcas, tag01s } = params;
 
-    // Determinar marcas efetivas: seleção do painel > permissões > null (all)
-    const fetchMarcas = marcas.length > 0 ? marcas : permittedMarcas.length > 0 ? permittedMarcas : null;
+    console.log('[AnalysisView] handleReloadWithFilters', { month, monthFrom, marcas, tag01s, permittedMarcas: permittedMarcas.length });
 
-    const rzInSelection = marcas.length === 0 || marcas.map(m => m.toUpperCase()).includes('RZ');
-    const rzMarcasForFetch = rzInSelection ? null : ['RZ'];
+    // Marcas para o fetch: seleção explícita > todas permitidas
+    // Se não há marcas permitidas carregadas ainda, usa all (p_marcas = null)
+    const fetchMarcas = marcas.length > 0
+      ? marcas
+      : permittedMarcas.length > 0
+        ? permittedMarcas
+        : null;  // null = busca todas no SQL
 
+    // RZ: busca separada apenas se RZ não está na seleção explícita
+    const rzNotInSelection = marcas.length > 0 && !marcas.map(m => m.toUpperCase()).includes('RZ');
     const tag01sParam = tag01s.length > 0 ? tag01s : null;
 
     const [rawItems, rzRawItems] = await Promise.all([
       fetchMarcas
         ? fetchLiveDreForPpt(month, fetchMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, monthFrom, tag01sParam)
-        : fetchLiveDreForPpt(month, permittedMarcas.length > 0 ? permittedMarcas : ['_none_'], null, monthFrom, tag01sParam),
-      rzMarcasForFetch
+        : getVarianceJustifications({ year_month: month }), // fallback para snapshot se sem marcas
+      rzNotInSelection
         ? fetchLiveDreForPpt(month, ['RZ'], null, monthFrom).catch(() => [] as any[])
         : Promise.resolve([] as any[]),
     ]);
+
+    console.log('[AnalysisView] handleReloadWithFilters ← rawItems:', rawItems.length);
 
     const filtered = filterByTag01(rawItems);
     const { prepareVariancePptData } = await import('../services/variancePptDataService');
