@@ -314,12 +314,18 @@ export default function AnalysisView() {
     const { month, monthFrom, marcas, tag01s } = params;
     const isRange = !!monthFrom && monthFrom !== month;
 
-    // Marcas para filtrar: seleção explícita > todas permitidas > sem restrição
+    // Hierarquia de marcas:
+    //   1. Seleção explícita no painel de slides
+    //   2. Filtro de marca ativo no DRE principal (effectiveMarcas) — mantém consistência com o PPT gerado
+    //   3. Todas as marcas permitidas do usuário (permittedMarcas)
+    //   4. Sem restrição (admin sem filtro)
     const filterMarcas = marcas.length > 0
       ? marcas
-      : permittedMarcas.length > 0
-        ? permittedMarcas
-        : undefined;
+      : effectiveMarcas.length > 0
+        ? effectiveMarcas
+        : permittedMarcas.length > 0
+          ? permittedMarcas
+          : undefined;
 
     // RZ: busca separada apenas se RZ não está na seleção explícita
     const rzNotInSelection = marcas.length > 0 && !marcas.map(m => m.toUpperCase()).includes('RZ');
@@ -354,7 +360,7 @@ export default function AnalysisView() {
     const newData = prepareVariancePptData(
       filtered,
       month,
-      marcas.length > 0 ? marcas.join(', ') : null,
+      filterMarcas ? filterMarcas.join(', ') : null,
       rzRawItems.length > 0 ? rzRawItems : undefined,
       isRange,
     );
@@ -364,14 +370,14 @@ export default function AnalysisView() {
       const breakdown = await fetchMarcaBreakdown(
         month,
         permittedMarcas,
-        marcas.length > 0 ? marcas : null,
+        filterMarcas ?? null,
         effectiveTag01.length > 0 ? effectiveTag01 : null,
       );
       if (breakdown) newData.marcaBreakdowns = breakdown;
     } catch {}
 
     return newData;
-  }, [effectiveFiliais, filterByTag01, permittedMarcas, effectiveTag01]);
+  }, [effectiveFiliais, effectiveMarcas, filterByTag01, permittedMarcas, effectiveTag01]);
 
   // Helper: buscar snapshot do variance_justifications e montar contexto
   const fetchSnapshotContext = async () => {
