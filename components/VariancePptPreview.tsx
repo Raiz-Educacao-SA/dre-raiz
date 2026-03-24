@@ -3519,6 +3519,9 @@ export interface VariancePptPreviewProps {
   onReloadWithMarcas?: (marcas: string[]) => Promise<VariancePptData>;
   onReloadWithPeriod?: (month: string, isYtd: boolean) => Promise<VariancePptData>;
   availableMonths?: string[];
+  /** Quando fornecido, o componente restringe a visualização às marcas da lista.
+   *  Usado para usuários com acesso limitado a marcas específicas. */
+  restrictedMarcas?: string[];
 }
 
 // ─── Slide wrapper with hide toggle ──────────────────────────────────
@@ -3565,13 +3568,14 @@ function HideableSlide({
   );
 }
 
-export default function VariancePptPreview({ data, onReloadWithPeriod, availableMonths = [] }: VariancePptPreviewProps) {
+export default function VariancePptPreview({ data, onReloadWithPeriod, availableMonths = [], restrictedMarcas }: VariancePptPreviewProps) {
   const [presenting, setPresenting] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [hiddenSlides, setHiddenSlides] = useState<Set<string>>(new Set());
 
   // ── In-memory marca filter (instant — no DB round-trip) ───────────
-  const [activeMarcas, setActiveMarcas] = useState<string[]>([]);
+  // Se restrictedMarcas fornecido, inicializa com as marcas permitidas
+  const [activeMarcas, setActiveMarcas] = useState<string[]>(restrictedMarcas ?? []);
 
   // ── Base data: updated when period changes (DB re-fetch) or parent passes new data ──
   const [baseData, setBaseData] = useState<VariancePptData>(data);
@@ -3584,9 +3588,9 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
   // Reset when parent loads a new snapshot
   useEffect(() => {
     setBaseData(data);
-    setActiveMarcas([]);
+    setActiveMarcas(restrictedMarcas ?? []);
     setActivePeriod({ month: data.yearMonth ?? '', isYtd: data.isYtd ?? false });
-  }, [data]);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Period change → re-fetch from DB
   useEffect(() => {
@@ -3597,7 +3601,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
     if (sameMonth && sameYtd) return;
     setPeriodLoading(true);
     onReloadWithPeriod(activePeriod.month, activePeriod.isYtd)
-      .then(d => { setBaseData(d); setActiveMarcas([]); })
+      .then(d => { setBaseData(d); setActiveMarcas(restrictedMarcas ?? []); })
       .catch(console.error)
       .finally(() => setPeriodLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3610,10 +3614,14 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
   );
 
   // All available marcas from the ORIGINAL baseData (never shrink the option list)
-  const allAvailableMarcas = useMemo(
-    () => [...new Set(Object.values(baseData.marcaBreakdowns ?? {}).flat().map(e => e.marca))].sort(),
-    [baseData],
-  );
+  // Se restrictedMarcas fornecido, limita às marcas permitidas do usuário
+  const allAvailableMarcas = useMemo(() => {
+    const all = [...new Set(Object.values(baseData.marcaBreakdowns ?? {}).flat().map(e => e.marca))].sort();
+    if (restrictedMarcas && restrictedMarcas.length > 0) {
+      return all.filter(m => restrictedMarcas.includes(m));
+    }
+    return all;
+  }, [baseData, restrictedMarcas]);
 
   const marcaCtxValue = useMemo(
     () => ({ activeMarcas, setActiveMarcas, loading: false }),

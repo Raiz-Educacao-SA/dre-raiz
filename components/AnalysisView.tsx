@@ -860,6 +860,7 @@ export default function AnalysisView() {
                     onReloadWithMarcas={handleReloadWithMarcas}
                     onReloadWithPeriod={handleReloadWithPeriod}
                     availableMonths={availableMonths}
+                    restrictedMarcas={hasPermissions && allowedMarcas.length > 0 ? allowedMarcas : undefined}
                   />
 
                   <div className="flex justify-center gap-3">
