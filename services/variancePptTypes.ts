@@ -82,6 +82,14 @@ export interface RzDreRow {
   a1Pct: number | null;
 }
 
+/** Parâmetros unificados para re-fetch dos slides */
+export interface SlideReloadParams {
+  month: string;         // 'YYYY-MM' — mês de referência (fim do range)
+  monthFrom?: string;    // 'YYYY-MM' — início do range (multi-mês)
+  marcas: string[];      // marcas selecionadas (vazio = todas permitidas)
+  tag01s: string[];      // linhas DRE selecionadas (vazio = todas)
+}
+
 export interface VariancePptData {
   yearMonth: string;           // 'YYYY-MM' — the reference month
   isYtd?: boolean;             // true when showing Jan→month cumulative

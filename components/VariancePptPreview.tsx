@@ -4,13 +4,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { Play, X, ChevronLeft, ChevronRight, Eye, EyeOff, Filter } from 'lucide-react';
+import { Play, X, ChevronLeft, ChevronRight, Eye, EyeOff, Filter, SlidersHorizontal, Check } from 'lucide-react';
 import type {
   VariancePptData,
   VariancePptSection,
   VariancePptNode,
   VariancePptCalcRow,
   VariancePptMarcaEntry,
+  SlideReloadParams,
 } from '../services/variancePptTypes';
 import { VARIANCE_COLORS } from '../services/variancePptTypes';
 import {
@@ -127,6 +128,195 @@ function SlideCard({ children, className = '' }: { children: React.ReactNode; cl
     >
       {children}
     </section>
+  );
+}
+
+// ─── Global slide filters type ───────────────────────────────────────
+type GlobalSlideFilters = {
+  month: string;
+  monthFrom?: string;
+  marcas: string[];   // vazio = todas as marcas permitidas
+  tag01s: string[];   // vazio = todas as linhas
+};
+
+// ─── Slide Filters Panel ─────────────────────────────────────────────
+function SlideFiltersPanel({
+  current,
+  liveMonths,
+  availableMarcas,
+  availableTag01s,
+  loading,
+  onApply,
+  onClose,
+}: {
+  current: GlobalSlideFilters;
+  liveMonths: string[];
+  availableMarcas: string[];
+  availableTag01s: string[];
+  loading: boolean;
+  onApply: (f: GlobalSlideFilters) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = React.useState<GlobalSlideFilters>(() => ({ ...current }));
+
+  React.useEffect(() => { setDraft({ ...current }); }, [current]);
+
+  const toggleMonth = (m: string) => {
+    setDraft(prev => {
+      const inRange = prev.monthFrom
+        ? liveMonths.filter(x => x >= prev.monthFrom! && x <= prev.month)
+        : [prev.month];
+      const checked = inRange.includes(m);
+      const next = checked ? inRange.filter(x => x !== m) : [...inRange, m];
+      const sorted = [...next].sort();
+      if (sorted.length === 0) return prev;
+      return { ...prev, month: sorted[sorted.length - 1], monthFrom: sorted.length > 1 ? sorted[0] : undefined };
+    });
+  };
+
+  const isMonthChecked = (m: string) => {
+    if (!draft.monthFrom) return draft.month === m;
+    return m >= draft.monthFrom && m <= draft.month;
+  };
+
+  const toggleMarca = (m: string) =>
+    setDraft(prev => ({ ...prev, marcas: prev.marcas.includes(m) ? prev.marcas.filter(x => x !== m) : [...prev.marcas, m] }));
+
+  const toggleTag01 = (t: string) =>
+    setDraft(prev => ({ ...prev, tag01s: prev.tag01s.includes(t) ? prev.tag01s.filter(x => x !== t) : [...prev.tag01s, t] }));
+
+  const activeCount = (draft.monthFrom ? 1 : 0) + (draft.marcas.length > 0 ? 1 : 0) + (draft.tag01s.length > 0 ? 1 : 0);
+
+  const CB = 'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 cursor-pointer';
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.65)' }} onClick={onClose}>
+      <div
+        className="relative rounded-2xl shadow-2xl overflow-hidden"
+        style={{ background: '#111827', border: '1px solid #374151', width: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: '#374151' }}>
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal size={15} style={{ color: '#60A5FA' }} />
+            <span className="text-sm font-bold text-white">Filtros dos Slides</span>
+            {activeCount > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: '#2563EB', color: 'white' }}>
+                {activeCount} ativo{activeCount > 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-white/10 transition-colors">
+            <X size={14} style={{ color: '#9CA3AF' }} />
+          </button>
+        </div>
+
+        {/* Body — 3 columns */}
+        <div className="flex overflow-hidden flex-1 min-h-0">
+          {/* Período */}
+          <div className="flex-1 flex flex-col border-r overflow-hidden" style={{ borderColor: '#374151' }}>
+            <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase" style={{ color: '#6B7280', borderBottom: '1px solid #1F2937' }}>
+              Período
+            </div>
+            <div className="overflow-y-auto flex-1 py-1.5">
+              {liveMonths.map(m => {
+                const checked = isMonthChecked(m);
+                return (
+                  <label key={m} className="flex items-center gap-2.5 px-4 py-1.5 cursor-pointer select-none" style={{ color: checked ? 'white' : '#9CA3AF' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#1F2937')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <span className={CB} style={{ borderColor: checked ? '#2563EB' : '#4B5563', background: checked ? '#2563EB' : 'transparent' }}>
+                      {checked && <Check size={8} color="white" strokeWidth={3} />}
+                    </span>
+                    <input type="checkbox" checked={checked} onChange={() => toggleMonth(m)} className="sr-only" />
+                    <span className="text-xs font-bold">{monthShortFromYearMonth(m)}</span>
+                  </label>
+                );
+              })}
+              {liveMonths.length === 0 && <div className="px-4 py-2 text-xs" style={{ color: '#6B7280' }}>Nenhum mês</div>}
+            </div>
+          </div>
+
+          {/* Marca */}
+          <div className="flex-1 flex flex-col border-r overflow-hidden" style={{ borderColor: '#374151' }}>
+            <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase flex items-center justify-between" style={{ color: '#6B7280', borderBottom: '1px solid #1F2937' }}>
+              <span>Marca</span>
+              {draft.marcas.length > 0 && (
+                <button className="text-[9px] font-bold" style={{ color: '#3B82F6' }} onClick={() => setDraft(p => ({ ...p, marcas: [] }))}>Limpar</button>
+              )}
+            </div>
+            <div className="overflow-y-auto flex-1 py-1.5">
+              {availableMarcas.map(m => {
+                const checked = draft.marcas.includes(m);
+                return (
+                  <label key={m} className="flex items-center gap-2.5 px-4 py-1.5 cursor-pointer select-none" style={{ color: checked ? 'white' : '#9CA3AF' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#1F2937')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <span className={CB} style={{ borderColor: checked ? '#2563EB' : '#4B5563', background: checked ? '#2563EB' : 'transparent' }}>
+                      {checked && <Check size={8} color="white" strokeWidth={3} />}
+                    </span>
+                    <input type="checkbox" checked={checked} onChange={() => toggleMarca(m)} className="sr-only" />
+                    <span className="text-xs font-bold">{m}</span>
+                  </label>
+                );
+              })}
+              {availableMarcas.length === 0 && <div className="px-4 py-2 text-xs" style={{ color: '#6B7280' }}>Sem marcas</div>}
+            </div>
+          </div>
+
+          {/* Linhas DRE */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase flex items-center justify-between" style={{ color: '#6B7280', borderBottom: '1px solid #1F2937' }}>
+              <span>Linhas DRE</span>
+              {draft.tag01s.length > 0 && (
+                <button className="text-[9px] font-bold" style={{ color: '#3B82F6' }} onClick={() => setDraft(p => ({ ...p, tag01s: [] }))}>Limpar</button>
+              )}
+            </div>
+            <div className="overflow-y-auto flex-1 py-1.5">
+              {availableTag01s.map(t => {
+                const checked = draft.tag01s.includes(t);
+                return (
+                  <label key={t} className="flex items-center gap-2.5 px-4 py-1.5 cursor-pointer select-none" style={{ color: checked ? 'white' : '#9CA3AF' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#1F2937')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                    <span className={CB} style={{ borderColor: checked ? '#2563EB' : '#4B5563', background: checked ? '#2563EB' : 'transparent' }}>
+                      {checked && <Check size={8} color="white" strokeWidth={3} />}
+                    </span>
+                    <input type="checkbox" checked={checked} onChange={() => toggleTag01(t)} className="sr-only" />
+                    <span className="text-[11px] font-medium leading-snug">{t}</span>
+                  </label>
+                );
+              })}
+              {availableTag01s.length === 0 && <div className="px-4 py-2 text-xs" style={{ color: '#6B7280' }}>Sem linhas</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-5 py-3 border-t" style={{ borderColor: '#374151' }}>
+          <button
+            className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+            style={{ color: '#9CA3AF', background: '#1F2937' }}
+            onClick={() => setDraft({ month: current.month, monthFrom: undefined, marcas: [], tag01s: [] })}
+          >
+            Limpar todos
+          </button>
+          <div className="flex items-center gap-2">
+            <button className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors" style={{ color: '#9CA3AF' }} onClick={onClose}>
+              Cancelar
+            </button>
+            <button
+              className="flex items-center gap-1.5 text-xs font-bold px-4 py-1.5 rounded-lg transition-colors"
+              style={{ background: loading ? '#1D4ED8' : '#2563EB', color: 'white', opacity: loading ? 0.7 : 1, cursor: loading ? 'wait' : 'pointer' }}
+              onClick={() => !loading && onApply(draft)}
+            >
+              {loading ? <><span className="animate-spin inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full" /> Carregando…</> : <><Check size={13} /> Aplicar filtros</>}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3230,6 +3420,9 @@ function PresentationMode({
   onPrev,
   onNext,
   onExit,
+  filterPanel,
+  onOpenFilters,
+  filterActiveCount,
 }: {
   slides: React.ReactNode[];
   currentSlide: number;
@@ -3237,6 +3430,9 @@ function PresentationMode({
   onPrev: () => void;
   onNext: () => void;
   onExit: () => void;
+  filterPanel?: React.ReactNode;
+  onOpenFilters?: () => void;
+  filterActiveCount?: number;
 }) {
   const [scale, setScale] = useState(1);
 
@@ -3304,8 +3500,28 @@ function PresentationMode({
           </button>
         </div>
 
-        <div className="w-14" />
+        {onOpenFilters ? (
+          <button
+            onClick={onOpenFilters}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors relative"
+            style={filterActiveCount && filterActiveCount > 0
+              ? { background: '#1D4ED8', color: 'white' }
+              : { color: '#9CA3AF', background: '#1F2937' }}
+          >
+            <SlidersHorizontal size={13} />
+            Filtros
+            {filterActiveCount && filterActiveCount > 0 ? (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center" style={{ background: '#EF4444', color: 'white' }}>
+                {filterActiveCount}
+              </span>
+            ) : null}
+          </button>
+        ) : <div className="w-14" />}
       </div>
+
+      {/* Filter panel overlay (rendered inside fullscreen container) */}
+      {filterPanel}
+
 
       {/* Zonas de clique nas bordas pretas (fora do slide) para navegar */}
       <div
@@ -3568,9 +3784,10 @@ export interface VariancePptPreviewProps {
   data: VariancePptData;
   onReloadWithMarcas?: (marcas: string[]) => Promise<VariancePptData>;
   onReloadWithPeriod?: (month: string, isYtd: boolean, monthFrom?: string) => Promise<VariancePptData>;
+  /** Callback unificado: substitui onReloadWithPeriod + onReloadWithMarcas para o painel de filtros */
+  onReloadWithFilters?: (params: SlideReloadParams) => Promise<VariancePptData>;
   availableMonths?: string[];
-  /** Quando fornecido, o componente restringe a visualização às marcas da lista.
-   *  Usado para usuários com acesso limitado a marcas específicas. */
+  /** Quando fornecido, o componente restringe a visualização às marcas da lista. */
   restrictedMarcas?: string[];
 }
 
@@ -3618,45 +3835,87 @@ function HideableSlide({
   );
 }
 
-export default function VariancePptPreview({ data, onReloadWithPeriod, availableMonths = [], restrictedMarcas }: VariancePptPreviewProps) {
+export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadWithFilters, availableMonths = [], restrictedMarcas }: VariancePptPreviewProps) {
   const [presenting, setPresenting] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [hiddenSlides, setHiddenSlides] = useState<Set<string>>(new Set());
 
-  // ── In-memory marca filter (instant — no DB round-trip) ───────────
-  // Se restrictedMarcas fornecido, inicializa com as marcas permitidas
-  const [activeMarcas, setActiveMarcas] = useState<string[]>(restrictedMarcas ?? []);
-
-  // ── Base data: updated when period changes (DB re-fetch) or parent passes new data ──
-  const [baseData, setBaseData] = useState<VariancePptData>(data);
-  const [activePeriod, setActivePeriod] = useState<ActivePeriod>({
+  // ── Unified global filters (drives both period picker and filter panel) ──────────
+  const [globalFilters, setGlobalFilters] = useState<GlobalSlideFilters>({
     month: data.yearMonth ?? '',
-    isYtd: data.isYtd ?? false,
+    monthFrom: data.monthFrom,
+    marcas: restrictedMarcas ?? [],
+    tag01s: [],
   });
-  const [periodLoading, setPeriodLoading] = useState(false);
+  const [globalLoading, setGlobalLoading] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
+
+  // Derived values — keep existing code in contexts working
+  const activeMarcas = globalFilters.marcas;
+  const setActiveMarcas = useCallback((marcas: string[]) => {
+    setGlobalFilters(prev => ({ ...prev, marcas }));
+  }, []);
+  const activePeriod: ActivePeriod = {
+    month: globalFilters.month,
+    monthFrom: globalFilters.monthFrom,
+    isYtd: false,
+  };
+  const setActivePeriod = useCallback((p: ActivePeriod) => {
+    setGlobalFilters(prev => ({ ...prev, month: p.month, monthFrom: p.monthFrom }));
+  }, []);
+  const periodLoading = globalLoading;
+
+  // ── Base data ─────────────────────────────────────────────────────────────────
+  const [baseData, setBaseData] = useState<VariancePptData>(data);
 
   // Reset when parent loads a new snapshot
   useEffect(() => {
     setBaseData(data);
-    setActiveMarcas(restrictedMarcas ?? []);
-    setActivePeriod({ month: data.yearMonth ?? '', isYtd: data.isYtd ?? false });
+    setGlobalFilters({
+      month: data.yearMonth ?? '',
+      monthFrom: data.monthFrom,
+      marcas: restrictedMarcas ?? [],
+      tag01s: [],
+    });
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Period change → re-fetch from DB
+  // ── Period change effect (SlideHeader picker — backward compat) ───────────────
   useEffect(() => {
-    if (!onReloadWithPeriod || !activePeriod.month) return;
-    // Skip if same as parent data (initial mount or data reset)
-    const sameMonth = activePeriod.month === (data.yearMonth ?? '');
-    const sameYtd = (activePeriod.isYtd ?? false) === (data.isYtd ?? false);
-    const sameFrom = (activePeriod.monthFrom ?? '') === (data.monthFrom ?? '');
-    if (sameMonth && sameYtd && sameFrom) return;
-    setPeriodLoading(true);
-    onReloadWithPeriod(activePeriod.month, activePeriod.isYtd, activePeriod.monthFrom)
-      .then(d => { setBaseData(d); setActiveMarcas(restrictedMarcas ?? []); })
+    if (!onReloadWithPeriod || onReloadWithFilters) return;  // unified handler takes precedence
+    if (!globalFilters.month) return;
+    const sameMonth = globalFilters.month === (data.yearMonth ?? '');
+    const sameYtd = false === (data.isYtd ?? false);
+    const sameFrom = (globalFilters.monthFrom ?? '') === (data.monthFrom ?? '');
+    if (sameMonth && !sameYtd && sameFrom) return;
+    setGlobalLoading(true);
+    onReloadWithPeriod(globalFilters.month, false, globalFilters.monthFrom)
+      .then(d => { setBaseData(d); setGlobalFilters(prev => ({ ...prev, marcas: restrictedMarcas ?? [] })); })
       .catch(console.error)
-      .finally(() => setPeriodLoading(false));
+      .finally(() => setGlobalLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePeriod]);
+  }, [globalFilters.month, globalFilters.monthFrom]);
+
+  // ── Unified filter effect (panel Apply → single fetch for all filters) ────────
+  useEffect(() => {
+    if (!onReloadWithFilters || !globalFilters.month) return;
+    // Skip initial state identical to parent data
+    const sameMonth = globalFilters.month === (data.yearMonth ?? '');
+    const sameFrom = (globalFilters.monthFrom ?? '') === (data.monthFrom ?? '');
+    const sameMarcas = JSON.stringify([...globalFilters.marcas].sort()) === JSON.stringify([...(restrictedMarcas ?? [])].sort());
+    const noTag01s = globalFilters.tag01s.length === 0;
+    if (sameMonth && sameFrom && sameMarcas && noTag01s) return;
+    setGlobalLoading(true);
+    onReloadWithFilters({
+      month: globalFilters.month,
+      monthFrom: globalFilters.monthFrom,
+      marcas: globalFilters.marcas,
+      tag01s: globalFilters.tag01s,
+    })
+      .then(d => setBaseData(d))
+      .catch(console.error)
+      .finally(() => setGlobalLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalFilters]);
 
   // Apply marca filter in-memory on top of baseData
   const localData = useMemo(
@@ -3674,15 +3933,35 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
     return all;
   }, [baseData, restrictedMarcas]);
 
+  // All unique tag01 lines from current data (for filter panel)
+  const availableTag01s = useMemo(() => {
+    const names = new Set<string>();
+    for (const section of baseData.sections) {
+      for (const node of section.tag01Nodes) {
+        if (node.label) names.add(node.label);
+      }
+    }
+    return Array.from(names).sort();
+  }, [baseData.sections]);
+
+  // Count active non-default filters for badge
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (globalFilters.monthFrom) n++;
+    if (globalFilters.marcas.length > 0) n++;
+    if (globalFilters.tag01s.length > 0) n++;
+    return n;
+  }, [globalFilters]);
+
   const marcaCtxValue = useMemo(
     () => ({ activeMarcas, setActiveMarcas, loading: false }),
-    [activeMarcas],
+    [activeMarcas, setActiveMarcas],
   );
 
   // Months from Jan to current data month — always complete for live range selection.
   // availableMonths prop (snapshot-based) may be sparse; this ensures all months are pickable.
   const liveAvailableMonths = useMemo(() => {
-    const ym = activePeriod.month || data.yearMonth;
+    const ym = globalFilters.month || data.yearMonth;
     if (!ym) return availableMonths;
     const [yr, mo] = ym.split('-').map(Number);
     const months: string[] = [];
@@ -4063,6 +4342,9 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
               ({hiddenCount} oculto{hiddenCount > 1 ? 's' : ''})
             </span>
           )}
+          {globalLoading && (
+            <span className="text-blue-500 font-bold ml-2 animate-pulse">⟳ atualizando…</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {hiddenCount > 0 && (
@@ -4074,6 +4356,23 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
               Exibir todos
             </button>
           )}
+          {onReloadWithFilters && (
+            <button
+              onClick={() => setShowFilterPanel(true)}
+              className="relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors"
+              style={activeFilterCount > 0
+                ? { background: '#EFF6FF', borderColor: '#93C5FD', color: '#1D4ED8' }
+                : { background: '#F9FAFB', borderColor: '#E5E7EB', color: '#6B7280' }}
+            >
+              <SlidersHorizontal size={13} />
+              Filtros
+              {activeFilterCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full text-[9px] font-bold flex items-center justify-center bg-blue-600 text-white">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          )}
           <button
             onClick={() => startPresentation()}
             className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium shadow-sm"
@@ -4083,6 +4382,19 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
           </button>
         </div>
       </div>
+
+      {/* Filter panel (preview mode) */}
+      {showFilterPanel && onReloadWithFilters && (
+        <SlideFiltersPanel
+          current={globalFilters}
+          liveMonths={liveAvailableMonths}
+          availableMarcas={allAvailableMarcas}
+          availableTag01s={availableTag01s}
+          loading={globalLoading}
+          onApply={f => { setGlobalFilters(f); setShowFilterPanel(false); }}
+          onClose={() => setShowFilterPanel(false)}
+        />
+      )}
 
       <PeriodContext.Provider value={periodCtxValue}>
         <MarcaFilterContext.Provider value={marcaCtxValue}>
@@ -4112,6 +4424,19 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
               onPrev={goPrev}
               onNext={goNext}
               onExit={exitPresentation}
+              onOpenFilters={onReloadWithFilters ? () => setShowFilterPanel(true) : undefined}
+              filterActiveCount={activeFilterCount}
+              filterPanel={showFilterPanel && onReloadWithFilters ? (
+                <SlideFiltersPanel
+                  current={globalFilters}
+                  liveMonths={liveAvailableMonths}
+                  availableMarcas={allAvailableMarcas}
+                  availableTag01s={availableTag01s}
+                  loading={globalLoading}
+                  onApply={f => { setGlobalFilters(f); setShowFilterPanel(false); }}
+                  onClose={() => setShowFilterPanel(false)}
+                />
+              ) : undefined}
             />
           </MarcaFilterContext.Provider>
         </PeriodContext.Provider>

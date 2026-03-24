@@ -24,7 +24,7 @@ import { ExecutiveSummary } from '../analysisPack';
 import { getMarcasEFiliais, getVarianceJustifications, getVarianceYtdItems, fetchLiveDreForPpt, fetchMarcaBreakdown, getVarianceAvailableMonths, saveSlideVersion, getSlideVersions, updateSlideVersion, deleteSlideVersion, SlideVersion } from '../services/supabaseService';
 import { buildContextFromSnapshot } from '../analysisPack/services/snapshotContextBuilder';
 import type { AnalysisContext } from '../analysisPack/types/schema';
-import type { VariancePptData } from '../services/variancePptTypes';
+import type { VariancePptData, SlideReloadParams } from '../services/variancePptTypes';
 import MultiSelectFilter from './MultiSelectFilter';
 import VariancePptPreview from './VariancePptPreview';
 import SlideInsightEditor from './SlideInsightEditor';
@@ -293,6 +293,52 @@ export default function AnalysisView() {
 
     return newData;
   }, [effectiveMarcas, effectiveFiliais, filterByTag01, permittedMarcas, effectiveTag01]);
+
+  // ── Callback unificado: re-fetch com todos os filtros do painel de slides ──
+  const handleReloadWithFilters = useCallback(async (params: SlideReloadParams): Promise<VariancePptData> => {
+    const { month, monthFrom, marcas, tag01s } = params;
+
+    // Determinar marcas efetivas: seleção do painel > permissões > null (all)
+    const fetchMarcas = marcas.length > 0 ? marcas : permittedMarcas.length > 0 ? permittedMarcas : null;
+
+    const rzInSelection = marcas.length === 0 || marcas.map(m => m.toUpperCase()).includes('RZ');
+    const rzMarcasForFetch = rzInSelection ? null : ['RZ'];
+
+    const tag01sParam = tag01s.length > 0 ? tag01s : null;
+
+    const [rawItems, rzRawItems] = await Promise.all([
+      fetchMarcas
+        ? fetchLiveDreForPpt(month, fetchMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, monthFrom, tag01sParam)
+        : fetchLiveDreForPpt(month, permittedMarcas.length > 0 ? permittedMarcas : ['_none_'], null, monthFrom, tag01sParam),
+      rzMarcasForFetch
+        ? fetchLiveDreForPpt(month, ['RZ'], null, monthFrom).catch(() => [] as any[])
+        : Promise.resolve([] as any[]),
+    ]);
+
+    const filtered = filterByTag01(rawItems);
+    const { prepareVariancePptData } = await import('../services/variancePptDataService');
+    const isRange = !!monthFrom && monthFrom !== month;
+    const newData = prepareVariancePptData(
+      filtered,
+      month,
+      marcas.length > 0 ? marcas.join(', ') : null,
+      rzRawItems.length > 0 ? rzRawItems : undefined,
+      isRange,
+    );
+    newData.monthFrom = monthFrom;
+
+    try {
+      const breakdown = await fetchMarcaBreakdown(
+        month,
+        permittedMarcas,
+        marcas.length > 0 ? marcas : null,
+        effectiveTag01.length > 0 ? effectiveTag01 : null,
+      );
+      if (breakdown) newData.marcaBreakdowns = breakdown;
+    } catch {}
+
+    return newData;
+  }, [effectiveFiliais, filterByTag01, permittedMarcas, effectiveTag01]);
 
   // Helper: buscar snapshot do variance_justifications e montar contexto
   const fetchSnapshotContext = async () => {
@@ -864,6 +910,7 @@ export default function AnalysisView() {
                     data={variancePreviewData}
                     onReloadWithMarcas={handleReloadWithMarcas}
                     onReloadWithPeriod={handleReloadWithPeriod}
+                    onReloadWithFilters={handleReloadWithFilters}
                     availableMonths={availableMonths}
                     restrictedMarcas={hasPermissions && allowedMarcas.length > 0 ? allowedMarcas : undefined}
                   />
