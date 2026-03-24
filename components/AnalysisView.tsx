@@ -255,20 +255,35 @@ export default function AnalysisView() {
     const yearStart = `${month.slice(0, 4)}-01`;
     const rzNotSelected = hasMarca && !effectiveMarcas.map(m => m.toUpperCase()).includes('RZ');
 
-    // rangeFrom: monthFrom (multi-select), then YTD yearStart, then undefined (single month)
     const rangeFrom = monthFrom ?? (isYtd ? yearStart : undefined);
-    const ytdNoMarca = !hasMarca && !!rangeFrom && permittedMarcas.length > 0;
+    const isRange = !!rangeFrom && rangeFrom !== month;
 
-    const [rawItems, rzRawItems] = await Promise.all([
-      hasMarca
-        ? fetchLiveDreForPpt(month, effectiveMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, rangeFrom)
-        : ytdNoMarca
-          ? fetchLiveDreForPpt(month, permittedMarcas, null, rangeFrom)
+    const filterMarcas = hasMarca ? effectiveMarcas
+      : permittedMarcas.length > 0 ? permittedMarcas
+      : undefined;
+
+    let rawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
+    let rzRawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
+
+    if (isRange) {
+      // YTD / multi-mês: agrega da base de justificativas
+      [rawItems, rzRawItems] = await Promise.all([
+        getVarianceYtdItems(rangeFrom!, month, undefined, filterMarcas),
+        rzNotSelected
+          ? getVarianceYtdItems(rangeFrom!, month, undefined, ['RZ']).catch(() => [] as typeof rawItems)
+          : Promise.resolve([] as typeof rawItems),
+      ]);
+    } else {
+      // Mês único: live se marcas disponíveis, senão snapshot
+      [rawItems, rzRawItems] = await Promise.all([
+        filterMarcas
+          ? fetchLiveDreForPpt(month, filterMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null)
           : getVarianceJustifications({ year_month: month }),
-      rzNotSelected
-        ? fetchLiveDreForPpt(month, ['RZ'], null, rangeFrom).catch(() => [] as any[])
-        : Promise.resolve([] as any[]),
-    ]);
+        rzNotSelected
+          ? fetchLiveDreForPpt(month, ['RZ'], null).catch(() => [] as typeof rawItems)
+          : Promise.resolve([] as typeof rawItems),
+      ]);
+    }
 
     const filtered = filterByTag01(rawItems);
     const { prepareVariancePptData } = await import('../services/variancePptDataService');
@@ -277,9 +292,9 @@ export default function AnalysisView() {
       month,
       hasMarca ? effectiveMarcas.join(', ') : null,
       rzRawItems.length > 0 ? rzRawItems : undefined,
-      isYtd || !!monthFrom,
+      isRange,
     );
-    newData.monthFrom = monthFrom;
+    newData.monthFrom = rangeFrom !== month ? rangeFrom : undefined;
 
     try {
       const breakdown = await fetchMarcaBreakdown(
@@ -297,35 +312,45 @@ export default function AnalysisView() {
   // ── Callback unificado: re-fetch com todos os filtros do painel de slides ──
   const handleReloadWithFilters = useCallback(async (params: SlideReloadParams): Promise<VariancePptData> => {
     const { month, monthFrom, marcas, tag01s } = params;
+    const isRange = !!monthFrom && monthFrom !== month;
 
-    console.log('[AnalysisView] handleReloadWithFilters', { month, monthFrom, marcas, tag01s, permittedMarcas: permittedMarcas.length });
-
-    // Marcas para o fetch: seleção explícita > todas permitidas
-    // Se não há marcas permitidas carregadas ainda, usa all (p_marcas = null)
-    const fetchMarcas = marcas.length > 0
+    // Marcas para filtrar: seleção explícita > todas permitidas > sem restrição
+    const filterMarcas = marcas.length > 0
       ? marcas
       : permittedMarcas.length > 0
         ? permittedMarcas
-        : null;  // null = busca todas no SQL
+        : undefined;
 
     // RZ: busca separada apenas se RZ não está na seleção explícita
     const rzNotInSelection = marcas.length > 0 && !marcas.map(m => m.toUpperCase()).includes('RZ');
-    const tag01sParam = tag01s.length > 0 ? tag01s : null;
 
-    const [rawItems, rzRawItems] = await Promise.all([
-      fetchMarcas
-        ? fetchLiveDreForPpt(month, fetchMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, monthFrom, tag01sParam)
-        : getVarianceJustifications({ year_month: month }), // fallback para snapshot se sem marcas
-      rzNotInSelection
-        ? fetchLiveDreForPpt(month, ['RZ'], null, monthFrom).catch(() => [] as any[])
-        : Promise.resolve([] as any[]),
-    ]);
+    let rawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
+    let rzRawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
 
-    console.log('[AnalysisView] handleReloadWithFilters ← rawItems:', rawItems.length);
+    if (isRange) {
+      // YTD / multi-mês: busca da base de justificativas para todos os meses do range.
+      // prepareVariancePptData agrega automaticamente via aggPkType (chave sem year_month).
+      [rawItems, rzRawItems] = await Promise.all([
+        getVarianceYtdItems(monthFrom!, month, undefined, filterMarcas),
+        rzNotInSelection
+          ? getVarianceYtdItems(monthFrom!, month, undefined, ['RZ']).catch(() => [] as typeof rawItems)
+          : Promise.resolve([] as typeof rawItems),
+      ]);
+    } else {
+      // Mês único: live (get_soma_tags) se marcas disponíveis, senão snapshot salvo
+      const tag01sParam = tag01s.length > 0 ? tag01s : null;
+      [rawItems, rzRawItems] = await Promise.all([
+        filterMarcas
+          ? fetchLiveDreForPpt(month, filterMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, undefined, tag01sParam)
+          : getVarianceJustifications({ year_month: month }),
+        rzNotInSelection
+          ? fetchLiveDreForPpt(month, ['RZ'], null, undefined).catch(() => [] as typeof rawItems)
+          : Promise.resolve([] as typeof rawItems),
+      ]);
+    }
 
     const filtered = filterByTag01(rawItems);
     const { prepareVariancePptData } = await import('../services/variancePptDataService');
-    const isRange = !!monthFrom && monthFrom !== month;
     const newData = prepareVariancePptData(
       filtered,
       month,
