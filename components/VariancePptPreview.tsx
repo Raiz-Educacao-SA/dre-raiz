@@ -3868,42 +3868,31 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
   // ── Base data ─────────────────────────────────────────────────────────────────
   const [baseData, setBaseData] = useState<VariancePptData>(data);
 
+  // ── Track last fetched period to avoid double-fetch ──────────────────────────
+  const lastFetchedPeriod = useRef({ month: data.yearMonth ?? '', monthFrom: data.monthFrom });
+
   // Reset when parent loads a new snapshot
   useEffect(() => {
     setBaseData(data);
-    setGlobalFilters({
+    const next = {
       month: data.yearMonth ?? '',
       monthFrom: data.monthFrom,
       marcas: restrictedMarcas ?? [],
       tag01s: [],
-    });
+    };
+    setGlobalFilters(next);
+    lastFetchedPeriod.current = { month: next.month, monthFrom: next.monthFrom };
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Period change effect (SlideHeader picker — backward compat) ───────────────
-  useEffect(() => {
-    if (!onReloadWithPeriod || onReloadWithFilters) return;  // unified handler takes precedence
-    if (!globalFilters.month) return;
-    const sameMonth = globalFilters.month === (data.yearMonth ?? '');
-    const sameYtd = false === (data.isYtd ?? false);
-    const sameFrom = (globalFilters.monthFrom ?? '') === (data.monthFrom ?? '');
-    if (sameMonth && !sameYtd && sameFrom) return;
-    setGlobalLoading(true);
-    onReloadWithPeriod(globalFilters.month, false, globalFilters.monthFrom)
-      .then(d => { setBaseData(d); setGlobalFilters(prev => ({ ...prev, marcas: restrictedMarcas ?? [] })); })
-      .catch(console.error)
-      .finally(() => setGlobalLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globalFilters.month, globalFilters.monthFrom]);
-
-  // applyFilters: chamado diretamente pelo painel (sem useEffect intermediário)
+  // applyFilters: chamado pelo painel de filtros OU pelo SlideHeader picker
   const applyFilters = useCallback(async (f: GlobalSlideFilters) => {
     if (!onReloadWithFilters || !f.month) return;
+    // Mark this period as "being fetched" so the period-change effect doesn't double-fire
+    lastFetchedPeriod.current = { month: f.month, monthFrom: f.monthFrom };
     setGlobalFilters(f);
     setGlobalLoading(true);
-    console.log('[PPT] applyFilters →', f);
     try {
       const d = await onReloadWithFilters({ month: f.month, monthFrom: f.monthFrom, marcas: f.marcas, tag01s: f.tag01s });
-      console.log('[PPT] applyFilters ← yearMonth:', d.yearMonth, 'monthFrom:', d.monthFrom, 'sections:', d.sections.length);
       setBaseData(d);
     } catch (e) {
       console.error('[PPT] applyFilters error:', e);
@@ -3911,6 +3900,32 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
       setGlobalLoading(false);
     }
   }, [onReloadWithFilters]);
+
+  // ── Period change effect (SlideHeader picker) ─────────────────────────────────
+  useEffect(() => {
+    if (!globalFilters.month) return;
+    // Unified handler: SlideHeader picker changed the period → trigger full reload.
+    // Guard: if lastFetchedPeriod already matches, this was triggered by applyFilters
+    // setting state (not a user picker action) — skip to avoid double-fetch.
+    if (onReloadWithFilters) {
+      const alreadyFetched =
+        globalFilters.month === lastFetchedPeriod.current.month &&
+        (globalFilters.monthFrom ?? '') === (lastFetchedPeriod.current.monthFrom ?? '');
+      if (!alreadyFetched) applyFilters(globalFilters);
+      return;
+    }
+    // Backward compat: onReloadWithPeriod only
+    if (!onReloadWithPeriod) return;
+    const sameMonth = globalFilters.month === (data.yearMonth ?? '');
+    const sameFrom = (globalFilters.monthFrom ?? '') === (data.monthFrom ?? '');
+    if (sameMonth && sameFrom) return;
+    setGlobalLoading(true);
+    onReloadWithPeriod(globalFilters.month, false, globalFilters.monthFrom)
+      .then(d => { setBaseData(d); setGlobalFilters(prev => ({ ...prev, marcas: restrictedMarcas ?? [] })); })
+      .catch(console.error)
+      .finally(() => setGlobalLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalFilters.month, globalFilters.monthFrom]);
 
   // Apply marca filter in-memory on top of baseData
   const localData = useMemo(
