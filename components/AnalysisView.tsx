@@ -265,19 +265,27 @@ export default function AnalysisView() {
     let rawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
     let rzRawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
 
-    if (isRange) {
-      // YTD / multi-mês: agrega da base de justificativas
+    const filiaisParam = effectiveFiliais.length > 0 ? effectiveFiliais : null;
+
+    if (isRange && filterMarcas) {
+      // YTD com filtro de marca: live RPC com range (rows null=todas as marcas no snapshot)
       [rawItems, rzRawItems] = await Promise.all([
-        getVarianceYtdItems(rangeFrom!, month, undefined, filterMarcas),
+        fetchLiveDreForPpt(month, filterMarcas, filiaisParam, rangeFrom),
         rzNotSelected
-          ? getVarianceYtdItems(rangeFrom!, month, undefined, ['RZ']).catch(() => [] as typeof rawItems)
+          ? fetchLiveDreForPpt(month, ['RZ'], null, rangeFrom).catch(() => [] as typeof rawItems)
           : Promise.resolve([] as typeof rawItems),
+      ]);
+    } else if (isRange) {
+      // YTD sem filtro (admin): snapshot correto para todas as marcas
+      [rawItems, rzRawItems] = await Promise.all([
+        getVarianceYtdItems(rangeFrom!, month, undefined, undefined),
+        Promise.resolve([] as typeof rawItems),
       ]);
     } else {
       // Mês único: live se marcas disponíveis, senão snapshot
       [rawItems, rzRawItems] = await Promise.all([
         filterMarcas
-          ? fetchLiveDreForPpt(month, filterMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null)
+          ? fetchLiveDreForPpt(month, filterMarcas, filiaisParam)
           : getVarianceJustifications({ year_month: month }),
         rzNotSelected
           ? fetchLiveDreForPpt(month, ['RZ'], null).catch(() => [] as typeof rawItems)
@@ -333,21 +341,32 @@ export default function AnalysisView() {
     let rawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
     let rzRawItems: Awaited<ReturnType<typeof getVarianceJustifications>>;
 
-    if (isRange) {
-      // YTD / multi-mês: busca da base de justificativas para todos os meses do range.
-      // prepareVariancePptData agrega automaticamente via aggPkType (chave sem year_month).
+    const tag01sParam = tag01s.length > 0 ? tag01s : null;
+    const filiaisParam = effectiveFiliais.length > 0 ? effectiveFiliais : null;
+
+    if (isRange && filterMarcas) {
+      // YTD com filtro de marca: live RPC com range.
+      // Rows de snapshot com marca=null representam TODAS as marcas (não filtrável por marca).
+      // fetchLiveDreForPpt passa p_month_from→p_month_to ao get_soma_tags, que agrega
+      // somente as marcas solicitadas — correto por construção.
       [rawItems, rzRawItems] = await Promise.all([
-        getVarianceYtdItems(monthFrom!, month, undefined, filterMarcas),
+        fetchLiveDreForPpt(month, filterMarcas, filiaisParam, monthFrom, tag01sParam),
         rzNotInSelection
-          ? getVarianceYtdItems(monthFrom!, month, undefined, ['RZ']).catch(() => [] as typeof rawItems)
+          ? fetchLiveDreForPpt(month, ['RZ'], null, monthFrom).catch(() => [] as typeof rawItems)
           : Promise.resolve([] as typeof rawItems),
+      ]);
+    } else if (isRange) {
+      // YTD sem filtro de marca (admin): snapshot agrega tudo corretamente
+      // (rows marca=null = total de todas as marcas, que é o que admin quer ver).
+      [rawItems, rzRawItems] = await Promise.all([
+        getVarianceYtdItems(monthFrom!, month, undefined, undefined),
+        Promise.resolve([] as typeof rawItems),
       ]);
     } else {
       // Mês único: live (get_soma_tags) se marcas disponíveis, senão snapshot salvo
-      const tag01sParam = tag01s.length > 0 ? tag01s : null;
       [rawItems, rzRawItems] = await Promise.all([
         filterMarcas
-          ? fetchLiveDreForPpt(month, filterMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, undefined, tag01sParam)
+          ? fetchLiveDreForPpt(month, filterMarcas, filiaisParam, undefined, tag01sParam)
           : getVarianceJustifications({ year_month: month }),
         rzNotInSelection
           ? fetchLiveDreForPpt(month, ['RZ'], null, undefined).catch(() => [] as typeof rawItems)
