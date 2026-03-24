@@ -250,19 +250,23 @@ export default function AnalysisView() {
   }, [selectedMonth, variancePreviewData, filterByTag01, permittedMarcas, effectiveTag01]);
 
   // ── Callback: re-fetch real data when user changes period inside preview ──
-  const handleReloadWithPeriod = useCallback(async (month: string, isYtd: boolean): Promise<VariancePptData> => {
+  const handleReloadWithPeriod = useCallback(async (month: string, isYtd: boolean, monthFrom?: string): Promise<VariancePptData> => {
     const hasMarca = effectiveMarcas.length > 0;
     const yearStart = `${month.slice(0, 4)}-01`;
     const rzNotSelected = hasMarca && !effectiveMarcas.map(m => m.toUpperCase()).includes('RZ');
 
+    // rangeFrom: monthFrom (multi-select), then YTD yearStart, then undefined (single month)
+    const rangeFrom = monthFrom ?? (isYtd ? yearStart : undefined);
+    const ytdNoMarca = !hasMarca && !!rangeFrom && permittedMarcas.length > 0;
+
     const [rawItems, rzRawItems] = await Promise.all([
       hasMarca
-        ? fetchLiveDreForPpt(month, effectiveMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, isYtd ? yearStart : undefined)
-        : isYtd
-          ? getVarianceYtdItems(yearStart, month, undefined, undefined)
+        ? fetchLiveDreForPpt(month, effectiveMarcas, effectiveFiliais.length > 0 ? effectiveFiliais : null, rangeFrom)
+        : ytdNoMarca
+          ? fetchLiveDreForPpt(month, permittedMarcas, null, rangeFrom)
           : getVarianceJustifications({ year_month: month }),
       rzNotSelected
-        ? fetchLiveDreForPpt(month, ['RZ'], null, isYtd ? yearStart : undefined).catch(() => [] as any[])
+        ? fetchLiveDreForPpt(month, ['RZ'], null, rangeFrom).catch(() => [] as any[])
         : Promise.resolve([] as any[]),
     ]);
 
@@ -273,8 +277,9 @@ export default function AnalysisView() {
       month,
       hasMarca ? effectiveMarcas.join(', ') : null,
       rzRawItems.length > 0 ? rzRawItems : undefined,
-      isYtd,
+      isYtd || !!monthFrom,
     );
+    newData.monthFrom = monthFrom;
 
     try {
       const breakdown = await fetchMarcaBreakdown(

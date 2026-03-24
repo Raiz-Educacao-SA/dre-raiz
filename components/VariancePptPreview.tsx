@@ -162,15 +162,39 @@ function SlideHeader({
     return () => document.removeEventListener('mousedown', handler);
   }, [showPicker]);
 
+  // Sync picker checkboxes with current activePeriod when opening
+  React.useEffect(() => {
+    if (!showPicker) return;
+    if (activePeriod.monthFrom) {
+      setPickerSelected(availableMonths.filter(m => m >= activePeriod.monthFrom! && m <= activePeriod.month));
+    } else if (activePeriod.month) {
+      setPickerSelected([activePeriod.month]);
+    } else {
+      setPickerSelected([]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPicker]);
+
   // Display: if context has active period, use it; else use prop
   const displayLabel = activePeriod.month
-    ? (activePeriod.isYtd ? buildYtdShort(activePeriod.month) : monthShortFromYearMonth(activePeriod.month))
+    ? (activePeriod.monthFrom
+        ? `${monthShortFromYearMonth(activePeriod.monthFrom).split('/')[0]}-${monthShortFromYearMonth(activePeriod.month)}`
+        : activePeriod.isYtd
+          ? buildYtdShort(activePeriod.month)
+          : monthShortFromYearMonth(activePeriod.month))
     : monthShort;
 
   // Detect if period has been changed from original
   const periodChanged = activePeriod.month
-    ? (activePeriod.isYtd || monthShortFromYearMonth(activePeriod.month) !== monthShort)
+    ? (activePeriod.isYtd || !!activePeriod.monthFrom || monthShortFromYearMonth(activePeriod.month) !== monthShort)
     : false;
+
+  // Multi-month picker local state: track which months are checked before applying
+  const [pickerSelected, setPickerSelected] = React.useState<string[]>(() =>
+    activePeriod.monthFrom
+      ? availableMonths.filter(m => m >= activePeriod.monthFrom! && m <= activePeriod.month)
+      : [activePeriod.month].filter(Boolean)
+  );
 
   return (
     <div className="px-6 pt-3 pb-2.5 border-b border-gray-100 shrink-0 bg-white" style={{ minHeight: 52 }}>
@@ -216,38 +240,64 @@ function SlideHeader({
             {showPicker && availableMonths.length > 0 && (
               <div
                 className="absolute right-0 top-full mt-1 z-50 rounded-xl shadow-2xl border overflow-hidden"
-                style={{ backgroundColor: '#111827', borderColor: '#374151', minWidth: 140, maxHeight: 260, overflowY: 'auto' }}
+                style={{ backgroundColor: '#111827', borderColor: '#374151', minWidth: 160 }}
               >
-                {/* YTD option */}
-                <button
-                  onClick={() => { setActivePeriod({ month: availableMonths[0], isYtd: true }); setShowPicker(false); }}
-                  className="w-full text-left px-3 py-2 text-[11px] font-bold transition-colors flex items-center gap-2"
-                  style={activePeriod.isYtd
-                    ? { backgroundColor: '#2563EB', color: 'white' }
-                    : { color: '#9CA3AF' }
-                  }
-                >
-                  <span>📅</span>
-                  YTD (Jan→atual)
-                </button>
-                <div style={{ borderTop: '1px solid #374151' }} />
-                {/* Monthly options */}
-                {availableMonths.map(m => {
-                  const isActive = !activePeriod.isYtd && activePeriod.month === m;
-                  return (
-                    <button
-                      key={m}
-                      onClick={() => { setActivePeriod({ month: m, isYtd: false }); setShowPicker(false); }}
-                      className="w-full text-left px-3 py-2 text-[11px] font-bold transition-colors"
-                      style={isActive
-                        ? { backgroundColor: '#2563EB', color: 'white' }
-                        : { color: '#D1D5DB' }
-                      }
-                    >
-                      {monthShortFromYearMonth(m)}
-                    </button>
-                  );
-                })}
+                <div className="px-3 py-1.5 text-[9px] font-bold tracking-widest uppercase" style={{ color: '#6B7280' }}>
+                  Selecionar meses
+                </div>
+                <div style={{ borderTop: '1px solid #374151', maxHeight: 220, overflowY: 'auto' }}>
+                  {availableMonths.map(m => {
+                    const checked = pickerSelected.includes(m);
+                    return (
+                      <label
+                        key={m}
+                        className="flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none"
+                        style={{ color: checked ? 'white' : '#D1D5DB' }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#1F2937')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setPickerSelected(prev =>
+                              prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
+                            );
+                          }}
+                          style={{ accentColor: '#2563EB', width: 12, height: 12 }}
+                        />
+                        <span className="text-[11px] font-bold">{monthShortFromYearMonth(m)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{ borderTop: '1px solid #374151' }} className="px-3 py-2 flex gap-2">
+                  <button
+                    className="flex-1 text-[10px] font-bold py-1 rounded-md"
+                    style={{ backgroundColor: '#374151', color: '#9CA3AF' }}
+                    onClick={() => { setPickerSelected([]); }}
+                  >
+                    Limpar
+                  </button>
+                  <button
+                    disabled={pickerSelected.length === 0}
+                    className="flex-1 text-[10px] font-bold py-1 rounded-md transition-colors"
+                    style={pickerSelected.length > 0
+                      ? { backgroundColor: '#2563EB', color: 'white' }
+                      : { backgroundColor: '#1F2937', color: '#6B7280', cursor: 'not-allowed' }
+                    }
+                    onClick={() => {
+                      if (pickerSelected.length === 0) return;
+                      const sorted = [...pickerSelected].sort();
+                      const monthTo = sorted[sorted.length - 1];
+                      const monthFrom = sorted.length > 1 ? sorted[0] : undefined;
+                      setActivePeriod({ month: monthTo, isYtd: false, monthFrom });
+                      setShowPicker(false);
+                    }}
+                  >
+                    Aplicar
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -2414,7 +2464,7 @@ const MarcaFilterContext = React.createContext<{
 }>({ activeMarcas: [], setActiveMarcas: () => {}, loading: false });
 
 // ── Global period context ─────────────────────────────────────────────
-type ActivePeriod = { month: string; isYtd: boolean };
+type ActivePeriod = { month: string; isYtd: boolean; monthFrom?: string };
 
 const PeriodContext = React.createContext<{
   activePeriod: ActivePeriod;
@@ -3517,7 +3567,7 @@ function Tag01T02BreakdownSlide({
 export interface VariancePptPreviewProps {
   data: VariancePptData;
   onReloadWithMarcas?: (marcas: string[]) => Promise<VariancePptData>;
-  onReloadWithPeriod?: (month: string, isYtd: boolean) => Promise<VariancePptData>;
+  onReloadWithPeriod?: (month: string, isYtd: boolean, monthFrom?: string) => Promise<VariancePptData>;
   availableMonths?: string[];
   /** Quando fornecido, o componente restringe a visualização às marcas da lista.
    *  Usado para usuários com acesso limitado a marcas específicas. */
@@ -3598,9 +3648,10 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
     // Skip if same as parent data (initial mount or data reset)
     const sameMonth = activePeriod.month === (data.yearMonth ?? '');
     const sameYtd = (activePeriod.isYtd ?? false) === (data.isYtd ?? false);
-    if (sameMonth && sameYtd) return;
+    const sameFrom = (activePeriod.monthFrom ?? '') === (data.monthFrom ?? '');
+    if (sameMonth && sameYtd && sameFrom) return;
     setPeriodLoading(true);
-    onReloadWithPeriod(activePeriod.month, activePeriod.isYtd)
+    onReloadWithPeriod(activePeriod.month, activePeriod.isYtd, activePeriod.monthFrom)
       .then(d => { setBaseData(d); setActiveMarcas(restrictedMarcas ?? []); })
       .catch(console.error)
       .finally(() => setPeriodLoading(false));
