@@ -3679,9 +3679,22 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, available
     [activeMarcas],
   );
 
+  // Months from Jan to current data month — always complete for live range selection.
+  // availableMonths prop (snapshot-based) may be sparse; this ensures all months are pickable.
+  const liveAvailableMonths = useMemo(() => {
+    const ym = activePeriod.month || data.yearMonth;
+    if (!ym) return availableMonths;
+    const [yr, mo] = ym.split('-').map(Number);
+    const months: string[] = [];
+    for (let m = 1; m <= mo; m++) {
+      months.push(`${yr}-${String(m).padStart(2, '0')}`);
+    }
+    return months;
+  }, [activePeriod.month, data.yearMonth, availableMonths]);
+
   const periodCtxValue = useMemo(
-    () => ({ activePeriod, setActivePeriod, periodLoading, availableMonths }),
-    [activePeriod, periodLoading, availableMonths],
+    () => ({ activePeriod, setActivePeriod, periodLoading, availableMonths: liveAvailableMonths }),
+    [activePeriod, periodLoading, liveAvailableMonths],
   );
 
   const toggleHide = useCallback((key: string) => {
