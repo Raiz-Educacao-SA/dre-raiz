@@ -3914,7 +3914,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
       key: 'overview', label: 'Visão Geral',
       node: (
         <FilterableSlide key="fs-overview" groups={globalFilterGroups}>
-          {(filters, filterButton) => <OverviewSlide data={filterVariancePptData(localData, filters)} filterSlot={filterButton} />}
+          {(filters, filterButton) => <OverviewSlide data={filterVariancePptData(localData, filters)} filterSlot={undefined} />}
         </FilterableSlide>
       ),
     });
@@ -3925,7 +3925,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
       key: 'performance', label: 'Performance vs Orçado',
       node: (
         <FilterableSlide key="fs-performance" groups={globalFilterGroups}>
-          {(filters, filterButton) => <PerformanceSlide data={filterVariancePptData(localData, filters)} pageNum={performancePn} filterSlot={filterButton} />}
+          {(filters, filterButton) => <PerformanceSlide data={filterVariancePptData(localData, filters)} pageNum={performancePn} filterSlot={undefined} />}
         </FilterableSlide>
       ),
     });
@@ -3936,7 +3936,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
       key: 'analytics', label: 'Análise',
       node: (
         <FilterableSlide key="fs-analytics" groups={globalFilterGroups}>
-          {(filters, filterButton) => <AnalyticsSlide data={filterVariancePptData(localData, filters)} pageNum={analyticsPn} filterSlot={filterButton} />}
+          {(filters, filterButton) => <AnalyticsSlide data={filterVariancePptData(localData, filters)} pageNum={analyticsPn} filterSlot={undefined} />}
         </FilterableSlide>
       ),
     });
@@ -3965,7 +3965,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
                 const filteredSection = depth3Marcas.length > 0
                   ? filterSection(section, filters)
                   : filterSectionByMarcaBreakdowns(filterSection(section, filters), filters, breakdownEntries);
-                return <SectionSlide section={filteredSection} data={localData} pageNum={sectionPn} filterSlot={filterButton} />;
+                return <SectionSlide section={filteredSection} data={localData} pageNum={sectionPn} filterSlot={undefined} />;
               }}
             </FilterableSlide>
           ),
@@ -4014,7 +4014,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
                         pageNum={justPn}
                         slideLabel={slideLabel}
                         titleOverride={fullLabel}
-                        filterSlot={filterButton}
+                        filterSlot={undefined}
                       />
                     );
                   }}
@@ -4088,7 +4088,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
                       data={localData}
                       rows={filterT01Rows(allRows, filters)}
                       pageNum={detailPn}
-                      filterSlot={filterButton}
+                      filterSlot={undefined}
                     />
                   )}
                 </FilterableSlide>
@@ -4125,7 +4125,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
                           t01={filtT01}
                           data={localData}
                           pageNum={breakdownPn}
-                          filterSlot={filterButton}
+                          filterSlot={undefined}
                         />
                       );
                     }}
@@ -4165,7 +4165,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
                   data={localData}
                   entries={filterMarcaEntries(marcaEntries, filters)}
                   pageNum={marcaPn}
-                  filterSlot={filterButton}
+                  filterSlot={undefined}
                 />
               )}
             </FilterableSlide>
@@ -4180,7 +4180,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
       key: 'summary', label: 'Resumo',
       node: (
         <FilterableSlide key="fs-summary" groups={globalFilterGroups}>
-          {(filters, filterButton) => <SummarySlide data={filterVariancePptData(localData, filters)} pageNum={summaryPn} filterSlot={filterButton} />}
+          {(filters, filterButton) => <SummarySlide data={filterVariancePptData(localData, filters)} pageNum={summaryPn} filterSlot={undefined} />}
         </FilterableSlide>
       ),
     });
