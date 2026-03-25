@@ -512,57 +512,91 @@ const CalcMemoryModal: React.FC<{
       case 'margin': {
         if (!financial_summary) return <p className="text-xs text-gray-400">Dados não disponíveis.</p>;
         const fs = financial_summary;
-        // Cascata: Receita − CV − CF = Margem Contribuição − SGA = Margem Operacional − Rateio = EBITDA
-        const margemContrib = fs.receita.real + fs.custos_variaveis.real + fs.custos_fixos.real;
-        const margemContribOrc = fs.receita.orcado + fs.custos_variaveis.orcado + fs.custos_fixos.orcado;
-        const margemOp = margemContrib + fs.sga.real;
-        const margemOpOrc = margemContribOrc + fs.sga.orcado;
-        const ebitdaReal = fs.ebitda.real;
-        const ebitdaOrc = fs.ebitda.orcado;
-        const pctReal = fs.receita.real > 0 ? (ebitdaReal / fs.receita.real) * 100 : 0;
-        const pctOrc = fs.receita.orcado > 0 ? (ebitdaOrc / fs.receita.orcado) * 100 : 0;
-        const ebitdaColor = pctReal >= 25 ? 'text-emerald-600' : pctReal >= 10 ? 'text-amber-600' : 'text-red-600';
+        // helpers de cálculo por cenário
+        const rR = fs.receita.real, rO = fs.receita.orcado, rA = fs.receita.a1;
+        const pct = (v: number, base: number) => base !== 0 ? (v / base) * 100 : 0;
+        const fmtP = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
 
-        const rows = [
-          { label: 'Receita', real: fs.receita.real, orc: fs.receita.orcado, color: 'text-blue-700', indent: false, separator: false },
-          { label: '− Custos Variáveis', real: fs.custos_variaveis.real, orc: fs.custos_variaveis.orcado, color: 'text-violet-600', indent: true, separator: false },
-          { label: '− Custos Fixos', real: fs.custos_fixos.real, orc: fs.custos_fixos.orcado, color: 'text-violet-600', indent: true, separator: false },
-          { label: '= Margem de Contribuição', real: margemContrib, orc: margemContribOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
-          { label: '− SG&A', real: fs.sga.real, orc: fs.sga.orcado, color: 'text-violet-600', indent: true, separator: false },
-          { label: '= Margem Operacional', real: margemOp, orc: margemOpOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
-          { label: '− Rateio', real: fs.rateio.real, orc: fs.rateio.orcado, color: 'text-violet-600', indent: true, separator: false },
+        // Subtotais por cenário
+        const mcR = rR + fs.custos_variaveis.real + fs.custos_fixos.real;
+        const mcO = rO + fs.custos_variaveis.orcado + fs.custos_fixos.orcado;
+        const mcA = rA + fs.custos_variaveis.a1 + fs.custos_fixos.a1;
+        const moR = mcR + fs.sga.real;
+        const moO = mcO + fs.sga.orcado;
+        const moA = mcA + fs.sga.a1;
+        const ebR = fs.ebitda.real, ebO = fs.ebitda.orcado, ebA = fs.ebitda.a1;
+        const ebitdaColor = pct(ebR, rR) >= 25 ? 'text-emerald-600' : pct(ebR, rR) >= 10 ? 'text-amber-600' : 'text-red-600';
+
+        type DreRow = {
+          label: string; indent: boolean; separator: boolean;
+          vR: number; vO: number; vA: number;
+          baseR: number; baseO: number; baseA: number;
+          colorClass: string; bold: boolean;
+        };
+        const rows: DreRow[] = [
+          { label: 'Receita Líquida', indent: false, separator: false, vR: rR, vO: rO, vA: rA, baseR: rR, baseO: rO, baseA: rA, colorClass: 'text-blue-700', bold: false },
+          { label: '− Custos Variáveis', indent: true, separator: false, vR: fs.custos_variaveis.real, vO: fs.custos_variaveis.orcado, vA: fs.custos_variaveis.a1, baseR: rR, baseO: rO, baseA: rA, colorClass: 'text-violet-600', bold: false },
+          { label: '− Custos Fixos', indent: true, separator: false, vR: fs.custos_fixos.real, vO: fs.custos_fixos.orcado, vA: fs.custos_fixos.a1, baseR: rR, baseO: rO, baseA: rA, colorClass: 'text-violet-600', bold: false },
+          { label: '= Margem de Contribuição', indent: false, separator: true, vR: mcR, vO: mcO, vA: mcA, baseR: rR, baseO: rO, baseA: rA, colorClass: 'text-gray-900', bold: true },
+          { label: '− SG&A', indent: true, separator: false, vR: fs.sga.real, vO: fs.sga.orcado, vA: fs.sga.a1, baseR: rR, baseO: rO, baseA: rA, colorClass: 'text-violet-600', bold: false },
+          { label: '= Margem Operacional', indent: false, separator: true, vR: moR, vO: moO, vA: moA, baseR: rR, baseO: rO, baseA: rA, colorClass: 'text-gray-900', bold: true },
+          { label: '− Rateio', indent: true, separator: false, vR: fs.rateio.real, vO: fs.rateio.orcado, vA: fs.rateio.a1, baseR: rR, baseO: rO, baseA: rA, colorClass: 'text-violet-600', bold: false },
         ];
+
+        const CellPair = ({ v, base, colorClass, bold }: { v: number; base: number; colorClass: string; bold: boolean }) => (
+          <>
+            <td className={`py-1.5 pr-0.5 text-right text-[10px] ${bold ? 'font-bold' : 'font-medium'} ${colorClass}`}>{fmtBRL(v)}</td>
+            <td className={`py-1.5 pl-0.5 text-right text-[9px] ${bold ? 'font-bold' : ''} text-gray-400`}>{fmtP(pct(v, base))}</td>
+          </>
+        );
 
         return (
           <div>
             <p className="text-[10px] text-gray-500 mb-3">
-              Cascateamento da DRE: Receita → Margem de Contribuição → Margem Operacional → Margem EBITDA
+              Cascateamento da DRE — % calculado sobre a Receita Líquida de cada cenário (base = 100%)
             </p>
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="py-1 text-left text-[10px] text-gray-400 font-semibold">Linha DRE</th>
-                  <th className="py-1 text-right text-[10px] text-gray-400 font-semibold">Real</th>
-                  <th className="py-1 text-right text-[10px] text-gray-400 font-semibold">Orçado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} className={r.separator ? 'border-t border-gray-200' : 'border-b border-gray-100'}>
-                    <td className={`py-1.5 ${r.indent ? 'pl-3 text-gray-500' : 'text-gray-700'}`}>{r.label}</td>
-                    <td className={`py-1.5 text-right font-semibold ${r.color}`}>{fmtBRL(r.real)}</td>
-                    <td className="py-1.5 text-right text-gray-400">{fmtBRL(r.orc)}</td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px]" style={{ minWidth: 520 }}>
+                <thead>
+                  <tr className="border-b-2 border-gray-200">
+                    <th className="py-1 text-left text-gray-500 font-semibold w-36">Linha DRE</th>
+                    <th className="py-1 text-right text-blue-600 font-bold" colSpan={2}>Real</th>
+                    <th className="py-1 text-right text-gray-500 font-semibold" colSpan={2}>Orçado</th>
+                    <th className="py-1 text-right text-gray-400 font-semibold" colSpan={2}>A-1</th>
                   </tr>
-                ))}
-                <tr className="border-t-2 border-gray-400">
-                  <td className="py-2 font-black text-gray-900">= Margem Op. Líquida (EBITDA)</td>
-                  <td className={`py-2 text-right font-black text-base ${ebitdaColor}`}>{fmtBRL(ebitdaReal)} <span className="text-sm">({fmtPct(pctReal)})</span></td>
-                  <td className="py-2 text-right font-bold text-gray-400">{fmtBRL(ebitdaOrc)} <span className="text-[10px]">({fmtPct(pctOrc)})</span></td>
-                </tr>
-              </tbody>
-            </table>
+                  <tr className="border-b border-gray-100">
+                    <th />
+                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">R$</th>
+                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">%</th>
+                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">R$</th>
+                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">%</th>
+                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">R$</th>
+                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i} className={r.separator ? 'border-t border-gray-300 bg-gray-50' : 'border-b border-gray-100'}>
+                      <td className={`py-1.5 ${r.indent ? 'pl-3 text-gray-400' : r.bold ? 'font-bold text-gray-800' : 'text-gray-600'}`}>{r.label}</td>
+                      <CellPair v={r.vR} base={r.baseR} colorClass={r.colorClass} bold={r.bold} />
+                      <CellPair v={r.vO} base={r.baseO} colorClass="text-gray-500" bold={r.bold} />
+                      <CellPair v={r.vA} base={r.baseA} colorClass="text-gray-400" bold={r.bold} />
+                    </tr>
+                  ))}
+                  <tr className="border-t-2 border-gray-400 bg-gray-50">
+                    <td className="py-2 font-black text-gray-900 text-[10px]">= Margem EBITDA</td>
+                    <td className={`py-2 pr-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtBRL(ebR)}</td>
+                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtP(pct(ebR, rR))}</td>
+                    <td className="py-2 pr-0.5 text-right text-[10px] font-bold text-gray-500">{fmtBRL(ebO)}</td>
+                    <td className="py-2 pl-0.5 text-right text-[10px] font-bold text-gray-500">{fmtP(pct(ebO, rO))}</td>
+                    <td className="py-2 pr-0.5 text-right text-[10px] font-bold text-gray-400">{fmtBRL(ebA)}</td>
+                    <td className="py-2 pl-0.5 text-right text-[10px] font-bold text-gray-400">{fmtP(pct(ebA, rA))}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
             <p className="text-[10px] text-gray-400 mt-3">
-              Margem EBITDA % = EBITDA / Receita × 100. Status: <strong>{pctReal >= 25 ? '✅ Saudável (≥25%)' : pctReal >= 10 ? '⚠️ Atenção (10-25%)' : '🔴 Crítico (<10%)'}</strong>
+              Status Real: <strong>{pct(ebR, rR) >= 25 ? '✅ Saudável (≥25%)' : pct(ebR, rR) >= 10 ? '⚠️ Atenção (10-25%)' : '🔴 Crítico (<10%)'}</strong>
             </p>
           </div>
         );
@@ -767,7 +801,7 @@ const CalcMemoryModal: React.FC<{
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col m-4"
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col m-4"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
