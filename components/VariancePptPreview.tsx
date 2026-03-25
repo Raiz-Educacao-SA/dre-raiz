@@ -1114,47 +1114,77 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
   const globalMaxSection = Math.max(...realV, ...orcV, ...sectionA1V);
   const sectionPhantomV = realV.map(() => globalMaxSection);
 
-  const chartOption = {
-    grid: { left: 8, right: 8, top: 94, bottom: 46 },
-    xAxis: {
+  const HORIZ_THRESHOLD = 6;
+  const isHorizontal = sortedNodes.length > HORIZ_THRESHOLD;
+
+  // Formatter de variação — reutilizado nos dois modos
+  const sectionVarFormatter = (p: any) => {
+    const idx = p.dataIndex;
+    const orcPct = sectionVarPcts[idx];
+    const orcAbs = sectionVarAbs[idx];
+    const a1Pct  = sectionA1VarPcts[idx];
+    const a1Abs  = sectionA1VarAbs[idx];
+    if (orcPct === null || orcPct === undefined) return '';
+    const orcFav = orcPct >= 0;
+    const orcAbsLabel = `${orcFav ? '+' : ''}${fmtChartLabel(toChartVal(orcAbs, unit), unit)}`;
+    const orcPctLabel = `${orcPct >= 0 ? '+' : ''}${orcPct.toFixed(1)}% Orç`;
+    const line1 = `{${orcFav ? 'pos' : 'neg'}|${orcAbsLabel} ${orcPctLabel}}`;
+    const a1Fav = (a1Pct ?? 0) >= 0;
+    const a1AbsLabel = `${a1Fav ? '+' : ''}${fmtChartLabel(toChartVal(a1Abs, unit), unit)}`;
+    const a1PctLabel = a1Pct !== null ? ` ${a1Pct >= 0 ? '+' : ''}${a1Pct.toFixed(1)}% A-1` : '';
+    const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1AbsLabel}${a1PctLabel}}`;
+    return `${line1}\n${line2}`;
+  };
+  const sectionVarRich = {
+    pos:   { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
+    neg:   { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
+    posA1: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
+    negA1: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
+  };
+
+  const chartOption = isHorizontal ? {
+    // ── MODO HORIZONTAL (muitos itens) ────────────────────────────────
+    grid: { left: 92, right: 148, top: 28, bottom: 28 },
+    xAxis: { type: 'value' as const, show: false },
+    yAxis: {
       type: 'category' as const,
-      data: labels,
-      axisLabel: { fontSize: 9, fontWeight: 700, color: '#374151', interval: 0, overflow: 'truncate' as const, width: 68 },
-      axisLine: { lineStyle: { color: '#E5E7EB' } },
+      data: [...labels].reverse(),
+      inverse: false,
+      axisLabel: { fontSize: 8, fontWeight: 700, color: '#374151', width: 84, overflow: 'truncate' as const },
+      axisLine: { show: false },
       axisTick: { show: false },
+      splitLine: { show: false },
     },
-    yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
     legend: {
-      bottom: 2,
+      top: 4, right: 4,
       data: [`Real ${data.year}`, 'Orçado', String(data.a1Year)],
-      itemWidth: 10,
-      itemHeight: 8,
-      textStyle: { fontSize: 9, color: '#6B7280' },
+      itemWidth: 10, itemHeight: 8,
+      textStyle: { fontSize: 8, color: '#6B7280' },
     },
     series: [
       {
         name: `Real ${data.year}`,
         type: 'bar' as const,
-        data: realV,
-        barMaxWidth: 28,
-        barGap: '8%',
-        itemStyle: { color: accentClr, borderRadius: [3, 3, 0, 0] },
-        label: { show: true, position: 'top' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 8, fontWeight: 800, color: accentClr },
+        data: [...realV].reverse(),
+        barMaxHeight: 12,
+        barGap: '6%',
+        itemStyle: { color: accentClr, borderRadius: [0, 2, 2, 0] },
+        label: { show: false },
       },
       {
-        // Phantom: global max → todos os labels no mesmo nível
         name: '__var__',
         type: 'bar' as const,
-        data: sectionPhantomV,
-        barWidth: 1,
+        data: [...sectionPhantomV].reverse(),
+        barHeight: 1,
         silent: true,
-        itemStyle: { color: 'transparent', borderRadius: 0 },
+        itemStyle: { color: 'transparent' },
         label: {
           show: true,
-          position: 'top' as const,
-          offset: [0, -26],
+          position: 'right' as const,
+          offset: [6, 0],
           formatter: (p: any) => {
-            const idx = p.dataIndex;
+            // reverse idx back to original order
+            const idx = sectionPhantomV.length - 1 - p.dataIndex;
             const orcPct = sectionVarPcts[idx];
             const orcAbs = sectionVarAbs[idx];
             const a1Pct  = sectionA1VarPcts[idx];
@@ -1170,13 +1200,59 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
             const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1AbsLabel}${a1PctLabel}}`;
             return `${line1}\n${line2}`;
           },
-          rich: {
-            pos:   { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
-            neg:   { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
-            posA1: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
-            negA1: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
-          },
+          rich: sectionVarRich,
         },
+      },
+      {
+        name: 'Orçado',
+        type: 'bar' as const,
+        data: [...orcV].reverse(),
+        barMaxHeight: 12,
+        itemStyle: { color: '#D1D5DB', borderRadius: [0, 2, 2, 0] },
+        label: { show: false },
+      },
+      {
+        name: String(data.a1Year),
+        type: 'bar' as const,
+        data: [...sectionA1V].reverse(),
+        barMaxHeight: 12,
+        itemStyle: { color: hex(C.teal), borderRadius: [0, 2, 2, 0] },
+        label: { show: false },
+      },
+    ],
+  } : {
+    // ── MODO VERTICAL (poucos itens) ──────────────────────────────────
+    grid: { left: 8, right: 8, top: 94, bottom: 46 },
+    xAxis: {
+      type: 'category' as const,
+      data: labels,
+      axisLabel: { fontSize: 9, fontWeight: 700, color: '#374151', interval: 0, overflow: 'truncate' as const, width: 68 },
+      axisLine: { lineStyle: { color: '#E5E7EB' } },
+      axisTick: { show: false },
+    },
+    yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
+    legend: {
+      bottom: 2,
+      data: [`Real ${data.year}`, 'Orçado', String(data.a1Year)],
+      itemWidth: 10, itemHeight: 8,
+      textStyle: { fontSize: 9, color: '#6B7280' },
+    },
+    series: [
+      {
+        name: `Real ${data.year}`,
+        type: 'bar' as const,
+        data: realV,
+        barMaxWidth: 28, barGap: '8%',
+        itemStyle: { color: accentClr, borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'top' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 8, fontWeight: 800, color: accentClr },
+      },
+      {
+        name: '__var__',
+        type: 'bar' as const,
+        data: sectionPhantomV,
+        barWidth: 1, silent: true,
+        itemStyle: { color: 'transparent', borderRadius: 0 },
+        label: { show: true, position: 'top' as const, offset: [0, -26], formatter: sectionVarFormatter, rich: sectionVarRich },
       },
       {
         name: 'Orçado',
@@ -1606,7 +1682,87 @@ function MarcaSlide({
   const globalMaxMarca = Math.max(...realV, ...orcV, ...a1V);
   const phantomV = realV.map(() => globalMaxMarca);
 
-  const chartOption = {
+  const MARCA_HORIZ_THRESHOLD = 6;
+  const isMarcaHorizontal = filtered.length > MARCA_HORIZ_THRESHOLD;
+
+  const marcaVarFormatter = (rawIdx: number) => {
+    const d = marcaDeltas[rawIdx];
+    const orcFav = (d.orcPct ?? 0) >= 0;
+    const orcAbs = `${orcFav ? '+' : ''}${fmtChartLabel(toChartVal(d.orcAbs, unit), unit)}`;
+    const orcPct = d.orcPct !== null ? ` ${d.orcPct >= 0 ? '+' : ''}${d.orcPct.toFixed(1)}% Orç` : '';
+    const line1 = `{${orcFav ? 'pos' : 'neg'}|${orcAbs}${orcPct}}`;
+    const a1Fav = (d.a1Pct ?? 0) >= 0;
+    const a1Abs = `${a1Fav ? '+' : ''}${fmtChartLabel(toChartVal(d.a1Abs, unit), unit)}`;
+    const a1Pct = d.a1Pct !== null ? ` ${d.a1Pct >= 0 ? '+' : ''}${d.a1Pct.toFixed(1)}% A-1` : '';
+    const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1Abs}${a1Pct}}`;
+    return `${line1}\n${line2}`;
+  };
+  const marcaVarRich = {
+    pos:   { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
+    neg:   { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
+    posA1: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
+    negA1: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
+  };
+
+  const chartOption = isMarcaHorizontal ? {
+    // ── MODO HORIZONTAL (muitas marcas) ───────────────────────────────
+    tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const }, textStyle: { fontSize: 10 } },
+    legend: {
+      top: 4, right: 4, itemWidth: 10, itemHeight: 8,
+      data: [`Real ${data.year}`, 'Orçado', String(data.a1Year)],
+      textStyle: { fontSize: 8, fontWeight: 600, color: '#374151' },
+    },
+    grid: { left: 52, right: 148, top: 28, bottom: 12 },
+    xAxis: { type: 'value' as const, show: false },
+    yAxis: {
+      type: 'category' as const,
+      data: [...labels].reverse(),
+      inverse: false,
+      axisLabel: { fontSize: 8, fontWeight: 700, color: '#374151', width: 44, overflow: 'truncate' as const },
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+    },
+    series: [
+      {
+        name: `Real ${data.year}`,
+        type: 'bar' as const,
+        data: [...realV].reverse(),
+        barMaxHeight: 14, barGap: '6%', barCategoryGap: '14%',
+        itemStyle: { color: accentClr, borderRadius: [0, 3, 3, 0] },
+        label: { show: false },
+      },
+      {
+        name: '__delta__',
+        type: 'bar' as const,
+        data: [...phantomV].reverse(),
+        barHeight: 1, silent: true,
+        itemStyle: { color: 'transparent' },
+        label: {
+          show: true, position: 'right' as const, offset: [6, 0],
+          formatter: (p: any) => marcaVarFormatter(phantomV.length - 1 - p.dataIndex),
+          rich: marcaVarRich,
+        },
+      },
+      {
+        name: 'Orçado',
+        type: 'bar' as const,
+        data: [...orcV].reverse(),
+        barMaxHeight: 14,
+        itemStyle: { color: '#D1D5DB', borderRadius: [0, 3, 3, 0] },
+        label: { show: false },
+      },
+      {
+        name: String(data.a1Year),
+        type: 'bar' as const,
+        data: [...a1V].reverse(),
+        barMaxHeight: 14,
+        itemStyle: { color: hex(C.teal), borderRadius: [0, 3, 3, 0] },
+        label: { show: false },
+      },
+    ],
+  } : {
+    // ── MODO VERTICAL (poucas marcas) ─────────────────────────────────
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const }, textStyle: { fontSize: 10 } },
     legend: {
       bottom: 0, itemWidth: 12, itemHeight: 8,
@@ -1626,74 +1782,34 @@ function MarcaSlide({
       {
         name: `Real ${data.year}`,
         type: 'bar' as const,
-        data: realV,
-        barMaxWidth: 100,
-        barGap: '6%',
-        barCategoryGap: '12%',
+        data: realV, barMaxWidth: 100, barGap: '6%', barCategoryGap: '12%',
         itemStyle: { color: accentClr, borderRadius: [3, 3, 0, 0] },
-        label: {
-          show: true, position: 'top' as const,
-          formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 9, fontWeight: 800, color: accentClr,
-        },
+        label: { show: true, position: 'top' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 9, fontWeight: 800, color: accentClr },
       },
       {
-        // Phantom: 2 linhas de variação acima de tudo (sem seta, sem R$)
         name: '__delta__',
         type: 'bar' as const,
-        data: phantomV,
-        barWidth: 1,
-        silent: true,
+        data: phantomV, barWidth: 1, silent: true,
         itemStyle: { color: 'transparent' },
         label: {
-          show: true,
-          position: 'top' as const,
-          offset: [0, -26],
-          formatter: (p: any) => {
-            const d = marcaDeltas[p.dataIndex];
-            // Linha 1: vs Orçado
-            const orcFav = (d.orcPct ?? 0) >= 0;
-            const orcAbs = `${orcFav ? '+' : ''}${fmtChartLabel(toChartVal(d.orcAbs, unit), unit)}`;
-            const orcPct = d.orcPct !== null ? ` ${d.orcPct >= 0 ? '+' : ''}${d.orcPct.toFixed(1)}% Orç` : '';
-            const line1 = `{${orcFav ? 'pos' : 'neg'}|${orcAbs}${orcPct}}`;
-            // Linha 2: vs A-1
-            const a1Fav = (d.a1Pct ?? 0) >= 0;
-            const a1Abs = `${a1Fav ? '+' : ''}${fmtChartLabel(toChartVal(d.a1Abs, unit), unit)}`;
-            const a1Pct = d.a1Pct !== null ? ` ${d.a1Pct >= 0 ? '+' : ''}${d.a1Pct.toFixed(1)}% A-1` : '';
-            const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1Abs}${a1Pct}}`;
-            return `${line1}\n${line2}`;
-          },
-          rich: {
-            pos:   { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
-            neg:   { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
-            posA1: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
-            negA1: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
-          },
+          show: true, position: 'top' as const, offset: [0, -26],
+          formatter: (p: any) => marcaVarFormatter(p.dataIndex),
+          rich: marcaVarRich,
         },
       },
       {
         name: 'Orçado',
         type: 'bar' as const,
-        data: orcV,
-        barMaxWidth: 100,
+        data: orcV, barMaxWidth: 100,
         itemStyle: { color: '#D1D5DB', borderRadius: [3, 3, 0, 0] },
-        label: {
-          show: true, position: 'top' as const,
-          formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 8, color: '#9CA3AF', fontWeight: 600,
-        },
+        label: { show: true, position: 'top' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 8, color: '#9CA3AF', fontWeight: 600 },
       },
       {
         name: String(data.a1Year),
         type: 'bar' as const,
-        data: a1V,
-        barMaxWidth: 100,
+        data: a1V, barMaxWidth: 100,
         itemStyle: { color: hex(C.teal), borderRadius: [3, 3, 0, 0] },
-        label: {
-          show: true, position: 'top' as const,
-          formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 8, color: hex(C.teal), fontWeight: 600,
-        },
+        label: { show: true, position: 'top' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 8, color: hex(C.teal), fontWeight: 600 },
       },
     ],
   };
