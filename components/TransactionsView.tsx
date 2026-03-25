@@ -390,6 +390,23 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     return () => debouncedSetFilter.cancel();
   }, [debouncedSetFilter]);
 
+  // Auto-search: dispara busca automaticamente ao alterar qualquer filtro (com debounce)
+  const autoSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFirstFilterRender = useRef(true);
+  useEffect(() => {
+    if (isFirstFilterRender.current) {
+      isFirstFilterRender.current = false;
+      return;
+    }
+    if (autoSearchTimer.current) clearTimeout(autoSearchTimer.current);
+    autoSearchTimer.current = setTimeout(() => {
+      handleSearchData(1);
+    }, 600);
+    return () => {
+      if (autoSearchTimer.current) clearTimeout(autoSearchTimer.current);
+    };
+  }, [colFilters]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const handleGlobalClick = (event: MouseEvent) => {
       if (openDropdown && filterContainerRef.current) {
