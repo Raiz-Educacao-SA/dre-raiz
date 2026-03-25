@@ -3727,6 +3727,8 @@ export interface VariancePptPreviewProps {
   availableMonths?: string[];
   /** Quando fornecido, o componente restringe a visualização às marcas da lista. */
   restrictedMarcas?: string[];
+  /** Todas as marcas que o usuário tem permissão de ver — usado para popular o painel de filtros */
+  permittedMarcas?: string[];
 }
 
 // ─── Slide wrapper with hide toggle ──────────────────────────────────
@@ -3773,7 +3775,7 @@ function HideableSlide({
   );
 }
 
-export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadWithFilters, availableMonths = [], restrictedMarcas }: VariancePptPreviewProps) {
+export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadWithFilters, availableMonths = [], restrictedMarcas, permittedMarcas }: VariancePptPreviewProps) {
   const [presenting, setPresenting] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [hiddenSlides, setHiddenSlides] = useState<Set<string>>(new Set());
@@ -3880,15 +3882,19 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
     return { ...marcaFilteredData, sections: marcaFilteredData.sections.filter(sec => s.includes(sec.tag0)) };
   }, [marcaFilteredData, globalFilters.sections]);
 
-  // All available marcas from the ORIGINAL baseData (never shrink the option list)
-  // Se restrictedMarcas fornecido, limita às marcas permitidas do usuário
+  // All available marcas for the filter panel.
+  // Priority: permittedMarcas (full user-accessible list, always stable)
+  // → fallback to brands found in marcaBreakdowns (old data or missing prop)
+  // → restrictedMarcas limits the final list for non-admin users
   const allAvailableMarcas = useMemo(() => {
-    const all = [...new Set(Object.values(baseData.marcaBreakdowns ?? {}).flat().map(e => e.marca))].sort();
+    const fromBreakdowns = [...new Set(Object.values(baseData.marcaBreakdowns ?? {}).flat().map(e => e.marca))].sort();
+    // Use permittedMarcas when provided so the list never shrinks after a marca-filtered reload
+    const base = permittedMarcas && permittedMarcas.length > 0 ? permittedMarcas : fromBreakdowns;
     if (restrictedMarcas && restrictedMarcas.length > 0) {
-      return all.filter(m => restrictedMarcas.includes(m));
+      return base.filter(m => restrictedMarcas.includes(m));
     }
-    return all;
-  }, [baseData, restrictedMarcas]);
+    return base;
+  }, [baseData, restrictedMarcas, permittedMarcas]);
 
   // All available sections (tag0) from original baseData — always full list
   const availableSections = useMemo(
