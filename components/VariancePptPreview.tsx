@@ -3497,8 +3497,8 @@ function Tag01T02BreakdownSlide({
 
   // Table rows: total + tag02s
   const tableRows = [
-    { label: t01.label, real: t01.real, orc: t01.orcCompare, orcPct: t01.orcVarPct, isTotal: true },
-    ...tag02s.map(n => ({ label: n.label, real: n.real, orc: n.orcCompare, orcPct: n.orcVarPct, isTotal: false })),
+    { label: t01.label, real: t01.real, orc: t01.orcCompare, orcPct: t01.orcVarPct, a1: t01.a1Compare, a1Pct: t01.a1VarPct, isTotal: true },
+    ...tag02s.map(n => ({ label: n.label, real: n.real, orc: n.orcCompare, orcPct: n.orcVarPct, a1: n.a1Compare, a1Pct: n.a1VarPct, isTotal: false })),
   ];
 
   // Top 5 estouros: orcVarPct < 0, ordenado pelo maior gap R$ (real - orc mais negativo primeiro)
@@ -3609,7 +3609,7 @@ function Tag01T02BreakdownSlide({
       <div className="flex gap-0 pb-7" style={{ height: 'calc(100% - 52px)' }}>
 
         {/* Left: table */}
-        <div className="w-[48%] shrink-0 overflow-hidden px-3 pt-3 border-r border-gray-100">
+        <div className="w-[60%] shrink-0 overflow-hidden px-3 pt-3 border-r border-gray-100">
           <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2">
               <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -3622,11 +3622,13 @@ function Tag01T02BreakdownSlide({
           <table className="w-full border-collapse">
             <thead>
               <tr style={{ backgroundColor: '#F9FAFB' }}>
-                <th className="text-left px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">CATEGORIA</th>
-                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">REAL</th>
-                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">ORÇADO</th>
-                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ R$</th>
-                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">VAR %</th>
+                <th className="text-left px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">CATEGORIA</th>
+                <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">REAL</th>
+                <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">ORÇADO</th>
+                <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ R$</th>
+                <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ% Orç</th>
+                <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200 border-l border-l-gray-200">A-1</th>
+                <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ% A-1</th>
               </tr>
             </thead>
             <tbody>
@@ -3639,23 +3641,27 @@ function Tag01T02BreakdownSlide({
                     style={{ backgroundColor: row.isTotal ? `${accentClr}12` : 'white' }}
                   >
                     <td
-                      className={`px-1.5 py-1 text-[10px] truncate max-w-0 ${row.isTotal ? 'font-extrabold' : 'font-medium text-gray-800'}`}
-                      style={{ width: '38%', color: row.isTotal ? accentClr : undefined }}
+                      className={`px-1 py-1 text-[9px] truncate max-w-0 ${row.isTotal ? 'font-extrabold' : 'font-medium text-gray-800'}`}
+                      style={{ width: '32%', color: row.isTotal ? accentClr : undefined }}
                     >
                       {row.label}
                     </td>
                     <td
-                      className={`text-right px-1.5 py-1 text-[10px] tabular-nums ${row.isTotal ? 'font-extrabold' : 'font-semibold text-gray-800'}`}
+                      className={`text-right px-1 py-1 text-[9px] tabular-nums ${row.isTotal ? 'font-extrabold' : 'font-semibold text-gray-800'}`}
                       style={{ color: row.isTotal ? accentClr : undefined }}
                     >
                       {fmtK(row.real)}
                     </td>
-                    <td className="text-right px-1.5 py-1 text-[10px] text-gray-500 tabular-nums">{fmtK(row.orc)}</td>
-                    <td className="text-right px-1.5 py-1 text-[10px] font-semibold tabular-nums" style={{ color: deltaColor(row.orcPct) }}>
+                    <td className="text-right px-1 py-1 text-[9px] text-gray-500 tabular-nums">{fmtK(row.orc)}</td>
+                    <td className="text-right px-1 py-1 text-[9px] font-semibold tabular-nums" style={{ color: deltaColor(row.orcPct) }}>
                       {(delta >= 0 ? '+' : '') + fmtK(delta)}
                     </td>
-                    <td className="text-right px-1.5 py-1">
+                    <td className="text-right px-1 py-1">
                       <VarBadge pct={row.orcPct} />
+                    </td>
+                    <td className="text-right px-1 py-1 text-[9px] text-gray-500 tabular-nums border-l border-l-gray-100">{fmtK(row.a1)}</td>
+                    <td className="text-right px-1 py-1">
+                      <VarBadge pct={row.a1Pct} />
                     </td>
                   </tr>
                 );
