@@ -160,9 +160,10 @@ function SlideFiltersPanel({
   onApply: (f: GlobalSlideFilters) => void;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = React.useState<GlobalSlideFilters>(() => ({ ...current }));
+  const normalizeDraft = (f: GlobalSlideFilters): GlobalSlideFilters => ({ sections: [], ...f });
+  const [draft, setDraft] = React.useState<GlobalSlideFilters>(() => normalizeDraft(current));
 
-  React.useEffect(() => { setDraft({ ...current }); }, [current]);
+  React.useEffect(() => { setDraft(normalizeDraft(current)); }, [current]);
 
   const toggleMonth = (m: string) => {
     setDraft(prev => {
