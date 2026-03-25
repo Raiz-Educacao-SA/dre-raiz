@@ -494,7 +494,7 @@ const CalcMemoryModal: React.FC<{
                 ].map((r, i) => (
                   <tr key={i} className="border-b border-gray-100">
                     <td className="py-1.5 text-gray-600">{r.label}</td>
-                    <td className={`py-1.5 text-right font-semibold ${r.positive ? 'text-blue-700' : 'text-red-600'}`}>{fmtBRL(r.real)}</td>
+                    <td className={`py-1.5 text-right font-semibold ${r.positive ? 'text-blue-700' : 'text-violet-600'}`}>{fmtBRL(r.real)}</td>
                     <td className="py-1.5 text-right text-gray-400">{fmtBRL(r.orc)}</td>
                   </tr>
                 ))}
@@ -526,13 +526,13 @@ const CalcMemoryModal: React.FC<{
 
         const rows = [
           { label: 'Receita', real: fs.receita.real, orc: fs.receita.orcado, color: 'text-blue-700', indent: false, separator: false },
-          { label: '− Custos Variáveis', real: fs.custos_variaveis.real, orc: fs.custos_variaveis.orcado, color: 'text-red-500', indent: true, separator: false },
+          { label: '− Custos Variáveis', real: fs.custos_variaveis.real, orc: fs.custos_variaveis.orcado, color: 'text-violet-600', indent: true, separator: false },
           { label: '= Margem de Contribuição', real: margemContrib, orc: margemContribOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
-          { label: '− Custos Fixos', real: fs.custos_fixos.real, orc: fs.custos_fixos.orcado, color: 'text-red-500', indent: true, separator: false },
+          { label: '− Custos Fixos', real: fs.custos_fixos.real, orc: fs.custos_fixos.orcado, color: 'text-violet-600', indent: true, separator: false },
           { label: '= Margem Operacional', real: margemOp, orc: margemOpOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
-          { label: '− SG&A', real: fs.sga.real, orc: fs.sga.orcado, color: 'text-red-500', indent: true, separator: false },
+          { label: '− SG&A', real: fs.sga.real, orc: fs.sga.orcado, color: 'text-violet-600', indent: true, separator: false },
           { label: '= Margem Op. Líquida', real: margemOpSga, orc: margemOpSgaOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
-          { label: '− Rateio', real: fs.rateio.real, orc: fs.rateio.orcado, color: 'text-red-500', indent: true, separator: false },
+          { label: '− Rateio', real: fs.rateio.real, orc: fs.rateio.orcado, color: 'text-violet-600', indent: true, separator: false },
         ];
 
         return (
@@ -1789,10 +1789,10 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right font-medium text-gray-900">{fmtBRL(c.receita_real)}</td>
-                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.custos_variaveis_real)}</td>
-                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.custos_fixos_real)}</td>
-                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.sga_real)}</td>
-                    <td className="px-3 py-2 text-right text-red-600">{fmtBRL(c.rateio_real)}</td>
+                    <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(c.custos_variaveis_real)}</td>
+                    <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(c.custos_fixos_real)}</td>
+                    <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(c.sga_real)}</td>
+                    <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(c.rateio_real)}</td>
                     <td className="px-3 py-2 text-right font-medium" style={{ color: c.ebitda >= 0 ? '#059669' : '#DC2626' }}>
                       {fmtBRL(c.ebitda)}
                     </td>
@@ -1815,10 +1815,10 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-right text-gray-900">{fmtBRL(portfolio_consolidated.consolidated_revenue)}</td>
-                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.custos_variaveis_real, 0))}</td>
-                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.custos_fixos_real, 0))}</td>
-                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.sga_real, 0))}</td>
-                  <td className="px-3 py-2 text-right text-red-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.rateio_real, 0))}</td>
+                  <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.custos_variaveis_real, 0))}</td>
+                  <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.custos_fixos_real, 0))}</td>
+                  <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.sga_real, 0))}</td>
+                  <td className="px-3 py-2 text-right text-violet-600">{fmtBRL(portfolio_companies.reduce((s, c) => s + c.rateio_real, 0))}</td>
                   <td className="px-3 py-2 text-right" style={{ color: portfolio_consolidated.consolidated_ebitda >= 0 ? '#059669' : '#DC2626' }}>
                     {fmtBRL(portfolio_consolidated.consolidated_ebitda)}
                   </td>
