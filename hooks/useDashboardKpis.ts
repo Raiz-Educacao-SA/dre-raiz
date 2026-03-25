@@ -176,7 +176,8 @@ export const useDashboardKpis = ({
 
   // Trends — executive-level
   const trends = useMemo((): KpiTrends => {
-    const compScenarioName = comparisonMode === 'budget' ? 'Orçamento' : 'Ano Anterior';
+    // Cenários em somaRows: 'Orçado' e 'A-1' (não 'Orçamento'/'Ano Anterior')
+    const compScenarioName = comparisonMode === 'budget' ? 'Orçado' : 'A-1';
     const comparison = filteredByMonth.filter(t => t.scenario === compScenarioName);
 
     const compRevenue = receitaLiquidaComparison;
@@ -228,8 +229,8 @@ export const useDashboardKpis = ({
       };
     };
 
-    const budgetData = filteredByMonth.filter(t => t.scenario === 'Orçamento');
-    const prevYearData = filteredByMonth.filter(t => t.scenario === 'Ano Anterior');
+    const budgetData = filteredByMonth.filter(t => t.scenario === 'Orçado');
+    const prevYearData = filteredByMonth.filter(t => t.scenario === 'A-1');
 
     return {
       revenue: revenueTrend,

@@ -171,7 +171,8 @@ const App: React.FC = () => {
   // ⚡ LAZY LOAD: Carregar transações apenas quando o usuário navegar para views que precisam
   // Views que precisam de transações: movements, kpis, forecasting, analysis
   // Dashboard usa getSomaTags RPC (já carrega separadamente acima)
-  const viewsNeedingTransactions = ['dashboard'];
+  // Dashboard usa somaRows (getSomaTags) — não precisa carregar transações individuais
+  const viewsNeedingTransactions: string[] = [];
   const transactionsLoadedRef = React.useRef(false);
 
   const loadTransactionsIfNeeded = React.useCallback(() => {
@@ -786,16 +787,19 @@ const App: React.FC = () => {
     });
   }, [transactions, selectedMarca, selectedFilial, currentView, filterTransactions]);
 
-  // Transações sintéticas para os gráficos do Dashboard (convertidas de SomaTagsRow)
+  // Transações sintéticas para o Dashboard derivadas de somaRows
+  // Custos são armazenados negativos no banco — usamos Math.abs porque useDashboardKpis
+  // subtrai os custos do revenue: ebitda = revenue - fixedCosts - variableCosts - ...
   const dashboardTransactions = useMemo((): Transaction[] =>
     dashboardSomaRows.map((row, idx) => ({
       id: `dash-${idx}`,
       date: `${row.month}-01`,
-      amount: Number(row.total),
+      amount: Math.abs(Number(row.total)),   // sempre positivo; hooks subtraem para calcular ebitda
       type: (row.tag0.startsWith('01.') ? 'REVENUE' :
              row.tag0.startsWith('02.') ? 'VARIABLE_COST' :
-             row.tag0.startsWith('03.') ? 'FIXED_COST' : 'SGA') as Transaction['type'],
-      scenario: row.scenario,
+             row.tag0.startsWith('03.') ? 'FIXED_COST' :
+             row.tag0.startsWith('06.') ? 'RATEIO' : 'SGA') as Transaction['type'],
+      scenario: row.scenario,   // 'Real' | 'Orçado' | 'A-1'
       tag0: row.tag0,
       tag01: row.tag01,
       description: '',
@@ -1193,7 +1197,7 @@ const App: React.FC = () => {
             <CockpitDashboard
               kpis={kpis}
               somaRows={dashboardSomaRows}
-              transactions={filteredTransactions}
+              transactions={dashboardTransactions}
               selectedMarca={selectedMarca}
               selectedFilial={selectedFilial}
               uniqueBrands={uniqueBrands}

@@ -142,6 +142,23 @@ export const BranchPerformanceSection: React.FC<BranchPerformanceSectionProps> =
     { key: 'ebitda', label: 'EBITDA', activeColor: 'bg-[#10B981]' },
   ];
 
+  // Dados sintéticos de somaRows não têm marca/filial por linha — não é possível drill por unidade
+  const hasBranchData = branchData.some(d => d.branch && d.branch !== '' && d.branch !== '???');
+  if (!hasBranchData) {
+    return (
+      <section>
+        <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+          <h3 className="text-base font-black text-gray-900 uppercase tracking-tighter mb-2">
+            Desempenho por Unidade
+          </h3>
+          <p className="text-sm text-gray-400 text-center py-6">
+            Detalhamento por filial disponível na guia <strong>DRE Gerencial</strong>.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-4">
       <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">

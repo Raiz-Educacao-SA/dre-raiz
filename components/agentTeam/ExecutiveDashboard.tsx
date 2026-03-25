@@ -721,9 +721,9 @@ const ExecutiveDashboard: React.FC = () => {
       const tag03Filter = selectedTag03sRef.current.length > 0 ? selectedTag03sRef.current : undefined;
       const tag0Filter = selectedTag0sRef.current;
 
-      // Fetch DRE consolidado + marcas em paralelo
+      // Fetch DRE consolidado + marcas em paralelo — apenas recorrência "Sim"
       const [dreSnapshotRaw, marcasResult] = await Promise.all([
-        getSomaTags(mFrom, mTo, marcaFilter, undefined, tag02Filter, tag01Filter, undefined, tag03Filter),
+        getSomaTags(mFrom, mTo, marcaFilter, undefined, tag02Filter, tag01Filter, 'Sim', tag03Filter),
         getMarcasEFiliais(),
       ]);
 
@@ -766,7 +766,7 @@ const ExecutiveDashboard: React.FC = () => {
       let portfolioCompanies: CompanyFinancialSnapshot[] = [];
       if (marcasParaPortfolio.length > 1) {
         const marcaResults = await Promise.all(
-          marcasParaPortfolio.map(m => getSomaTags(mFrom, mTo, [m], undefined, tag02Filter, tag01Filter, undefined, tag03Filter))
+          marcasParaPortfolio.map(m => getSomaTags(mFrom, mTo, [m], undefined, tag02Filter, tag01Filter, 'Sim', tag03Filter))
         );
         const rowsByMarca = new Map<string, SomaTagsRow[]>();
         marcasParaPortfolio.forEach((m, i) => {
