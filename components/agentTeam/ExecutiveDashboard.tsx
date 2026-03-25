@@ -512,39 +512,59 @@ const CalcMemoryModal: React.FC<{
       case 'margin': {
         if (!financial_summary) return <p className="text-xs text-gray-400">Dados não disponíveis.</p>;
         const fs = financial_summary;
+        const margemContrib = fs.receita.real + fs.custos_variaveis.real;
+        const margemContribOrc = fs.receita.orcado + fs.custos_variaveis.orcado;
+        const margemOp = margemContrib + fs.custos_fixos.real;
+        const margemOpOrc = margemContribOrc + fs.custos_fixos.orcado;
+        const margemOpSga = margemOp + fs.sga.real;
+        const margemOpSgaOrc = margemOpOrc + fs.sga.orcado;
+        const ebitdaReal = fs.ebitda.real;
+        const ebitdaOrc = fs.ebitda.orcado;
+        const pctReal = fs.receita.real > 0 ? (ebitdaReal / fs.receita.real) * 100 : 0;
+        const pctOrc = fs.receita.orcado > 0 ? (ebitdaOrc / fs.receita.orcado) * 100 : 0;
+        const ebitdaColor = pctReal >= 25 ? 'text-emerald-600' : pctReal >= 10 ? 'text-amber-600' : 'text-red-600';
+
+        const rows = [
+          { label: 'Receita', real: fs.receita.real, orc: fs.receita.orcado, color: 'text-blue-700', indent: false, separator: false },
+          { label: '− Custos Variáveis', real: fs.custos_variaveis.real, orc: fs.custos_variaveis.orcado, color: 'text-red-500', indent: true, separator: false },
+          { label: '= Margem de Contribuição', real: margemContrib, orc: margemContribOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
+          { label: '− Custos Fixos', real: fs.custos_fixos.real, orc: fs.custos_fixos.orcado, color: 'text-red-500', indent: true, separator: false },
+          { label: '= Margem Operacional', real: margemOp, orc: margemOpOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
+          { label: '− SG&A', real: fs.sga.real, orc: fs.sga.orcado, color: 'text-red-500', indent: true, separator: false },
+          { label: '= Margem Op. Líquida', real: margemOpSga, orc: margemOpSgaOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
+          { label: '− Rateio', real: fs.rateio.real, orc: fs.rateio.orcado, color: 'text-red-500', indent: true, separator: false },
+        ];
+
         return (
           <div>
             <p className="text-[10px] text-gray-500 mb-3">
-              Margem de Contribuição = (Receita + Custos Variáveis) / Receita × 100
+              Cascateamento da DRE: Receita → Margem de Contribuição → Margem Operacional → Margem EBITDA
             </p>
             <table className="w-full text-xs">
-              <tbody>
-                <tr className="border-b border-gray-100">
-                  <td className="py-1.5 text-gray-600">Receita</td>
-                  <td className="py-1.5 text-right font-semibold text-blue-700">{fmtBRL(fs.receita.real)}</td>
-                </tr>
-                <tr className="border-b border-gray-100">
-                  <td className="py-1.5 text-gray-600">Custos Variáveis</td>
-                  <td className="py-1.5 text-right font-semibold text-red-600">{fmtBRL(fs.custos_variaveis.real)}</td>
-                </tr>
-                <tr className="border-b border-gray-100">
-                  <td className="py-1.5 text-gray-600">= Margem de Contribuição (R$)</td>
-                  <td className="py-1.5 text-right font-bold text-gray-900">{fmtBRL(fs.margem_contribuicao.real)}</td>
-                </tr>
+              <thead>
                 <tr className="border-b border-gray-200">
-                  <td className="py-1.5 font-black text-gray-900">= Margem %</td>
-                  <td className={`py-1.5 text-right font-black text-lg ${fs.margem_contribuicao.health === 'healthy' ? 'text-emerald-600' : fs.margem_contribuicao.health === 'attention' ? 'text-amber-600' : 'text-red-600'}`}>
-                    {fmtPct(fs.margem_contribuicao.pct_real)}
-                  </td>
+                  <th className="py-1 text-left text-[10px] text-gray-400 font-semibold">Linha DRE</th>
+                  <th className="py-1 text-right text-[10px] text-gray-400 font-semibold">Real</th>
+                  <th className="py-1 text-right text-[10px] text-gray-400 font-semibold">Orçado</th>
                 </tr>
-                <tr>
-                  <td className="py-1.5 text-gray-600">Orçado %</td>
-                  <td className="py-1.5 text-right text-gray-400">{fmtPct(fs.margem_contribuicao.pct_orcado)}</td>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className={r.separator ? 'border-t border-gray-200' : 'border-b border-gray-100'}>
+                    <td className={`py-1.5 ${r.indent ? 'pl-3 text-gray-500' : 'text-gray-700'}`}>{r.label}</td>
+                    <td className={`py-1.5 text-right font-semibold ${r.color}`}>{fmtBRL(r.real)}</td>
+                    <td className="py-1.5 text-right text-gray-400">{fmtBRL(r.orc)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-gray-400">
+                  <td className="py-2 font-black text-gray-900">= Margem EBITDA</td>
+                  <td className={`py-2 text-right font-black text-base ${ebitdaColor}`}>{fmtBRL(ebitdaReal)} <span className="text-sm">({fmtPct(pctReal)})</span></td>
+                  <td className="py-2 text-right font-bold text-gray-400">{fmtBRL(ebitdaOrc)} <span className="text-[10px]">({fmtPct(pctOrc)})</span></td>
                 </tr>
               </tbody>
             </table>
             <p className="text-[10px] text-gray-400 mt-3">
-              Status: <strong>{fs.margem_contribuicao.health === 'healthy' ? '✅ Saudável (≥ 30%)' : fs.margem_contribuicao.health === 'attention' ? '⚠️ Atenção (20-30%)' : '🔴 Crítico (< 20%)'}</strong>
+              Margem EBITDA % = EBITDA / Receita × 100. Status: <strong>{pctReal >= 25 ? '✅ Saudável (≥25%)' : pctReal >= 10 ? '⚠️ Atenção (10-25%)' : '🔴 Crítico (<10%)'}</strong>
             </p>
           </div>
         );
@@ -737,7 +757,7 @@ const CalcMemoryModal: React.FC<{
     'risk': 'Nível de Risco — Derivação',
     'confidence': 'Confiança — Completude dos Dados',
     'ebitda': 'EBITDA — Composição',
-    'margin': 'Margem de Contribuição — Fórmula',
+    'margin': 'Margem EBITDA — Cascateamento DRE',
     'revenue': 'Receita — Análise vs Orçado',
     'trend': 'Tendência — Projeção por Regressão',
     'ebitda-monthly': 'EBITDA Mensal — Histórico',
@@ -872,12 +892,12 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
             onClick={() => setOpenCard('ebitda')}
           />
           <KPICard
-            label="Margem"
-            value={fmtPct(financial_summary.margem_contribuicao.pct_real)}
-            subtitle={`Orçado: ${fmtPct(financial_summary.margem_contribuicao.pct_orcado)}`}
+            label="Margem EBITDA"
+            value={fmtPct(financial_summary.receita.real > 0 ? (financial_summary.ebitda.real / financial_summary.receita.real) * 100 : 0)}
+            subtitle={`Orçado: ${fmtPct(financial_summary.receita.orcado > 0 ? (financial_summary.ebitda.orcado / financial_summary.receita.orcado) * 100 : 0)}`}
             icon={<Target size={16} />}
-            color={financial_summary.margem_contribuicao.health === 'healthy' ? '#059669' : financial_summary.margem_contribuicao.health === 'attention' ? '#D97706' : '#DC2626'}
-            bg={financial_summary.margem_contribuicao.health === 'healthy' ? '#ECFDF5' : financial_summary.margem_contribuicao.health === 'attention' ? '#FFFBEB' : '#FEF2F2'}
+            color={financial_summary.ebitda.real / (financial_summary.receita.real || 1) >= 0.25 ? '#059669' : financial_summary.ebitda.real / (financial_summary.receita.real || 1) >= 0.10 ? '#D97706' : '#DC2626'}
+            bg={financial_summary.ebitda.real / (financial_summary.receita.real || 1) >= 0.25 ? '#ECFDF5' : financial_summary.ebitda.real / (financial_summary.receita.real || 1) >= 0.10 ? '#FFFBEB' : '#FEF2F2'}
             onClick={() => setOpenCard('margin')}
           />
           <KPICard
