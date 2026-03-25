@@ -3628,6 +3628,7 @@ function Tag01T02BreakdownSlide({
                 <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ R$</th>
                 <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ% Orç</th>
                 <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200 border-l border-l-gray-200">A-1</th>
+                <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ R$ A-1</th>
                 <th className="text-right px-1 py-1 font-bold text-[8px] text-gray-500 border-b border-gray-200">Δ% A-1</th>
               </tr>
             </thead>
@@ -3660,6 +3661,9 @@ function Tag01T02BreakdownSlide({
                       <VarBadge pct={row.orcPct} />
                     </td>
                     <td className="text-right px-1 py-1 text-[9px] text-gray-500 tabular-nums border-l border-l-gray-100">{fmtK(row.a1)}</td>
+                    <td className="text-right px-1 py-1 text-[9px] font-semibold tabular-nums" style={{ color: deltaColor(row.a1Pct) }}>
+                      {(() => { const d = row.real - row.a1; return (d >= 0 ? '+' : '') + fmtK(d); })()}
+                    </td>
                     <td className="text-right px-1 py-1">
                       <VarBadge pct={row.a1Pct} />
                     </td>
