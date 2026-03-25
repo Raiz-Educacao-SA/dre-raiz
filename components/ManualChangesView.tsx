@@ -3,7 +3,7 @@ import { ManualChange, ContaContabilOption } from '../types';
 import {
   History, CheckCircle2, XCircle, ArrowRight, AlertCircle, GitFork,
   User, Clock, ChevronDown, ShieldCheck, FileText, Shield, Lock, FilterX, X,
-  CheckSquare, Square, Loader2, Search, Tag, Building2,
+  CheckSquare, Square, Loader2, Search, Tag, Building2, RefreshCw,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getContaContabilOptions, getFiliais } from '../services/supabaseService';
@@ -14,6 +14,7 @@ interface ManualChangesViewProps {
   approveChange: (changeId: string) => void;
   rejectChange: (changeId: string) => void;
   bulkApproveChanges?: (ids: string[]) => Promise<void>;
+  onRefresh?: () => Promise<void>;
 }
 
 interface DetailModalProps {
@@ -332,10 +333,17 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
   );
 };
 
-const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveChange, rejectChange, bulkApproveChanges }) => {
+const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveChange, rejectChange, bulkApproveChanges, onRefresh }) => {
   const [selectedChange, setSelectedChange] = useState<ManualChange | null>(null);
   const { user, isAdmin, isApprover } = useAuth();
   const canApprove = isAdmin || isApprover;
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (!onRefresh || isRefreshing) return;
+    setIsRefreshing(true);
+    try { await onRefresh(); } finally { setIsRefreshing(false); }
+  };
 
   // Seleção em massa
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -505,6 +513,17 @@ const ManualChangesView: React.FC<ManualChangesViewProps> = ({ changes, approveC
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {onRefresh && (
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="bg-[#1B75BB] text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-[#155d99] shadow-md transition-all active:scale-95 disabled:opacity-60"
+              title="Recarregar aprovações do banco de dados"
+            >
+              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+              <span className="text-xs font-black">{isRefreshing ? 'Atualizando…' : 'Atualizar'}</span>
+            </button>
+          )}
           <button
             onClick={handleExportExcel}
             className="bg-emerald-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-emerald-700 shadow-md transition-all active:scale-95"

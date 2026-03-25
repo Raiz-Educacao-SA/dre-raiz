@@ -238,27 +238,23 @@ const App: React.FC = () => {
     return unsub;
   }, [user?.email, refreshInquiryCounts]);
 
-  // Carregar dados completos quando navegar para Aprovações
+  // Callback reutilizável: busca manual changes e atualiza estado
+  const loadManualChanges = React.useCallback(async () => {
+    try {
+      const loadedChanges = await supabaseService.getAllManualChanges();
+      setManualChanges(loadedChanges);
+      setPendingCountFast(loadedChanges.filter(c => c.status === 'Pendente').length);
+    } catch (error) {
+      console.error('❌ Erro ao carregar manual changes:', error);
+    }
+  }, []);
+
+  // Carregar dados completos quando navegar para Aprovações (lazy, apenas uma vez)
   useEffect(() => {
     if (currentView !== 'manual_changes' || manualChangesLoadedRef.current) return;
     manualChangesLoadedRef.current = true;
-
-    const loadManualChanges = async () => {
-      try {
-        console.log('🔵 Carregando manual changes do Supabase...');
-        const loadedChanges = await supabaseService.getAllManualChanges();
-        console.log('✅ Manual changes carregados:', {
-          total: loadedChanges.length,
-          pendentes: loadedChanges.filter(c => c.status === 'Pendente').length,
-        });
-        setManualChanges(loadedChanges);
-        setPendingCountFast(loadedChanges.filter(c => c.status === 'Pendente').length);
-      } catch (error) {
-        console.error('❌ Erro ao carregar manual changes:', error);
-      }
-    };
     loadManualChanges();
-  }, [currentView]);
+  }, [currentView, loadManualChanges]);
 
   // Salvar filtros no sessionStorage quando mudarem
   useEffect(() => {
@@ -1244,7 +1240,7 @@ const App: React.FC = () => {
           {currentView === 'manual_changes' && (
             <ErrorBoundary fallbackMessage="Erro ao carregar Aprovações">
               <Suspense fallback={<LoadingSpinner message="Carregando alterações..." />}>
-                <ManualChangesView changes={manualChanges} approveChange={handleApproveChange} rejectChange={handleRejectChange} bulkApproveChanges={handleBulkApproveChanges} />
+                <ManualChangesView changes={manualChanges} approveChange={handleApproveChange} rejectChange={handleRejectChange} bulkApproveChanges={handleBulkApproveChanges} onRefresh={loadManualChanges} />
               </Suspense>
             </ErrorBoundary>
           )}
