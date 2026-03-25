@@ -181,6 +181,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   // Auth para review tracking
   const { user } = useAuth();
 
+  // canEdit: disponível no escopo do componente para uso no popup de detalhe e nas linhas da tabela
+  const canEdit = activeTab === 'real' || userRole === 'admin';
+
 
 
   // Estado de busca
@@ -1961,7 +1964,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                           </td>
                         );
                         case 'acoes': {
-                          const canEdit = activeTab === 'real' || userRole === 'admin';
                           return (
                           <td key="acoes" style={tdS} className="text-center">
                             <div className="flex items-center justify-center gap-1.5">
