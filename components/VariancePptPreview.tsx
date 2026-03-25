@@ -135,8 +135,9 @@ function SlideCard({ children, className = '' }: { children: React.ReactNode; cl
 type GlobalSlideFilters = {
   month: string;
   monthFrom?: string;
-  marcas: string[];   // vazio = todas as marcas permitidas
-  tag01s: string[];   // vazio = todas as linhas
+  marcas: string[];    // vazio = todas as marcas permitidas
+  tag01s: string[];    // vazio = todas as linhas (tag01)
+  sections: string[];  // vazio = todas as seções (tag0) — filtro client-side
 };
 
 // ─── Slide Filters Panel ─────────────────────────────────────────────
@@ -145,6 +146,7 @@ function SlideFiltersPanel({
   liveMonths,
   availableMarcas,
   availableTag01s,
+  availableSections,
   loading,
   onApply,
   onClose,
@@ -153,6 +155,7 @@ function SlideFiltersPanel({
   liveMonths: string[];
   availableMarcas: string[];
   availableTag01s: string[];
+  availableSections: string[];
   loading: boolean;
   onApply: (f: GlobalSlideFilters) => void;
   onClose: () => void;
@@ -185,7 +188,14 @@ function SlideFiltersPanel({
   const toggleTag01 = (t: string) =>
     setDraft(prev => ({ ...prev, tag01s: prev.tag01s.includes(t) ? prev.tag01s.filter(x => x !== t) : [...prev.tag01s, t] }));
 
-  const activeCount = (draft.monthFrom ? 1 : 0) + (draft.marcas.length > 0 ? 1 : 0) + (draft.tag01s.length > 0 ? 1 : 0);
+  const toggleSection = (s: string) =>
+    setDraft(prev => ({ ...prev, sections: prev.sections.includes(s) ? prev.sections.filter(x => x !== s) : [...prev.sections, s] }));
+
+  const activeCount =
+    (draft.monthFrom ? 1 : 0) +
+    (draft.marcas.length > 0 ? 1 : 0) +
+    (draft.sections.length > 0 ? 1 : 0) +
+    (draft.tag01s.length > 0 ? 1 : 0);
 
   const CB = 'w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 cursor-pointer';
 
@@ -193,7 +203,7 @@ function SlideFiltersPanel({
     <div className="fixed inset-0 z-[10000] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.65)' }} onClick={onClose}>
       <div
         className="relative rounded-2xl shadow-2xl overflow-hidden"
-        style={{ background: '#111827', border: '1px solid #374151', width: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
+        style={{ background: '#111827', border: '1px solid #374151', width: 860, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
@@ -265,7 +275,35 @@ function SlideFiltersPanel({
             </div>
           </div>
 
-          {/* Linhas DRE */}
+          {/* Seções (tag0) — filtro client-side, sem reload */}
+          {availableSections.length > 0 && (
+            <div className="flex-1 flex flex-col border-r overflow-hidden" style={{ borderColor: '#374151' }}>
+              <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase flex items-center justify-between" style={{ color: '#6B7280', borderBottom: '1px solid #1F2937' }}>
+                <span>Seções</span>
+                {draft.sections.length > 0 && (
+                  <button className="text-[9px] font-bold" style={{ color: '#3B82F6' }} onClick={() => setDraft(p => ({ ...p, sections: [] }))}>Limpar</button>
+                )}
+              </div>
+              <div className="overflow-y-auto flex-1 py-1.5">
+                {availableSections.map(s => {
+                  const checked = draft.sections.length === 0 || draft.sections.includes(s);
+                  return (
+                    <label key={s} className="flex items-center gap-2.5 px-4 py-1.5 cursor-pointer select-none" style={{ color: checked ? 'white' : '#9CA3AF' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#1F2937')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      <span className={CB} style={{ borderColor: checked ? '#2563EB' : '#4B5563', background: checked ? '#2563EB' : 'transparent' }}>
+                        {checked && <Check size={8} color="white" strokeWidth={3} />}
+                      </span>
+                      <input type="checkbox" checked={checked} onChange={() => toggleSection(s)} className="sr-only" />
+                      <span className="text-[11px] font-medium leading-snug">{s}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Linhas DRE (tag01) */}
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="px-4 py-2 text-[10px] font-bold tracking-widest uppercase flex items-center justify-between" style={{ color: '#6B7280', borderBottom: '1px solid #1F2937' }}>
               <span>Linhas DRE</span>
@@ -298,7 +336,7 @@ function SlideFiltersPanel({
           <button
             className="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
             style={{ color: '#9CA3AF', background: '#1F2937' }}
-            onClick={() => setDraft({ month: current.month, monthFrom: undefined, marcas: [], tag01s: [] })}
+            onClick={() => setDraft({ month: current.month, monthFrom: undefined, marcas: [], sections: [], tag01s: [] })}
           >
             Limpar todos
           </button>
@@ -3744,6 +3782,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
     month: data.yearMonth ?? '',
     monthFrom: data.monthFrom,
     marcas: restrictedMarcas ?? [],
+    sections: [],
     tag01s: [],
   });
   const [globalLoading, setGlobalLoading] = useState(false);
@@ -3777,6 +3816,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
       month: data.yearMonth ?? '',
       monthFrom: data.monthFrom,
       marcas: restrictedMarcas ?? [],
+      sections: [],
       tag01s: [],
     };
     setGlobalFilters(next);
@@ -3827,10 +3867,17 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
   }, [globalFilters.month, globalFilters.monthFrom]);
 
   // Apply marca filter in-memory on top of baseData
-  const localData = useMemo(
+  const marcaFilteredData = useMemo(
     () => activeMarcas.length > 0 ? filterVariancePptData(baseData, { marcas: activeMarcas }) : baseData,
     [baseData, activeMarcas],
   );
+
+  // Apply sections (tag0) client-side filter on top of marca-filtered data
+  const localData = useMemo(() => {
+    const s = globalFilters.sections;
+    if (!s || s.length === 0) return marcaFilteredData;
+    return { ...marcaFilteredData, sections: marcaFilteredData.sections.filter(sec => s.includes(sec.tag0)) };
+  }, [marcaFilteredData, globalFilters.sections]);
 
   // All available marcas from the ORIGINAL baseData (never shrink the option list)
   // Se restrictedMarcas fornecido, limita às marcas permitidas do usuário
@@ -3841,6 +3888,12 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
     }
     return all;
   }, [baseData, restrictedMarcas]);
+
+  // All available sections (tag0) from original baseData — always full list
+  const availableSections = useMemo(
+    () => baseData.sections.map(s => s.tag0),
+    [baseData.sections],
+  );
 
   // All unique tag01 lines from current data (for filter panel)
   const availableTag01s = useMemo(() => {
@@ -3858,6 +3911,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
     let n = 0;
     if (globalFilters.monthFrom) n++;
     if (globalFilters.marcas.length > 0) n++;
+    if (globalFilters.sections.length > 0) n++;
     if (globalFilters.tag01s.length > 0) n++;
     return n;
   }, [globalFilters]);
@@ -4311,6 +4365,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
           liveMonths={liveAvailableMonths}
           availableMarcas={allAvailableMarcas}
           availableTag01s={availableTag01s}
+          availableSections={availableSections}
           loading={globalLoading}
           onApply={f => { applyFilters(f); setShowFilterPanel(false); }}
           onClose={() => setShowFilterPanel(false)}
