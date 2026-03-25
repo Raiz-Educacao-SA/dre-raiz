@@ -181,11 +181,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   // Auth para review tracking
   const { user } = useAuth();
 
-  // canEdit: disponível no escopo do componente para uso no popup de detalhe e nas linhas da tabela
-  const canEdit = activeTab === 'real' || userRole === 'admin';
-
-
-
   // Estado de busca
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchAllModal, setShowSearchAllModal] = useState(false);
@@ -329,6 +324,10 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     const saved = sessionStorage.getItem('transactionsActiveTab');
     return saved ? JSON.parse(saved) : 'real';
   });
+
+  // canEdit: disponível no escopo do componente para uso no popup de detalhe e nas linhas da tabela
+  const canEdit = activeTab === 'real' || userRole === 'admin';
+
   // Paginação server-side
   const PAGE_SIZE = 1000;
   const [currentPageNumber, setCurrentPageNumber] = useState(1);
