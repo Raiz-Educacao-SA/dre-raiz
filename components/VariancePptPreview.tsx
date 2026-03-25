@@ -160,7 +160,7 @@ function SlideFiltersPanel({
   onApply: (f: GlobalSlideFilters) => void;
   onClose: () => void;
 }) {
-  const normalizeDraft = (f: GlobalSlideFilters): GlobalSlideFilters => ({ sections: [], ...f });
+  const normalizeDraft = (f: GlobalSlideFilters): GlobalSlideFilters => ({ ...f, sections: f.sections ?? [] });
   const [draft, setDraft] = React.useState<GlobalSlideFilters>(() => normalizeDraft(current));
 
   React.useEffect(() => { setDraft(normalizeDraft(current)); }, [current]);
