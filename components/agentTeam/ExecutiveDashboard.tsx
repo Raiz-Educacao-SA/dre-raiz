@@ -546,7 +546,7 @@ const CalcMemoryModal: React.FC<{
         const CellPair = ({ v, base, colorClass, bold }: { v: number; base: number; colorClass: string; bold: boolean }) => (
           <>
             <td className={`py-1.5 pr-0.5 text-right text-[10px] ${bold ? 'font-bold' : 'font-medium'} ${colorClass}`}>{fmtBRL(v)}</td>
-            <td className={`py-1.5 pl-0.5 text-right text-[9px] ${bold ? 'font-bold' : ''} ${colorClass} opacity-80`}>{fmtP(pct(v, base))}</td>
+            <td className={`py-1.5 pl-0.5 text-right text-[9px] ${bold ? 'font-bold' : ''} text-gray-400`}>{fmtP(pct(v, base))}</td>
           </>
         );
 
@@ -586,11 +586,11 @@ const CalcMemoryModal: React.FC<{
                   <tr className="border-t-2 border-gray-400 bg-gray-50">
                     <td className="py-2 font-black text-gray-900 text-[10px]">= Margem EBITDA</td>
                     <td className={`py-2 pr-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtBRL(ebR)}</td>
-                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor} opacity-80`}>{fmtP(pct(ebR, rR))}</td>
+                    <td className="py-2 pl-0.5 text-right text-[10px] font-bold text-gray-400">{fmtP(pct(ebR, rR))}</td>
                     <td className={`py-2 pr-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtBRL(ebO)}</td>
-                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor} opacity-80`}>{fmtP(pct(ebO, rO))}</td>
+                    <td className="py-2 pl-0.5 text-right text-[10px] font-bold text-gray-400">{fmtP(pct(ebO, rO))}</td>
                     <td className={`py-2 pr-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtBRL(ebA)}</td>
-                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor} opacity-80`}>{fmtP(pct(ebA, rA))}</td>
+                    <td className="py-2 pl-0.5 text-right text-[10px] font-bold text-gray-400">{fmtP(pct(ebA, rA))}</td>
                   </tr>
                 </tbody>
               </table>
