@@ -923,15 +923,19 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
                 <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">ORÇADO</th>
                 <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ R$</th>
                 <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">VAR %</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200 border-l border-l-gray-200">{a1Label}</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ R$ A-1</th>
+                <th className="text-right px-1.5 py-1 font-bold text-[9px] text-gray-500 border-b border-gray-200">Δ% A-1</th>
               </tr>
             </thead>
             <tbody>
               {entries.map((entry, idx) => {
                 if (entry.type === 'section') {
                   const { section } = entry;
+                  const a1Delta = section.node.real - section.node.a1Compare;
                   return (
                     <tr key={idx} className="border-b border-gray-50 bg-white">
-                      <td className="px-1.5 py-1 text-[10px] font-medium text-gray-800 truncate max-w-0" style={{ width: '40%' }}>{section.tag0}</td>
+                      <td className="px-1.5 py-1 text-[10px] font-medium text-gray-800 truncate max-w-0" style={{ width: '30%' }}>{section.tag0}</td>
                       <td className="text-right px-1.5 py-1 text-[10px] font-semibold text-gray-800 tabular-nums">{fmtK(section.node.real)}</td>
                       <td className="text-right px-1.5 py-1 text-[10px] text-gray-500 tabular-nums">{fmtK(section.node.orcCompare)}</td>
                       <td className="text-right px-1.5 py-1 text-[10px] font-semibold tabular-nums" style={{ color: deltaColor(section.node.orcVarPct) }}>
@@ -940,23 +944,29 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
                       <td className="text-right px-1.5 py-1">
                         <VarBadge pct={section.node.orcVarPct} />
                       </td>
+                      <td className="text-right px-1.5 py-1 text-[10px] text-gray-500 tabular-nums border-l border-l-gray-100">{fmtK(section.node.a1Compare)}</td>
+                      <td className="text-right px-1.5 py-1 text-[10px] font-semibold tabular-nums" style={{ color: deltaColor(section.node.a1VarPct) }}>
+                        {(a1Delta >= 0 ? '+' : '') + fmtK(a1Delta)}
+                      </td>
+                      <td className="text-right px-1.5 py-1">
+                        <VarBadge pct={section.node.a1VarPct} />
+                      </td>
                     </tr>
                   );
                 } else {
                   const { calc, bg, textColor } = entry;
                   const baseColor = textColor ? `#${textColor}` : '#111827';
                   const isDark = bg === '1E3A8A' || bg === '374151';
+                  const a1Delta = calc.real - calc.a1;
                   return (
                     <tr key={idx} className="border-b border-gray-200" style={{ backgroundColor: `#${bg}` }}>
-                      <td className="px-1.5 py-1.5 text-[10px] font-extrabold truncate max-w-0" style={{ color: baseColor, width: '40%' }}>{calc.label}</td>
+                      <td className="px-1.5 py-1.5 text-[10px] font-extrabold truncate max-w-0" style={{ color: baseColor, width: '30%' }}>{calc.label}</td>
                       <td className="text-right px-1.5 py-1.5 text-[10px] font-extrabold tabular-nums" style={{ color: baseColor }}>{fmtK(calc.real)}</td>
                       <td className="text-right px-1.5 py-1.5 text-[10px] tabular-nums" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : baseColor }}>{fmtK(calc.orcado)}</td>
                       <td className="text-right px-1.5 py-1.5 text-[10px] font-bold tabular-nums">
                         {(() => {
                           const v = calc.real - calc.orcado;
-                          const clr = isDark
-                            ? (v >= 0 ? '#86EFAC' : '#FCA5A5')
-                            : deltaColor(calc.deltaOrcPct);
+                          const clr = isDark ? (v >= 0 ? '#86EFAC' : '#FCA5A5') : deltaColor(calc.deltaOrcPct);
                           return <span style={{ color: clr }}>{v >= 0 ? '+' : ''}{fmtK(v)}</span>;
                         })()}
                       </td>
@@ -967,6 +977,21 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
                           </span>
                         ) : (
                           <VarBadge pct={calc.deltaOrcPct} />
+                        )}
+                      </td>
+                      <td className="text-right px-1.5 py-1.5 text-[10px] tabular-nums border-l border-l-gray-100" style={{ color: isDark ? 'rgba(255,255,255,0.7)' : baseColor }}>{fmtK(calc.a1)}</td>
+                      <td className="text-right px-1.5 py-1.5 text-[10px] font-bold tabular-nums">
+                        <span style={{ color: isDark ? (a1Delta >= 0 ? '#86EFAC' : '#FCA5A5') : deltaColor(calc.deltaA1Pct) }}>
+                          {a1Delta >= 0 ? '+' : ''}{fmtK(a1Delta)}
+                        </span>
+                      </td>
+                      <td className="text-right px-1.5 py-1.5">
+                        {isDark ? (
+                          <span className="text-[9px] font-bold tabular-nums" style={{ color: (calc.deltaA1Pct ?? 0) >= 0 ? '#86EFAC' : '#FCA5A5' }}>
+                            {fmtPct(calc.deltaA1Pct)}
+                          </span>
+                        ) : (
+                          <VarBadge pct={calc.deltaA1Pct} />
                         )}
                       </td>
                     </tr>
@@ -1388,15 +1413,15 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
 // ═══════════════════════════════════════════════════════════════════════
 
 function DetailSlide({ section, data, page = 0, pageNum }: { section: VariancePptSection; data: VariancePptData; page?: number; pageNum?: number }) {
-  type DetailRow = { depth: number; label: string; real: number; orc: number; varPct: number | null; justText: string; status: string };
+  type DetailRow = { depth: number; label: string; real: number; orc: number; varPct: number | null; a1: number; a1Pct: number | null; justText: string; status: string };
   const allRows: DetailRow[] = [];
 
   for (const t01 of section.tag01Nodes) {
-    allRows.push({ depth: 0, label: t01.label, real: t01.real, orc: t01.orcCompare, varPct: t01.orcVarPct, justText: t01.orcAiSummary || '', status: t01.orcStatus });
+    allRows.push({ depth: 0, label: t01.label, real: t01.real, orc: t01.orcCompare, varPct: t01.orcVarPct, a1: t01.a1Compare, a1Pct: t01.a1VarPct, justText: t01.orcAiSummary || '', status: t01.orcStatus });
     for (const t02 of t01.children) {
-      allRows.push({ depth: 1, label: t02.label, real: t02.real, orc: t02.orcCompare, varPct: t02.orcVarPct, justText: t02.orcAiSummary || '', status: t02.orcStatus });
+      allRows.push({ depth: 1, label: t02.label, real: t02.real, orc: t02.orcCompare, varPct: t02.orcVarPct, a1: t02.a1Compare, a1Pct: t02.a1VarPct, justText: t02.orcAiSummary || '', status: t02.orcStatus });
       for (const marca of t02.children) {
-        allRows.push({ depth: 2, label: marca.label, real: marca.real, orc: marca.orcCompare, varPct: marca.orcVarPct, justText: marca.orcJustification || marca.orcAiSummary || '', status: marca.orcStatus });
+        allRows.push({ depth: 2, label: marca.label, real: marca.real, orc: marca.orcCompare, varPct: marca.orcVarPct, a1: marca.a1Compare, a1Pct: marca.a1VarPct, justText: marca.orcJustification || marca.orcAiSummary || '', status: marca.orcStatus });
       }
     }
   }
@@ -1422,18 +1447,26 @@ function DetailSlide({ section, data, page = 0, pageNum }: { section: VariancePp
       <div className="p-4 pb-8 overflow-hidden" style={{ height: 'calc(100% - 52px)' }}>
         <table className="w-full text-sm border-collapse table-fixed">
           <colgroup>
-            <col style={{ width: '22%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '9%' }} />
-            <col style={{ width: '47%' }} />
+            <col style={{ width: '18%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '6%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '6%' }} />
+            <col style={{ width: '35%' }} />
           </colgroup>
           <thead>
             <tr style={{ backgroundColor: '#F9FAFB' }}>
               <th className="text-left px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">CONTA</th>
               <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">REAL</th>
               <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">ORC</th>
+              <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ R$</th>
               <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ%</th>
+              <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200 border-l border-l-gray-200">A-1</th>
+              <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ R$ A-1</th>
+              <th className="text-right px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">Δ% A-1</th>
               <th className="text-left px-2 py-2 font-bold text-[10px] text-gray-600 border-b border-gray-200">JUSTIFICATIVA / SÍNTESE</th>
             </tr>
           </thead>
@@ -1444,13 +1477,25 @@ function DetailSlide({ section, data, page = 0, pageNum }: { section: VariancePp
               const isMarca = row.depth === 2;
               const textColor = isMarca ? '#EA580C' : row.depth <= 1 ? hex(C.darkText) : hex(C.mutedText);
               const rowBg = row.depth === 0 ? '#FAFAFA' : 'white';
+              const orcDelta = row.real - row.orc;
+              const a1Delta = row.real - row.a1;
               return (
                 <tr key={idx} className="border-b border-gray-50" style={{ backgroundColor: rowBg }}>
                   <td className="px-2 py-1 truncate text-[11px]" style={{ color: textColor, fontWeight: isBold ? 700 : 400 }} title={row.label}>{indent}{row.label}</td>
                   <td className="text-right px-2 py-1 text-[11px] tabular-nums" style={{ color: textColor, fontWeight: isBold ? 700 : 400 }}>{fmtK(row.real)}</td>
                   <td className="text-right px-2 py-1 text-[11px] tabular-nums text-gray-500">{fmtK(row.orc)}</td>
+                  <td className="text-right px-2 py-1 text-[11px] font-semibold tabular-nums" style={{ color: deltaColor(row.varPct) }}>
+                    {(orcDelta >= 0 ? '+' : '') + fmtK(orcDelta)}
+                  </td>
                   <td className="text-right px-2 py-1">
                     <VarBadge pct={row.varPct} />
+                  </td>
+                  <td className="text-right px-2 py-1 text-[11px] tabular-nums text-gray-500 border-l border-l-gray-100">{fmtK(row.a1)}</td>
+                  <td className="text-right px-2 py-1 text-[11px] font-semibold tabular-nums" style={{ color: deltaColor(row.a1Pct) }}>
+                    {(a1Delta >= 0 ? '+' : '') + fmtK(a1Delta)}
+                  </td>
+                  <td className="text-right px-2 py-1">
+                    <VarBadge pct={row.a1Pct} />
                   </td>
                   <td className="px-2 py-1">
                     <div className="flex items-start gap-1">
@@ -3157,6 +3202,7 @@ function Tag01DetailSlide({
                   <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">Δ R$</th>
                   <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">Δ% Orç</th>
                   <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">{a1Label}</th>
+                  <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">Δ R$ {a1Label}</th>
                   <th className="text-right px-2 py-1.5 font-bold text-[10px] text-gray-500 uppercase tracking-wide">Δ% {a1Label}</th>
                 </tr>
               </thead>
@@ -3170,6 +3216,7 @@ function Tag01DetailSlide({
                   const bold    = isTotal || isT02;
                   const indent  = isMarca ? '\u00A0\u00A0↳ ' : '';
                   const varAbs  = row.real - row.orc;
+                  const varA1   = row.real - row.a1;
                   return (
                     <tr key={idx} className="border-b border-gray-50" style={{ backgroundColor: bg }}>
                       <td className="px-2 py-0.5 text-[10px] truncate" style={{ maxWidth: 120, color: textClr, fontWeight: bold ? 700 : 400 }} title={row.label}>
@@ -3191,6 +3238,11 @@ function Tag01DetailSlide({
                       </td>
                       <td className="text-right px-2 py-0.5 text-[10px] tabular-nums"
                         style={{ color: isTotal ? 'rgba(255,255,255,0.75)' : '#6B7280' }}>{fmtK(row.a1)}</td>
+                      <td className="text-right px-2 py-0.5 text-[10px] tabular-nums font-semibold">
+                        <span style={{ color: isTotal ? (varA1 >= 0 ? '#86EFAC' : '#FCA5A5') : deltaColor(row.a1Pct) }}>
+                          {varA1 >= 0 ? '+' : ''}{fmtK(varA1)}
+                        </span>
+                      </td>
                       <td className="text-right px-2 py-0.5">
                         {isTotal
                           ? <span className="text-[10px] font-bold text-white">{fmtPct(row.a1Pct)}</span>
