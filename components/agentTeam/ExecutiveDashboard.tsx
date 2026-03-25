@@ -546,7 +546,7 @@ const CalcMemoryModal: React.FC<{
         const CellPair = ({ v, base, colorClass, bold }: { v: number; base: number; colorClass: string; bold: boolean }) => (
           <>
             <td className={`py-1.5 pr-0.5 text-right text-[10px] ${bold ? 'font-bold' : 'font-medium'} ${colorClass}`}>{fmtBRL(v)}</td>
-            <td className={`py-1.5 pl-0.5 text-right text-[9px] ${bold ? 'font-bold' : ''} text-gray-400`}>{fmtP(pct(v, base))}</td>
+            <td className={`py-1.5 pl-0.5 text-right text-[9px] ${bold ? 'font-bold' : ''} ${colorClass} opacity-80`}>{fmtP(pct(v, base))}</td>
           </>
         );
 
@@ -560,18 +560,18 @@ const CalcMemoryModal: React.FC<{
                 <thead>
                   <tr className="border-b-2 border-gray-200">
                     <th className="py-1 text-left text-gray-500 font-semibold w-36">Linha DRE</th>
-                    <th className="py-1 text-right text-blue-600 font-bold" colSpan={2}>Real</th>
-                    <th className="py-1 text-right text-gray-500 font-semibold" colSpan={2}>Orçado</th>
-                    <th className="py-1 text-right text-gray-400 font-semibold" colSpan={2}>A-1</th>
+                    <th className="py-1 text-center text-blue-600 font-bold" colSpan={2}>Real</th>
+                    <th className="py-1 text-center text-gray-600 font-bold" colSpan={2}>Orçado</th>
+                    <th className="py-1 text-center text-gray-500 font-bold" colSpan={2}>A-1</th>
                   </tr>
                   <tr className="border-b border-gray-100">
                     <th />
-                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">R$</th>
-                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">%</th>
-                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">R$</th>
-                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">%</th>
-                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">R$</th>
-                    <th className="py-0.5 text-right text-[9px] text-gray-400 font-normal">%</th>
+                    <th className="py-0.5 text-center text-[9px] text-gray-400 font-normal">R$</th>
+                    <th className="py-0.5 text-center text-[9px] text-gray-400 font-normal">%</th>
+                    <th className="py-0.5 text-center text-[9px] text-gray-400 font-normal">R$</th>
+                    <th className="py-0.5 text-center text-[9px] text-gray-400 font-normal">%</th>
+                    <th className="py-0.5 text-center text-[9px] text-gray-400 font-normal">R$</th>
+                    <th className="py-0.5 text-center text-[9px] text-gray-400 font-normal">%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -579,18 +579,18 @@ const CalcMemoryModal: React.FC<{
                     <tr key={i} className={r.separator ? 'border-t border-gray-300 bg-gray-50' : 'border-b border-gray-100'}>
                       <td className={`py-1.5 ${r.indent ? 'pl-3 text-gray-400' : r.bold ? 'font-bold text-gray-800' : 'text-gray-600'}`}>{r.label}</td>
                       <CellPair v={r.vR} base={r.baseR} colorClass={r.colorClass} bold={r.bold} />
-                      <CellPair v={r.vO} base={r.baseO} colorClass="text-gray-500" bold={r.bold} />
-                      <CellPair v={r.vA} base={r.baseA} colorClass="text-gray-400" bold={r.bold} />
+                      <CellPair v={r.vO} base={r.baseO} colorClass={r.colorClass} bold={r.bold} />
+                      <CellPair v={r.vA} base={r.baseA} colorClass={r.colorClass} bold={r.bold} />
                     </tr>
                   ))}
                   <tr className="border-t-2 border-gray-400 bg-gray-50">
                     <td className="py-2 font-black text-gray-900 text-[10px]">= Margem EBITDA</td>
                     <td className={`py-2 pr-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtBRL(ebR)}</td>
-                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtP(pct(ebR, rR))}</td>
-                    <td className="py-2 pr-0.5 text-right text-[10px] font-bold text-gray-500">{fmtBRL(ebO)}</td>
-                    <td className="py-2 pl-0.5 text-right text-[10px] font-bold text-gray-500">{fmtP(pct(ebO, rO))}</td>
-                    <td className="py-2 pr-0.5 text-right text-[10px] font-bold text-gray-400">{fmtBRL(ebA)}</td>
-                    <td className="py-2 pl-0.5 text-right text-[10px] font-bold text-gray-400">{fmtP(pct(ebA, rA))}</td>
+                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor} opacity-80`}>{fmtP(pct(ebR, rR))}</td>
+                    <td className={`py-2 pr-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtBRL(ebO)}</td>
+                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor} opacity-80`}>{fmtP(pct(ebO, rO))}</td>
+                    <td className={`py-2 pr-0.5 text-right text-[10px] font-black ${ebitdaColor}`}>{fmtBRL(ebA)}</td>
+                    <td className={`py-2 pl-0.5 text-right text-[10px] font-black ${ebitdaColor} opacity-80`}>{fmtP(pct(ebA, rA))}</td>
                   </tr>
                 </tbody>
               </table>
