@@ -4409,6 +4409,7 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
                   liveMonths={liveAvailableMonths}
                   availableMarcas={allAvailableMarcas}
                   availableTag01s={availableTag01s}
+                  availableSections={availableSections}
                   loading={globalLoading}
                   onApply={f => { applyFilters(f); setShowFilterPanel(false); }}
                   onClose={() => setShowFilterPanel(false)}
