@@ -783,8 +783,8 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
   const ebitda = data.calcRows.find(c => c.label === 'EBITDA TOTAL');
 
   // Bar chart: sections + EBITDA
-  const allRaw = data.sections.flatMap(s => [Math.abs(s.node.real), Math.abs(s.node.orcCompare)]);
-  if (ebitda) allRaw.push(Math.abs(ebitda.real), Math.abs(ebitda.orcado));
+  const allRaw = data.sections.flatMap(s => [Math.abs(s.node.real), Math.abs(s.node.orcCompare), Math.abs(s.node.a1Compare)]);
+  if (ebitda) allRaw.push(Math.abs(ebitda.real), Math.abs(ebitda.orcado), Math.abs(ebitda.a1));
   const unit = detectScale(...allRaw);
 
   const chartLabels = [
@@ -799,6 +799,10 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
     ...data.sections.map(s => Math.abs(toChartVal(s.node.orcCompare, unit))),
     ...(ebitda ? [Math.abs(toChartVal(ebitda.orcado, unit))] : []),
   ];
+  const a1V = [
+    ...data.sections.map(s => Math.abs(toChartVal(s.node.a1Compare, unit))),
+    ...(ebitda ? [Math.abs(toChartVal(ebitda.a1, unit))] : []),
+  ];
   const overviewVarPcts = [
     ...data.sections.map(s => s.node.orcVarPct),
     ...(ebitda ? [ebitda.deltaOrcPct] : []),
@@ -807,12 +811,21 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
     ...data.sections.map(s => s.node.real - s.node.orcCompare),
     ...(ebitda ? [ebitda.real - ebitda.orcado] : []),
   ];
+  const overviewA1VarPcts = [
+    ...data.sections.map(s => s.node.a1VarPct),
+    ...(ebitda ? [ebitda.deltaA1Pct] : []),
+  ];
+  const overviewA1VarAbs = [
+    ...data.sections.map(s => s.node.real - s.node.a1Compare),
+    ...(ebitda ? [ebitda.real - ebitda.a1] : []),
+  ];
 
-  // Phantom heights: max(real, orc) so variance label appears above both bars
-  const phantomV = realV.map((r, i) => Math.max(r, orcV[i]));
+  // Phantom: global max → todos os labels no mesmo nível
+  const globalMaxOverview = Math.max(...realV, ...orcV, ...a1V);
+  const phantomV = realV.map(() => globalMaxOverview);
 
   const chartOption = {
-    grid: { left: 8, right: 8, top: 62, bottom: 46 },
+    grid: { left: 8, right: 8, top: 76, bottom: 46 },
     xAxis: {
       type: 'category' as const,
       data: chartLabels,
@@ -823,7 +836,7 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
     yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
     legend: {
       bottom: 2,
-      data: [`Real ${data.year}`, 'Orçado'],
+      data: [`Real ${data.year}`, 'Orçado', String(data.a1Year)],
       itemWidth: 10,
       itemHeight: 8,
       textStyle: { fontSize: 9, color: '#6B7280', fontWeight: 600 },
@@ -833,20 +846,13 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
         name: `Real ${data.year}`,
         type: 'bar' as const,
         data: realV,
-        barMaxWidth: 28,
-        barGap: '15%',
+        barMaxWidth: 24,
+        barGap: '8%',
         itemStyle: { color: '#2563EB', borderRadius: [3, 3, 0, 0] },
-        label: {
-          show: true,
-          position: 'top' as const,
-          formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 8,
-          fontWeight: 700,
-          color: '#2563EB',
-        },
+        label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 7, fontWeight: 700, color: '#fff' },
       },
       {
-        // Phantom series: invisible bar centered between Real and Orçado, carries variance label
+        // Phantom: global max → todos os labels no mesmo nível
         name: '__var__',
         type: 'bar' as const,
         data: phantomV,
@@ -859,19 +865,26 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
           offset: [0, -4],
           formatter: (p: any) => {
             const idx = p.dataIndex;
-            const pct = overviewVarPcts[idx];
-            const abs = overviewVarAbs[idx];
-            if (pct === null || pct === undefined) return '';
-            const fav = pct >= 0;
-            const tag = fav ? 'pos' : 'neg';
-            const sign = pct >= 0 ? '+' : '';
-            const absLabel = `${sign}${fmtChartLabel(toChartVal(abs, unit), unit)}`;
-            const pctLabel = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
-            return `{${tag}|${absLabel} | ${pctLabel}}`;
+            const orcPct = overviewVarPcts[idx];
+            const orcAbs = overviewVarAbs[idx];
+            const a1Pct  = overviewA1VarPcts[idx];
+            const a1Abs  = overviewA1VarAbs[idx];
+            if (orcPct === null || orcPct === undefined) return '';
+            const orcFav = orcPct >= 0;
+            const orcAbsLabel = `${orcFav ? '+' : ''}${fmtChartLabel(toChartVal(orcAbs, unit), unit)}`;
+            const orcPctLabel = `${orcPct >= 0 ? '+' : ''}${orcPct.toFixed(1)}% Orç`;
+            const line1 = `{${orcFav ? 'pos' : 'neg'}|${orcAbsLabel} ${orcPctLabel}}`;
+            const a1Fav = (a1Pct ?? 0) >= 0;
+            const a1AbsLabel = `${a1Fav ? '+' : ''}${fmtChartLabel(toChartVal(a1Abs, unit), unit)}`;
+            const a1PctLabel = a1Pct !== null ? ` ${a1Pct >= 0 ? '+' : ''}${a1Pct.toFixed(1)}% A-1` : '';
+            const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1AbsLabel}${a1PctLabel}}`;
+            return `${line1}\n${line2}`;
           },
           rich: {
-            pos: { fontSize: 7, fontWeight: 800, color: '#16A34A', lineHeight: 13 },
-            neg: { fontSize: 7, fontWeight: 800, color: '#DC2626', lineHeight: 13 },
+            pos:   { fontSize: 7, fontWeight: 800, color: '#34D399', lineHeight: 13 },
+            neg:   { fontSize: 7, fontWeight: 800, color: '#FB7185', lineHeight: 13 },
+            posA1: { fontSize: 6, fontWeight: 700, color: '#34D399', lineHeight: 12 },
+            negA1: { fontSize: 6, fontWeight: 700, color: '#FB7185', lineHeight: 12 },
           },
         },
       },
@@ -879,16 +892,17 @@ function OverviewSlide({ data, filterSlot }: { data: VariancePptData; filterSlot
         name: 'Orçado',
         type: 'bar' as const,
         data: orcV,
-        barMaxWidth: 28,
+        barMaxWidth: 24,
         itemStyle: { color: '#D1D5DB', borderRadius: [3, 3, 0, 0] },
-        label: {
-          show: true,
-          position: 'top' as const,
-          formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 7,
-          color: '#9CA3AF',
-          fontWeight: 600,
-        },
+        label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 7, color: '#6B7280', fontWeight: 600 },
+      },
+      {
+        name: String(data.a1Year),
+        type: 'bar' as const,
+        data: a1V,
+        barMaxWidth: 24,
+        itemStyle: { color: hex(C.teal), borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 7, color: 'white', fontWeight: 600 },
       },
     ],
   };
@@ -1075,13 +1089,16 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
         getSortOrder(a.label, CUSTOS_FIXOS_ORDER) - getSortOrder(b.label, CUSTOS_FIXOS_ORDER))
     : [...section.tag01Nodes].sort((a, b) => Math.abs(b.real) - Math.abs(a.real));
 
-  const allRaw = sortedNodes.flatMap(n => [Math.abs(n.real), Math.abs(n.orcCompare)]);
+  const allRaw = sortedNodes.flatMap(n => [Math.abs(n.real), Math.abs(n.orcCompare), Math.abs(n.a1Compare)]);
   const unit = detectScale(...allRaw);
   const labels = sortedNodes.map(n => n.label.length > 14 ? n.label.slice(0, 13) + '…' : n.label);
   const realV = sortedNodes.map(n => Math.abs(toChartVal(n.real, unit)));
   const orcV = sortedNodes.map(n => Math.abs(toChartVal(n.orcCompare, unit)));
+  const sectionA1V = sortedNodes.map(n => Math.abs(toChartVal(n.a1Compare, unit)));
   const sectionVarPcts = sortedNodes.map(n => n.orcVarPct);
   const sectionVarAbs = sortedNodes.map(n => n.real - n.orcCompare);
+  const sectionA1VarPcts = sortedNodes.map(n => n.a1VarPct);
+  const sectionA1VarAbs = sortedNodes.map(n => n.real - n.a1Compare);
 
   const accentClr = `#${section.sectionColor}`;
   const isRateio = section.label.toUpperCase().includes('RATEIO');
@@ -1093,11 +1110,12 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
     ? data.rzDre.map(r => ({ ...r }))
     : [];
 
-  // Phantom heights: max(real, orc) so variance label appears above both bars
-  const sectionPhantomV = realV.map((r, i) => Math.max(r, orcV[i]));
+  // Phantom: global max → todos os labels no mesmo nível
+  const globalMaxSection = Math.max(...realV, ...orcV, ...sectionA1V);
+  const sectionPhantomV = realV.map(() => globalMaxSection);
 
   const chartOption = {
-    grid: { left: 8, right: 8, top: 72, bottom: 46 },
+    grid: { left: 8, right: 8, top: 76, bottom: 46 },
     xAxis: {
       type: 'category' as const,
       data: labels,
@@ -1108,7 +1126,7 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
     yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
     legend: {
       bottom: 2,
-      data: [`Real ${data.year}`, 'Orçado'],
+      data: [`Real ${data.year}`, 'Orçado', String(data.a1Year)],
       itemWidth: 10,
       itemHeight: 8,
       textStyle: { fontSize: 9, color: '#6B7280' },
@@ -1118,20 +1136,13 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
         name: `Real ${data.year}`,
         type: 'bar' as const,
         data: realV,
-        barMaxWidth: 32,
-        barGap: '15%',
+        barMaxWidth: 28,
+        barGap: '8%',
         itemStyle: { color: accentClr, borderRadius: [3, 3, 0, 0] },
-        label: {
-          show: true,
-          position: 'inside' as const,
-          formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 8,
-          fontWeight: 700,
-          color: '#fff',
-        },
+        label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 8, fontWeight: 700, color: '#fff' },
       },
       {
-        // Phantom: invisible bar, carries 2-line variance label (R$ + %)
+        // Phantom: global max → todos os labels no mesmo nível
         name: '__var__',
         type: 'bar' as const,
         data: sectionPhantomV,
@@ -1144,20 +1155,26 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
           offset: [0, -4],
           formatter: (p: any) => {
             const idx = p.dataIndex;
-            const pct = sectionVarPcts[idx];
-            const abs = sectionVarAbs[idx];
-            if (pct === null || pct === undefined) return '';
-            const tag = pct >= 0 ? 'pos' : 'neg';
-            const sign = pct >= 0 ? '+' : '';
-            const absLabel = `${sign}${fmtChartLabel(toChartVal(abs, unit), unit)}`;
-            const pctLabel = `${sign}${pct.toFixed(1)}%`;
-            return `{${tag}|${absLabel}}\n{${tag}2|${pctLabel}}`;
+            const orcPct = sectionVarPcts[idx];
+            const orcAbs = sectionVarAbs[idx];
+            const a1Pct  = sectionA1VarPcts[idx];
+            const a1Abs  = sectionA1VarAbs[idx];
+            if (orcPct === null || orcPct === undefined) return '';
+            const orcFav = orcPct >= 0;
+            const orcAbsLabel = `${orcFav ? '+' : ''}${fmtChartLabel(toChartVal(orcAbs, unit), unit)}`;
+            const orcPctLabel = `${orcPct >= 0 ? '+' : ''}${orcPct.toFixed(1)}% Orç`;
+            const line1 = `{${orcFav ? 'pos' : 'neg'}|${orcAbsLabel} ${orcPctLabel}}`;
+            const a1Fav = (a1Pct ?? 0) >= 0;
+            const a1AbsLabel = `${a1Fav ? '+' : ''}${fmtChartLabel(toChartVal(a1Abs, unit), unit)}`;
+            const a1PctLabel = a1Pct !== null ? ` ${a1Pct >= 0 ? '+' : ''}${a1Pct.toFixed(1)}% A-1` : '';
+            const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1AbsLabel}${a1PctLabel}}`;
+            return `${line1}\n${line2}`;
           },
           rich: {
-            pos:  { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
-            neg:  { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
-            pos2: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
-            neg2: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
+            pos:   { fontSize: 8, fontWeight: 800, color: '#34D399', lineHeight: 14 },
+            neg:   { fontSize: 8, fontWeight: 800, color: '#FB7185', lineHeight: 14 },
+            posA1: { fontSize: 7, fontWeight: 700, color: '#34D399', lineHeight: 13 },
+            negA1: { fontSize: 7, fontWeight: 700, color: '#FB7185', lineHeight: 13 },
           },
         },
       },
@@ -1165,16 +1182,17 @@ function SectionSlide({ section, data, pageNum, filterSlot }: { section: Varianc
         name: 'Orçado',
         type: 'bar' as const,
         data: orcV,
-        barMaxWidth: 32,
+        barMaxWidth: 28,
         itemStyle: { color: '#D1D5DB', borderRadius: [3, 3, 0, 0] },
-        label: {
-          show: true,
-          position: 'inside' as const,
-          formatter: (p: any) => fmtChartLabel(p.value, unit),
-          fontSize: 7,
-          color: '#6B7280',
-          fontWeight: 600,
-        },
+        label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 7, color: '#6B7280', fontWeight: 600 },
+      },
+      {
+        name: String(data.a1Year),
+        type: 'bar' as const,
+        data: sectionA1V,
+        barMaxWidth: 28,
+        itemStyle: { color: hex(C.teal), borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, unit), fontSize: 7, color: 'white', fontWeight: 600 },
       },
     ],
   };
@@ -1584,8 +1602,9 @@ function MarcaSlide({
   const accentClr = `#${section.sectionColor}`;
   const aiText = section.node.enrichedInsight || section.node.orcAiSummary || '';
 
-  // Phantom: posicionado no máximo das 3 barras → label de Δ% aparece acima de tudo
-  const phantomV = realV.map((r, i) => Math.max(r, orcV[i], a1V[i]));
+  // Phantom: global max → todos os labels no mesmo nível
+  const globalMaxMarca = Math.max(...realV, ...orcV, ...a1V);
+  const phantomV = realV.map(() => globalMaxMarca);
 
   const chartOption = {
     tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const }, textStyle: { fontSize: 10 } },
@@ -3565,19 +3584,24 @@ function Tag01T02BreakdownSlide({
     .sort((a, b) => (b.real - b.orcCompare) - (a.real - a.orcCompare))
     .slice(0, 5);
 
-  // Helper: build a Real vs Orçado mini chart option for a subset of nodes
+  // Helper: build a Real vs Orçado vs A-1 mini chart option for a subset of nodes
   const buildMiniChart = (nodes: typeof tag02s, accentColor: string, orcColor: string) => {
-    const raw = nodes.flatMap(n => [Math.abs(n.real), Math.abs(n.orcCompare)]);
+    const raw = nodes.flatMap(n => [Math.abs(n.real), Math.abs(n.orcCompare), Math.abs(n.a1Compare)]);
     const u = detectScale(...raw);
     const labels = nodes.map(n => n.label.length > 13 ? n.label.slice(0, 12) + '…' : n.label);
-    const rV = nodes.map(n => Math.abs(toChartVal(n.real, u)));
-    const oV = nodes.map(n => Math.abs(toChartVal(n.orcCompare, u)));
-    const vPcts = nodes.map(n => n.orcVarPct);
-    const vAbs  = nodes.map(n => n.real - n.orcCompare);
-    const phV = rV.map((r, i) => Math.max(r, oV[i]));
+    const rV  = nodes.map(n => Math.abs(toChartVal(n.real, u)));
+    const oV  = nodes.map(n => Math.abs(toChartVal(n.orcCompare, u)));
+    const aV  = nodes.map(n => Math.abs(toChartVal(n.a1Compare, u)));
+    const orcPcts  = nodes.map(n => n.orcVarPct);
+    const orcAbs   = nodes.map(n => n.real - n.orcCompare);
+    const a1Pcts   = nodes.map(n => n.a1VarPct);
+    const a1Abs    = nodes.map(n => n.real - n.a1Compare);
+    // Phantom: global max → todos os labels no mesmo nível
+    const gMax = Math.max(...rV, ...oV, ...aV);
+    const phV = rV.map(() => gMax);
 
     return {
-      grid: { left: 6, right: 6, top: 38, bottom: 36 },
+      grid: { left: 6, right: 6, top: 48, bottom: 36 },
       xAxis: {
         type: 'category' as const,
         data: labels,
@@ -3588,20 +3612,20 @@ function Tag01T02BreakdownSlide({
       yAxis: { type: 'value' as const, show: false, splitLine: { show: false } },
       legend: {
         bottom: 0,
-        data: [`Real ${data.year}`, 'Orçado'],
+        data: [`Real ${data.year}`, 'Orçado', String(data.a1Year)],
         itemWidth: 8,
         itemHeight: 6,
-        textStyle: { fontSize: 8, color: '#6B7280' },
+        textStyle: { fontSize: 7, color: '#6B7280' },
       },
       series: [
         {
           name: `Real ${data.year}`,
           type: 'bar' as const,
           data: rV,
-          barMaxWidth: 30,
-          barGap: '10%',
+          barMaxWidth: 22,
+          barGap: '8%',
           itemStyle: { color: accentColor, borderRadius: [2, 2, 0, 0] },
-          label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, u), fontSize: 7, fontWeight: 700, color: '#fff' },
+          label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, u), fontSize: 6, fontWeight: 700, color: '#fff' },
         },
         {
           name: '__var__',
@@ -3616,20 +3640,26 @@ function Tag01T02BreakdownSlide({
             offset: [0, -2],
             formatter: (p: any) => {
               const idx = p.dataIndex;
-              const pct = vPcts[idx];
-              const abs = vAbs[idx];
-              if (pct === null || pct === undefined) return '';
-              const tag = pct >= 0 ? 'pos' : 'neg';
-              const sign = pct >= 0 ? '+' : '';
-              const absLabel = `${sign}${fmtChartLabel(toChartVal(abs, u), u)}`;
-              const pctLabel = `${sign}${pct.toFixed(1)}%`;
-              return `{${tag}|${absLabel}}\n{${tag}2|${pctLabel}}`;
+              const orcPct = orcPcts[idx];
+              const orcAbsV = orcAbs[idx];
+              const a1Pct = a1Pcts[idx];
+              const a1AbsV = a1Abs[idx];
+              if (orcPct === null || orcPct === undefined) return '';
+              const orcFav = orcPct >= 0;
+              const orcAbsLabel = `${orcFav ? '+' : ''}${fmtChartLabel(toChartVal(orcAbsV, u), u)}`;
+              const orcPctLabel = `${orcPct >= 0 ? '+' : ''}${orcPct.toFixed(1)}% Orç`;
+              const line1 = `{${orcFav ? 'pos' : 'neg'}|${orcAbsLabel} ${orcPctLabel}}`;
+              const a1Fav = (a1Pct ?? 0) >= 0;
+              const a1AbsLabel = `${a1Fav ? '+' : ''}${fmtChartLabel(toChartVal(a1AbsV, u), u)}`;
+              const a1PctLabel = a1Pct !== null ? ` ${a1Pct >= 0 ? '+' : ''}${a1Pct.toFixed(1)}% A-1` : '';
+              const line2 = `{${a1Fav ? 'posA1' : 'negA1'}|${a1AbsLabel}${a1PctLabel}}`;
+              return `${line1}\n${line2}`;
             },
             rich: {
-              pos:  { fontSize: 7, fontWeight: 800, color: '#34D399', lineHeight: 11 },
-              neg:  { fontSize: 7, fontWeight: 800, color: '#FB7185', lineHeight: 11 },
-              pos2: { fontSize: 6, fontWeight: 700, color: '#34D399', lineHeight: 10 },
-              neg2: { fontSize: 6, fontWeight: 700, color: '#FB7185', lineHeight: 10 },
+              pos:   { fontSize: 6, fontWeight: 800, color: '#34D399', lineHeight: 10 },
+              neg:   { fontSize: 6, fontWeight: 800, color: '#FB7185', lineHeight: 10 },
+              posA1: { fontSize: 5, fontWeight: 700, color: '#34D399', lineHeight: 9 },
+              negA1: { fontSize: 5, fontWeight: 700, color: '#FB7185', lineHeight: 9 },
             },
           },
         },
@@ -3637,9 +3667,17 @@ function Tag01T02BreakdownSlide({
           name: 'Orçado',
           type: 'bar' as const,
           data: oV,
-          barMaxWidth: 30,
+          barMaxWidth: 22,
           itemStyle: { color: orcColor, borderRadius: [2, 2, 0, 0] },
           label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, u), fontSize: 6, color: '#fff', fontWeight: 600 },
+        },
+        {
+          name: String(data.a1Year),
+          type: 'bar' as const,
+          data: aV,
+          barMaxWidth: 22,
+          itemStyle: { color: hex(C.teal), borderRadius: [2, 2, 0, 0] },
+          label: { show: true, position: 'inside' as const, formatter: (p: any) => fmtChartLabel(p.value, u), fontSize: 6, color: 'white', fontWeight: 600 },
         },
       ],
     };
