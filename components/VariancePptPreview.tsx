@@ -4086,11 +4086,10 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
           });
         };
 
-        const TAG01_WITH_T02_BREAKDOWN = ['folha'];
-
         for (const t01 of section.tag01Nodes) {
           const shouldSplit = TAG01_SPLIT_BY_TAG02.some(k => t01.label.toLowerCase().includes(k)) && t01.children.length > 0;
-          const shouldBreakdown = TAG01_WITH_T02_BREAKDOWN.some(k => t01.label.toLowerCase().includes(k)) && t01.children.length > 0;
+          // Breakdown por categoria: qualquer tag01 com filhos tag02 (exceto os que usam split mode)
+          const shouldBreakdown = !shouldSplit && t01.children.length > 0;
 
           if (shouldSplit) {
             // Per-tag02: detail slide immediately followed by its own justificativas
