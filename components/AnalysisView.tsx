@@ -249,6 +249,18 @@ export default function AnalysisView() {
     return newData;
   }, [selectedMonth, variancePreviewData, filterByTag01, permittedMarcas, effectiveTag01]);
 
+  // Helper: lista de meses entre from e to (inclusive), ex: ['2026-01','2026-02','2026-03']
+  function buildMonthRange(from: string, to: string): string[] {
+    const result: string[] = [];
+    let [y, m] = from.split('-').map(Number);
+    const [ty, tm] = to.split('-').map(Number);
+    while (y < ty || (y === ty && m <= tm)) {
+      result.push(`${y}-${String(m).padStart(2, '0')}`);
+      if (++m > 12) { m = 1; y++; }
+    }
+    return result;
+  }
+
   // ── Callback: re-fetch real data when user changes period inside preview ──
   const handleReloadWithPeriod = useCallback(async (month: string, isYtd: boolean, monthFrom?: string): Promise<VariancePptData> => {
     const hasMarca = effectiveMarcas.length > 0;
@@ -268,13 +280,17 @@ export default function AnalysisView() {
     const filiaisParam = effectiveFiliais.length > 0 ? effectiveFiliais : null;
 
     if (isRange && filterMarcas) {
-      // YTD com filtro de marca: live RPC com range (rows null=todas as marcas no snapshot)
-      [rawItems, rzRawItems] = await Promise.all([
-        fetchLiveDreForPpt(month, filterMarcas, filiaisParam, rangeFrom),
+      // YTD com filtro de marca: busca mês-a-mês para garantir que cada mês
+      // seja carregado corretamente (range único pode truncar via PostgREST limit).
+      const months = buildMonthRange(rangeFrom!, month);
+      const [itemsArr, rzArr] = await Promise.all([
+        Promise.all(months.map(mo => fetchLiveDreForPpt(mo, filterMarcas!, filiaisParam, undefined).catch(() => [] as typeof rawItems))),
         rzNotSelected
-          ? fetchLiveDreForPpt(month, ['RZ'], null, rangeFrom).catch(() => [] as typeof rawItems)
-          : Promise.resolve([] as typeof rawItems),
+          ? Promise.all(months.map(mo => fetchLiveDreForPpt(mo, ['RZ'], null, undefined).catch(() => [] as typeof rawItems)))
+          : Promise.resolve(months.map(() => [] as typeof rawItems)),
       ]);
+      rawItems = (itemsArr as (typeof rawItems)[]).flat() as typeof rawItems;
+      rzRawItems = (rzArr as (typeof rawItems)[]).flat() as typeof rawItems;
     } else if (isRange) {
       // YTD sem filtro (admin): snapshot correto para todas as marcas
       [rawItems, rzRawItems] = await Promise.all([
@@ -345,16 +361,17 @@ export default function AnalysisView() {
     const filiaisParam = effectiveFiliais.length > 0 ? effectiveFiliais : null;
 
     if (isRange && filterMarcas) {
-      // YTD com filtro de marca: live RPC com range.
-      // Rows de snapshot com marca=null representam TODAS as marcas (não filtrável por marca).
-      // fetchLiveDreForPpt passa p_month_from→p_month_to ao get_soma_tags, que agrega
-      // somente as marcas solicitadas — correto por construção.
-      [rawItems, rzRawItems] = await Promise.all([
-        fetchLiveDreForPpt(month, filterMarcas, filiaisParam, monthFrom, tag01sParam),
+      // YTD com filtro de marca: busca mês-a-mês para garantir que cada mês
+      // seja carregado corretamente (range único pode truncar via PostgREST limit).
+      const months = buildMonthRange(monthFrom!, month);
+      const [itemsArr, rzArr] = await Promise.all([
+        Promise.all(months.map(mo => fetchLiveDreForPpt(mo, filterMarcas!, filiaisParam, undefined, tag01sParam).catch(() => [] as typeof rawItems))),
         rzNotInSelection
-          ? fetchLiveDreForPpt(month, ['RZ'], null, monthFrom).catch(() => [] as typeof rawItems)
-          : Promise.resolve([] as typeof rawItems),
+          ? Promise.all(months.map(mo => fetchLiveDreForPpt(mo, ['RZ'], null, undefined).catch(() => [] as typeof rawItems)))
+          : Promise.resolve(months.map(() => [] as typeof rawItems)),
       ]);
+      rawItems = (itemsArr as (typeof rawItems)[]).flat() as typeof rawItems;
+      rzRawItems = (rzArr as (typeof rawItems)[]).flat() as typeof rawItems;
     } else if (isRange) {
       // YTD sem filtro de marca (admin): snapshot agrega tudo corretamente
       // (rows marca=null = total de todas as marcas, que é o que admin quer ver).

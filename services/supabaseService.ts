@@ -3238,10 +3238,7 @@ export async function fetchLiveDreForPpt(
     p_recurring: 'Sim',
     p_tags03: null,
   };
-  console.log('[fetchLiveDreForPpt] RPC params:', rpcParams);
   const { data: somaData, error: somaError } = await supabase.rpc('get_soma_tags', rpcParams);
-  const uniqueMonths = somaData ? [...new Set((somaData as any[]).map((r: any) => r.month))].sort() : [];
-  console.log('[fetchLiveDreForPpt] somaData rows:', somaData?.length, '| months:', uniqueMonths);
   if (somaError) console.error('[fetchLiveDreForPpt] RPC error:', somaError);
   if (somaError || !somaData?.length) return [];
 
