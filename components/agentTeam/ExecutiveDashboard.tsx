@@ -18,6 +18,8 @@ import {
   Zap,
   Calendar,
   Tag,
+  X,
+  Info,
 } from 'lucide-react';
 import type {
   ScoreResult,
@@ -227,14 +229,17 @@ const KPICard: React.FC<{
   icon: React.ReactNode;
   color: string;
   bg: string;
-}> = ({ label, value, subtitle, icon, color, bg }) => (
+  onClick?: () => void;
+}> = ({ label, value, subtitle, icon, color, bg, onClick }) => (
   <div
-    className="rounded-xl p-4 border"
+    className={`rounded-xl p-4 border${onClick ? ' cursor-pointer hover:shadow-md transition-shadow' : ''}`}
     style={{ backgroundColor: bg, borderColor: color + '30' }}
+    onClick={onClick}
+    title={onClick ? 'Clique para ver memorial de cálculo' : undefined}
   >
     <div className="flex items-center justify-between mb-2">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-        {label}
+      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1">
+        {label} {onClick && <Info size={9} className="opacity-40" />}
       </span>
       <div style={{ color }}>{icon}</div>
     </div>
@@ -327,28 +332,479 @@ const ActionItem: React.FC<{ action: ExecutiveAction; index: number }> = ({ acti
 );
 
 // --------------------------------------------
+// Calculation Memory Modal
+// --------------------------------------------
+
+type CardId =
+  | 'health-score'
+  | 'risk'
+  | 'confidence'
+  | 'ebitda'
+  | 'margin'
+  | 'revenue'
+  | 'trend'
+  | 'ebitda-monthly'
+  | 'optimization'
+  | 'alerts';
+
+const CalcMemoryModal: React.FC<{
+  cardId: CardId;
+  data: DashboardData;
+  onClose: () => void;
+}> = ({ cardId, data, onClose }) => {
+  const { summary, financial_summary, score, forecast, optimization, alerts, trend_last_6_months } = data;
+
+  const renderContent = () => {
+    switch (cardId) {
+      case 'health-score': {
+        const b = score?.breakdown;
+        if (!b) return <p className="text-xs text-gray-400">Dados de breakdown não disponíveis.</p>;
+        const rows = [
+          { label: 'Base inicial', value: b.base, op: '' },
+          { label: 'Penalidade confiança', value: -b.penalty_confidence, op: '−' },
+          { label: 'Penalidade margem', value: -b.penalty_margin, op: '−' },
+          { label: 'Penalidade EBITDA', value: -b.penalty_ebitda, op: '−' },
+          { label: 'Penalidade alertas críticos', value: -b.penalty_high_priority, op: '−' },
+          { label: 'Penalidade conflitos', value: -b.penalty_conflicts, op: '−' },
+        ];
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              O Health Score é calculado a partir de uma base de 100 pontos com descontos por penalidades.
+            </p>
+            <table className="w-full text-xs">
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className={i < rows.length - 1 ? 'border-b border-gray-100' : ''}>
+                    <td className="py-1.5 text-gray-600">{r.label}</td>
+                    <td className={`py-1.5 text-right font-bold ${r.value < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                      {r.op} {Math.abs(r.value).toFixed(1)}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-gray-300">
+                  <td className="py-2 font-black text-gray-900">= Score Final</td>
+                  <td className="py-2 text-right font-black text-2xl" style={{ color: scoreColor(b.final_score) }}>
+                    {b.final_score}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[10px] text-gray-400 mt-3">Classificação: <strong>{score?.classification ?? '—'}</strong></p>
+          </div>
+        );
+      }
+
+      case 'risk': {
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              O nível de risco é derivado da classificação do health score em conjunto com o número de alertas ativos.
+            </p>
+            <table className="w-full text-xs mb-3">
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Classificação score</td>
+                  <td className="py-1.5 text-right font-bold text-gray-900">{score?.classification ?? '—'}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Alertas ativos</td>
+                  <td className="py-1.5 text-right font-bold text-gray-900">{alerts.length}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Alertas críticos (high)</td>
+                  <td className="py-1.5 text-right font-bold text-red-600">{alerts.filter(a => a.severity === 'high').length}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Tendência slope</td>
+                  <td className="py-1.5 text-right font-bold text-gray-900">{forecast?.slope.score?.toFixed(2) ?? '—'}</td>
+                </tr>
+                <tr>
+                  <td className="py-1.5 font-black text-gray-900">= Nível de Risco</td>
+                  <td className="py-1.5 text-right font-black" style={{ color: riskColor(summary?.risk_level ?? 'low') }}>
+                    {riskLabel(summary?.risk_level ?? 'low')}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            {alerts.length > 0 && (
+              <div className="space-y-1 mt-2">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Todos os alertas</p>
+                {alerts.map((a, i) => (
+                  <div key={i} className={`text-[10px] px-2 py-1 rounded ${a.severity === 'high' ? 'bg-red-50 text-red-700' : a.severity === 'medium' ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-600'}`}>
+                    <span className="font-bold uppercase mr-1">[{a.severity}]</span>{a.message}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      }
+
+      case 'confidence': {
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              O índice de confiança representa a completude e consistência dos dados disponíveis para análise.
+            </p>
+            <table className="w-full text-xs">
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Confiança calculada</td>
+                  <td className="py-1.5 text-right font-black text-2xl text-gray-900">{summary?.confidence_level ?? 0}%</td>
+                </tr>
+                <tr>
+                  <td className="py-1.5 text-gray-600">Significado</td>
+                  <td className="py-1.5 text-right font-bold text-gray-900">
+                    {(summary?.confidence_level ?? 0) >= 80 ? 'Dados confiáveis' : (summary?.confidence_level ?? 0) >= 50 ? 'Dados parciais' : 'Dados insuficientes'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[10px] text-gray-400 mt-3">
+              Confiança acima de 80%: análise completa. Entre 50-80%: análise com ressalvas. Abaixo de 50%: dados insuficientes para decisão.
+            </p>
+          </div>
+        );
+      }
+
+      case 'ebitda': {
+        if (!financial_summary) return <p className="text-xs text-gray-400">Dados não disponíveis.</p>;
+        const fs = financial_summary;
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              EBITDA = Receita + Custos Variáveis + Custos Fixos + SG&A + Rateio (custos têm sinal negativo)
+            </p>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="py-1 text-left text-[10px] text-gray-400 font-semibold">Componente</th>
+                  <th className="py-1 text-right text-[10px] text-gray-400 font-semibold">Real</th>
+                  <th className="py-1 text-right text-[10px] text-gray-400 font-semibold">Orçado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: 'Receita', real: fs.receita.real, orc: fs.receita.orcado, positive: true },
+                  { label: 'Custos Variáveis', real: fs.custos_variaveis.real, orc: fs.custos_variaveis.orcado, positive: false },
+                  { label: 'Custos Fixos', real: fs.custos_fixos.real, orc: fs.custos_fixos.orcado, positive: false },
+                  { label: 'SG&A', real: fs.sga.real, orc: fs.sga.orcado, positive: false },
+                  { label: 'Rateio', real: fs.rateio.real, orc: fs.rateio.orcado, positive: false },
+                ].map((r, i) => (
+                  <tr key={i} className="border-b border-gray-100">
+                    <td className="py-1.5 text-gray-600">{r.label}</td>
+                    <td className={`py-1.5 text-right font-semibold ${r.positive ? 'text-blue-700' : 'text-red-600'}`}>{fmtBRL(r.real)}</td>
+                    <td className="py-1.5 text-right text-gray-400">{fmtBRL(r.orc)}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-gray-300">
+                  <td className="py-2 font-black text-gray-900">= EBITDA</td>
+                  <td className={`py-2 text-right font-black text-lg ${fs.ebitda.real >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmtBRL(fs.ebitda.real)}</td>
+                  <td className="py-2 text-right font-bold text-gray-400">{fmtBRL(fs.ebitda.orcado)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      case 'margin': {
+        if (!financial_summary) return <p className="text-xs text-gray-400">Dados não disponíveis.</p>;
+        const fs = financial_summary;
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              Margem de Contribuição = (Receita + Custos Variáveis) / Receita × 100
+            </p>
+            <table className="w-full text-xs">
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Receita</td>
+                  <td className="py-1.5 text-right font-semibold text-blue-700">{fmtBRL(fs.receita.real)}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Custos Variáveis</td>
+                  <td className="py-1.5 text-right font-semibold text-red-600">{fmtBRL(fs.custos_variaveis.real)}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">= Margem de Contribuição (R$)</td>
+                  <td className="py-1.5 text-right font-bold text-gray-900">{fmtBRL(fs.margem_contribuicao.real)}</td>
+                </tr>
+                <tr className="border-b border-gray-200">
+                  <td className="py-1.5 font-black text-gray-900">= Margem %</td>
+                  <td className={`py-1.5 text-right font-black text-lg ${fs.margem_contribuicao.health === 'healthy' ? 'text-emerald-600' : fs.margem_contribuicao.health === 'attention' ? 'text-amber-600' : 'text-red-600'}`}>
+                    {fmtPct(fs.margem_contribuicao.pct_real)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-1.5 text-gray-600">Orçado %</td>
+                  <td className="py-1.5 text-right text-gray-400">{fmtPct(fs.margem_contribuicao.pct_orcado)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[10px] text-gray-400 mt-3">
+              Status: <strong>{fs.margem_contribuicao.health === 'healthy' ? '✅ Saudável (≥ 30%)' : fs.margem_contribuicao.health === 'attention' ? '⚠️ Atenção (20-30%)' : '🔴 Crítico (< 20%)'}</strong>
+            </p>
+          </div>
+        );
+      }
+
+      case 'revenue': {
+        if (!financial_summary) return <p className="text-xs text-gray-400">Dados não disponíveis.</p>;
+        const fs = financial_summary;
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              Gap% = (Real − Orçado) / |Orçado| × 100
+            </p>
+            <table className="w-full text-xs">
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Receita Real</td>
+                  <td className="py-1.5 text-right font-black text-lg text-blue-700">{fmtBRL(fs.receita.real)}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Receita Orçada</td>
+                  <td className="py-1.5 text-right font-semibold text-gray-600">{fmtBRL(fs.receita.orcado)}</td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Diferença (R$)</td>
+                  <td className={`py-1.5 text-right font-bold ${(fs.receita.real - fs.receita.orcado) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {fmtBRL(fs.receita.real - fs.receita.orcado)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-1.5 font-black text-gray-900">= Gap %</td>
+                  <td className={`py-1.5 text-right font-black text-lg ${fs.receita.gap_pct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {fmtPct(fs.receita.gap_pct)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      case 'trend': {
+        if (!forecast) return <p className="text-xs text-gray-400">Dados de forecast não disponíveis.</p>;
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              Tendência calculada por regressão linear sobre os scores históricos mensais.
+            </p>
+            <table className="w-full text-xs mb-3">
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Slope (inclinação)</td>
+                  <td className={`py-1.5 text-right font-black text-lg ${forecast.slope.score > 0 ? 'text-emerald-600' : forecast.slope.score < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                    {forecast.slope.score > 0 ? '+' : ''}{forecast.slope.score.toFixed(3)}
+                  </td>
+                </tr>
+                <tr className="border-b border-gray-100">
+                  <td className="py-1.5 text-gray-600">Interpretação</td>
+                  <td className="py-1.5 text-right font-bold text-gray-900">
+                    {forecast.slope.score > 0 ? 'Melhora' : forecast.slope.score < 0 ? 'Queda' : 'Estável'}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Projeções (próximos 3 períodos)</p>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="py-1 text-left text-[10px] text-gray-400">Período</th>
+                  <th className="py-1 text-right text-[10px] text-gray-400">Score projetado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(forecast.forecast.score ?? []).map((s, i) => (
+                  <tr key={i} className="border-b border-gray-100">
+                    <td className="py-1.5 text-gray-600">+{i + 1} mês</td>
+                    <td className={`py-1.5 text-right font-bold ${s >= 70 ? 'text-emerald-600' : s >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{Math.round(s)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      case 'ebitda-monthly': {
+        if (trend_last_6_months.length === 0) return <p className="text-xs text-gray-400">Sem dados mensais.</p>;
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              Histórico mensal de EBITDA dos últimos meses disponíveis.
+            </p>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-200">
+                  <th className="py-1 text-left text-[10px] text-gray-400">Mês</th>
+                  <th className="py-1 text-right text-[10px] text-gray-400">Receita</th>
+                  <th className="py-1 text-right text-[10px] text-gray-400">EBITDA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trend_last_6_months.map((d, i) => (
+                  <tr key={i} className="border-b border-gray-100">
+                    <td className="py-1.5 text-gray-600">{d.mes}</td>
+                    <td className="py-1.5 text-right text-blue-700 font-semibold">{fmtBRL(d.receita)}</td>
+                    <td className={`py-1.5 text-right font-bold ${d.ebitda >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{fmtBRL(d.ebitda)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      case 'optimization': {
+        if (!optimization) return <p className="text-xs text-gray-400">Score acima de 85 — sem otimização necessária.</p>;
+        return (
+          <div>
+            <div className="flex gap-4 mb-3">
+              <div className="text-center">
+                <div className="text-[10px] text-gray-400">Score Projetado</div>
+                <div className="text-lg font-black text-gray-900">{Math.round(optimization.projected_score)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-gray-400">EBITDA Projetado</div>
+                <div className="text-lg font-black text-emerald-600">{fmtBRL(optimization.projected_ebitda)}</div>
+              </div>
+            </div>
+            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">Ações propostas ({optimization.proposed_actions.length})</p>
+            <div className="space-y-2">
+              {optimization.proposed_actions.map((a, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-2.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-black text-gray-700 uppercase">{a.category}</span>
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${a.priority === 'high' ? 'bg-red-100 text-red-700' : a.priority === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {a.priority}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-900 font-semibold">{a.action}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{a.justification}</p>
+                  <div className="flex gap-3 mt-1">
+                    <span className="text-[9px] text-emerald-700">Economia: {fmtBRL(a.expected_savings)}</span>
+                    <span className="text-[9px] text-blue-700">+{a.score_impact} pts</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      case 'alerts': {
+        if (alerts.length === 0) return <p className="text-xs text-green-600">Nenhum alerta ativo.</p>;
+        const bySeverity = ['high', 'medium', 'low'] as const;
+        return (
+          <div>
+            <p className="text-[10px] text-gray-500 mb-3">
+              Todos os alertas gerados pela análise do período selecionado.
+            </p>
+            {bySeverity.map(sev => {
+              const items = alerts.filter(a => a.severity === sev);
+              if (items.length === 0) return null;
+              return (
+                <div key={sev} className="mb-3">
+                  <p className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 ${sev === 'high' ? 'text-red-600' : sev === 'medium' ? 'text-amber-600' : 'text-gray-500'}`}>
+                    {sev === 'high' ? '🔴 Crítico' : sev === 'medium' ? '⚠️ Médio' : '⚪ Baixo'} ({items.length})
+                  </p>
+                  <div className="space-y-1">
+                    {items.map((a, i) => (
+                      <div key={i} className={`text-[10px] px-2 py-1.5 rounded ${sev === 'high' ? 'bg-red-50 text-red-700' : sev === 'medium' ? 'bg-amber-50 text-amber-700' : 'bg-gray-50 text-gray-600'}`}>
+                        <p className="font-semibold">{a.message}</p>
+                        {a.recommendation && <p className="mt-0.5 opacity-80">→ {a.recommendation}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      }
+
+      default:
+        return null;
+    }
+  };
+
+  const titles: Record<CardId, string> = {
+    'health-score': 'Health Score — Memorial de Cálculo',
+    'risk': 'Nível de Risco — Derivação',
+    'confidence': 'Confiança — Completude dos Dados',
+    'ebitda': 'EBITDA — Composição',
+    'margin': 'Margem de Contribuição — Fórmula',
+    'revenue': 'Receita — Análise vs Orçado',
+    'trend': 'Tendência — Projeção por Regressão',
+    'ebitda-monthly': 'EBITDA Mensal — Histórico',
+    'optimization': 'Plano Ótimo — Ações Detalhadas',
+    'alerts': 'Alertas — Listagem Completa',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col m-4"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Info size={14} className="text-[#1B75BB]" />
+            <h2 className="text-sm font-black text-gray-900">{titles[cardId]}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        {/* Body */}
+        <div className="overflow-y-auto flex-1 px-5 py-4">
+          {renderContent()}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --------------------------------------------
 // Dashboard Content (inner component)
 // --------------------------------------------
 
 const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({ data, loading }) => {
   const { summary, financial_summary, score, forecast, optimization, alerts, trend_last_6_months } = data;
+  const [openCard, setOpenCard] = useState<CardId | null>(null);
 
   if (!summary) return null;
 
   return (
     <div className="space-y-5">
+      {/* Modal de memorial de cálculo */}
+      {openCard && (
+        <CalcMemoryModal cardId={openCard} data={data} onClose={() => setOpenCard(null)} />
+      )}
+
       {/* LINHA 1 — Score + Risk + Confidence */}
       <div className="grid grid-cols-3 gap-4">
         {/* Health Score — grande */}
         <div
-          className="rounded-xl p-5 border text-center"
+          className="rounded-xl p-5 border text-center cursor-pointer hover:shadow-md transition-shadow"
           style={{
             backgroundColor: scoreBg(summary.overall_health_score),
             borderColor: scoreColor(summary.overall_health_score) + '30',
           }}
+          onClick={() => setOpenCard('health-score')}
+          title="Clique para ver memorial de cálculo"
         >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">
-            Health Score
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2 flex items-center justify-center gap-1">
+            Health Score <Info size={10} className="opacity-40" />
           </div>
           <div
             className="text-5xl font-black"
@@ -363,14 +819,16 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
 
         {/* Risk Level */}
         <div
-          className="rounded-xl p-5 border text-center"
+          className="rounded-xl p-5 border text-center cursor-pointer hover:shadow-md transition-shadow"
           style={{
             backgroundColor: riskBg(summary.risk_level),
             borderColor: riskColor(summary.risk_level) + '30',
           }}
+          onClick={() => setOpenCard('risk')}
+          title="Clique para ver derivação do risco"
         >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">
-            Nível de Risco
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2 flex items-center justify-center gap-1">
+            Nível de Risco <Info size={10} className="opacity-40" />
           </div>
           <div
             className="text-2xl font-black"
@@ -384,9 +842,13 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
         </div>
 
         {/* Confidence */}
-        <div className="rounded-xl p-5 border border-gray-200 bg-gray-50 text-center">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2">
-            Confiança
+        <div
+          className="rounded-xl p-5 border border-gray-200 bg-gray-50 text-center cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setOpenCard('confidence')}
+          title="Clique para ver completude dos dados"
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-2 flex items-center justify-center gap-1">
+            Confiança <Info size={10} className="opacity-40" />
           </div>
           <div className="text-4xl font-black text-gray-900">
             {summary.confidence_level}%
@@ -407,6 +869,7 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
             icon={<Activity size={16} />}
             color={financial_summary.ebitda.real >= 0 ? '#059669' : '#DC2626'}
             bg={financial_summary.ebitda.real >= 0 ? '#ECFDF5' : '#FEF2F2'}
+            onClick={() => setOpenCard('ebitda')}
           />
           <KPICard
             label="Margem"
@@ -415,6 +878,7 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
             icon={<Target size={16} />}
             color={financial_summary.margem_contribuicao.health === 'healthy' ? '#059669' : financial_summary.margem_contribuicao.health === 'attention' ? '#D97706' : '#DC2626'}
             bg={financial_summary.margem_contribuicao.health === 'healthy' ? '#ECFDF5' : financial_summary.margem_contribuicao.health === 'attention' ? '#FFFBEB' : '#FEF2F2'}
+            onClick={() => setOpenCard('margin')}
           />
           <KPICard
             label="Receita"
@@ -423,6 +887,7 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
             icon={<TrendingUp size={16} />}
             color="#2563EB"
             bg="#EFF6FF"
+            onClick={() => setOpenCard('revenue')}
           />
           <KPICard
             label="Tendência"
@@ -457,6 +922,7 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
                 : forecast?.slope.score && forecast.slope.score < 0 ? '#FEF2F2'
                 : '#F9FAFB'
             }
+            onClick={() => setOpenCard('trend')}
           />
         </div>
       )}
@@ -464,17 +930,25 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
       {/* LINHA 3 — Trend chart + Optimization + Alerts */}
       <div className="grid grid-cols-3 gap-4">
         {/* Trend */}
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
-            EBITDA Mensal
+        <div
+          className="bg-white rounded-xl p-4 border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setOpenCard('ebitda-monthly')}
+          title="Clique para ver histórico completo"
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1">
+            EBITDA Mensal <Info size={9} className="opacity-40" />
           </div>
           <MiniBar data={trend_last_6_months} />
         </div>
 
         {/* Optimization */}
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3">
-            Plano Ótimo
+        <div
+          className="bg-white rounded-xl p-4 border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setOpenCard('optimization')}
+          title="Clique para ver ações detalhadas"
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1">
+            Plano Ótimo <Info size={9} className="opacity-40" />
           </div>
           {optimization ? (
             <div className="space-y-2">
@@ -505,10 +979,14 @@ const DashboardContent: React.FC<{ data: DashboardData; loading: boolean }> = ({
         </div>
 
         {/* Critical Alerts */}
-        <div className="bg-white rounded-xl p-4 border border-gray-200">
+        <div
+          className="bg-white rounded-xl p-4 border border-gray-200 cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => setOpenCard('alerts')}
+          title="Clique para ver todos os alertas"
+        >
           <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1">
             <AlertTriangle size={12} className="text-amber-500" />
-            Alertas Críticos
+            Alertas Críticos <Info size={9} className="opacity-40" />
           </div>
           {alerts.filter((a) => a.severity === 'high').length > 0 ? (
             <div className="space-y-1.5">
