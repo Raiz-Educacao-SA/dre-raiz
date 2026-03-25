@@ -512,12 +512,11 @@ const CalcMemoryModal: React.FC<{
       case 'margin': {
         if (!financial_summary) return <p className="text-xs text-gray-400">Dados não disponíveis.</p>;
         const fs = financial_summary;
-        const margemContrib = fs.receita.real + fs.custos_variaveis.real;
-        const margemContribOrc = fs.receita.orcado + fs.custos_variaveis.orcado;
-        const margemOp = margemContrib + fs.custos_fixos.real;
-        const margemOpOrc = margemContribOrc + fs.custos_fixos.orcado;
-        const margemOpSga = margemOp + fs.sga.real;
-        const margemOpSgaOrc = margemOpOrc + fs.sga.orcado;
+        // Cascata: Receita − CV − CF = Margem Contribuição − SGA = Margem Operacional − Rateio = EBITDA
+        const margemContrib = fs.receita.real + fs.custos_variaveis.real + fs.custos_fixos.real;
+        const margemContribOrc = fs.receita.orcado + fs.custos_variaveis.orcado + fs.custos_fixos.orcado;
+        const margemOp = margemContrib + fs.sga.real;
+        const margemOpOrc = margemContribOrc + fs.sga.orcado;
         const ebitdaReal = fs.ebitda.real;
         const ebitdaOrc = fs.ebitda.orcado;
         const pctReal = fs.receita.real > 0 ? (ebitdaReal / fs.receita.real) * 100 : 0;
@@ -527,11 +526,10 @@ const CalcMemoryModal: React.FC<{
         const rows = [
           { label: 'Receita', real: fs.receita.real, orc: fs.receita.orcado, color: 'text-blue-700', indent: false, separator: false },
           { label: '− Custos Variáveis', real: fs.custos_variaveis.real, orc: fs.custos_variaveis.orcado, color: 'text-violet-600', indent: true, separator: false },
-          { label: '= Margem de Contribuição', real: margemContrib, orc: margemContribOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
           { label: '− Custos Fixos', real: fs.custos_fixos.real, orc: fs.custos_fixos.orcado, color: 'text-violet-600', indent: true, separator: false },
-          { label: '= Margem Operacional', real: margemOp, orc: margemOpOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
+          { label: '= Margem de Contribuição', real: margemContrib, orc: margemContribOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
           { label: '− SG&A', real: fs.sga.real, orc: fs.sga.orcado, color: 'text-violet-600', indent: true, separator: false },
-          { label: '= Margem Op. Líquida', real: margemOpSga, orc: margemOpSgaOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
+          { label: '= Margem Operacional', real: margemOp, orc: margemOpOrc, color: 'text-gray-900 font-bold', indent: false, separator: true },
           { label: '− Rateio', real: fs.rateio.real, orc: fs.rateio.orcado, color: 'text-violet-600', indent: true, separator: false },
         ];
 
@@ -557,7 +555,7 @@ const CalcMemoryModal: React.FC<{
                   </tr>
                 ))}
                 <tr className="border-t-2 border-gray-400">
-                  <td className="py-2 font-black text-gray-900">= Margem EBITDA</td>
+                  <td className="py-2 font-black text-gray-900">= Margem Op. Líquida (EBITDA)</td>
                   <td className={`py-2 text-right font-black text-base ${ebitdaColor}`}>{fmtBRL(ebitdaReal)} <span className="text-sm">({fmtPct(pctReal)})</span></td>
                   <td className="py-2 text-right font-bold text-gray-400">{fmtBRL(ebitdaOrc)} <span className="text-[10px]">({fmtPct(pctOrc)})</span></td>
                 </tr>
