@@ -614,7 +614,17 @@ const MONTH_OPTIONS = [
   { value: '10', label: 'Out' }, { value: '11', label: 'Nov' }, { value: '12', label: 'Dez' },
 ];
 
-const ExecutiveDashboard: React.FC = () => {
+interface ExecutiveDashboardProps {
+  allowedMarcas?: string[];
+  allowedFiliais?: string[];
+  allowedTag01?: string[];
+}
+
+const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
+  allowedMarcas = [],
+  allowedFiliais = [],
+  allowedTag01 = [],
+}) => {
   const now = new Date();
   const currentYear = now.getUTCFullYear().toString();
   // Default: meses fechados (até mês anterior)
@@ -664,7 +674,11 @@ const ExecutiveDashboard: React.FC = () => {
       getTag03Options(),
     ]).then(([t0, t01, t02, t03]) => {
       setAvailableTag0s(t0);
-      setAvailableTag01s(t01);
+      // Filtrar tag01 pelas permissões do usuário
+      const visibleTag01 = allowedTag01.length > 0
+        ? t01.filter(t => allowedTag01.includes(t))
+        : t01;
+      setAvailableTag01s(visibleTag01);
       setAvailableTag02s(t02);
       setAvailableTag03s(t03);
     });
@@ -715,8 +729,21 @@ const ExecutiveDashboard: React.FC = () => {
     try {
       const mFrom = `${currentYear}-${monthFromRef.current}`;
       const mTo = `${currentYear}-${monthToRef.current}`;
-      const marcaFilter = selectedMarcasRef.current.length > 0 ? selectedMarcasRef.current : undefined;
-      const tag01Filter = selectedTag01sRef.current.length > 0 ? selectedTag01sRef.current : undefined;
+      // Aplicar restrição de permissões: interseção com allowedMarcas
+      const effectiveMarcas = allowedMarcas.length > 0
+        ? (selectedMarcasRef.current.length > 0
+            ? selectedMarcasRef.current.filter(m => allowedMarcas.some(p => p.toUpperCase() === m.toUpperCase()))
+            : allowedMarcas)
+        : (selectedMarcasRef.current.length > 0 ? selectedMarcasRef.current : undefined);
+      const marcaFilter = effectiveMarcas;
+
+      // Aplicar restrição de permissões: interseção com allowedTag01
+      const effectiveTag01 = allowedTag01.length > 0
+        ? (selectedTag01sRef.current.length > 0
+            ? selectedTag01sRef.current.filter(t => allowedTag01.includes(t))
+            : allowedTag01)
+        : (selectedTag01sRef.current.length > 0 ? selectedTag01sRef.current : undefined);
+      const tag01Filter = effectiveTag01;
       const tag02Filter = selectedTag02sRef.current.length > 0 ? selectedTag02sRef.current : undefined;
       const tag03Filter = selectedTag03sRef.current.length > 0 ? selectedTag03sRef.current : undefined;
       const tag0Filter = selectedTag0sRef.current;
@@ -733,9 +760,12 @@ const ExecutiveDashboard: React.FC = () => {
         ? dreSnapshotRaw.filter(r => tag0Set.has(r.tag0))
         : dreSnapshotRaw;
 
-      // Popular lista de marcas disponíveis (só na primeira vez)
+      // Popular lista de marcas disponíveis filtrada por permissões (só na primeira vez)
       if (availableMarcas.length === 0 && marcasResult.marcas.length > 0) {
-        setAvailableMarcas(marcasResult.marcas);
+        const visibleMarcas = allowedMarcas.length > 0
+          ? marcasResult.marcas.filter(m => allowedMarcas.some(p => p.toUpperCase() === m.toUpperCase()))
+          : marcasResult.marcas;
+        setAvailableMarcas(visibleMarcas);
       }
 
       if (!dreSnapshot || dreSnapshot.length === 0) {

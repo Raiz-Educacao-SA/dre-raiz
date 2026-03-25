@@ -1292,7 +1292,11 @@ const App: React.FC = () => {
           {currentView === 'executive_dashboard' && (
             <ErrorBoundary fallbackMessage="Erro ao carregar CEO Dashboard">
               <Suspense fallback={<LoadingSpinner message="Carregando dashboard executivo..." />}>
-                <ExecutiveDashboard />
+                <ExecutiveDashboard
+                  allowedMarcas={allowedMarcas}
+                  allowedFiliais={allowedFiliais}
+                  allowedTag01={allowedTag01}
+                />
               </Suspense>
             </ErrorBoundary>
           )}
