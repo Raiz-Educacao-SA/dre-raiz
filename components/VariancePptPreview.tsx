@@ -338,32 +338,7 @@ function SlideHeader({
   filterSlot?: React.ReactNode;
 }) {
   const accentColor = color ? `#${color}` : '#2563EB';
-  const { activePeriod, setActivePeriod, periodLoading, availableMonths } = React.useContext(PeriodContext);
-  const [showPicker, setShowPicker] = React.useState(false);
-  const pickerRef = React.useRef<HTMLDivElement | null>(null);
-
-  // Close on outside click
-  React.useEffect(() => {
-    if (!showPicker) return;
-    const handler = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setShowPicker(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showPicker]);
-
-  // Sync picker checkboxes with current activePeriod when opening
-  React.useEffect(() => {
-    if (!showPicker) return;
-    if (activePeriod.monthFrom) {
-      setPickerSelected(availableMonths.filter(m => m >= activePeriod.monthFrom! && m <= activePeriod.month));
-    } else if (activePeriod.month) {
-      setPickerSelected([activePeriod.month]);
-    } else {
-      setPickerSelected([]);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPicker]);
+  const { activePeriod, periodLoading } = React.useContext(PeriodContext);
 
   // Display: if context has active period, use it; else use prop
   const displayLabel = activePeriod.month
@@ -378,13 +353,6 @@ function SlideHeader({
   const periodChanged = activePeriod.month
     ? (activePeriod.isYtd || !!activePeriod.monthFrom || monthShortFromYearMonth(activePeriod.month) !== monthShort)
     : false;
-
-  // Multi-month picker local state: track which months are checked before applying
-  const [pickerSelected, setPickerSelected] = React.useState<string[]>(() =>
-    activePeriod.monthFrom
-      ? availableMonths.filter(m => m >= activePeriod.monthFrom! && m <= activePeriod.month)
-      : [activePeriod.month].filter(Boolean)
-  );
 
   return (
     <div className="px-6 pt-3 pb-2.5 border-b border-gray-100 shrink-0 bg-white" style={{ minHeight: 52 }}>
@@ -406,91 +374,22 @@ function SlideHeader({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0 mt-0.5">
-          <div className="relative" ref={pickerRef}>
-            <button
-              onClick={e => { e.stopPropagation(); setShowPicker(v => !v); }}
-              disabled={availableMonths.length === 0 || periodLoading}
-              className="flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-bold transition-colors select-none"
-              style={periodChanged
-                ? { borderColor: '#2563EB', backgroundColor: '#EFF6FF', color: '#2563EB' }
-                : { borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', color: '#6B7280' }
-              }
-              title="Trocar período"
-            >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              {periodLoading ? '…' : displayLabel}
-              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-
-            {showPicker && availableMonths.length > 0 && (
-              <div
-                className="absolute right-0 top-full mt-1 z-50 rounded-xl shadow-2xl border overflow-hidden"
-                style={{ backgroundColor: '#111827', borderColor: '#374151', minWidth: 160 }}
-              >
-                <div className="px-3 py-1.5 text-[9px] font-bold tracking-widest uppercase" style={{ color: '#6B7280' }}>
-                  Selecionar meses
-                </div>
-                <div style={{ borderTop: '1px solid #374151', maxHeight: 220, overflowY: 'auto' }}>
-                  {availableMonths.map(m => {
-                    const checked = pickerSelected.includes(m);
-                    return (
-                      <label
-                        key={m}
-                        className="flex items-center gap-2 px-3 py-1.5 cursor-pointer select-none"
-                        style={{ color: checked ? 'white' : '#D1D5DB' }}
-                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#1F2937')}
-                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setPickerSelected(prev =>
-                              prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
-                            );
-                          }}
-                          style={{ accentColor: '#2563EB', width: 12, height: 12 }}
-                        />
-                        <span className="text-[11px] font-bold">{monthShortFromYearMonth(m)}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <div style={{ borderTop: '1px solid #374151' }} className="px-3 py-2 flex gap-2">
-                  <button
-                    className="flex-1 text-[10px] font-bold py-1 rounded-md"
-                    style={{ backgroundColor: '#374151', color: '#9CA3AF' }}
-                    onClick={() => { setPickerSelected([]); }}
-                  >
-                    Limpar
-                  </button>
-                  <button
-                    disabled={pickerSelected.length === 0}
-                    className="flex-1 text-[10px] font-bold py-1 rounded-md transition-colors"
-                    style={pickerSelected.length > 0
-                      ? { backgroundColor: '#2563EB', color: 'white' }
-                      : { backgroundColor: '#1F2937', color: '#6B7280', cursor: 'not-allowed' }
-                    }
-                    onClick={() => {
-                      if (pickerSelected.length === 0) return;
-                      const sorted = [...pickerSelected].sort();
-                      const monthTo = sorted[sorted.length - 1];
-                      const monthFrom = sorted.length > 1 ? sorted[0] : undefined;
-                      setActivePeriod({ month: monthTo, isYtd: false, monthFrom });
-                      setShowPicker(false);
-                    }}
-                  >
-                    Aplicar
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Period badge — read-only, use the Filtros panel to change */}
+          <span
+            className="flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] font-bold select-none"
+            style={periodChanged
+              ? { borderColor: '#93C5FD', backgroundColor: '#EFF6FF', color: '#1D4ED8' }
+              : { borderColor: '#E5E7EB', backgroundColor: '#F9FAFB', color: '#6B7280' }
+            }
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            {periodLoading ? '…' : displayLabel}
+          </span>
           {filterSlot}
         </div>
       </div>
@@ -4343,6 +4242,21 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
 
   return (
     <div className="space-y-6">
+      {/* Full-screen loading overlay */}
+      {globalLoading && (
+        <div className="fixed inset-0 z-[20000] flex flex-col items-center justify-center" style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}>
+          <div className="flex flex-col items-center gap-4 px-8 py-7 rounded-2xl shadow-2xl" style={{ background: '#111827', border: '1px solid #374151' }}>
+            {/* Animated ring */}
+            <div className="relative w-12 h-12">
+              <div className="absolute inset-0 rounded-full border-4" style={{ borderColor: '#1F2937' }} />
+              <div className="absolute inset-0 rounded-full border-4 border-transparent animate-spin" style={{ borderTopColor: '#2563EB' }} />
+            </div>
+            <div className="text-sm font-bold text-white">Carregando dados…</div>
+            <div className="text-[11px]" style={{ color: '#6B7280' }}>Aguarde enquanto aplicamos os filtros</div>
+          </div>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="text-xs text-gray-500">
@@ -4351,9 +4265,6 @@ export default function VariancePptPreview({ data, onReloadWithPeriod, onReloadW
             <span className="text-red-500 font-bold ml-1">
               ({hiddenCount} oculto{hiddenCount > 1 ? 's' : ''})
             </span>
-          )}
-          {globalLoading && (
-            <span className="text-blue-500 font-bold ml-2 animate-pulse">⟳ atualizando…</span>
           )}
         </div>
         <div className="flex items-center gap-2">
