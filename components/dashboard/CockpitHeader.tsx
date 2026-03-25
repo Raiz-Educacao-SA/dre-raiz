@@ -1,5 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Flag, Building2, CalendarDays, Check, ChevronDown, RefreshCw } from 'lucide-react';
+import React from 'react';
+import { Flag, Building2, CalendarDays, RefreshCw } from 'lucide-react';
+import MultiSelectFilter from '@/components/MultiSelectFilter';
 
 interface CockpitHeaderProps {
   selectedMarca: string[];
@@ -127,78 +128,3 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   );
 };
 
-// ─── MultiSelectFilter (extracted from Dashboard.tsx) ──────────────
-interface MultiSelectFilterProps {
-  label: string;
-  icon: React.ReactNode;
-  options: string[];
-  selected: string[];
-  onChange: (selected: string[]) => void;
-  colorScheme: 'blue' | 'orange';
-}
-
-const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({ label, icon, options, selected, onChange, colorScheme }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const colors = {
-    blue: { border: 'border-[#1B75BB]', borderLight: 'border-gray-100', bg: 'bg-[#1B75BB]', bgLight: 'bg-blue-50', text: 'text-[#1B75BB]', ring: 'ring-[#1B75BB]/10' },
-    orange: { border: 'border-[#F44C00]', borderLight: 'border-gray-100', bg: 'bg-[#F44C00]', bgLight: 'bg-orange-50', text: 'text-[#F44C00]', ring: 'ring-[#F44C00]/10' },
-  };
-  const scheme = colors[colorScheme];
-  const hasSelection = selected.length > 0;
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const displayText = selected.length === 0 ? 'TODAS' : selected.length === 1 ? selected[0].toUpperCase() : `${selected.length} SELECIONADAS`;
-
-  return (
-    <div ref={dropdownRef} className="relative">
-      <div onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-2 bg-white px-4 h-[52px] rounded-lg border-2 shadow-sm transition-all cursor-pointer hover:shadow-md ${
-          hasSelection ? `${scheme.border} ring-4 ${scheme.ring}` : scheme.borderLight
-        }`}>
-        <div className={`p-1.5 rounded-lg ${hasSelection ? `${scheme.bg} text-white` : `${scheme.bgLight} ${scheme.text}`}`}>{icon}</div>
-        <div className="flex flex-col justify-center">
-          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none mb-0.5">{label}</span>
-          <div className="flex items-center gap-1.5">
-            <span className="font-black text-[10px] uppercase tracking-tight text-gray-900 min-w-[120px]">{displayText}</span>
-            <ChevronDown size={12} className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-          </div>
-        </div>
-      </div>
-
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-2 bg-white rounded-lg border-2 border-gray-200 shadow-xl z-50 min-w-[240px] max-h-[400px] overflow-hidden flex flex-col animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="p-2 border-b border-gray-100 flex gap-2">
-            <button onClick={() => onChange(options)} className="flex-1 px-2 py-1.5 text-[10px] font-black uppercase bg-gray-100 hover:bg-gray-200 rounded transition-all">Selecionar Todas</button>
-            <button onClick={() => onChange([])} className="flex-1 px-2 py-1.5 text-[10px] font-black uppercase bg-gray-100 hover:bg-gray-200 rounded transition-all">Limpar</button>
-          </div>
-          <div className="overflow-y-auto flex-1">
-            {options.map(option => {
-              const isSelected = selected.includes(option);
-              return (
-                <label key={option} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors">
-                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${isSelected ? `${scheme.border} ${scheme.bg}` : 'border-gray-300'}`}>
-                    {isSelected && <Check size={12} className="text-white" />}
-                  </div>
-                  <input type="checkbox" checked={isSelected} onChange={() => onChange(isSelected ? selected.filter(i => i !== option) : [...selected, option])} className="sr-only" />
-                  <span className="text-xs font-bold text-gray-900">{option}</span>
-                </label>
-              );
-            })}
-          </div>
-          <div className="p-2 border-t border-gray-100 bg-gray-50">
-            <span className="text-[10px] font-bold text-gray-600">{selected.length} de {options.length} selecionada(s)</span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};

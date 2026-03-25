@@ -2610,7 +2610,11 @@ const MultiSelectFilter = React.memo(({ id, label, options, selected, active, is
                 </span>
               )}
             </div>
-            <button onMouseDown={(e) => { e.preventDefault(); onClear(); }} className="text-[7px] font-black text-rose-500 uppercase hover:underline">Limpar</button>
+            <div className="flex items-center gap-1.5">
+              <button onMouseDown={(e) => { e.preventDefault(); onSelectMultiple(normalizedOptions.map(o => o.value)); }} className="text-[7px] font-black text-green-600 uppercase hover:underline">Todos</button>
+              <span className="text-gray-300 text-[7px]">|</span>
+              <button onMouseDown={(e) => { e.preventDefault(); onClear(); }} className="text-[7px] font-black text-rose-500 uppercase hover:underline">Limpar</button>
+            </div>
           </div>
 
           <div className="mb-1.5 relative">
