@@ -2386,7 +2386,22 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                   {/* Coluna Esquerda — Identificação */}
                   <div>
                     <p className="text-[8px] font-black text-[#1B75BB] uppercase tracking-widest mb-1">Identificação</p>
-                    <F label="Ticket" value={t.ticket || '-'} copyable />
+                    {/* Ticket como hiperlink (mesmo padrão da tabela) */}
+                    <div className="flex items-start justify-between py-[3px] border-b border-gray-100/80 group gap-2">
+                      <span className="text-[8px] font-black text-gray-400 uppercase tracking-wide shrink-0 w-[90px] mt-[2px]">Ticket</span>
+                      {t.ticket ? (
+                        <a
+                          href={`https://raizeducacao.zeev.it/report/main/?inpsearch=${t.ticket}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="text-[10px] font-black text-[#1B75BB] hover:underline flex items-center gap-0.5 justify-end flex-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {t.ticket} <ExternalLink size={8} />
+                        </a>
+                      ) : (
+                        <span className="text-[10px] font-bold text-gray-800 text-right flex-1">-</span>
+                      )}
+                    </div>
                     <F label="Chave ID" value={t.chave_id || '-'} mono copyable />
                     <F label="Conta" value={t.conta_contabil} mono accent copyable />
                     <F label="Vendor" value={t.vendor || '-'} />
@@ -2499,7 +2514,28 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
               </div>
 
               {/* Footer */}
-              <div className="px-4 py-1.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end shrink-0">
+              <div className="px-4 py-1.5 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between shrink-0">
+                {/* Ações — só visíveis para quem pode editar */}
+                <div className="flex items-center gap-2">
+                  {canEdit && (
+                    <button
+                      onClick={() => { setDetailTransaction(null); setEditingTransaction(t); }}
+                      className="px-3 py-1.5 bg-sky-50 text-sky-700 border border-sky-200 rounded-lg hover:bg-sky-100 font-black text-[10px] uppercase transition-all active:scale-95 flex items-center gap-1.5"
+                      title="Solicitar ajuste neste lançamento"
+                    >
+                      <Edit3 size={11} /> Solicitar Ajuste
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button
+                      onClick={() => { setDetailTransaction(null); setRateioTransaction(t); }}
+                      className="px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 font-black text-[10px] uppercase transition-all active:scale-95 flex items-center gap-1.5"
+                      title="Fazer rateio neste lançamento"
+                    >
+                      <GitFork size={11} /> Rateio
+                    </button>
+                  )}
+                </div>
                 <button onClick={() => setDetailTransaction(null)} className="px-4 py-1.5 bg-[#1B75BB] text-white rounded-lg hover:bg-[#155a94] font-black text-[10px] uppercase transition-all active:scale-95">
                   Fechar
                 </button>
