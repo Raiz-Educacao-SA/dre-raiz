@@ -99,6 +99,17 @@ interface DashboardData {
   portfolio_stress: PortfolioStressResult[];
 }
 
+interface FilialSnapshot {
+  filial: string;
+  receita_real: number;
+  custos_variaveis_real: number;
+  custos_fixos_real: number;
+  sga_real: number;
+  rateio_real: number;
+  ebitda: number;
+  margem_pct: number;
+}
+
 type TabId = 'dashboard' | 'portfolio' | 'simulation' | 'decisions' | 'stress';
 
 interface TabDef {
@@ -1182,16 +1193,6 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   const [selectedTag03s, setSelectedTag03s] = useState<string[]>([]);
 
   // Filial drill-down no portfólio
-  interface FilialSnapshot {
-    filial: string;
-    receita_real: number;
-    custos_variaveis_real: number;
-    custos_fixos_real: number;
-    sga_real: number;
-    rateio_real: number;
-    ebitda: number;
-    margem_pct: number;
-  }
   const [marcasFiliais, setMarcasFiliais] = useState<{ marca: string; label: string }[]>([]);
   const [expandedMarcas, setExpandedMarcas] = useState<Set<string>>(new Set());
   const [filialSnapshots, setFilialSnapshots] = useState<Map<string, FilialSnapshot[]>>(new Map());
@@ -1764,7 +1765,15 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
       )}
 
       {activeTab === 'portfolio' && (
-        <PortfolioContent data={data} />
+        <PortfolioContent
+          data={data}
+          expandedMarcas={expandedMarcas}
+          loadingFiliais={loadingFiliais}
+          filialSnapshots={filialSnapshots}
+          filialSnapshotsRef={filialSnapshotsRef}
+          marcasFiliais={marcasFiliais}
+          handleToggleMarca={handleToggleMarca}
+        />
       )}
 
       {activeTab === 'stress' && (
@@ -1811,7 +1820,25 @@ function portfolioClassLabel(c: string): string {
   }
 }
 
-const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
+interface PortfolioContentProps {
+  data: DashboardData;
+  expandedMarcas: Set<string>;
+  loadingFiliais: Set<string>;
+  filialSnapshots: Map<string, FilialSnapshot[]>;
+  filialSnapshotsRef: React.MutableRefObject<Map<string, FilialSnapshot[]>>;
+  marcasFiliais: { marca: string; label: string }[];
+  handleToggleMarca: (marcaId: string) => void;
+}
+
+const PortfolioContent: React.FC<PortfolioContentProps> = ({
+  data,
+  expandedMarcas,
+  loadingFiliais,
+  filialSnapshots,
+  filialSnapshotsRef,
+  marcasFiliais,
+  handleToggleMarca,
+}) => {
   const { portfolio_companies, portfolio_consolidated, portfolio_score, portfolio_risk, portfolio_allocation } = data;
 
   if (portfolio_companies.length === 0) {
