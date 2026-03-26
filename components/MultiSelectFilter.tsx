@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Check, Search } from 'lucide-react';
+import { ChevronDown, Check, Search, CheckSquare, X } from 'lucide-react';
 
 // IMPORTANTE: Componente externo (fora de qualquer pai) para evitar
 // re-criação a cada render do componente pai — preserva estado do dropdown.
@@ -145,23 +145,34 @@ const MultiSelectFilter: React.FC<MultiSelectFilterProps> = React.memo(
             style={{ top: `${dropdownPosition.top}px`, left: `${dropdownPosition.left}px` }}
           >
             {/* Header */}
-            <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-              <span className="text-xs font-semibold text-gray-700">Selecione</span>
-              <div className="flex items-center gap-2">
+            <div className="px-2 py-2 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => onChange(options)}
-                  className="text-[10px] text-green-600 hover:text-green-800 font-medium"
+                  onClick={() => onChange(filteredOptions.length > 0 ? filteredOptions : options)}
+                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded
+                             bg-green-50 border border-green-200 text-green-700 hover:bg-green-100
+                             text-[11px] font-semibold transition-colors"
                 >
-                  Todos
+                  <CheckSquare size={11} />
+                  Selecionar Todos
                 </button>
-                <span className="text-gray-300 text-[10px]">|</span>
                 <button
                   onClick={() => onChange([])}
-                  className="text-[10px] text-blue-600 hover:text-blue-800 font-medium"
+                  disabled={selected.length === 0}
+                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded
+                             bg-red-50 border border-red-200 text-red-600 hover:bg-red-100
+                             text-[11px] font-semibold transition-colors
+                             disabled:opacity-30 disabled:cursor-not-allowed"
                 >
+                  <X size={11} />
                   Limpar
                 </button>
               </div>
+              {selected.length > 0 && (
+                <p className="text-[9px] text-gray-400 text-center mt-1">
+                  {selected.length} selecionado{selected.length > 1 ? 's' : ''}
+                </p>
+              )}
             </div>
 
             {/* Busca */}
