@@ -20,6 +20,8 @@ import {
   Tag,
   X,
   Info,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import type {
   ScoreResult,
@@ -1179,6 +1181,24 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
   const [selectedTag02s, setSelectedTag02s] = useState<string[]>([]);
   const [selectedTag03s, setSelectedTag03s] = useState<string[]>([]);
 
+  // Filial drill-down no portfólio
+  interface FilialSnapshot {
+    filial: string;
+    receita_real: number;
+    custos_variaveis_real: number;
+    custos_fixos_real: number;
+    sga_real: number;
+    rateio_real: number;
+    ebitda: number;
+    margem_pct: number;
+  }
+  const [marcasFiliais, setMarcasFiliais] = useState<{ marca: string; label: string }[]>([]);
+  const [expandedMarcas, setExpandedMarcas] = useState<Set<string>>(new Set());
+  const [filialSnapshots, setFilialSnapshots] = useState<Map<string, FilialSnapshot[]>>(new Map());
+  const filialSnapshotsRef = useRef(filialSnapshots);
+  useEffect(() => { filialSnapshotsRef.current = filialSnapshots; }, [filialSnapshots]);
+  const [loadingFiliais, setLoadingFiliais] = useState<Set<string>>(new Set());
+
   // Refs para evitar stale closures no useCallback
   const monthFromRef = useRef(monthFrom);
   const monthToRef = useRef(monthTo);
@@ -1253,6 +1273,61 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
     setSimRiskAssessment(riskAssessment);
   }, []);
 
+  const handleToggleMarca = useCallback(async (marcaId: string) => {
+    // Toggle expand/collapse
+    setExpandedMarcas(prev => {
+      const next = new Set(prev);
+      if (next.has(marcaId)) { next.delete(marcaId); } else { next.add(marcaId); }
+      return next;
+    });
+
+    // Já carregado — só alterna
+    if (filialSnapshotsRef.current.has(marcaId)) return;
+
+    // Lazy load: busca dados por filial desta marca
+    const filiais = marcasFiliais
+      .filter(f => f.marca.toUpperCase() === marcaId.toUpperCase())
+      .map(f => f.label);
+    if (filiais.length === 0) return;
+
+    setLoadingFiliais(prev => new Set(prev).add(marcaId));
+    try {
+      const mFrom = `${currentYear}-${monthFromRef.current}`;
+      const mTo = `${currentYear}-${monthToRef.current}`;
+      const results = await Promise.all(
+        filiais.map(filial =>
+          getSomaTags(mFrom, mTo, [marcaId], [filial], undefined, undefined, 'Sim')
+        )
+      );
+      const snapshots = filiais.map((filial, i) => {
+        const rows = (results[i] ?? []).filter((r: SomaTagsRow) => r.scenario === 'Real');
+        const sumTag = (prefix: string) =>
+          rows.filter((r: SomaTagsRow) => (r.tag0 ?? '').startsWith(prefix))
+              .reduce((s: number, r: SomaTagsRow) => s + (r.total ?? 0), 0);
+        const receita = sumTag('01.');
+        const cv = sumTag('02.');  // negativo
+        const cf = sumTag('03.');  // negativo
+        const sga = sumTag('04.'); // negativo
+        const rateio = sumTag('06.'); // negativo
+        const ebitda = receita + cv + cf + sga + rateio;
+        return {
+          filial,
+          receita_real: receita,
+          custos_variaveis_real: cv,
+          custos_fixos_real: cf,
+          sga_real: sga,
+          rateio_real: rateio,
+          ebitda,
+          margem_pct: receita > 0 ? (ebitda / receita) * 100 : 0,
+        };
+      }).filter(s => s.receita_real !== 0 || s.ebitda !== 0);
+
+      setFilialSnapshots(prev => new Map(prev).set(marcaId, snapshots));
+    } finally {
+      setLoadingFiliais(prev => { const s = new Set(prev); s.delete(marcaId); return s; });
+    }
+  }, [marcasFiliais, currentYear]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -1296,6 +1371,10 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({
           ? marcasResult.marcas.filter(m => allowedMarcas.some(p => p.toUpperCase() === m.toUpperCase()))
           : marcasResult.marcas;
         setAvailableMarcas(visibleMarcas);
+      }
+      // Salvar mapa marca→filiais para drill-down lazy
+      if (marcasResult.filiais.length > 0) {
+        setMarcasFiliais(marcasResult.filiais);
       }
 
       if (!dreSnapshot || dreSnapshot.length === 0) {
@@ -1807,12 +1886,32 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
             <tbody>
               {portfolio_companies.map((c, i) => {
                 const bd = portfolio_consolidated?.company_breakdown.find(b => b.organization_id === c.organization_id);
+                const isExpanded = expandedMarcas.has(c.organization_id);
+                const isLoadingF = loadingFiliais.has(c.organization_id);
+                const filiais = filialSnapshots.get(c.organization_id) ?? [];
+                const hasFiliais = marcasFiliais.some(f => f.marca.toUpperCase() === c.organization_id.toUpperCase());
                 return (
-                  <tr key={c.organization_id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <React.Fragment key={c.organization_id}>
+                  <tr className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-2 font-bold text-gray-400">{i + 1}</td>
                     <td className="px-3 py-2 font-bold text-gray-900">
-                      {c.display_name}
-                      {c.is_csc && <span className="ml-1.5 text-[9px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">CSC</span>}
+                      <div className="flex items-center gap-1.5">
+                        {hasFiliais ? (
+                          <button
+                            onClick={() => handleToggleMarca(c.organization_id)}
+                            className="text-gray-400 hover:text-[#1B75BB] transition-colors flex-shrink-0"
+                            title={isExpanded ? 'Recolher filiais' : 'Expandir filiais'}
+                          >
+                            {isLoadingF
+                              ? <Loader2 size={12} className="animate-spin" />
+                              : isExpanded
+                              ? <ChevronDown size={12} />
+                              : <ChevronRight size={12} />}
+                          </button>
+                        ) : <span className="w-3 flex-shrink-0" />}
+                        {c.display_name}
+                        {c.is_csc && <span className="ml-1 text-[9px] font-bold text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">CSC</span>}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-right">
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold"
@@ -1834,6 +1933,43 @@ const PortfolioContent: React.FC<{ data: DashboardData }> = ({ data }) => {
                     </td>
                     <td className="px-3 py-2 text-right text-gray-500">{fmtPct(bd?.revenue_share ?? c.portfolio_weight)}</td>
                   </tr>
+                  {/* Linhas de filial — visíveis apenas quando expandido */}
+                  {isExpanded && isLoadingF && (
+                    <tr className="bg-blue-50 border-b border-blue-100">
+                      <td colSpan={12} className="px-3 py-2 text-[10px] text-blue-500 text-center">
+                        <Loader2 size={10} className="inline animate-spin mr-1" />Carregando filiais...
+                      </td>
+                    </tr>
+                  )}
+                  {isExpanded && !isLoadingF && filiais.length === 0 && filialSnapshotsRef.current.has(c.organization_id) && (
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <td colSpan={12} className="px-6 py-1.5 text-[10px] text-gray-400 italic">Sem filiais com dados no período</td>
+                    </tr>
+                  )}
+                  {isExpanded && !isLoadingF && filiais.map((f, fi) => (
+                    <tr key={`${c.organization_id}-${f.filial}`} className="border-b border-blue-50 bg-blue-50/40 hover:bg-blue-50">
+                      <td className="px-3 py-1.5 text-[10px] text-gray-300">{i + 1}.{fi + 1}</td>
+                      <td className="px-3 py-1.5 text-[10px] text-gray-600 pl-7 flex items-center gap-1">
+                        <span className="w-1 h-1 rounded-full bg-blue-300 flex-shrink-0" />
+                        {f.filial}
+                      </td>
+                      <td className="px-3 py-1.5" />{/* Score — sem score por filial */}
+                      <td className="px-3 py-1.5 text-right text-[10px] font-medium text-gray-800">{fmtBRL(f.receita_real)}</td>
+                      <td className="px-3 py-1.5 text-right text-[10px] text-violet-500">{fmtBRL(f.custos_variaveis_real)}</td>
+                      <td className="px-3 py-1.5 text-right text-[10px] text-violet-500">{fmtBRL(f.custos_fixos_real)}</td>
+                      <td className="px-3 py-1.5 text-right text-[10px] text-violet-500">{fmtBRL(f.sga_real)}</td>
+                      <td className="px-3 py-1.5 text-right text-[10px] text-violet-500">{fmtBRL(f.rateio_real)}</td>
+                      <td className="px-3 py-1.5 text-right text-[10px] font-semibold" style={{ color: f.ebitda >= 0 ? '#059669' : '#DC2626' }}>
+                        {fmtBRL(f.ebitda)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-[10px] text-gray-500">{fmtPct(f.margem_pct)}</td>
+                      <td className="px-3 py-1.5" />{/* YoY — sem comparativo por filial */}
+                      <td className="px-3 py-1.5 text-right text-[10px] text-gray-400">
+                        {f.receita_real > 0 && c.receita_real > 0 ? fmtPct((f.receita_real / c.receita_real) * 100) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                  </React.Fragment>
                 );
               })}
               {portfolio_consolidated && (
