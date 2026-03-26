@@ -17,7 +17,7 @@ jobs:
 
       - name: Instalar ODBC Driver 18 para SQL Server
         run: |
-          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
           curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/mssql-release.list
           sudo apt-get update -qq
           sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
