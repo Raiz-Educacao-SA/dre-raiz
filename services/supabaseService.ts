@@ -2751,6 +2751,203 @@ export const runNormalizarFornecedores = async (): Promise<{ ok: boolean; data?:
 };
 
 // ============================================
+// De-Para Conta Contábil
+// ============================================
+export interface DeparaContaContabil {
+  conta_de: string;
+  descricao_de: string;
+  conta_para: string;
+  descricao_para: string;
+  updated_at: string;
+}
+
+export const getDeparaContaContabil = async (): Promise<DeparaContaContabil[]> => {
+  const { data, error } = await supabase
+    .from('depara_conta_contabil')
+    .select('conta_de, descricao_de, conta_para, descricao_para, updated_at')
+    .order('conta_de')
+    .range(0, 999);
+  if (error) { console.error('Erro ao buscar depara_conta_contabil:', error); return []; }
+  return data || [];
+};
+
+export const getDeparaContaContabilCount = async (): Promise<number> => {
+  const { count, error } = await supabase
+    .from('depara_conta_contabil')
+    .select('conta_de', { count: 'exact', head: true });
+  if (error) { console.error('Erro ao contar depara_conta_contabil:', error); return 0; }
+  return count || 0;
+};
+
+export const searchDeparaContaContabil = async (term: string): Promise<DeparaContaContabil[]> => {
+  const pattern = `%${term.trim()}%`;
+  const { data, error } = await supabase
+    .from('depara_conta_contabil')
+    .select('conta_de, descricao_de, conta_para, descricao_para, updated_at')
+    .or(`conta_de.ilike.${pattern},descricao_de.ilike.${pattern},conta_para.ilike.${pattern},descricao_para.ilike.${pattern}`)
+    .order('conta_de')
+    .limit(500);
+  if (error) { console.error('Erro ao buscar depara_conta_contabil:', error); return []; }
+  return data || [];
+};
+
+export const insertDeparaContaContabil = async (
+  conta_de: string, descricao_de: string, conta_para: string, descricao_para: string
+): Promise<DeparaContaContabil | null> => {
+  const { data, error } = await supabase
+    .from('depara_conta_contabil')
+    .insert({ conta_de: conta_de.trim(), descricao_de: descricao_de.trim(), conta_para: conta_para.trim(), descricao_para: descricao_para.trim() })
+    .select('conta_de, descricao_de, conta_para, descricao_para, updated_at')
+    .single();
+  if (error) { console.error('Erro ao inserir depara_conta_contabil:', error); return null; }
+  return data;
+};
+
+export const updateDeparaContaContabil = async (
+  conta_de_old: string, conta_de: string, descricao_de: string, conta_para: string, descricao_para: string
+): Promise<{ ok: boolean; error?: string }> => {
+  if (conta_de_old !== conta_de.trim()) {
+    const { error: delErr } = await supabase.from('depara_conta_contabil').delete().eq('conta_de', conta_de_old);
+    if (delErr) return { ok: false, error: delErr.message };
+    const { error: insErr } = await supabase.from('depara_conta_contabil')
+      .insert({ conta_de: conta_de.trim(), descricao_de: descricao_de.trim(), conta_para: conta_para.trim(), descricao_para: descricao_para.trim() });
+    if (insErr) return { ok: false, error: insErr.message };
+    return { ok: true };
+  }
+  const { error } = await supabase
+    .from('depara_conta_contabil')
+    .update({ descricao_de: descricao_de.trim(), conta_para: conta_para.trim(), descricao_para: descricao_para.trim() })
+    .eq('conta_de', conta_de_old);
+  if (error) { console.error('Erro ao atualizar depara_conta_contabil:', error); return { ok: false, error: error.message }; }
+  return { ok: true };
+};
+
+export const deleteDeparaContaContabil = async (conta_de: string): Promise<boolean> => {
+  const { error } = await supabase.from('depara_conta_contabil').delete().eq('conta_de', conta_de);
+  if (error) { console.error('Erro ao deletar depara_conta_contabil:', error); return false; }
+  return true;
+};
+
+export const subscribeDeparaContaContabil = (onChange: () => void) => {
+  const channel = supabase
+    .channel('depara_conta_contabil_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'depara_conta_contabil' }, () => { onChange(); })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
+
+export const upsertDeparaContaContabilBatch = async (
+  rows: { conta_de: string; descricao_de: string; conta_para: string; descricao_para: string }[]
+): Promise<{ inserted: number; error?: string }> => {
+  const { data, error } = await supabase
+    .from('depara_conta_contabil')
+    .upsert(
+      rows.map(r => ({
+        conta_de: r.conta_de.trim(),
+        descricao_de: r.descricao_de.trim(),
+        conta_para: r.conta_para.trim(),
+        descricao_para: r.descricao_para.trim(),
+      })),
+      { onConflict: 'conta_de' }
+    )
+    .select('conta_de');
+  if (error) { console.error('Erro ao upsert depara_conta_contabil:', error); return { inserted: 0, error: error.message }; }
+  return { inserted: data?.length || 0 };
+};
+
+// ============================================
+// Contas Inativadas
+// ============================================
+export interface ContaInativada {
+  conta: string;
+  descricao: string;
+  updated_at: string;
+}
+
+export const getContasInativadas = async (): Promise<ContaInativada[]> => {
+  const { data, error } = await supabase
+    .from('contas_inativadas')
+    .select('conta, descricao, updated_at')
+    .order('conta')
+    .range(0, 999);
+  if (error) { console.error('Erro ao buscar contas_inativadas:', error); return []; }
+  return data || [];
+};
+
+export const getContasInativadasCount = async (): Promise<number> => {
+  const { count, error } = await supabase
+    .from('contas_inativadas')
+    .select('conta', { count: 'exact', head: true });
+  if (error) { console.error('Erro ao contar contas_inativadas:', error); return 0; }
+  return count || 0;
+};
+
+export const searchContasInativadas = async (term: string): Promise<ContaInativada[]> => {
+  const pattern = `%${term.trim()}%`;
+  const { data, error } = await supabase
+    .from('contas_inativadas')
+    .select('conta, descricao, updated_at')
+    .or(`conta.ilike.${pattern},descricao.ilike.${pattern}`)
+    .order('conta')
+    .limit(500);
+  if (error) { console.error('Erro ao buscar contas_inativadas:', error); return []; }
+  return data || [];
+};
+
+export const insertContaInativada = async (conta: string, descricao: string): Promise<ContaInativada | null> => {
+  const { data, error } = await supabase
+    .from('contas_inativadas')
+    .insert({ conta: conta.trim(), descricao: descricao.trim() })
+    .select('conta, descricao, updated_at')
+    .single();
+  if (error) { console.error('Erro ao inserir conta_inativada:', error); return null; }
+  return data;
+};
+
+export const updateContaInativada = async (
+  conta_old: string, conta: string, descricao: string
+): Promise<{ ok: boolean; error?: string }> => {
+  if (conta_old !== conta.trim()) {
+    const { error: delErr } = await supabase.from('contas_inativadas').delete().eq('conta', conta_old);
+    if (delErr) return { ok: false, error: delErr.message };
+    const { error: insErr } = await supabase.from('contas_inativadas').insert({ conta: conta.trim(), descricao: descricao.trim() });
+    if (insErr) return { ok: false, error: insErr.message };
+    return { ok: true };
+  }
+  const { error } = await supabase.from('contas_inativadas').update({ descricao: descricao.trim() }).eq('conta', conta_old);
+  if (error) { console.error('Erro ao atualizar conta_inativada:', error); return { ok: false, error: error.message }; }
+  return { ok: true };
+};
+
+export const deleteContaInativada = async (conta: string): Promise<boolean> => {
+  const { error } = await supabase.from('contas_inativadas').delete().eq('conta', conta);
+  if (error) { console.error('Erro ao deletar conta_inativada:', error); return false; }
+  return true;
+};
+
+export const subscribeContasInativadas = (onChange: () => void) => {
+  const channel = supabase
+    .channel('contas_inativadas_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'contas_inativadas' }, () => { onChange(); })
+    .subscribe();
+  return () => { supabase.removeChannel(channel); };
+};
+
+export const upsertContasInativadasBatch = async (
+  rows: { conta: string; descricao: string }[]
+): Promise<{ inserted: number; error?: string }> => {
+  const { data, error } = await supabase
+    .from('contas_inativadas')
+    .upsert(
+      rows.map(r => ({ conta: r.conta.trim(), descricao: r.descricao.trim() })),
+      { onConflict: 'conta' }
+    )
+    .select('conta');
+  if (error) { console.error('Erro ao upsert contas_inativadas:', error); return { inserted: 0, error: error.message }; }
+  return { inserted: data?.length || 0 };
+};
+
+// ============================================
 // Override Contábil (substituição contábil → manual)
 // ============================================
 

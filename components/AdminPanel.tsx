@@ -56,9 +56,10 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'override' | 'solicitacoes'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'override' | 'solicitacoes' | 'conta_contabil'>('import');
   const [dadosSubTab, setDadosSubTab] = useState<'importar' | 'exportar'>('importar');
   const [usersSubTab, setUsersSubTab] = useState<'cadastro' | 'engajamento'>('cadastro');
+  const [contaContabilSubTab, setContaContabilSubTab] = useState<'depara_conta' | 'inativar_conta'>('depara_conta');
 
   // Estados para aba Cronograma
   const [cronogramaItems, setCronogramaItems] = useState<supabaseService.CronogramaItem[]>([]);
@@ -195,6 +196,52 @@ const AdminPanel: React.FC = () => {
   const [deparaImportProgress, setDeparaImportProgress] = useState(0);
   const [deparaImportLog, setDeparaImportLog] = useState<{time: string; type: 'info'|'success'|'error'|'warn'; text: string}[]>([]);
 
+  // Estados para sub-aba De-Para Conta Contábil
+  const [ccDeparaData, setCcDeparaData] = useState<supabaseService.DeparaContaContabil[]>([]);
+  const [ccDeparaLoading, setCcDeparaLoading] = useState(false);
+  const [ccDeparaSearch, setCcDeparaSearch] = useState('');
+  const [ccDeparaTotalCount, setCcDeparaTotalCount] = useState(0);
+  const [ccDeparaSearching, setCcDeparaSearching] = useState(false);
+  const [ccDeparaIsSearchResult, setCcDeparaIsSearchResult] = useState(false);
+  const [ccDeparaEditingId, setCcDeparaEditingId] = useState<string | null>(null);
+  const [ccDeparaEditContaDe, setCcDeparaEditContaDe] = useState('');
+  const [ccDeparaEditDescricaoDe, setCcDeparaEditDescricaoDe] = useState('');
+  const [ccDeparaEditContaPara, setCcDeparaEditContaPara] = useState('');
+  const [ccDeparaEditDescricaoPara, setCcDeparaEditDescricaoPara] = useState('');
+  const [ccDeparaSaving, setCcDeparaSaving] = useState(false);
+  const [ccDeparaNewContaDe, setCcDeparaNewContaDe] = useState('');
+  const [ccDeparaNewDescricaoDe, setCcDeparaNewDescricaoDe] = useState('');
+  const [ccDeparaNewContaPara, setCcDeparaNewContaPara] = useState('');
+  const [ccDeparaNewDescricaoPara, setCcDeparaNewDescricaoPara] = useState('');
+  const [ccDeparaAdding, setCcDeparaAdding] = useState(false);
+  const [ccDeparaMessage, setCcDeparaMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [ccDeparaFile, setCcDeparaFile] = useState<File | null>(null);
+  const [ccDeparaImportPreview, setCcDeparaImportPreview] = useState<{conta_de: string; descricao_de: string; conta_para: string; descricao_para: string}[]>([]);
+  const [ccDeparaImporting, setCcDeparaImporting] = useState(false);
+  const [ccDeparaImportProgress, setCcDeparaImportProgress] = useState(0);
+  const [ccDeparaImportLog, setCcDeparaImportLog] = useState<{time: string; type: 'info'|'success'|'error'|'warn'; text: string}[]>([]);
+
+  // Estados para sub-aba Inativar Conta Contábil
+  const [ccInativaData, setCcInativaData] = useState<supabaseService.ContaInativada[]>([]);
+  const [ccInativaLoading, setCcInativaLoading] = useState(false);
+  const [ccInativaSearch, setCcInativaSearch] = useState('');
+  const [ccInativaTotalCount, setCcInativaTotalCount] = useState(0);
+  const [ccInativaSearching, setCcInativaSearching] = useState(false);
+  const [ccInativaIsSearchResult, setCcInativaIsSearchResult] = useState(false);
+  const [ccInativaEditingId, setCcInativaEditingId] = useState<string | null>(null);
+  const [ccInativaEditConta, setCcInativaEditConta] = useState('');
+  const [ccInativaEditDescricao, setCcInativaEditDescricao] = useState('');
+  const [ccInativaSaving, setCcInativaSaving] = useState(false);
+  const [ccInativaNewConta, setCcInativaNewConta] = useState('');
+  const [ccInativaNewDescricao, setCcInativaNewDescricao] = useState('');
+  const [ccInativaAdding, setCcInativaAdding] = useState(false);
+  const [ccInativaMessage, setCcInativaMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [ccInativaFile, setCcInativaFile] = useState<File | null>(null);
+  const [ccInativaImportPreview, setCcInativaImportPreview] = useState<{conta: string; descricao: string}[]>([]);
+  const [ccInativaImporting, setCcInativaImporting] = useState(false);
+  const [ccInativaImportProgress, setCcInativaImportProgress] = useState(0);
+  const [ccInativaImportLog, setCcInativaImportLog] = useState<{time: string; type: 'info'|'success'|'error'|'warn'; text: string}[]>([]);
+
   // Filtrar usuários por busca
   const filteredUsers = users.filter(user => {
     if (!userSearch) return true;
@@ -222,6 +269,8 @@ const AdminPanel: React.FC = () => {
     }
     if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
     if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
+    if (activeTab === 'conta_contabil' && ccDeparaData.length === 0) loadCcDeparaData();
+    if (activeTab === 'conta_contabil' && ccInativaData.length === 0) loadCcInativaData();
     if (activeTab === 'smtp' && !smtpConfigured && !smtpLoading) loadSmtpConfig();
     if (activeTab === 'cronograma') loadCronogramaData();
     if (activeTab === 'override' && overrideData.length === 0) loadOverrideData();
@@ -247,7 +296,13 @@ const AdminPanel: React.FC = () => {
     const unsub6 = supabaseService.subscribeOverrideContabil(() => {
       supabaseService.getOverrideContabil().then(setOverrideData);
     });
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); };
+    const unsub7 = supabaseService.subscribeDeparaContaContabil(() => {
+      supabaseService.getDeparaContaContabilCount().then(setCcDeparaTotalCount);
+    });
+    const unsub8 = supabaseService.subscribeContasInativadas(() => {
+      supabaseService.getContasInativadasCount().then(setCcInativaTotalCount);
+    });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); };
   }, []);
 
   // ---- Override Contábil handlers ----
@@ -564,6 +619,388 @@ const AdminPanel: React.FC = () => {
     }
     setDeparaNormalizing(false);
     setTimeout(() => setDeparaMessage(null), 5000);
+  };
+
+  // ---- De-Para Conta Contábil handlers ----
+  const loadCcDeparaData = async () => {
+    setCcDeparaLoading(true);
+    try {
+      const [data, count] = await Promise.all([
+        supabaseService.getDeparaContaContabil(),
+        supabaseService.getDeparaContaContabilCount(),
+      ]);
+      setCcDeparaData(data);
+      setCcDeparaTotalCount(count);
+      setCcDeparaIsSearchResult(false);
+    } catch (error) {
+      console.error('Erro ao carregar depara_conta_contabil:', error);
+    } finally {
+      setCcDeparaLoading(false);
+    }
+  };
+
+  const handleCcDeparaServerSearch = async () => {
+    const term = ccDeparaSearch.trim();
+    if (!term) { loadCcDeparaData(); return; }
+    setCcDeparaSearching(true);
+    try {
+      const results = await supabaseService.searchDeparaContaContabil(term);
+      setCcDeparaData(results);
+      setCcDeparaIsSearchResult(true);
+    } catch (error) {
+      console.error('Erro ao buscar depara_conta_contabil:', error);
+    } finally {
+      setCcDeparaSearching(false);
+    }
+  };
+
+  const handleCcDeparaEdit = (item: supabaseService.DeparaContaContabil) => {
+    setCcDeparaEditingId(item.conta_de);
+    setCcDeparaEditContaDe(item.conta_de);
+    setCcDeparaEditDescricaoDe(item.descricao_de);
+    setCcDeparaEditContaPara(item.conta_para);
+    setCcDeparaEditDescricaoPara(item.descricao_para);
+  };
+
+  const handleCcDeparaCancelEdit = () => {
+    setCcDeparaEditingId(null);
+    setCcDeparaEditContaDe(''); setCcDeparaEditDescricaoDe('');
+    setCcDeparaEditContaPara(''); setCcDeparaEditDescricaoPara('');
+  };
+
+  const handleCcDeparaSave = async (conta_de_old: string) => {
+    if (!ccDeparaEditContaDe.trim() || !ccDeparaEditContaPara.trim()) {
+      setCcDeparaMessage({ type: 'error', text: 'Conta De e Conta Para são obrigatórias.' });
+      return;
+    }
+    setCcDeparaSaving(true);
+    const result = await supabaseService.updateDeparaContaContabil(
+      conta_de_old, ccDeparaEditContaDe, ccDeparaEditDescricaoDe, ccDeparaEditContaPara, ccDeparaEditDescricaoPara
+    );
+    if (result.ok) {
+      setCcDeparaMessage({ type: 'success', text: 'Registro atualizado!' });
+      handleCcDeparaCancelEdit();
+      loadCcDeparaData();
+    } else {
+      setCcDeparaMessage({ type: 'error', text: result.error || 'Erro ao atualizar.' });
+    }
+    setCcDeparaSaving(false);
+    setTimeout(() => setCcDeparaMessage(null), 3000);
+  };
+
+  const handleCcDeparaAdd = async () => {
+    if (!ccDeparaNewContaDe.trim() || !ccDeparaNewContaPara.trim()) {
+      setCcDeparaMessage({ type: 'error', text: 'Conta De e Conta Para são obrigatórias.' });
+      return;
+    }
+    setCcDeparaAdding(true);
+    const result = await supabaseService.insertDeparaContaContabil(
+      ccDeparaNewContaDe, ccDeparaNewDescricaoDe, ccDeparaNewContaPara, ccDeparaNewDescricaoPara
+    );
+    if (result) {
+      setCcDeparaMessage({ type: 'success', text: 'Registro adicionado!' });
+      setCcDeparaNewContaDe(''); setCcDeparaNewDescricaoDe('');
+      setCcDeparaNewContaPara(''); setCcDeparaNewDescricaoPara('');
+      loadCcDeparaData();
+    } else {
+      setCcDeparaMessage({ type: 'error', text: 'Erro ao adicionar. Conta "De" já existe?' });
+    }
+    setCcDeparaAdding(false);
+    setTimeout(() => setCcDeparaMessage(null), 3000);
+  };
+
+  const handleCcDeparaDelete = async (conta_de: string) => {
+    if (!confirm('Tem certeza que deseja excluir este registro?')) return;
+    const ok = await supabaseService.deleteDeparaContaContabil(conta_de);
+    if (ok) {
+      setCcDeparaMessage({ type: 'success', text: 'Registro excluído.' });
+      loadCcDeparaData();
+    } else {
+      setCcDeparaMessage({ type: 'error', text: 'Erro ao excluir.' });
+    }
+    setTimeout(() => setCcDeparaMessage(null), 3000);
+  };
+
+  const addCcDeparaLog = (type: 'info'|'success'|'error'|'warn', text: string) => {
+    const time = new Date().toLocaleTimeString('pt-BR');
+    setCcDeparaImportLog(prev => [...prev, { time, type, text }]);
+  };
+
+  const handleCcDeparaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCcDeparaFile(file);
+    setCcDeparaImportPreview([]);
+    setCcDeparaImportLog([]);
+    setCcDeparaImportProgress(0);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        const wb = XLSX.read(data, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+        const mapped: {conta_de: string; descricao_de: string; conta_para: string; descricao_para: string}[] = [];
+        let skipped = 0;
+        for (const row of rows) {
+          const de = String(row['Conta De'] || row['conta_de'] || row['CONTA_DE'] || row['CONTA DE'] || '').trim();
+          const descDe = String(row['Descrição De'] || row['Descricao De'] || row['descricao_de'] || row['DESCRICAO_DE'] || '').trim();
+          const para = String(row['Conta Para'] || row['conta_para'] || row['CONTA_PARA'] || row['CONTA PARA'] || '').trim();
+          const descPara = String(row['Descrição Para'] || row['Descricao Para'] || row['descricao_para'] || row['DESCRICAO_PARA'] || '').trim();
+          if (de && para) {
+            mapped.push({ conta_de: de, descricao_de: descDe, conta_para: para, descricao_para: descPara });
+          } else {
+            skipped++;
+          }
+        }
+        if (mapped.length === 0) {
+          setCcDeparaMessage({ type: 'error', text: 'Nenhuma linha válida. Verifique se as colunas "Conta De" e "Conta Para" existem.' });
+          return;
+        }
+        setCcDeparaImportPreview(mapped);
+        setCcDeparaMessage({ type: 'success', text: `${mapped.length} registros carregados${skipped > 0 ? ` (${skipped} ignorados)` : ''}. Revise e clique em "Importar".` });
+      } catch (error) {
+        console.error('Erro ao ler arquivo de-para conta:', error);
+        setCcDeparaMessage({ type: 'error', text: 'Erro ao ler arquivo. Verifique o formato.' });
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleCcDeparaImport = async () => {
+    if (ccDeparaImportPreview.length === 0) return;
+    if (!confirm(`Importar ${ccDeparaImportPreview.length} registros de De-Para Conta Contábil? Registros existentes serão atualizados.`)) return;
+    setCcDeparaImporting(true);
+    setCcDeparaImportProgress(0);
+    setCcDeparaImportLog([]);
+    addCcDeparaLog('info', `Iniciando importação de ${ccDeparaImportPreview.length} registros...`);
+    const batchSize = 100;
+    const totalBatches = Math.ceil(ccDeparaImportPreview.length / batchSize);
+    let totalInserted = 0;
+    let totalErrors = 0;
+    for (let i = 0; i < totalBatches; i++) {
+      const start = i * batchSize;
+      const batch = ccDeparaImportPreview.slice(start, start + batchSize);
+      addCcDeparaLog('info', `Batch ${i + 1}/${totalBatches} — ${batch.length} registros...`);
+      try {
+        const result = await supabaseService.upsertDeparaContaContabilBatch(batch);
+        if (result.error) {
+          addCcDeparaLog('error', `Batch ${i + 1}: ${result.error}`);
+          totalErrors += batch.length;
+        } else {
+          totalInserted += result.inserted;
+          addCcDeparaLog('success', `Batch ${i + 1}: ${result.inserted} registros`);
+        }
+      } catch (err: any) {
+        addCcDeparaLog('error', `Batch ${i + 1}: ERRO — ${err.message}`);
+        totalErrors += batch.length;
+      }
+      setCcDeparaImportProgress(((i + 1) / totalBatches) * 100);
+    }
+    addCcDeparaLog(totalErrors > 0 ? 'warn' : 'success', `Concluído: ${totalInserted} importados, ${totalErrors} erros.`);
+    setCcDeparaImporting(false);
+    setCcDeparaFile(null);
+    setCcDeparaImportPreview([]);
+    loadCcDeparaData();
+  };
+
+  const handleCcDeparaExport = () => {
+    if (ccDeparaData.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(ccDeparaData.map(r => ({
+      'Conta De': r.conta_de,
+      'Descrição De': r.descricao_de,
+      'Conta Para': r.conta_para,
+      'Descrição Para': r.descricao_para,
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'DePara Conta Contabil');
+    XLSX.writeFile(wb, 'depara_conta_contabil.xlsx');
+  };
+
+  // ---- Contas Inativadas handlers ----
+  const loadCcInativaData = async () => {
+    setCcInativaLoading(true);
+    try {
+      const [data, count] = await Promise.all([
+        supabaseService.getContasInativadas(),
+        supabaseService.getContasInativadasCount(),
+      ]);
+      setCcInativaData(data);
+      setCcInativaTotalCount(count);
+      setCcInativaIsSearchResult(false);
+    } catch (error) {
+      console.error('Erro ao carregar contas_inativadas:', error);
+    } finally {
+      setCcInativaLoading(false);
+    }
+  };
+
+  const handleCcInativaServerSearch = async () => {
+    const term = ccInativaSearch.trim();
+    if (!term) { loadCcInativaData(); return; }
+    setCcInativaSearching(true);
+    try {
+      const results = await supabaseService.searchContasInativadas(term);
+      setCcInativaData(results);
+      setCcInativaIsSearchResult(true);
+    } catch (error) {
+      console.error('Erro ao buscar contas_inativadas:', error);
+    } finally {
+      setCcInativaSearching(false);
+    }
+  };
+
+  const handleCcInativaEdit = (item: supabaseService.ContaInativada) => {
+    setCcInativaEditingId(item.conta);
+    setCcInativaEditConta(item.conta);
+    setCcInativaEditDescricao(item.descricao);
+  };
+
+  const handleCcInativaCancelEdit = () => {
+    setCcInativaEditingId(null);
+    setCcInativaEditConta('');
+    setCcInativaEditDescricao('');
+  };
+
+  const handleCcInativaSave = async (conta_old: string) => {
+    if (!ccInativaEditConta.trim()) {
+      setCcInativaMessage({ type: 'error', text: 'Código da conta é obrigatório.' });
+      return;
+    }
+    setCcInativaSaving(true);
+    const result = await supabaseService.updateContaInativada(conta_old, ccInativaEditConta, ccInativaEditDescricao);
+    if (result.ok) {
+      setCcInativaMessage({ type: 'success', text: 'Registro atualizado!' });
+      handleCcInativaCancelEdit();
+      loadCcInativaData();
+    } else {
+      setCcInativaMessage({ type: 'error', text: result.error || 'Erro ao atualizar.' });
+    }
+    setCcInativaSaving(false);
+    setTimeout(() => setCcInativaMessage(null), 3000);
+  };
+
+  const handleCcInativaAdd = async () => {
+    if (!ccInativaNewConta.trim()) {
+      setCcInativaMessage({ type: 'error', text: 'Código da conta é obrigatório.' });
+      return;
+    }
+    setCcInativaAdding(true);
+    const result = await supabaseService.insertContaInativada(ccInativaNewConta, ccInativaNewDescricao);
+    if (result) {
+      setCcInativaMessage({ type: 'success', text: 'Conta inativada!' });
+      setCcInativaNewConta('');
+      setCcInativaNewDescricao('');
+      loadCcInativaData();
+    } else {
+      setCcInativaMessage({ type: 'error', text: 'Erro ao adicionar. Conta já cadastrada?' });
+    }
+    setCcInativaAdding(false);
+    setTimeout(() => setCcInativaMessage(null), 3000);
+  };
+
+  const handleCcInativaDelete = async (conta: string) => {
+    if (!confirm('Tem certeza que deseja remover esta conta da lista de inativadas?')) return;
+    const ok = await supabaseService.deleteContaInativada(conta);
+    if (ok) {
+      setCcInativaMessage({ type: 'success', text: 'Conta removida.' });
+      loadCcInativaData();
+    } else {
+      setCcInativaMessage({ type: 'error', text: 'Erro ao remover.' });
+    }
+    setTimeout(() => setCcInativaMessage(null), 3000);
+  };
+
+  const addCcInativaLog = (type: 'info'|'success'|'error'|'warn', text: string) => {
+    const time = new Date().toLocaleTimeString('pt-BR');
+    setCcInativaImportLog(prev => [...prev, { time, type, text }]);
+  };
+
+  const handleCcInativaFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCcInativaFile(file);
+    setCcInativaImportPreview([]);
+    setCcInativaImportLog([]);
+    setCcInativaImportProgress(0);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        const wb = XLSX.read(data, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws);
+        const mapped: {conta: string; descricao: string}[] = [];
+        let skipped = 0;
+        for (const row of rows) {
+          const conta = String(row['CONTA'] || row['Conta'] || row['conta'] || '').trim();
+          const desc = String(row['DESCRIÇÃO DA CONTA'] || row['Descrição da Conta'] || row['descricao'] || row['DESCRICAO'] || row['Descricao'] || '').trim();
+          if (conta) {
+            mapped.push({ conta, descricao: desc });
+          } else {
+            skipped++;
+          }
+        }
+        if (mapped.length === 0) {
+          setCcInativaMessage({ type: 'error', text: 'Nenhuma linha válida. Verifique se a coluna "CONTA" existe.' });
+          return;
+        }
+        setCcInativaImportPreview(mapped);
+        setCcInativaMessage({ type: 'success', text: `${mapped.length} contas carregadas${skipped > 0 ? ` (${skipped} ignoradas)` : ''}. Revise e clique em "Importar".` });
+      } catch (error) {
+        console.error('Erro ao ler arquivo contas inativadas:', error);
+        setCcInativaMessage({ type: 'error', text: 'Erro ao ler arquivo. Verifique o formato.' });
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleCcInativaImport = async () => {
+    if (ccInativaImportPreview.length === 0) return;
+    if (!confirm(`Importar ${ccInativaImportPreview.length} contas para inativar? Contas já existentes serão mantidas.`)) return;
+    setCcInativaImporting(true);
+    setCcInativaImportProgress(0);
+    setCcInativaImportLog([]);
+    addCcInativaLog('info', `Iniciando importação de ${ccInativaImportPreview.length} contas...`);
+    const batchSize = 100;
+    const totalBatches = Math.ceil(ccInativaImportPreview.length / batchSize);
+    let totalInserted = 0;
+    let totalErrors = 0;
+    for (let i = 0; i < totalBatches; i++) {
+      const start = i * batchSize;
+      const batch = ccInativaImportPreview.slice(start, start + batchSize);
+      addCcInativaLog('info', `Batch ${i + 1}/${totalBatches} — ${batch.length} contas...`);
+      try {
+        const result = await supabaseService.upsertContasInativadasBatch(batch);
+        if (result.error) {
+          addCcInativaLog('error', `Batch ${i + 1}: ${result.error}`);
+          totalErrors += batch.length;
+        } else {
+          totalInserted += result.inserted;
+          addCcInativaLog('success', `Batch ${i + 1}: ${result.inserted} contas`);
+        }
+      } catch (err: any) {
+        addCcInativaLog('error', `Batch ${i + 1}: ERRO — ${err.message}`);
+        totalErrors += batch.length;
+      }
+      setCcInativaImportProgress(((i + 1) / totalBatches) * 100);
+    }
+    addCcInativaLog(totalErrors > 0 ? 'warn' : 'success', `Concluído: ${totalInserted} importadas, ${totalErrors} erros.`);
+    setCcInativaImporting(false);
+    setCcInativaFile(null);
+    setCcInativaImportPreview([]);
+    loadCcInativaData();
+  };
+
+  const handleCcInativaExport = () => {
+    if (ccInativaData.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(ccInativaData.map(r => ({
+      'CONTA': r.conta,
+      'DESCRIÇÃO DA CONTA': r.descricao,
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Contas Inativadas');
+    XLSX.writeFile(wb, 'contas_inativadas.xlsx');
   };
 
   // deparaData já vem filtrado do servidor (via searchDeparaFornec) ou os primeiros 1000
@@ -2031,6 +2468,22 @@ const AdminPanel: React.FC = () => {
           </div>
           {activeTab === 'solicitacoes' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t"></div>
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('conta_contabil')}
+          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
+            activeTab === 'conta_contabil'
+              ? 'text-emerald-700 bg-emerald-50'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            <Hash size={14} />
+            Conta Contábil
+          </div>
+          {activeTab === 'conta_contabil' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-600 rounded-t"></div>
           )}
         </button>
       </div>
@@ -5420,6 +5873,391 @@ const AdminPanel: React.FC = () => {
         <InquiryAdminDashboard
           currentUser={{ email: currentUser.email, name: currentUser.name }}
         />
+      )}
+
+      {/* Aba: Conta Contábil */}
+      {activeTab === 'conta_contabil' && (
+        <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-xl p-3 shadow">
+
+          {/* Header + sub-abas em linha única */}
+          <div className="flex items-center gap-2 mb-2">
+            <div className="bg-emerald-100 p-1.5 rounded-lg shrink-0">
+              <Hash className="text-emerald-600" size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm font-black text-emerald-900 leading-none">Conta Contábil</h2>
+              <p className="text-[10px] text-emerald-600">De-Para e inativação de contas contábeis</p>
+            </div>
+            <button
+              onClick={() => setContaContabilSubTab('depara_conta')}
+              className={`flex items-center gap-1 px-3 py-1 rounded-lg font-bold text-[10px] uppercase transition-all shrink-0 ${
+                contaContabilSubTab === 'depara_conta'
+                  ? 'bg-emerald-600 text-white shadow'
+                  : 'bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+              }`}
+            >
+              <ArrowRightLeft size={11} />
+              De-Para Conta Contábil
+            </button>
+            <button
+              onClick={() => setContaContabilSubTab('inativar_conta')}
+              className={`flex items-center gap-1 px-3 py-1 rounded-lg font-bold text-[10px] uppercase transition-all shrink-0 ${
+                contaContabilSubTab === 'inativar_conta'
+                  ? 'bg-red-600 text-white shadow'
+                  : 'bg-white border border-red-200 text-red-700 hover:bg-red-50'
+              }`}
+            >
+              <X size={11} />
+              Inativar Conta Contábil
+            </button>
+          </div>
+
+          {/* ── Sub-aba: De-Para Conta Contábil ── */}
+          {contaContabilSubTab === 'depara_conta' && (
+            <>
+              {/* Toolbar */}
+              <div className="flex items-center gap-1.5 mb-2">
+                <p className="text-[10px] text-emerald-700 font-bold flex-1">
+                  {ccDeparaIsSearchResult
+                    ? `${ccDeparaData.length} resultado${ccDeparaData.length !== 1 ? 's' : ''}`
+                    : `${ccDeparaData.length} de ${ccDeparaTotalCount} registros`}
+                </p>
+                <label className="flex items-center gap-1 px-2 py-1 bg-white border border-emerald-300 text-emerald-700 text-[10px] font-bold rounded hover:bg-emerald-50 cursor-pointer transition-colors">
+                  <FileSpreadsheet size={11} />
+                  {ccDeparaFile ? ccDeparaFile.name.slice(0, 18) + '…' : 'Importar Excel'}
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleCcDeparaFileChange} disabled={ccDeparaImporting} />
+                </label>
+                {ccDeparaFile && (
+                  <button onClick={() => { setCcDeparaFile(null); setCcDeparaImportPreview([]); setCcDeparaImportLog([]); }} className="p-0.5 text-gray-400 hover:text-red-500 transition-colors" title="Limpar arquivo"><X size={12} /></button>
+                )}
+                <button onClick={handleCcDeparaExport} disabled={ccDeparaData.length === 0} className="flex items-center gap-1 px-2 py-1 bg-white border border-emerald-300 text-emerald-700 text-[10px] font-bold rounded hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <Download size={11} />Exportar
+                </button>
+              </div>
+
+              {/* Mensagem */}
+              {ccDeparaMessage && (
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded mb-1.5 text-[10px] font-bold ${ccDeparaMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  {ccDeparaMessage.type === 'success' ? <CheckCircle size={11} /> : <AlertTriangle size={11} />}
+                  {ccDeparaMessage.text}
+                </div>
+              )}
+
+              {/* Preview */}
+              {ccDeparaImportPreview.length > 0 && (
+                <div className="mb-1.5 p-1.5 bg-white/60 rounded border border-emerald-200">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-emerald-600">Preview — {ccDeparaImportPreview.length} registros</span>
+                    {!ccDeparaImporting && (
+                      <button onClick={handleCcDeparaImport} className="flex items-center gap-1 px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-bold rounded hover:bg-emerald-700 transition-colors">
+                        <Upload size={10} />Importar {ccDeparaImportPreview.length}
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-[100px] overflow-auto rounded border border-emerald-100">
+                    <table className="w-full text-[10px]">
+                      <thead className="sticky top-0 bg-emerald-100">
+                        <tr>
+                          <th className="px-1 py-0.5 text-left font-bold text-emerald-700 w-5">#</th>
+                          <th className="px-1 py-0.5 text-left font-bold text-emerald-700">Conta De</th>
+                          <th className="px-1 py-0.5 text-left font-bold text-emerald-700">Descrição De</th>
+                          <th className="px-1 py-0.5 text-left font-bold text-emerald-700">Conta Para</th>
+                          <th className="px-1 py-0.5 text-left font-bold text-emerald-700">Descrição Para</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ccDeparaImportPreview.slice(0, 100).map((item, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-emerald-50/30'}>
+                            <td className="px-1 py-0 text-gray-400">{idx + 1}</td>
+                            <td className="px-1 py-0 text-gray-700 font-mono">{item.conta_de}</td>
+                            <td className="px-1 py-0 text-gray-500">{item.descricao_de}</td>
+                            <td className="px-1 py-0 text-emerald-700 font-mono font-semibold">{item.conta_para}</td>
+                            <td className="px-1 py-0 text-emerald-600">{item.descricao_para}</td>
+                          </tr>
+                        ))}
+                        {ccDeparaImportPreview.length > 100 && <tr><td colSpan={5} className="px-1 py-0.5 text-center text-emerald-400 text-[10px]">… e mais {ccDeparaImportPreview.length - 100} registros</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Progresso + Log */}
+              {ccDeparaImporting && (
+                <div className="mb-1.5">
+                  <div className="w-full bg-emerald-100 rounded-full h-1"><div className="bg-emerald-600 h-1 rounded-full transition-all" style={{ width: `${ccDeparaImportProgress}%` }}></div></div>
+                  <p className="text-[10px] text-emerald-500 mt-0.5">{Math.round(ccDeparaImportProgress)}%</p>
+                </div>
+              )}
+              {ccDeparaImportLog.length > 0 && (
+                <div className="mb-1.5 max-h-[60px] overflow-auto bg-gray-900 rounded p-1.5 font-mono text-[10px]">
+                  {ccDeparaImportLog.map((log, idx) => (
+                    <div key={idx} className={`leading-tight ${log.type === 'success' ? 'text-green-400' : log.type === 'error' ? 'text-red-400' : log.type === 'warn' ? 'text-yellow-400' : 'text-gray-300'}`}>
+                      <span className="text-gray-500">[{log.time}]</span> {log.text}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Busca */}
+              <div className="flex gap-1.5 mb-1.5">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-emerald-400" size={12} />
+                  <input type="text" placeholder="Buscar conta ou descrição..." value={ccDeparaSearch}
+                    onChange={(e) => setCcDeparaSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleCcDeparaServerSearch(); }}
+                    className="w-full pl-6 pr-2 py-1 text-[10px] border border-emerald-200 rounded focus:outline-none focus:ring-1 focus:ring-emerald-400 bg-white" />
+                </div>
+                <button onClick={handleCcDeparaServerSearch} disabled={ccDeparaSearching} className="flex items-center gap-1 px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+                  <Search size={11} />{ccDeparaSearching ? 'Buscando…' : 'Buscar'}
+                </button>
+                {ccDeparaIsSearchResult && (
+                  <button onClick={() => { setCcDeparaSearch(''); loadCcDeparaData(); }} className="flex items-center gap-1 px-2 py-1 bg-white border border-emerald-300 text-emerald-700 text-[10px] font-bold rounded hover:bg-emerald-50 transition-colors">
+                    <X size={11} />Limpar
+                  </button>
+                )}
+              </div>
+
+              {/* Formulário adicionar — 4 campos em 1 linha + botão */}
+              <div className="flex gap-1 mb-1.5 p-1.5 bg-white/60 rounded border border-emerald-200">
+                <input type="text" placeholder="Conta De *" value={ccDeparaNewContaDe} onChange={(e) => setCcDeparaNewContaDe(e.target.value)}
+                  className="w-32 px-1.5 py-1 text-[10px] border border-emerald-200 rounded focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono shrink-0" />
+                <input type="text" placeholder="Descrição De" value={ccDeparaNewDescricaoDe} onChange={(e) => setCcDeparaNewDescricaoDe(e.target.value)}
+                  className="flex-1 px-1.5 py-1 text-[10px] border border-emerald-200 rounded focus:outline-none focus:ring-1 focus:ring-emerald-400" />
+                <input type="text" placeholder="Conta Para *" value={ccDeparaNewContaPara} onChange={(e) => setCcDeparaNewContaPara(e.target.value)}
+                  className="w-32 px-1.5 py-1 text-[10px] border border-emerald-200 rounded focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono shrink-0" />
+                <input type="text" placeholder="Descrição Para" value={ccDeparaNewDescricaoPara} onChange={(e) => setCcDeparaNewDescricaoPara(e.target.value)}
+                  className="flex-1 px-1.5 py-1 text-[10px] border border-emerald-200 rounded focus:outline-none focus:ring-1 focus:ring-emerald-400" />
+                <button onClick={handleCcDeparaAdd} disabled={ccDeparaAdding || !ccDeparaNewContaDe.trim() || !ccDeparaNewContaPara.trim()}
+                  className="flex items-center gap-1 px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0">
+                  <Plus size={11} />{ccDeparaAdding ? 'Adicionando…' : 'Adicionar'}
+                </button>
+              </div>
+
+              {/* Tabela */}
+              {ccDeparaLoading ? (
+                <div className="text-center py-6 text-emerald-500 text-[10px] font-bold">Carregando…</div>
+              ) : ccDeparaData.length === 0 ? (
+                <div className="text-center py-6 text-emerald-400 text-[10px]">
+                  {ccDeparaIsSearchResult ? `Sem resultados para "${ccDeparaSearch}".` : 'Nenhum registro cadastrado.'}
+                </div>
+              ) : (
+                <div className="max-h-[500px] overflow-auto rounded border border-emerald-200">
+                  <table className="w-full text-[10px]">
+                    <thead className="sticky top-0 bg-emerald-100 z-10">
+                      <tr>
+                        <th className="text-left px-1.5 py-0.5 font-black text-emerald-700 w-[18%]">Conta De</th>
+                        <th className="text-left px-1.5 py-0.5 font-black text-emerald-700 w-[28%]">Descrição De</th>
+                        <th className="text-left px-1.5 py-0.5 font-black text-emerald-700 w-[18%]">Conta Para</th>
+                        <th className="text-left px-1.5 py-0.5 font-black text-emerald-700 w-[28%]">Descrição Para</th>
+                        <th className="text-center px-1 py-0.5 font-black text-emerald-700 w-[8%]">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ccDeparaData.map((item, idx) => (
+                        <tr key={item.conta_de} className={`border-t border-emerald-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-emerald-50/20'} hover:bg-emerald-100/40`}>
+                          {ccDeparaEditingId === item.conta_de ? (
+                            <>
+                              <td className="px-1 py-0"><input type="text" value={ccDeparaEditContaDe} onChange={(e) => setCcDeparaEditContaDe(e.target.value)} className="w-full px-1 py-0 text-[10px] border border-emerald-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono" /></td>
+                              <td className="px-1 py-0"><input type="text" value={ccDeparaEditDescricaoDe} onChange={(e) => setCcDeparaEditDescricaoDe(e.target.value)} className="w-full px-1 py-0 text-[10px] border border-emerald-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" /></td>
+                              <td className="px-1 py-0"><input type="text" value={ccDeparaEditContaPara} onChange={(e) => setCcDeparaEditContaPara(e.target.value)} className="w-full px-1 py-0 text-[10px] border border-emerald-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono" /></td>
+                              <td className="px-1 py-0"><input type="text" value={ccDeparaEditDescricaoPara} onChange={(e) => setCcDeparaEditDescricaoPara(e.target.value)} className="w-full px-1 py-0 text-[10px] border border-emerald-300 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500" /></td>
+                              <td className="px-0 py-0 text-center">
+                                <div className="flex items-center justify-center">
+                                  <button onClick={() => handleCcDeparaSave(item.conta_de)} disabled={ccDeparaSaving} className="p-0.5 text-green-500 hover:text-green-700 hover:bg-green-100 rounded" title="Salvar"><Check size={10} /></button>
+                                  <button onClick={handleCcDeparaCancelEdit} className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="Cancelar"><X size={10} /></button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-1.5 py-0 text-gray-800 font-mono truncate">{item.conta_de}</td>
+                              <td className="px-1.5 py-0 text-gray-600 truncate">{item.descricao_de}</td>
+                              <td className="px-1.5 py-0 text-emerald-700 font-mono font-semibold truncate">{item.conta_para}</td>
+                              <td className="px-1.5 py-0 text-emerald-600 truncate">{item.descricao_para}</td>
+                              <td className="px-0 py-0 text-center">
+                                <div className="flex items-center justify-center">
+                                  <button onClick={() => handleCcDeparaEdit(item)} className="p-0.5 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-100 rounded" title="Editar"><Pencil size={10} /></button>
+                                  <button onClick={() => handleCcDeparaDelete(item.conta_de)} className="p-0.5 text-red-400 hover:text-red-600 hover:bg-red-100 rounded" title="Excluir"><Trash2 size={10} /></button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Sub-aba: Inativar Conta Contábil ── */}
+          {contaContabilSubTab === 'inativar_conta' && (
+            <>
+              {/* Toolbar */}
+              <div className="flex items-center gap-1.5 mb-2">
+                <p className="text-[10px] text-red-700 font-bold flex-1">
+                  {ccInativaIsSearchResult
+                    ? `${ccInativaData.length} resultado${ccInativaData.length !== 1 ? 's' : ''}`
+                    : `${ccInativaData.length} de ${ccInativaTotalCount} contas`}
+                </p>
+                <label className="flex items-center gap-1 px-2 py-1 bg-white border border-red-300 text-red-700 text-[10px] font-bold rounded hover:bg-red-50 cursor-pointer transition-colors">
+                  <FileSpreadsheet size={11} />
+                  {ccInativaFile ? ccInativaFile.name.slice(0, 18) + '…' : 'Importar Excel'}
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleCcInativaFileChange} disabled={ccInativaImporting} />
+                </label>
+                {ccInativaFile && (
+                  <button onClick={() => { setCcInativaFile(null); setCcInativaImportPreview([]); setCcInativaImportLog([]); }} className="p-0.5 text-gray-400 hover:text-red-500 transition-colors" title="Limpar"><X size={12} /></button>
+                )}
+                <button onClick={handleCcInativaExport} disabled={ccInativaData.length === 0} className="flex items-center gap-1 px-2 py-1 bg-white border border-red-300 text-red-700 text-[10px] font-bold rounded hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <Download size={11} />Exportar
+                </button>
+              </div>
+
+              {/* Mensagem */}
+              {ccInativaMessage && (
+                <div className={`flex items-center gap-1.5 px-2 py-1 rounded mb-1.5 text-[10px] font-bold ${ccInativaMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                  {ccInativaMessage.type === 'success' ? <CheckCircle size={11} /> : <AlertTriangle size={11} />}
+                  {ccInativaMessage.text}
+                </div>
+              )}
+
+              {/* Preview */}
+              {ccInativaImportPreview.length > 0 && (
+                <div className="mb-1.5 p-1.5 bg-white/60 rounded border border-red-200">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-red-600">Preview — {ccInativaImportPreview.length} contas</span>
+                    {!ccInativaImporting && (
+                      <button onClick={handleCcInativaImport} className="flex items-center gap-1 px-2 py-0.5 bg-red-600 text-white text-[10px] font-bold rounded hover:bg-red-700 transition-colors">
+                        <Upload size={10} />Importar {ccInativaImportPreview.length}
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-[100px] overflow-auto rounded border border-red-100">
+                    <table className="w-full text-[10px]">
+                      <thead className="sticky top-0 bg-red-100">
+                        <tr>
+                          <th className="px-1 py-0.5 text-left font-bold text-red-700 w-5">#</th>
+                          <th className="px-1 py-0.5 text-left font-bold text-red-700">CONTA</th>
+                          <th className="px-1 py-0.5 text-left font-bold text-red-700">DESCRIÇÃO</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ccInativaImportPreview.slice(0, 100).map((item, idx) => (
+                          <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-red-50/30'}>
+                            <td className="px-1 py-0 text-gray-400">{idx + 1}</td>
+                            <td className="px-1 py-0 text-gray-700 font-mono">{item.conta}</td>
+                            <td className="px-1 py-0 text-gray-500">{item.descricao}</td>
+                          </tr>
+                        ))}
+                        {ccInativaImportPreview.length > 100 && <tr><td colSpan={3} className="px-1 py-0.5 text-center text-red-400 text-[10px]">… e mais {ccInativaImportPreview.length - 100} contas</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Progresso + Log */}
+              {ccInativaImporting && (
+                <div className="mb-1.5">
+                  <div className="w-full bg-red-100 rounded-full h-1"><div className="bg-red-600 h-1 rounded-full transition-all" style={{ width: `${ccInativaImportProgress}%` }}></div></div>
+                  <p className="text-[10px] text-red-500 mt-0.5">{Math.round(ccInativaImportProgress)}%</p>
+                </div>
+              )}
+              {ccInativaImportLog.length > 0 && (
+                <div className="mb-1.5 max-h-[60px] overflow-auto bg-gray-900 rounded p-1.5 font-mono text-[10px]">
+                  {ccInativaImportLog.map((log, idx) => (
+                    <div key={idx} className={`leading-tight ${log.type === 'success' ? 'text-green-400' : log.type === 'error' ? 'text-red-400' : log.type === 'warn' ? 'text-yellow-400' : 'text-gray-300'}`}>
+                      <span className="text-gray-500">[{log.time}]</span> {log.text}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Busca */}
+              <div className="flex gap-1.5 mb-1.5">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-red-400" size={12} />
+                  <input type="text" placeholder="Buscar conta ou descrição..." value={ccInativaSearch}
+                    onChange={(e) => setCcInativaSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleCcInativaServerSearch(); }}
+                    className="w-full pl-6 pr-2 py-1 text-[10px] border border-red-200 rounded focus:outline-none focus:ring-1 focus:ring-red-400 bg-white" />
+                </div>
+                <button onClick={handleCcInativaServerSearch} disabled={ccInativaSearching} className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded hover:bg-red-700 disabled:opacity-50 transition-colors">
+                  <Search size={11} />{ccInativaSearching ? 'Buscando…' : 'Buscar'}
+                </button>
+                {ccInativaIsSearchResult && (
+                  <button onClick={() => { setCcInativaSearch(''); loadCcInativaData(); }} className="flex items-center gap-1 px-2 py-1 bg-white border border-red-300 text-red-700 text-[10px] font-bold rounded hover:bg-red-50 transition-colors">
+                    <X size={11} />Limpar
+                  </button>
+                )}
+              </div>
+
+              {/* Formulário adicionar — linha única */}
+              <div className="flex gap-1 mb-1.5 p-1.5 bg-white/60 rounded border border-red-200">
+                <input type="text" placeholder="Código da Conta *" value={ccInativaNewConta} onChange={(e) => setCcInativaNewConta(e.target.value)}
+                  className="w-40 px-1.5 py-1 text-[10px] border border-red-200 rounded focus:outline-none focus:ring-1 focus:ring-red-400 font-mono shrink-0" />
+                <input type="text" placeholder="Descrição da Conta" value={ccInativaNewDescricao} onChange={(e) => setCcInativaNewDescricao(e.target.value)}
+                  className="flex-1 px-1.5 py-1 text-[10px] border border-red-200 rounded focus:outline-none focus:ring-1 focus:ring-red-400" />
+                <button onClick={handleCcInativaAdd} disabled={ccInativaAdding || !ccInativaNewConta.trim()}
+                  className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white text-[10px] font-bold rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0">
+                  <Plus size={11} />{ccInativaAdding ? 'Adicionando…' : 'Adicionar'}
+                </button>
+              </div>
+
+              {/* Tabela */}
+              {ccInativaLoading ? (
+                <div className="text-center py-6 text-red-500 text-[10px] font-bold">Carregando…</div>
+              ) : ccInativaData.length === 0 ? (
+                <div className="text-center py-6 text-red-400 text-[10px]">
+                  {ccInativaIsSearchResult ? `Sem resultados para "${ccInativaSearch}".` : 'Nenhuma conta inativada cadastrada.'}
+                </div>
+              ) : (
+                <div className="max-h-[500px] overflow-auto rounded border border-red-200">
+                  <table className="w-full text-[10px]">
+                    <thead className="sticky top-0 bg-red-100 z-10">
+                      <tr>
+                        <th className="text-left px-1.5 py-0.5 font-black text-red-700 w-[28%]">CONTA</th>
+                        <th className="text-left px-1.5 py-0.5 font-black text-red-700 w-[64%]">DESCRIÇÃO DA CONTA</th>
+                        <th className="text-center px-1 py-0.5 font-black text-red-700 w-[8%]">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ccInativaData.map((item, idx) => (
+                        <tr key={item.conta} className={`border-t border-red-50 ${idx % 2 === 0 ? 'bg-white' : 'bg-red-50/20'} hover:bg-red-100/40`}>
+                          {ccInativaEditingId === item.conta ? (
+                            <>
+                              <td className="px-1 py-0"><input type="text" value={ccInativaEditConta} onChange={(e) => setCcInativaEditConta(e.target.value)} className="w-full px-1 py-0 text-[10px] border border-red-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 font-mono" /></td>
+                              <td className="px-1 py-0"><input type="text" value={ccInativaEditDescricao} onChange={(e) => setCcInativaEditDescricao(e.target.value)} className="w-full px-1 py-0 text-[10px] border border-red-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500" /></td>
+                              <td className="px-0 py-0 text-center">
+                                <div className="flex items-center justify-center">
+                                  <button onClick={() => handleCcInativaSave(item.conta)} disabled={ccInativaSaving} className="p-0.5 text-green-500 hover:text-green-700 hover:bg-green-100 rounded" title="Salvar"><Check size={10} /></button>
+                                  <button onClick={handleCcInativaCancelEdit} className="p-0.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="Cancelar"><X size={10} /></button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-1.5 py-0 text-gray-800 font-mono">{item.conta}</td>
+                              <td className="px-1.5 py-0 text-gray-600 truncate">{item.descricao}</td>
+                              <td className="px-0 py-0 text-center">
+                                <div className="flex items-center justify-center">
+                                  <button onClick={() => handleCcInativaEdit(item)} className="p-0.5 text-red-400 hover:text-red-600 hover:bg-red-100 rounded" title="Editar"><Pencil size={10} /></button>
+                                  <button onClick={() => handleCcInativaDelete(item.conta)} className="p-0.5 text-gray-400 hover:text-red-500 hover:bg-red-100 rounded" title="Remover"><Trash2 size={10} /></button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
 
     </div>
