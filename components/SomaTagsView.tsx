@@ -30,6 +30,23 @@ const fmtPct = (real: number, base: number): string => {
   return `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
 };
 
+// Análise Vertical: valor / Receita Líquida
+const fmtMgPct = (value: number, receita: number): string => {
+  if (receita === 0) return '—';
+  return `${((value / Math.abs(receita)) * 100).toFixed(1)}%`;
+};
+
+const mgColorClass = (value: number, receita: number, isReceitaRow = false, onCalc = false): string => {
+  if (onCalc) return 'text-white font-black';
+  if (isReceitaRow) return 'text-teal-600 font-black';
+  if (receita === 0) return 'text-gray-400';
+  const pct = value / Math.abs(receita);
+  if (pct > 0.05) return 'text-emerald-700 font-semibold';
+  if (pct > 0)    return 'text-emerald-600';
+  if (pct > -0.50) return 'text-rose-600';
+  return 'text-rose-800 font-semibold';
+};
+
 const deltaClass = (delta: number, base: number, onCalc = false): string => {
   if (base === 0) return 'text-gray-400';
   if (delta > 0) return onCalc ? 'text-lime-300' : 'text-emerald-600';
@@ -60,6 +77,7 @@ interface CalcData  { real:  number; orcado: number; a1: number }
 interface ColsVis {
   real: boolean; orcado: boolean; deltaAbsOrcado: boolean; deltaPercOrcado: boolean;
   a1: boolean;   deltaAbsA1: boolean; deltaPercA1: boolean;
+  mgReal: boolean; mgOrcado: boolean; mgA1: boolean;
 }
 interface MonthData { real: number; orcado: number; a1: number }
 interface Tag01MonthlyItem { tag01: string; byMonth: Record<string, MonthData> }
@@ -68,9 +86,9 @@ interface Tag0MonthlyGroup { tag0: string; byMonth: Record<string, MonthData>; i
 type ViewMode = 'consolidado' | 'cenario' | 'mes';
 
 // ── CalcRow — linha calculada (MARGEM / EBITDA) — Consolidado ─────────────────
-interface CalcRowProps { label: string; data: CalcData; borderTop?: boolean; cols: ColsVis; activeElements: string[] }
+interface CalcRowProps { label: string; data: CalcData; borderTop?: boolean; cols: ColsVis; activeElements: string[]; receitaLiquida?: CalcData }
 
-const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols, activeElements }) => {
+const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols, activeElements, receitaLiquida }) => {
   const { real, orcado, a1 } = data;
   const dOrç  = real - orcado;
   const dA1   = real - a1;
@@ -94,6 +112,9 @@ const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols, activeE
           case 'A1':              return cols.a1              ? <td key="a1"   className={`px-2 py-1 text-center font-mono ${hasA1 ? '' : 'text-orange-300'}`}>{hasA1 ? fmt(a1) : '—'}</td> : null;
           case 'DeltaAbsA1':      return cols.deltaAbsA1      ? <td key="da1"  className={`px-2 py-1 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>{hasA1 ? fmt(dA1) : '—'}</td> : null;
           case 'DeltaPercA1':     return cols.deltaPercA1     ? <td key="dp1"  className={`px-2 py-1 text-center font-mono ${hasA1 ? deltaClass(dA1, a1, true) : 'text-orange-300'}`}>{fmtPct(real, a1)}</td> : null;
+          case 'MgReal':   return cols.mgReal && receitaLiquida   ? <td key="mgr"  title={`Análise Vertical Real: ${fmtMgPct(data.real, receitaLiquida.real)}`} className={`px-2 py-1 text-center font-mono text-[11px] ${mgColorClass(data.real, receitaLiquida.real, false, true)}`}>{fmtMgPct(data.real, receitaLiquida.real)}</td> : null;
+          case 'MgOrcado': return cols.mgOrcado && receitaLiquida ? <td key="mgo"  title={`Análise Vertical Orçado: ${fmtMgPct(data.orcado, receitaLiquida.orcado)}`} className={`px-2 py-1 text-center font-mono text-[11px] ${mgColorClass(data.orcado, receitaLiquida.orcado, false, true)}`}>{fmtMgPct(data.orcado, receitaLiquida.orcado)}</td> : null;
+          case 'MgA1':     return cols.mgA1 && receitaLiquida     ? <td key="mga1" title={`Análise Vertical A-1: ${fmtMgPct(data.a1, receitaLiquida.a1)}`} className={`px-2 py-1 text-center font-mono text-[11px] ${mgColorClass(data.a1, receitaLiquida.a1, false, true)}`}>{fmtMgPct(data.a1, receitaLiquida.a1)}</td> : null;
           default: return null;
         }
       })}
@@ -202,6 +223,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [showDeltaPercOrcado, setShowDeltaPercOrcado] = useState(true);
   const [showDeltaAbsA1,      setShowDeltaAbsA1]      = useState(true);
   const [showDeltaPercA1,     setShowDeltaPercA1]     = useState(true);
+  const [showMargem,          setShowMargem]          = useState(false);
   const [selectionOrder, setSelectionOrder] = useState<string[]>([
     'Real', 'Orçado', 'DeltaAbsOrcado', 'DeltaPercOrcado', 'A1', 'DeltaAbsA1', 'DeltaPercA1',
   ]);
@@ -281,20 +303,36 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     }, [],
   );
 
+  const toggleMargem = useCallback(() => {
+    const keys = ['MgReal', 'MgOrcado', 'MgA1'];
+    if (!showMargem) {
+      setSelectionOrder(prev => [...prev.filter(s => !keys.includes(s)), ...keys]);
+    } else {
+      setSelectionOrder(prev => prev.filter(s => !keys.includes(s)));
+    }
+    setShowMargem(v => !v);
+  }, [showMargem]);
+
   const activeElements = useMemo(() => {
     const showMap: Record<string, boolean> = {
       'Real': showReal, 'Orçado': showOrcado,
       'DeltaAbsOrcado': showDeltaAbsOrcado, 'DeltaPercOrcado': showDeltaPercOrcado,
       'A1': showA1, 'DeltaAbsA1': showDeltaAbsA1, 'DeltaPercA1': showDeltaPercA1,
+      'MgReal':   showMargem && showReal,
+      'MgOrcado': showMargem && showOrcado,
+      'MgA1':     showMargem && showA1,
     };
     return selectionOrder.filter(el => showMap[el]);
-  }, [showReal, showOrcado, showA1, showDeltaAbsOrcado, showDeltaPercOrcado, showDeltaAbsA1, showDeltaPercA1, selectionOrder]);
+  }, [showReal, showOrcado, showA1, showDeltaAbsOrcado, showDeltaPercOrcado, showDeltaAbsA1, showDeltaPercA1, showMargem, selectionOrder]);
 
   const cols: ColsVis = useMemo(() => ({
     real: showReal, orcado: showOrcado,
     deltaAbsOrcado: showDeltaAbsOrcado, deltaPercOrcado: showDeltaPercOrcado,
     a1: showA1, deltaAbsA1: showDeltaAbsA1, deltaPercA1: showDeltaPercA1,
-  }), [showReal, showOrcado, showA1, showDeltaAbsOrcado, showDeltaPercOrcado, showDeltaAbsA1, showDeltaPercA1]);
+    mgReal:   showMargem && showReal,
+    mgOrcado: showMargem && showOrcado,
+    mgA1:     showMargem && showA1,
+  }), [showReal, showOrcado, showA1, showDeltaAbsOrcado, showDeltaPercOrcado, showDeltaAbsA1, showDeltaPercA1, showMargem]);
 
   // ── Memos de hash e contexto de filtros (para DreAnalysisSection) ─────────
   const filterHash = useMemo(() =>
@@ -325,6 +363,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   // ColSpans dinâmicos para grupos do cabeçalho (Consolidado)
   const orcGrpCols = [showOrcado, showDeltaAbsOrcado, showDeltaPercOrcado].filter(Boolean).length;
   const a1GrpCols  = [showA1,     showDeltaAbsA1,     showDeltaPercA1].filter(Boolean).length;
+  const mgGrpCols  = [showMargem && showReal, showMargem && showOrcado, showMargem && showA1].filter(Boolean).length;
 
   // Cascata: filtra filiais disponíveis conforme marcas selecionadas
   const filiaisFiltradas = useMemo(() => {
@@ -651,6 +690,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
   const margemData = useMemo(() => sumPfx(['01.', '02.', '03.']),         [groups]);
   const ebitdaData = useMemo(() => sumPfx(['01.', '02.', '03.', '04.']), [groups]);
+
+  const receitaLiquida = useMemo(() => {
+    const g = groups.find(g => g.tag0.startsWith('01.'));
+    return { real: g?.real ?? 0, orcado: g?.orcado ?? 0, a1: g?.a1 ?? 0 };
+  }, [groups]);
 
   // Dados mensais para MARGEM/EBITDA (visões Cenário e Mês)
   const monthlyCalcByPfx = useCallback((pfxs: string[]): Record<string, MonthData> => {
@@ -1299,6 +1343,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                   case 'A1':              return cols.a1              ? <td key="a1"   className={`px-2 py-0.5 text-center font-mono text-[12px] cursor-pointer hover:bg-yellow-300 transition-colors ${rHasA1 ? 'text-gray-800' : 'text-gray-300'}`} onDoubleClick={() => drillTo('A-1',    tag0, tag01, null, df)}>{rHasA1 ? fmt(a1) : '—'}</td> : null;
                   case 'DeltaAbsA1':      return cols.deltaAbsA1      ? <td key="da1"  className={`px-2 py-0.5 text-center font-mono text-[12px] ${rHasA1 ? deltaClass(dA1, a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(dA1) : '—'}</td> : null;
                   case 'DeltaPercA1':     return cols.deltaPercA1     ? <td key="dp1"  className={`px-2 py-0.5 text-center font-mono text-[12px] ${rHasA1 ? deltaClass(dA1, a1) : 'text-gray-300'}`}>{rHasA1 ? fmtPct(real, a1) : '—'}</td> : null;
+                  case 'MgReal':   return cols.mgReal   ? <td key="mgr"  title="Análise Vertical Real" className={`px-2 py-0.5 text-center font-mono text-[11px] ${mgColorClass(real, receitaLiquida.real)}`}>{fmtMgPct(real, receitaLiquida.real)}</td> : null;
+                  case 'MgOrcado': return cols.mgOrcado ? <td key="mgo"  className={`px-2 py-0.5 text-center font-mono text-[11px] ${mgColorClass(orcado, receitaLiquida.orcado)}`}>{fmtMgPct(orcado, receitaLiquida.orcado)}</td> : null;
+                  case 'MgA1':     return cols.mgA1     ? <td key="mga1" className={`px-2 py-0.5 text-center font-mono text-[11px] ${mgColorClass(a1, receitaLiquida.a1)}`}>{fmtMgPct(a1, receitaLiquida.a1)}</td> : null;
                   default: return null;
                 }
               })}
@@ -1948,6 +1995,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
 
         <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
 
+        {/* Margem % — Análise Vertical */}
+        <button
+          onClick={toggleMargem}
+          title="Análise Vertical: divide cada linha pela Receita Líquida (100%)"
+          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border transition-all text-[8px] font-black uppercase shrink-0 ${showMargem ? 'bg-teal-500 text-white border-teal-500 shadow-sm' : 'bg-white text-gray-400 border-gray-200 hover:border-teal-300 hover:text-teal-600'}`}>
+          <span>Mg %</span>
+          {showMargem && <span className="ml-0.5 opacity-60">×</span>}
+        </button>
+
+        <div className="h-4 w-px bg-gray-200 mx-0.5 shrink-0" />
+
         {/* Recorrência (movido da linha de filtros) */}
         <div className="flex items-center gap-0.5 bg-white border border-teal-200 rounded-lg px-1.5 py-0.5 shadow-sm shrink-0">
           <span className="text-[8px] font-black text-gray-500 uppercase whitespace-nowrap mr-1">Recorr</span>
@@ -2378,6 +2436,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                     {cols.real   && <th className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-blue-600 to-blue-500 border-r border-white/20 shadow-sm">REAL</th>}
                     {orcGrpCols > 0 && <th colSpan={orcGrpCols} className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-emerald-600 to-emerald-500 border-r border-white/20 shadow-sm">REAL vs ORÇADO</th>}
                     {a1GrpCols  > 0 && <th colSpan={a1GrpCols}  className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-purple-600 to-purple-500 shadow-sm">REAL vs A-1</th>}
+                    {mgGrpCols  > 0 && <th colSpan={mgGrpCols}  className="px-2 py-1 text-center text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-teal-600 to-teal-500 shadow-sm">MARGEM %</th>}
                   </tr>
                   <tr className="bg-gradient-to-r from-slate-700 to-slate-600 text-white h-6">
                     {activeElements.map(el => {
@@ -2389,6 +2448,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                         case 'A1':              return <th key="a1"   onClick={() => handleColSort('a1_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[130px] bg-gradient-to-br from-purple-500 to-purple-600 cursor-pointer select-none hover:brightness-110 transition-all">A-1<SortIcon col="a1_total" /></th>;
                         case 'DeltaAbsA1':      return <th key="da1"  onClick={() => handleColSort('da1_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[120px] bg-gradient-to-br from-purple-500 to-purple-600 cursor-pointer select-none hover:brightness-110 transition-all">Δ R−A-1<SortIcon col="da1_total" /></th>;
                         case 'DeltaPercA1':     return <th key="dp1"  onClick={() => handleColSort('dp1_total')} className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-purple-500 to-purple-600 cursor-pointer select-none hover:brightness-110 transition-all">Δ%<SortIcon col="dp1_total" /></th>;
+                        case 'MgReal':          return <th key="mgr"  className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-teal-500 to-teal-600">Mg Real</th>;
+                        case 'MgOrcado':        return <th key="mgo"  className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-teal-500 to-teal-600">Mg Orç</th>;
+                        case 'MgA1':            return <th key="mga1" className="px-2 py-1 text-center font-black text-[9px] uppercase w-[72px] bg-gradient-to-br from-teal-500 to-teal-600">Mg A-1</th>;
                         default: return null;
                       }
                     })}
@@ -2413,6 +2475,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                               case 'A1':              return <td key="a1"   onClick={(e) => handleCellClick(e,`${g.tag0}|A1`, g.a1, `A-1: ${g.tag0}`)} className={`px-2 py-1 text-center font-mono font-black cursor-pointer ${isCellSel(`${g.tag0}|A1`) ? 'bg-blue-200 text-blue-900 ring-2 ring-inset ring-blue-500' : hasA1 ? '' : 'text-gray-500'}`} onDoubleClick={() => drillTo('A-1', g.tag0, null, null)}>{hasA1 ? fmt(g.a1) : '—'}</td>;
                               case 'DeltaAbsA1':      return <td key="da1"  className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>{hasA1 ? fmt(dA1) : '—'}</td>;
                               case 'DeltaPercA1':     return <td key="dp1"  className={`px-2 py-1 text-center font-mono font-black ${hasA1 ? deltaClass(dA1, g.a1) : 'text-gray-500'}`}>{fmtPct(g.real, g.a1)}</td>;
+                              case 'MgReal':   return cols.mgReal   ? <td key="mgr"  title={`Análise Vertical Real: ${g.tag0} = ${g.tag0.startsWith('01.') ? '100,0%' : fmtMgPct(g.real, receitaLiquida.real)}`} className={`px-2 py-1 text-center font-mono font-black text-[11px] ${mgColorClass(g.real, receitaLiquida.real, g.tag0.startsWith('01.'))}`}>{g.tag0.startsWith('01.') ? '100,0%' : fmtMgPct(g.real, receitaLiquida.real)}</td> : null;
+                              case 'MgOrcado': return cols.mgOrcado ? <td key="mgo"  title={`Análise Vertical Orçado: ${g.tag0} = ${g.tag0.startsWith('01.') ? '100,0%' : fmtMgPct(g.orcado, receitaLiquida.orcado)}`} className={`px-2 py-1 text-center font-mono font-black text-[11px] ${mgColorClass(g.orcado, receitaLiquida.orcado, g.tag0.startsWith('01.'))}`}>{g.tag0.startsWith('01.') ? '100,0%' : fmtMgPct(g.orcado, receitaLiquida.orcado)}</td> : null;
+                              case 'MgA1':     return cols.mgA1     ? <td key="mga1" title={`Análise Vertical A-1: ${g.tag0} = ${g.tag0.startsWith('01.') ? '100,0%' : fmtMgPct(g.a1, receitaLiquida.a1)}`} className={`px-2 py-1 text-center font-mono font-black text-[11px] ${mgColorClass(g.a1, receitaLiquida.a1, g.tag0.startsWith('01.'))}`}>{g.tag0.startsWith('01.') ? '100,0%' : fmtMgPct(g.a1, receitaLiquida.a1)}</td> : null;
                               default: return null;
                             }
                           })}
@@ -2442,6 +2507,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                                     case 'A1':              return <td key="a1"   onClick={(e) => handleCellClick(e,`${g.tag0}|${r.tag01}|A1`, r.a1, `A-1: ${r.tag01}`)} className={`px-2 py-1 text-center font-mono cursor-pointer ${isCellSel(`${g.tag0}|${r.tag01}|A1`) ? 'bg-blue-100 text-blue-800 ring-2 ring-inset ring-blue-400' : rHasA1 ? 'text-gray-900 hover:bg-yellow-300' : 'text-gray-300'}`} onDoubleClick={() => drillTo('A-1', g.tag0, r.tag01, null)}>{rHasA1 ? fmt(r.a1) : '—'}</td>;
                                     case 'DeltaAbsA1':      return <td key="da1"  className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(rdA1) : '—'}</td>;
                                     case 'DeltaPercA1':     return <td key="dp1"  className={`px-2 py-1 text-center font-mono ${rHasA1 ? deltaClass(rdA1, r.a1) : 'text-gray-300'}`}>{rHasA1 ? `${((rdA1 / Math.abs(r.a1)) * 100).toFixed(1)}%` : '—'}</td>;
+                                    case 'MgReal':   return cols.mgReal   ? <td key="mgr"  title={`Análise Vertical Real: ${r.tag01}\n${fmt(r.real)} ÷ Receita Líquida (${fmt(receitaLiquida.real)})`} className={`px-2 py-1 text-center font-mono text-[11px] border-r border-gray-100 ${mgColorClass(r.real, receitaLiquida.real)}`}>{fmtMgPct(r.real, receitaLiquida.real)}</td> : null;
+                                    case 'MgOrcado': return cols.mgOrcado ? <td key="mgo"  title={`Análise Vertical Orçado: ${r.tag01}\n${fmt(r.orcado)} ÷ Receita Líquida Orçada (${fmt(receitaLiquida.orcado)})`} className={`px-2 py-1 text-center font-mono text-[11px] ${mgColorClass(r.orcado, receitaLiquida.orcado)}`}>{fmtMgPct(r.orcado, receitaLiquida.orcado)}</td> : null;
+                                    case 'MgA1':     return cols.mgA1     ? <td key="mga1" title={`Análise Vertical A-1: ${r.tag01}\n${fmt(r.a1)} ÷ Receita Líquida A-1 (${fmt(receitaLiquida.a1)})`} className={`px-2 py-1 text-center font-mono text-[11px] ${mgColorClass(r.a1, receitaLiquida.a1)}`}>{fmtMgPct(r.a1, receitaLiquida.a1)}</td> : null;
                                     default: return null;
                                   }
                                 })}
@@ -2450,9 +2518,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                             </React.Fragment>
                           );
                         })}
-                        {!hasTagFilter && idx === lastIdx03 && <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} activeElements={activeElements} />}
-                        {!hasTagFilter && idx === lastIdx04 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop cols={cols} activeElements={activeElements} />}
-                        {!hasTagFilter && idx === lastIdx03 && lastIdx04 === -1 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} cols={cols} activeElements={activeElements} />}
+                        {!hasTagFilter && idx === lastIdx03 && <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida} />}
+                        {!hasTagFilter && idx === lastIdx04 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida} />}
+                        {!hasTagFilter && idx === lastIdx03 && lastIdx04 === -1 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida} />}
                       </React.Fragment>
                     );
                   })}
@@ -2474,6 +2542,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                         case 'A1':              return <td key="a1"   className={`px-2 py-2 text-center font-mono ${(totals.a1 !== 0 || totals.real !== 0) ? '' : 'text-gray-500'}`}>{(totals.a1 !== 0 || totals.real !== 0) ? fmt(totals.a1) : '—'}</td>;
                         case 'DeltaAbsA1':      return <td key="da1"  className={`px-2 py-2 text-center font-mono ${(totals.a1 !== 0 || totals.real !== 0) ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>{(totals.a1 !== 0 || totals.real !== 0) ? fmt(totals.real - totals.a1) : '—'}</td>;
                         case 'DeltaPercA1':     return <td key="dp1"  className={`px-2 py-2 text-center font-mono ${(totals.a1 !== 0 || totals.real !== 0) ? deltaClass(totals.real - totals.a1, totals.a1, true) : 'text-gray-500'}`}>{fmtPct(totals.real, totals.a1)}</td>;
+                        case 'MgReal':   return cols.mgReal   ? <td key="mgr"  className={`px-2 py-2 text-center font-mono text-[11px] ${mgColorClass(totals.real, receitaLiquida.real)}`}>{fmtMgPct(totals.real, receitaLiquida.real)}</td> : null;
+                        case 'MgOrcado': return cols.mgOrcado ? <td key="mgo"  className={`px-2 py-2 text-center font-mono text-[11px] ${mgColorClass(totals.orcado, receitaLiquida.orcado)}`}>{fmtMgPct(totals.orcado, receitaLiquida.orcado)}</td> : null;
+                        case 'MgA1':     return cols.mgA1     ? <td key="mga1" className={`px-2 py-2 text-center font-mono text-[11px] ${mgColorClass(totals.a1, receitaLiquida.a1)}`}>{fmtMgPct(totals.a1, receitaLiquida.a1)}</td> : null;
                         default: return null;
                       }
                     })}
