@@ -709,7 +709,10 @@ function addDetailSlide(pptx: PptxGenJS, section: VariancePptSection, data: Vari
 
   const allRows: DetailRow[] = [];
 
-  for (const t01 of section.tag01Nodes) {
+  // Custos: menor real primeiro (mais negativo = maior custo = mais relevante)
+  const sortedNodes = [...section.tag01Nodes].sort((a, b) => a.real - b.real);
+
+  for (const t01 of sortedNodes) {
     allRows.push({
       depth: 0, label: t01.label,
       real: t01.real, orc: t01.orcCompare, varPct: t01.orcVarPct,
@@ -1417,12 +1420,13 @@ export async function generateVariancePpt(data: VariancePptData): Promise<void> 
     addSectionSlide(pptx, section, data);
 
     if (section.tag0.startsWith('01.')) {
-      // RECEITA LÍQUIDA: one detail slide per tag01 (marca + AI + justificativas)
-      for (const t01 of section.tag01Nodes) {
+      // RECEITA LÍQUIDA: maior para menor (maior receita primeiro)
+      const sortedReceita = [...section.tag01Nodes].sort((a, b) => b.real - a.real);
+      for (const t01 of sortedReceita) {
         addTag01DetailSlides(pptx, section, t01, data);
       }
     } else if (section.tag01Nodes.length > 0) {
-      // Other sections: keep existing detail slide (unchanged)
+      // Custos/Despesas: menor para maior (maior custo — mais negativo — primeiro)
       addDetailSlide(pptx, section, data);
     }
 
