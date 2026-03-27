@@ -86,9 +86,9 @@ interface Tag0MonthlyGroup { tag0: string; byMonth: Record<string, MonthData>; i
 type ViewMode = 'consolidado' | 'cenario' | 'mes';
 
 // ── CalcRow — linha calculada (MARGEM / EBITDA) — Consolidado ─────────────────
-interface CalcRowProps { label: string; data: CalcData; borderTop?: boolean; cols: ColsVis; activeElements: string[]; receitaLiquida?: CalcData }
+interface CalcRowProps { label: string; data: CalcData; borderTop?: boolean; cols: ColsVis; activeElements: string[]; receitaLiquida?: CalcData; showDrill?: boolean; drillExpanded?: boolean; onToggleDrill?: () => void }
 
-const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols, activeElements, receitaLiquida }) => {
+const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols, activeElements, receitaLiquida, showDrill, drillExpanded, onToggleDrill }) => {
   const { real, orcado, a1 } = data;
   const dOrç  = real - orcado;
   const dA1   = real - a1;
@@ -97,12 +97,26 @@ const CalcRow: React.FC<CalcRowProps> = ({ label, data, borderTop, cols, activeE
   return (
     <tr className={`group bg-[#F44C00] text-white font-black text-[12px] h-6 shadow-sm
                    ${borderTop ? 'border-t-2 border-yellow-400' : ''}`}>
-      <td colSpan={2}
-          className="sticky left-0 bg-[#F44C00] z-20 group-hover:bg-yellow-400 group-hover:text-black transition-colors">
-        <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
-          <Activity size={12} /> {label}
-        </div>
-      </td>
+      {showDrill ? (
+        <>
+          <td className="px-1 py-1 w-8 sticky left-0 z-20 bg-[#F44C00] group-hover:bg-yellow-400 group-hover:text-black transition-colors text-center">
+            <button onClick={onToggleDrill} className="text-white group-hover:text-black transition-colors">
+              {drillExpanded ? <ChevronDown size={10} className="inline" /> : <ChevronRight size={10} className="inline" />}
+            </button>
+          </td>
+          <td className="sticky left-8 z-20 bg-[#F44C00] group-hover:bg-yellow-400 group-hover:text-black transition-colors">
+            <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
+              <Activity size={12} /> {label}
+            </div>
+          </td>
+        </>
+      ) : (
+        <td colSpan={2} className="sticky left-0 bg-[#F44C00] z-20 group-hover:bg-yellow-400 group-hover:text-black transition-colors">
+          <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
+            <Activity size={12} /> {label}
+          </div>
+        </td>
+      )}
       {activeElements.map(el => {
         switch (el) {
           case 'Real':            return cols.real            ? <td key="real" className="px-2 py-1 text-center font-mono">{fmt(real)}</td> : null;
@@ -238,6 +252,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   const [dimensionCache,    setDimensionCache]    = useState<Record<string, DREDimensionRow[]>>({});
   const [expandedTag01s,    setExpandedTag01s]    = useState<Record<string, boolean>>({});
   const [expandedDrillRows, setExpandedDrillRows] = useState<Record<string, boolean>>({});
+  const [expandedCalcRows,  setExpandedCalcRows]  = useState<Record<string, boolean>>({});
   const [drillDimensions,   setDrillDimensions]   = useState<string[]>([]);
   const [sortConfig, setSortConfig] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'real_total', dir: 'desc' });
   const [isTableFullscreen, setIsTableFullscreen] = useState(false);
@@ -291,6 +306,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   useEffect(() => { recurringRef.current = recurring;       }, [recurring]);
   useEffect(() => { allowedMarcasRef.current  = allowedMarcas;  }, [allowedMarcas]);
   useEffect(() => { allowedFiliaisRef.current = allowedFiliais; }, [allowedFiliais]);
+  // Previne fetches duplicados para a mesma cacheKey (chamadas durante re-renders)
+  const loadingKeysRef = useRef<Set<string>>(new Set());
 
   const toggleElement = useCallback(
     (element: string, currentState: boolean, setState: (v: boolean) => void) => {
@@ -397,6 +414,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   ) => {
     const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
     const cacheKey   = `${scenario}|${tag01}|${dim}|${filtersKey}`;
+    // Guard: evita fetches duplicados para a mesma key (re-renders durante loading)
+    if (loadingKeysRef.current.has(cacheKey)) return;
+    loadingKeysRef.current.add(cacheKey);
     const { from: mfRaw, to: mtRaw } = (() => {
       const m = selectedMonthsRef.current;
       if (m.length === 0) return { from: '01', to: '12' };
@@ -419,16 +439,20 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const tags02  = accFilters.tag02 ? [accFilters.tag02] : (tags02Ref.current.length > 0 ? tags02Ref.current : undefined);
     const tags03  = accFilters.tag03 ? [accFilters.tag03] : (tags03Ref.current.length > 0 ? tags03Ref.current : undefined);
     const vendors = vendorsRef.current.length > 0 ? vendorsRef.current : undefined;
-    const rows = await getDREDimension({
-      monthFrom: mf, monthTo: mt,
-      scenario, dimension: dim,
-      tags01: [tag01], tag0,
-      marcas, nomeFiliais: filiais,
-      tags02, tags03,
-      recurring: recurringRef.current ?? undefined,
-      vendor: vendors,
-    });
-    setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
+    try {
+      const rows = await getDREDimension({
+        monthFrom: mf, monthTo: mt,
+        scenario, dimension: dim,
+        tags01: [tag01], tag0,
+        marcas, nomeFiliais: filiais,
+        tags02, tags03,
+        recurring: recurringRef.current ?? undefined,
+        vendor: vendors,
+      });
+      setDimensionCache(prev => ({ ...prev, [cacheKey]: rows }));
+    } finally {
+      loadingKeysRef.current.delete(cacheKey);
+    }
   }, []);
 
   // ── Fetch ────────────────────────────────────────────────────────────────
@@ -767,6 +791,27 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   };
 
   /** Retorna o valor de sort correto para drill-down baseado em sortConfig.col */
+  // Agrega total de dimensão para CalcRows (soma todos os tag01 dos prefixos)
+  const getCalcDimTotal = useCallback((
+    prefixes: string[], dim: string, scenario: string, dimVal: string, accFilters: Record<string, string> = {}
+  ): number => {
+    const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
+    const seenTag01s = new Set<string>();
+    return groups
+      .filter(g => prefixes.length === 0 || prefixes.some(p => g.tag0.startsWith(p)))
+      .flatMap(g => g.items)
+      .reduce((total, item) => {
+        // Evita dupla contagem: mesma tag01 pode aparecer em múltiplos grupos (tag0),
+        // mas a cache armazena todos os dados sem filtro por tag0
+        if (seenTag01s.has(item.tag01)) return total;
+        seenTag01s.add(item.tag01);
+        const key = `${scenario}|${item.tag01}|${dim}|${filtersKey}`;
+        return total + (dimensionCache[key] || [])
+          .filter(r => r.dimension_value === dimVal)
+          .reduce((s, r) => s + Number(r.total_amount), 0);
+      }, 0);
+  }, [groups, dimensionCache]);
+
   const getDrillSortValue = (tag01: string, dim: string, dimVal: string, accFilters: Record<string, string>, col: string): number => {
     const real   = getDrillTotal(tag01, dim, 'Real',   dimVal, accFilters);
     const orcado = getDrillTotal(tag01, dim, 'Orçado', dimVal, accFilters);
@@ -1438,12 +1483,17 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
   };
 
   // Helper: linha de CalcRow mensal (Cenário e Mês usam a mesma estrutura)
-  const renderMonthlyCalcRow = (label: string, byMonth: Record<string, MonthData>, totData: CalcData, borderTop: boolean) => (
+  const renderMonthlyCalcRow = (label: string, byMonth: Record<string, MonthData>, totData: CalcData, borderTop: boolean, drillKey?: string) => (
     <tr className={`group bg-[#F44C00] text-white font-black text-[12px] h-6 shadow-sm
                    ${borderTop ? 'border-t-2 border-yellow-400' : ''}`}>
       <td colSpan={2}
           className="sticky left-0 bg-[#F44C00] z-20 group-hover:bg-yellow-400 group-hover:text-black transition-colors">
         <div className="flex items-center gap-1 px-2 uppercase tracking-tighter truncate font-black">
+          {drillKey && drillDimensions.length > 0 && (
+            <button onClick={() => setExpandedCalcRows(prev => ({ ...prev, [drillKey]: !prev[drillKey] }))} className="text-white/70 hover:text-white transition-colors mr-0.5">
+              {expandedCalcRows[drillKey] ? <ChevronDown size={12} className="inline" /> : <ChevronRight size={12} className="inline" />}
+            </button>
+          )}
           <Activity size={12} /> {label}
         </div>
       </td>
@@ -1511,6 +1561,129 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       )}
     </tr>
   );
+
+  // ── Drill-down agregado para CalcRows (MARGEM / EBITDA / TOTAL) ──────────
+  const renderCalcDrillRows = (
+    prefixes: string[],
+    dimIndex: number = 0,
+    accFilters: Record<string, string> = {},
+    depth: number = 0
+  ): React.ReactNode => {
+    if (drillDimensions.length === 0 || dimIndex >= drillDimensions.length) return null;
+    const dim        = drillDimensions[dimIndex];
+    const hasChildren = dimIndex < drillDimensions.length - 1;
+    const filtersKey = Object.entries(accFilters).sort().map(([k, v]) => `${k}=${v}`).join('&');
+    const indentPx   = 40 + depth * 20;
+
+    // Coleta todos os tag01 dos prefixos relevantes
+    const tag01Items = groups
+      .filter(g => prefixes.length === 0 || prefixes.some(p => g.tag0.startsWith(p)))
+      .flatMap(g => g.items.map(r => ({ tag01: r.tag01, tag0: g.tag0 })));
+
+    // Verifica/dispara carregamento para cada cenário
+    let allLoaded = true;
+    for (const sc of SOMA_SCENARIOS) {
+      for (const { tag01, tag0 } of tag01Items) {
+        const cacheKey = `${sc}|${tag01}|${dim}|${filtersKey}`;
+        if (!(cacheKey in dimensionCache)) {
+          allLoaded = false;
+          loadDrillData(tag01, tag0, sc, dim, accFilters);
+        }
+      }
+    }
+
+    if (!allLoaded) {
+      return (
+        <tr key={`calc-loading-${dim}-${depth}-${filtersKey}`} className="bg-orange-50">
+          <td colSpan={100} className="py-1 text-[9px] text-gray-500 italic" style={{ paddingLeft: `${indentPx}px` }}>
+            Carregando...
+          </td>
+        </tr>
+      );
+    }
+
+    // Agrega valores únicos dos 3 cenários
+    const allVals = new Set<string>();
+    for (const sc of SOMA_SCENARIOS) {
+      for (const { tag01 } of tag01Items) {
+        const key = `${sc}|${tag01}|${dim}|${filtersKey}`;
+        (dimensionCache[key] || []).forEach(r => { if (r.dimension_value) allVals.add(r.dimension_value); });
+      }
+    }
+
+    const vals = Array.from(allVals).sort((a, b) => {
+      const ra = getCalcDimTotal(prefixes, dim, 'Real', a, accFilters);
+      const rb = getCalcDimTotal(prefixes, dim, 'Real', b, accFilters);
+      return rb - ra;
+    });
+
+    if (vals.length === 0) {
+      return (
+        <tr key={`calc-empty-${dim}-${depth}-${filtersKey}`} className="bg-orange-50">
+          <td colSpan={100} className="py-1 text-[9px] text-gray-400 italic" style={{ paddingLeft: `${indentPx}px` }}>Sem dados</td>
+        </tr>
+      );
+    }
+
+    const bgBase = depth === 0 ? 'bg-orange-50' : depth === 1 ? 'bg-orange-100' : 'bg-amber-50';
+
+    return vals.map(val => {
+      const drillKey = `calc|${prefixes.join('+')}|${dim}|${val}|${filtersKey}`;
+      const isExpanded = hasChildren && !!expandedDrillRows[drillKey];
+
+      const real   = getCalcDimTotal(prefixes, dim, 'Real',   val, accFilters);
+      const orcado = getCalcDimTotal(prefixes, dim, 'Orçado', val, accFilters);
+      const a1     = getCalcDimTotal(prefixes, dim, 'A-1',    val, accFilters);
+      const dOrç   = real - orcado;
+      const dA1    = real - a1;
+      const rHasOrc = orcado !== 0 || real !== 0;
+      const rHasA1  = a1     !== 0 || real !== 0;
+
+      const labelContent = (
+        <div className="flex items-center gap-0.5" style={{ paddingLeft: `${indentPx - 8}px` }}>
+          {hasChildren
+            ? <button onClick={() => setExpandedDrillRows(prev => ({ ...prev, [drillKey]: !prev[drillKey] }))}
+                className="shrink-0 text-gray-400 hover:text-gray-700 mr-0.5">
+                {isExpanded ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
+              </button>
+            : <span className="inline-block w-[9px] shrink-0" />}
+          <span className="text-orange-400 shrink-0">◆</span>
+          <span className="ml-0.5 truncate">{val}</span>
+        </div>
+      );
+
+      const children = hasChildren && isExpanded
+        ? renderCalcDrillRows(prefixes, dimIndex + 1, { ...accFilters, [dim]: val }, depth + 1)
+        : null;
+
+      return (
+        <React.Fragment key={`calc-drill-${dim}-${val}-${filtersKey}`}>
+          <tr className={`group ${bgBase} border-b border-orange-100 hover:bg-yellow-300 transition-colors`}>
+            <td className={`px-2 py-0.5 w-8 sticky left-0 z-20 ${bgBase} group-hover:bg-yellow-300 transition-colors`} />
+            <td className={`py-0.5 pr-2 text-orange-900 font-semibold truncate sticky left-8 z-20 w-[280px] text-[10px] ${bgBase} group-hover:bg-yellow-300 transition-colors`}>
+              {labelContent}
+            </td>
+            {activeElements.map(el => {
+              switch (el) {
+                case 'Real':            return cols.real            ? <td key="real" className="px-2 py-0.5 text-center font-mono text-[12px] text-orange-900 border-r border-orange-100">{fmt(real)}</td> : null;
+                case 'Orçado':          return cols.orcado          ? <td key="orc"  className={`px-2 py-0.5 text-center font-mono text-[12px] ${rHasOrc ? 'text-orange-800' : 'text-gray-300'}`}>{rHasOrc ? fmt(orcado) : '—'}</td> : null;
+                case 'DeltaAbsOrcado':  return cols.deltaAbsOrcado  ? <td key="dao"  className={`px-2 py-0.5 text-center font-mono text-[12px] ${rHasOrc ? deltaClass(dOrç, orcado) : 'text-gray-300'}`}>{rHasOrc ? fmt(dOrç) : '—'}</td> : null;
+                case 'DeltaPercOrcado': return cols.deltaPercOrcado ? <td key="dpo"  className={`px-2 py-0.5 text-center font-mono text-[12px] border-r border-orange-100 ${rHasOrc ? deltaClass(dOrç, orcado) : 'text-gray-300'}`}>{rHasOrc ? fmtPct(real, orcado) : '—'}</td> : null;
+                case 'A1':              return cols.a1              ? <td key="a1"   className={`px-2 py-0.5 text-center font-mono text-[12px] ${rHasA1 ? 'text-orange-800' : 'text-gray-300'}`}>{rHasA1 ? fmt(a1) : '—'}</td> : null;
+                case 'DeltaAbsA1':      return cols.deltaAbsA1      ? <td key="da1"  className={`px-2 py-0.5 text-center font-mono text-[12px] ${rHasA1 ? deltaClass(dA1, a1) : 'text-gray-300'}`}>{rHasA1 ? fmt(dA1) : '—'}</td> : null;
+                case 'DeltaPercA1':     return cols.deltaPercA1     ? <td key="dp1"  className={`px-2 py-0.5 text-center font-mono text-[12px] ${rHasA1 ? deltaClass(dA1, a1) : 'text-gray-300'}`}>{rHasA1 ? fmtPct(real, a1) : '—'}</td> : null;
+                case 'MgReal':   return cols.mgReal   ? <td key="mgr"  className={`px-2 py-0.5 text-center font-mono text-[11px] ${mgColorClass(real, receitaLiquida.real)}`}>{fmtMgPct(real, receitaLiquida.real)}</td> : null;
+                case 'MgOrcado': return cols.mgOrcado ? <td key="mgo"  className={`px-2 py-0.5 text-center font-mono text-[11px] ${mgColorClass(orcado, receitaLiquida.orcado)}`}>{fmtMgPct(orcado, receitaLiquida.orcado)}</td> : null;
+                case 'MgA1':     return cols.mgA1     ? <td key="mga1" className={`px-2 py-0.5 text-center font-mono text-[11px] ${mgColorClass(a1, receitaLiquida.a1)}`}>{fmtMgPct(a1, receitaLiquida.a1)}</td> : null;
+                default: return null;
+              }
+            })}
+          </tr>
+          {children}
+        </React.Fragment>
+      );
+    });
+  };
 
   // ── Estilos de linha compartilhados ──────────────────────────────────────
   const TAG0_TR   = 'group bg-[#152e55] text-white font-black cursor-pointer hover:bg-[#1e3d6e] transition-colors h-7';
@@ -1769,9 +1942,12 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             })}
 
             {/* CalcRows */}
-            {!hasTagFilter && idx === lastIdx03M && renderMonthlyCalcRow('MARGEM DE CONTRIBUIÇÃO', monthlyMargemData, margemData, true)}
-            {!hasTagFilter && idx === lastIdx04M && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, true)}
-            {!hasTagFilter && idx === lastIdx03M && lastIdx04M === -1 && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, false)}
+            {!hasTagFilter && idx === lastIdx03M && renderMonthlyCalcRow('MARGEM DE CONTRIBUIÇÃO', monthlyMargemData, margemData, true, 'margem')}
+            {!hasTagFilter && idx === lastIdx03M && drillDimensions.length > 0 && expandedCalcRows['margem'] && renderCalcDrillRows(['01.', '02.', '03.'])}
+            {!hasTagFilter && idx === lastIdx04M && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, true, 'ebitda')}
+            {!hasTagFilter && idx === lastIdx04M && drillDimensions.length > 0 && expandedCalcRows['ebitda'] && renderCalcDrillRows(['01.', '02.', '03.', '04.'])}
+            {!hasTagFilter && idx === lastIdx03M && lastIdx04M === -1 && renderMonthlyCalcRow('EBITDA (S/ RATEIO RAIZ CSC)', monthlyEbitdaData, ebitdaData, false, 'ebitda')}
+            {!hasTagFilter && idx === lastIdx03M && lastIdx04M === -1 && drillDimensions.length > 0 && expandedCalcRows['ebitda'] && renderCalcDrillRows(['01.', '02.', '03.', '04.'])}
           </React.Fragment>
         );
       })}
@@ -1786,6 +1962,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white font-black text-[12px] shadow-[0_-2px_6px_rgba(0,0,0,0.3)] border-t-2 border-yellow-400">
           <td colSpan={2} className="py-2 uppercase tracking-tight font-black sticky left-0 z-50 bg-gradient-to-r from-slate-800 to-slate-700 ">
             <div className="flex items-center gap-1 px-2">
+              {drillDimensions.length > 0 && (
+                <button onClick={() => setExpandedCalcRows(prev => ({ ...prev, total: !prev.total }))} className="text-white/70 hover:text-white transition-colors mr-0.5">
+                  {expandedCalcRows['total'] ? <ChevronDown size={12} className="inline" /> : <ChevronRight size={12} className="inline" />}
+                </button>
+              )}
               {showOnlyEbitda && <Activity size={12} />}
               <span>{footerLabel}</span>
             </div>
@@ -1851,6 +2032,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             );
           })()}
         </tr>
+        {drillDimensions.length > 0 && expandedCalcRows['total'] && renderCalcDrillRows(showOnlyEbitda ? EBITDA_PREFIXES : [])}
       </tfoot>
     );
   };
@@ -2100,7 +2282,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
               <div className="h-4 w-px bg-orange-200 mx-0.5" />
               {/* Limpar drill-down */}
               <button
-                onClick={() => { setDrillDimensions([]); setDimensionCache({}); setExpandedTag01s({}); setExpandedDrillRows({}); }}
+                onClick={() => { setDrillDimensions([]); setDimensionCache({}); setExpandedTag01s({}); setExpandedDrillRows({}); setExpandedCalcRows({}); }}
                 className="p-0.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
                 title="Desativar drill-down">
                 <X size={10} />
@@ -2518,9 +2700,24 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                             </React.Fragment>
                           );
                         })}
-                        {!hasTagFilter && idx === lastIdx03 && <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida} />}
-                        {!hasTagFilter && idx === lastIdx04 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida} />}
-                        {!hasTagFilter && idx === lastIdx03 && lastIdx04 === -1 && <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida} />}
+                        {!hasTagFilter && idx === lastIdx03 && (<>
+                          <CalcRow label="MARGEM DE CONTRIBUIÇÃO" data={margemData} borderTop cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida}
+                            showDrill={drillDimensions.length > 0} drillExpanded={!!expandedCalcRows['margem']}
+                            onToggleDrill={() => setExpandedCalcRows(prev => ({ ...prev, margem: !prev.margem }))} />
+                          {drillDimensions.length > 0 && expandedCalcRows['margem'] && renderCalcDrillRows(['01.', '02.', '03.'])}
+                        </>)}
+                        {!hasTagFilter && idx === lastIdx04 && (<>
+                          <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} borderTop cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida}
+                            showDrill={drillDimensions.length > 0} drillExpanded={!!expandedCalcRows['ebitda']}
+                            onToggleDrill={() => setExpandedCalcRows(prev => ({ ...prev, ebitda: !prev.ebitda }))} />
+                          {drillDimensions.length > 0 && expandedCalcRows['ebitda'] && renderCalcDrillRows(['01.', '02.', '03.', '04.'])}
+                        </>)}
+                        {!hasTagFilter && idx === lastIdx03 && lastIdx04 === -1 && (<>
+                          <CalcRow label="EBITDA (S/ RATEIO RAIZ CSC)" data={ebitdaData} cols={cols} activeElements={activeElements} receitaLiquida={receitaLiquida}
+                            showDrill={drillDimensions.length > 0} drillExpanded={!!expandedCalcRows['ebitda']}
+                            onToggleDrill={() => setExpandedCalcRows(prev => ({ ...prev, ebitda: !prev.ebitda }))} />
+                          {drillDimensions.length > 0 && expandedCalcRows['ebitda'] && renderCalcDrillRows(['01.', '02.', '03.', '04.'])}
+                        </>)}
                       </React.Fragment>
                     );
                   })}
@@ -2529,6 +2726,11 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                   <tr className="bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 text-white font-black text-[12px] shadow-[0_-2px_6px_rgba(0,0,0,0.3)] border-t-2 border-yellow-400">
                     <td colSpan={2} className="py-2 uppercase tracking-tight font-black sticky left-0 z-50 bg-gradient-to-r from-slate-800 to-slate-700 ">
                       <div className="flex items-center gap-1 px-2">
+                        {drillDimensions.length > 0 && (
+                          <button onClick={() => setExpandedCalcRows(prev => ({ ...prev, total: !prev.total }))} className="text-white/70 hover:text-white transition-colors mr-0.5">
+                            {expandedCalcRows['total'] ? <ChevronDown size={12} className="inline" /> : <ChevronRight size={12} className="inline" />}
+                          </button>
+                        )}
                         {showOnlyEbitda && <Activity size={12} />}
                         <span>{showOnlyEbitda ? 'EBITDA TOTAL' : 'TOTAL GERAL'}</span>
                       </div>
@@ -2549,6 +2751,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                       }
                     })}
                   </tr>
+                  {drillDimensions.length > 0 && expandedCalcRows['total'] && renderCalcDrillRows(showOnlyEbitda ? EBITDA_PREFIXES : [])}
                 </tfoot>
               </>
             )}
