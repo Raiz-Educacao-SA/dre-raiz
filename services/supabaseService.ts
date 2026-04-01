@@ -1621,9 +1621,11 @@ export const deleteTransaction = async (id: string, scenario?: string): Promise<
   return true;
 };
 
-export const bulkAddTransactions = async (transactions: Omit<Transaction, 'id'>[]): Promise<Transaction[]> => {
+export const bulkAddTransactions = async (transactions: Omit<Transaction, 'id'>[], scenario?: string): Promise<Transaction[]> => {
+  const table = getTableForScenario(scenario);
+  console.log(`📥 bulkAddTransactions: table=${table}, scenario=${scenario}, count=${transactions.length}`);
   const { data, error } = await supabase
-    .from('transactions')
+    .from(table)
     .insert(transactions.map(t => transactionToDb(t as Transaction)))
     .select();
 

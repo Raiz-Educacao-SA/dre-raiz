@@ -22,6 +22,7 @@ const ExecutiveDashboard = React.lazy(() => import('./components/agentTeam/Execu
 const CronogramaPopup = React.lazy(() => import('./components/CronogramaPopup'));
 // VarianceJustificationsView agora é aba dentro de AnalysisView
 const InquiryInboxView = React.lazy(() => import('./components/inquiries/InquiryInboxView'));
+const PptTesteView = React.lazy(() => import('./components/PptTesteView'));
 import { ViewType, Transaction, SchoolKPIs, ManualChange, TransactionType } from './types';
 import { INITIAL_TRANSACTIONS, CATEGORIES, BRANCHES } from './constants';
 import { PanelLeftOpen, Building2, Maximize2, Minimize2, Flag, Loader2, Lock, Menu, X, Activity, Table as TableIcon, Table2, RefreshCw, Download, ChevronDown, FileSpreadsheet } from 'lucide-react';
@@ -613,8 +614,8 @@ const App: React.FC = () => {
         chave_id: chave_id ? `${chave_id}-R${idx + 1}` : null,
         description: `${rest.description} [R${idx + 1}/${rawParts.length}]`,
       }));
-      // inserir novas ANTES de deletar (integridade)
-      await supabaseService.bulkAddTransactions(newParts as any);
+      // inserir novas ANTES de deletar (integridade) — na mesma tabela da transação original
+      await supabaseService.bulkAddTransactions(newParts as any, scenario);
       // deletar original e registrar aprovação em paralelo
       await Promise.all([
         supabaseService.deleteTransaction(change.transactionId, scenario),
@@ -1304,6 +1305,13 @@ const App: React.FC = () => {
             <ErrorBoundary fallbackMessage="Erro ao carregar Solicitações">
               <Suspense fallback={<LoadingSpinner message="Carregando solicitações..." />}>
                 <InquiryInboxView />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+          {currentView === 'ppt_teste' && (
+            <ErrorBoundary fallbackMessage="Erro ao carregar PPT Teste">
+              <Suspense fallback={<LoadingSpinner message="Carregando PPT Teste..." />}>
+                <PptTesteView />
               </Suspense>
             </ErrorBoundary>
           )}
