@@ -39,7 +39,7 @@ except ImportError:
 # CONFIGURACOES
 # ══════════════════════════════════════════════════════════════════════════════
 
-EXCEL_PATH  = r"C:\Users\edmilson.serafim\OneDrive\IA\CARGA ORÇ.xlsx"
+EXCEL_PATH  = r"C:\Users\edmilson.serafim\OneDrive\10 - IA\CARGA ORÇ.xlsx"
 SHEET_NAME  = "CARGA"
 ANO_ORC     = 2026
 

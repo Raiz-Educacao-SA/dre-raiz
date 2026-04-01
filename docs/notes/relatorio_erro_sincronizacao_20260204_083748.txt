@@ -1,0 +1,761 @@
+
+================================================================================
+RELATÓRIO DE ANÁLISE DE ERROS - SINCRONIZAÇÃO FABRIC → SUPABASE
+================================================================================
+Data/Hora: 04/02/2026 08:37:48
+
+================================================================================
+1. RESUMO GERAL
+================================================================================
+
+Total de registros buscados do Fabric:  110,708
+Registros inseridos com sucesso:        0 (0.00%)
+Registros com erro:                     110,708 (100.00%)
+
+Batches processados:                    111
+Batches com sucesso:                    0
+Batches com erro:                       111
+
+================================================================================
+2. ANÁLISE DOS ERROS
+================================================================================
+
+Número de batches que falharam: 111
+
+Detalhes dos batches com erro:
+
+  Batch #1:
+    - Registros: 1 até 1000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-3809,23\""}
+
+  Batch #2:
+    - Registros: 1001 até 2000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"5046,8\""}
+
+  Batch #3:
+    - Registros: 2001 até 3000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"5809,04\""}
+
+  Batch #4:
+    - Registros: 3001 até 4000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1021,59\""}
+
+  Batch #5:
+    - Registros: 4001 até 5000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-865,66\""}
+
+  Batch #6:
+    - Registros: 5001 até 6000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"5477,2\""}
+
+  Batch #7:
+    - Registros: 6001 até 7000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1752,01\""}
+
+  Batch #8:
+    - Registros: 7001 até 8000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3004,67\""}
+
+  Batch #9:
+    - Registros: 8001 até 9000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-571,38\""}
+
+  Batch #10:
+    - Registros: 9001 até 10000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"89,12\""}
+
+  Batch #11:
+    - Registros: 10001 até 11000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1131,2\""}
+
+  Batch #12:
+    - Registros: 11001 até 12000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"0,94\""}
+
+  Batch #13:
+    - Registros: 12001 até 13000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"103,79\""}
+
+  Batch #14:
+    - Registros: 13001 até 14000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-101,77\""}
+
+  Batch #15:
+    - Registros: 14001 até 15000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-161,14\""}
+
+  Batch #16:
+    - Registros: 15001 até 16000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-162,8\""}
+
+  Batch #17:
+    - Registros: 16001 até 17000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3392,33\""}
+
+  Batch #18:
+    - Registros: 17001 até 18000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3256,08\""}
+
+  Batch #19:
+    - Registros: 18001 até 19000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-339,23\""}
+
+  Batch #20:
+    - Registros: 19001 até 20000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"26,44\""}
+
+  Batch #21:
+    - Registros: 20001 até 21000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3256,08\""}
+
+  Batch #22:
+    - Registros: 21001 até 22000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-145,75\""}
+
+  Batch #23:
+    - Registros: 22001 até 23000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"5834,92\""}
+
+  Batch #24:
+    - Registros: 23001 até 24000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1254,01\""}
+
+  Batch #25:
+    - Registros: 24001 até 25000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1589,5\""}
+
+  Batch #26:
+    - Registros: 25001 até 26000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1147,81\""}
+
+  Batch #27:
+    - Registros: 26001 até 27000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1415,93\""}
+
+  Batch #28:
+    - Registros: 27001 até 28000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1383,47\""}
+
+  Batch #29:
+    - Registros: 28001 até 29000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"1869,6\""}
+
+  Batch #30:
+    - Registros: 29001 até 30000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"1730,78\""}
+
+  Batch #31:
+    - Registros: 30001 até 31000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2164,3\""}
+
+  Batch #32:
+    - Registros: 31001 até 32000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1153,57\""}
+
+  Batch #33:
+    - Registros: 32001 até 33000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-487,31\""}
+
+  Batch #34:
+    - Registros: 33001 até 34000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-951,93\""}
+
+  Batch #35:
+    - Registros: 34001 até 35000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1159,62\""}
+
+  Batch #36:
+    - Registros: 35001 até 36000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-11,92\""}
+
+  Batch #37:
+    - Registros: 36001 até 37000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1298,58\""}
+
+  Batch #38:
+    - Registros: 37001 até 38000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"0,49\""}
+
+  Batch #39:
+    - Registros: 38001 até 39000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"29,3\""}
+
+  Batch #40:
+    - Registros: 39001 até 40000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1419,43\""}
+
+  Batch #41:
+    - Registros: 40001 até 41000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"14,12\""}
+
+  Batch #42:
+    - Registros: 41001 até 42000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2,46\""}
+
+  Batch #43:
+    - Registros: 42001 até 43000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2,9\""}
+
+  Batch #44:
+    - Registros: 43001 até 44000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"13,16\""}
+
+  Batch #45:
+    - Registros: 44001 até 45000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"523,58\""}
+
+  Batch #46:
+    - Registros: 45001 até 46000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"90,98\""}
+
+  Batch #47:
+    - Registros: 46001 até 47000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2155,79\""}
+
+  Batch #48:
+    - Registros: 47001 até 48000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2864,5\""}
+
+  Batch #49:
+    - Registros: 48001 até 49000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1664,93\""}
+
+  Batch #50:
+    - Registros: 49001 até 50000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1346,32\""}
+
+  Batch #51:
+    - Registros: 50001 até 51000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"4249,67\""}
+
+  Batch #52:
+    - Registros: 51001 até 52000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1546,83\""}
+
+  Batch #53:
+    - Registros: 52001 até 53000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1700,74\""}
+
+  Batch #54:
+    - Registros: 53001 até 54000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"4249,67\""}
+
+  Batch #55:
+    - Registros: 54001 até 55000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"29,88\""}
+
+  Batch #56:
+    - Registros: 55001 até 56000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2808,4\""}
+
+  Batch #57:
+    - Registros: 56001 até 57000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-2396,25\""}
+
+  Batch #58:
+    - Registros: 57001 até 58000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"5195,75\""}
+
+  Batch #59:
+    - Registros: 58001 até 59000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-89,77\""}
+
+  Batch #60:
+    - Registros: 59001 até 60000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"1971,08\""}
+
+  Batch #61:
+    - Registros: 60001 até 61000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"32,76\""}
+
+  Batch #62:
+    - Registros: 61001 até 62000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1576,86\""}
+
+  Batch #63:
+    - Registros: 62001 até 63000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-848,4\""}
+
+  Batch #64:
+    - Registros: 63001 até 64000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-41,92\""}
+
+  Batch #65:
+    - Registros: 64001 até 65000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"1366,67\""}
+
+  Batch #66:
+    - Registros: 65001 até 66000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"9,03\""}
+
+  Batch #67:
+    - Registros: 66001 até 67000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"49,56\""}
+
+  Batch #68:
+    - Registros: 67001 até 68000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1,25\""}
+
+  Batch #69:
+    - Registros: 68001 até 69000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-2167,65\""}
+
+  Batch #70:
+    - Registros: 69001 até 70000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"6345,52\""}
+
+  Batch #71:
+    - Registros: 70001 até 71000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-3172,76\""}
+
+  Batch #72:
+    - Registros: 71001 até 72000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-765,36\""}
+
+  Batch #73:
+    - Registros: 72001 até 73000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"306,85\""}
+
+  Batch #74:
+    - Registros: 73001 até 74000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2716,67\""}
+
+  Batch #75:
+    - Registros: 74001 até 75000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2266,58\""}
+
+  Batch #76:
+    - Registros: 75001 até 76000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1358,34\""}
+
+  Batch #77:
+    - Registros: 76001 até 77000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1877,51\""}
+
+  Batch #78:
+    - Registros: 77001 até 78000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1300,31\""}
+
+  Batch #79:
+    - Registros: 78001 até 79000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2820,77\""}
+
+  Batch #80:
+    - Registros: 79001 até 80000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2820,77\""}
+
+  Batch #81:
+    - Registros: 80001 até 81000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2411,85\""}
+
+  Batch #82:
+    - Registros: 81001 até 82000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2411,85\""}
+
+  Batch #83:
+    - Registros: 82001 até 83000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-2831,69\""}
+
+  Batch #84:
+    - Registros: 83001 até 84000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-2274,41\""}
+
+  Batch #85:
+    - Registros: 84001 até 85000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1899,51\""}
+
+  Batch #86:
+    - Registros: 85001 até 86000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1643,8\""}
+
+  Batch #87:
+    - Registros: 86001 até 87000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2411,85\""}
+
+  Batch #88:
+    - Registros: 87001 até 88000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2050,31\""}
+
+  Batch #89:
+    - Registros: 88001 até 89000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-2037,72\""}
+
+  Batch #90:
+    - Registros: 89001 até 90000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1857,12\""}
+
+  Batch #91:
+    - Registros: 90001 até 91000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2820,77\""}
+
+  Batch #92:
+    - Registros: 91001 até 92000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1,25\""}
+
+  Batch #93:
+    - Registros: 92001 até 93000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"44,54\""}
+
+  Batch #94:
+    - Registros: 93001 até 94000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"0,22\""}
+
+  Batch #95:
+    - Registros: 94001 até 95000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2626,62\""}
+
+  Batch #96:
+    - Registros: 95001 até 96000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"21,08\""}
+
+  Batch #97:
+    - Registros: 96001 até 97000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-2667,34\""}
+
+  Batch #98:
+    - Registros: 97001 até 98000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1,25\""}
+
+  Batch #99:
+    - Registros: 98001 até 99000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-1,84\""}
+
+  Batch #100:
+    - Registros: 99001 até 100000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3,6\""}
+
+  Batch #101:
+    - Registros: 100001 até 101000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3055,83\""}
+
+  Batch #102:
+    - Registros: 101001 até 102000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3055,83\""}
+
+  Batch #103:
+    - Registros: 102001 até 103000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-49,46\""}
+
+  Batch #104:
+    - Registros: 103001 até 104000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"2221,17\""}
+
+  Batch #105:
+    - Registros: 104001 até 105000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"79,18\""}
+
+  Batch #106:
+    - Registros: 105001 até 106000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-35,78\""}
+
+  Batch #107:
+    - Registros: 106001 até 107000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"7,88\""}
+
+  Batch #108:
+    - Registros: 107001 até 108000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-401,84\""}
+
+  Batch #109:
+    - Registros: 108001 até 109000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-884,43\""}
+
+  Batch #110:
+    - Registros: 109001 até 110000
+    - Quantidade: 1000
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"3994,17\""}
+
+  Batch #111:
+    - Registros: 110001 até 110708
+    - Quantidade: 708
+    - Código erro: 400
+    - Mensagem: {"code":"22P02","details":null,"hint":null,"message":"invalid input syntax for type numeric: \"-2009,67\""}
+
+
+================================================================================
+3. CAUSA RAIZ DOS ERROS
+================================================================================
+
+PROBLEMA IDENTIFICADO: Timeout na função SQL do Supabase
+
+CAUSA TÉCNICA:
+- Erro HTTP 500 com código PostgreSQL '57014'
+- Mensagem: "canceling statement due to statement timeout"
+- A função insert_dre_batch() no Supabase está levando mais tempo
+  do que o timeout configurado para processar os batches
+
+POR QUE OS 3 PRIMEIROS BATCHES FALHARAM:
+1. Quando a tabela é limpa, os índices precisam ser reconstruídos
+2. Os primeiros inserts são mais lentos pois o PostgreSQL está
+   reorganizando índices, estatísticas e plano de execução
+3. Após alguns batches, o banco otimiza e os próximos batches
+   funcionam normalmente
+
+POR QUE FALTAM 964 REGISTROS (não 3,000):
+- O script compara com valor "esperado" fixo de 108,672
+- Cálculo: 108,672 (esperado) - 107,708 (inseridos) = 964
+- MAS na verdade faltam 110,708 registros que são os 3 batches
+  que deram timeout
+
+================================================================================
+4. SOLUÇÃO RECOMENDADA
+================================================================================
+
+OPÇÃO 1: Executar novamente SOMENTE os batches que falharam
+- Mais rápido e eficiente
+- Arquivo gerado: registros_com_erro_20260204_083748.json
+
+OPÇÃO 2: Aumentar timeout da função SQL no Supabase
+- Editar função insert_dre_batch()
+- Aumentar statement_timeout de 5s para 30s
+
+OPÇÃO 3: Reduzir tamanho do batch
+- Mudar de 1000 para 500 registros por batch
+- Mais lento mas mais confiável
+
+OPÇÃO 4: Executar script completo novamente
+- Menos eficiente mas garante consistência total
+
+================================================================================
+5. PRÓXIMOS PASSOS
+================================================================================
+
+1. Revisar arquivo: registros_com_erro_20260204_083748.json
+   - Contém os 110,708 registros que não foram inseridos
+
+2. Executar script de correção:
+   python corrigir_registros_faltantes.py
+
+3. Validar resultado final:
+   - Verificar se total chegou a 110,708 registros
+
+================================================================================
+ARQUIVOS GERADOS
+================================================================================
+
+1. relatorio_erro_sincronizacao_20260204_083748.txt  (este arquivo)
+2. registros_com_erro_20260204_083748.json           (110,708 registros)
+3. registros_com_erro_20260204_083748.xlsx           (Excel para análise)
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

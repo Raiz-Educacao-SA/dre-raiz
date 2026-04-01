@@ -1,0 +1,277 @@
+================================================================
+SCRIPTS ÚTEIS - MANUTENÇÃO E TROUBLESHOOTING
+================================================================
+
+================================================================
+1. TESTAR CONEXÃO COM SERVICE PRINCIPAL
+================================================================
+
+Executar:
+python C:\Users\edmilson.serafim\teste_service_principal.py
+
+O que faz:
+- Testa autenticação com Service Principal
+- Conecta no Fabric
+- Executa query simples
+- Valida se tudo está funcionando
+
+Resultado esperado:
+[OK] TESTE PASSOU! SERVICE PRINCIPAL FUNCIONA!
+
+================================================================
+2. VERIFICAR QUANTIDADE DE REGISTROS NO SUPABASE
+================================================================
+
+Python:
+python -c "
+import requests
+url = 'https://vafmufhlompwsdrlhkfz.supabase.co/rest/v1/dre_fabric'
+headers = {
+    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA',
+    'Prefer': 'count=exact'
+}
+r = requests.get(url + '?select=id&limit=1', headers=headers)
+count = r.headers['content-range'].split('/')[1]
+print(f'Total de registros: {count}')
+"
+
+Resultado esperado:
+Total de registros: 107112
+
+================================================================
+3. INVOCAR FUNÇÃO MANUALMENTE
+================================================================
+
+Via Azure CLI:
+# Primeiro, pegar a master key
+az functionapp keys list --resource-group rg-fabric-sync --name fabric-sync-dre --query "masterKey" -o tsv > master_key.txt
+
+# Depois, invocar
+python -c "
+import requests
+with open('master_key.txt', 'r') as f:
+    key = f.read().strip()
+url = 'https://fabric-sync-dre-crezcwh9bzaveya6.brazilsouth-01.azurewebsites.net/admin/functions/FabricSyncTimer'
+headers = {'x-functions-key': key, 'Content-Type': 'application/json'}
+r = requests.post(url, headers=headers, json={})
+print(f'Status: {r.status_code}')
+if r.status_code == 202:
+    print('Função invocada com sucesso!')
+"
+
+================================================================
+4. VERIFICAR STATUS DA FUNCTION APP
+================================================================
+
+az functionapp show --resource-group rg-fabric-sync --name fabric-sync-dre --query "state" -o tsv
+
+Resultado esperado:
+Running
+
+================================================================
+5. VER LOGS RECENTES (VIA CLI)
+================================================================
+
+# Não implementado ainda - usar Azure Portal
+# Azure Portal → fabric-sync-dre → Log stream
+
+================================================================
+6. LISTAR VARIÁVEIS DE AMBIENTE
+================================================================
+
+az functionapp config appsettings list --resource-group rg-fabric-sync --name fabric-sync-dre -o table
+
+Verificar se todas as 7 variáveis estão presentes:
+- FABRIC_SERVER
+- FABRIC_DATABASE
+- TENANT_ID
+- CLIENT_ID
+- CLIENT_SECRET
+- SUPABASE_URL
+- SUPABASE_KEY
+
+================================================================
+7. ATUALIZAR UMA VARIÁVEL DE AMBIENTE
+================================================================
+
+# Exemplo: atualizar CLIENT_SECRET
+az functionapp config appsettings set \
+  --resource-group rg-fabric-sync \
+  --name fabric-sync-dre \
+  --settings "CLIENT_SECRET=novo_valor_aqui"
+
+================================================================
+8. FAZER BACKUP DO CÓDIGO
+================================================================
+
+# Copiar pasta inteira
+robocopy "C:\Users\edmilson.serafim\azure_function" "C:\Users\edmilson.serafim\azure_function_backup" /E
+
+# Ou criar ZIP
+python -c "
+import zipfile, os, datetime
+backup_name = f'azure_function_backup_{datetime.datetime.now().strftime(\"%Y%m%d_%H%M%S\")}.zip'
+with zipfile.ZipFile(backup_name, 'w', zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk('C:/Users/edmilson.serafim/azure_function'):
+        for file in files:
+            if '__pycache__' not in root:
+                z.write(os.path.join(root, file))
+print(f'Backup criado: {backup_name}')
+"
+
+================================================================
+9. FAZER DEPLOY DE NOVA VERSÃO
+================================================================
+
+cd C:\Users\edmilson.serafim\azure_function
+
+# 1. Criar ZIP
+python -c "
+import zipfile, os
+with zipfile.ZipFile('../azure_function_deploy.zip', 'w', zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            if '__pycache__' not in root and not file.endswith('.zip'):
+                filepath = os.path.join(root, file)
+                z.write(filepath, os.path.relpath(filepath, '.'))
+print('ZIP criado')
+"
+
+# 2. Deploy
+az functionapp deployment source config-zip \
+  --resource-group rg-fabric-sync \
+  --name fabric-sync-dre \
+  --src "C:\Users\edmilson.serafim\azure_function_deploy.zip"
+
+================================================================
+10. RENOVAR CLIENT SECRET (QUANDO EXPIRAR)
+================================================================
+
+PASSO 1 - Criar novo secret no Azure AD:
+1. Azure Portal → Azure Active Directory
+2. App registrations → fabric-supabase-sync
+3. Certificates & secrets → New client secret
+4. Nome: "Secret renovado em [data]"
+5. Validade: 24 meses
+6. Copiar o valor (só aparece uma vez!)
+
+PASSO 2 - Atualizar na Function App:
+az functionapp config appsettings set \
+  --resource-group rg-fabric-sync \
+  --name fabric-sync-dre \
+  --settings "CLIENT_SECRET=novo_secret_aqui"
+
+PASSO 3 - Testar:
+python C:\Users\edmilson.serafim\teste_service_principal.py
+
+================================================================
+11. VERIFICAR ÚLTIMA EXECUÇÃO
+================================================================
+
+# Via Portal:
+Azure Portal → fabric-sync-dre → Functions → FabricSyncTimer → Monitor
+
+# Verificar se tabela Supabase foi atualizada recentemente
+python -c "
+import requests
+url = 'https://vafmufhlompwsdrlhkfz.supabase.co/rest/v1/dre_fabric'
+headers = {
+    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA',
+    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA'
+}
+r = requests.get(url + '?select=anomes&order=anomes.desc&limit=1', headers=headers)
+if r.json():
+    print(f'Último ANOMES: {r.json()[0][\"anomes\"]}')
+"
+
+================================================================
+12. ALTERAR HORÁRIO DE EXECUÇÃO
+================================================================
+
+# Editar arquivo
+# C:\Users\edmilson.serafim\azure_function\FabricSyncTimer\function.json
+
+Trocar linha:
+"schedule": "0 0 11 * * *"
+
+Para novo horário (em UTC):
+- 06:00 BRT = "0 0 9 * * *"
+- 08:00 BRT = "0 0 11 * * *"
+- 10:00 BRT = "0 0 13 * * *"
+- 12:00 BRT = "0 0 15 * * *"
+
+Depois fazer deploy novamente (script #9)
+
+================================================================
+13. TESTAR CONEXÃO COM SUPABASE
+================================================================
+
+python -c "
+import requests
+url = 'https://vafmufhlompwsdrlhkfz.supabase.co/rest/v1/dre_fabric'
+headers = {
+    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA',
+    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA'
+}
+r = requests.get(url + '?select=id&limit=1', headers=headers)
+if r.status_code == 200:
+    print('[OK] Conexão com Supabase funcionando!')
+else:
+    print(f'[ERRO] Status: {r.status_code}')
+"
+
+================================================================
+14. PARAR A FUNCTION APP (SE NECESSÁRIO)
+================================================================
+
+az functionapp stop --resource-group rg-fabric-sync --name fabric-sync-dre
+
+================================================================
+15. REINICIAR A FUNCTION APP
+================================================================
+
+az functionapp start --resource-group rg-fabric-sync --name fabric-sync-dre
+
+# Ou reiniciar
+az functionapp restart --resource-group rg-fabric-sync --name fabric-sync-dre
+
+================================================================
+16. DELETAR TODOS OS DADOS DO SUPABASE (CUIDADO!)
+================================================================
+
+python -c "
+import requests
+url = 'https://vafmufhlompwsdrlhkfz.supabase.co/rest/v1/dre_fabric?id=gt.0'
+headers = {
+    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA',
+    'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhZm11Zmhsb21wd3Nkcmxoa2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQzMjI5MSwiZXhwIjoyMDg1MDA4MjkxfQ.m0viLArNl57ExdNlRoEuNNZH0n_0iKSaa81Fyj2ekpA',
+    'Prefer': 'return=minimal'
+}
+r = requests.delete(url, headers=headers)
+print(f'Status: {r.status_code}')
+if r.status_code == 204:
+    print('[OK] Tabela limpa!')
+"
+
+================================================================
+17. EXPORTAR DADOS DO SUPABASE PARA EXCEL
+================================================================
+
+Executar:
+python C:\Users\edmilson.serafim\exportar_dre_fabric_excel.py
+
+Resultado:
+Cria arquivo: dre_fabric_export_[data].xlsx
+
+================================================================
+
+OBSERVAÇÕES IMPORTANTES:
+- Sempre fazer backup antes de fazer alterações
+- Testar mudanças em ambiente local primeiro
+- Verificar logs após qualquer alteração
+- Manter documentação atualizada
+
+================================================================
+
+Criado em: 02/02/2026
+Última atualização: 02/02/2026

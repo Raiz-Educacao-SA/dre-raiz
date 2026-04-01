@@ -1,0 +1,5 @@
+pandas
+pyodbc
+azure-identity
+supabase
+python-dotenv

@@ -1,0 +1,32 @@
+================================================================
+EXECUTAR SINCRONIZAÇÃO MANUAL
+================================================================
+
+OPÇÃO 1: Duplo clique no arquivo
+---------------------------------
+Arquivo: EXECUTAR_SYNC_MANUAL.bat
+Localização: C:\Users\edmilson.serafim\OneDrive - Raiz Educação S A\Área de Trabalho\Ap proposta
+
+
+OPÇÃO 2: Via Terminal (PowerShell ou CMD)
+------------------------------------------
+1. Abrir PowerShell ou CMD
+
+2. Navegar até a pasta:
+cd "C:\Users\edmilson.serafim\OneDrive - Raiz Educação S A\Área de Trabalho\Ap proposta"
+
+3. Executar:
+python Sincronizacao_manual_banco.py
+
+
+================================================================
+CONFIGURAÇÕES ATUAIS
+================================================================
+- BATCH_SIZE: 500 registros
+- Python timeout: 180 segundos
+- PostgreSQL timeout: 180 segundos (via função SQL)
+
+Esperado: ~99.9% de sucesso (110,708/110,708 registros)
+Tempo estimado: 10-15 minutos
+
+================================================================

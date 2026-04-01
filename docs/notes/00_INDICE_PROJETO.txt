@@ -1,0 +1,339 @@
+================================================================
+ÍNDICE DO PROJETO - SINCRONIZAÇÃO FABRIC → SUPABASE
+================================================================
+
+Data: 03/02/2026
+Status: ✅ PROJETO COMPLETO E FUNCIONAL
+
+================================================================
+ARQUIVOS DO PROJETO (NESTA PASTA)
+================================================================
+
+📋 DOCUMENTAÇÃO PRINCIPAL
+─────────────────────────────────────────────────────────────
+
+1. 00_INDICE_PROJETO.txt (ESTE ARQUIVO)
+   └─ Índice completo do projeto
+   └─ Comece por aqui!
+
+2. RESUMO_COMPLETO_SINCRONIZACAO.txt
+   └─ Resumo completo de tudo que foi feito
+   └─ Status atual, pendências, próximos passos
+   └─ LEIA ESTE para entender todo o contexto
+
+3. DEPLOY_FUNCTION_ATUALIZADA.txt
+   └─ Instruções de como fazer deploy no Azure
+   └─ 3 opções: Portal, VS Code ou CLI
+   └─ USE ESTE para fazer o deploy
+
+4. PENDENCIA_TI_STORAGE_ACCOUNT.txt
+   └─ Pendência para o TI configurar
+   └─ Necessário para timer automático
+   └─ ENVIE ESTE para o TI
+
+5. SCRIPTS_UTEIS.txt
+   └─ Scripts de manutenção e troubleshooting
+   └─ Comandos úteis para operação
+
+📦 ARQUIVO DE DEPLOY
+─────────────────────────────────────────────────────────────
+
+6. azure_function_deploy.zip
+   └─ Código da Azure Function pronto para deploy
+   └─ Fazer upload via Portal do Azure
+   └─ Contém código atualizado que funciona
+
+🐍 SCRIPTS PYTHON (SINCRONIZAÇÃO)
+─────────────────────────────────────────────────────────────
+
+7. sync_via_function.py
+   └─ Script PRINCIPAL de sincronização
+   └─ USA SQL Function (bypassa cache)
+   └─ FUNCIONA PERFEITAMENTE
+   └─ Execute: python sync_via_function.py
+
+8. diagnostico_sync.py
+   └─ Script de diagnóstico
+   └─ Útil para troubleshooting
+   └─ Identifica problemas na sincronização
+
+9. adicionar_colunas_supabase.py
+   └─ Instruções para recriar schema no Supabase
+   └─ Só usar se precisar recriar tabela
+
+================================================================
+ORDEM DE LEITURA RECOMENDADA
+================================================================
+
+Se você é novo no projeto:
+
+1º → 00_INDICE_PROJETO.txt (este arquivo)
+2º → RESUMO_COMPLETO_SINCRONIZACAO.txt
+3º → DEPLOY_FUNCTION_ATUALIZADA.txt (se vai fazer deploy)
+4º → PENDENCIA_TI_STORAGE_ACCOUNT.txt (para enviar ao TI)
+5º → SCRIPTS_UTEIS.txt (para operação do dia a dia)
+
+================================================================
+AÇÕES IMEDIATAS
+================================================================
+
+✅ VOCÊ PODE FAZER AGORA:
+
+1. Deploy da Azure Function
+   - Arquivo: azure_function_deploy.zip
+   - Como fazer: DEPLOY_FUNCTION_ATUALIZADA.txt
+   - Tempo: ~5 minutos
+
+2. Testar sincronização manual
+   - Execute: python sync_via_function.py
+   - Ou via Azure Portal após deploy
+
+⏳ AGUARDANDO TI:
+
+3. Configurar Storage Account
+   - Documento: PENDENCIA_TI_STORAGE_ACCOUNT.txt
+   - Necessário para automação do timer
+   - Sem isso: só funciona manual
+
+================================================================
+STATUS ATUAL DO PROJETO
+================================================================
+
+✅ FUNCIONANDO:
+- Conexão com Fabric via Service Principal
+- Query busca 108,672 registros
+- SQL Function insert_dre_batch criada no Supabase
+- Sincronização manual 100% funcional
+- Código da Azure Function atualizado
+
+⏳ PENDENTE:
+- Deploy da função atualizada no Azure
+- Configuração do Storage Account pelo TI
+
+❌ NÃO FUNCIONA AINDA:
+- Timer automático (precisa Storage Account)
+
+================================================================
+ESTRUTURA DO PROJETO
+================================================================
+
+Ap proposta/
+│
+├── 00_INDICE_PROJETO.txt .................. Este arquivo
+├── RESUMO_COMPLETO_SINCRONIZACAO.txt ...... Documentação completa
+├── DEPLOY_FUNCTION_ATUALIZADA.txt ......... Como fazer deploy
+├── PENDENCIA_TI_STORAGE_ACCOUNT.txt ....... Para o TI
+├── SCRIPTS_UTEIS.txt ...................... Scripts úteis
+│
+├── azure_function_deploy.zip .............. Código para deploy
+│
+├── sync_via_function.py ................... Script principal
+├── diagnostico_sync.py .................... Diagnóstico
+└── adicionar_colunas_supabase.py .......... Recriar schema
+
+================================================================
+COMO EXECUTAR SINCRONIZAÇÃO MANUAL
+================================================================
+
+Windows (PowerShell ou CMD):
+cd "C:\Users\edmilson.serafim\OneDrive - Raiz Educação S A\Área de Trabalho\Ap proposta"
+python sync_via_function.py
+
+Resultado esperado:
+- Conecta no Fabric
+- Busca 108,672 registros
+- Limpa tabela Supabase
+- Insere 108,672 registros em ~2 minutos
+- Sucesso: 100%
+
+================================================================
+DEPLOY NO AZURE
+================================================================
+
+MÉTODO MAIS FÁCIL (Via KUDU):
+
+1. Acesse: https://fabric-sync-dre-crezcwh9bzaveya6.scm.brazilsouth-01.azurewebsites.net
+2. Faça login com credenciais Azure
+3. Tools → Zip Push Deploy
+4. Arraste: azure_function_deploy.zip
+5. Aguarde deploy (1-2 min)
+6. Azure Portal → Restart da Function
+
+Detalhes completos: DEPLOY_FUNCTION_ATUALIZADA.txt
+
+================================================================
+COMPONENTES DO SISTEMA
+================================================================
+
+1. FABRIC (ORIGEM)
+   - Server: brexl7eomxoerljqiapyaul67i-tscdkva6temu3gn4zp67tlafl4
+   - Database: DRE
+   - Tabela: DRE (+ Filial, Tags, Fornecedor_Tags)
+   - Autenticação: Service Principal
+   - Registros: 108,672
+
+2. SUPABASE (DESTINO)
+   - URL: https://vafmufhlompwsdrlhkfz.supabase.co
+   - Tabela: dre_fabric
+   - Function: insert_dre_batch (bypassa cache!)
+   - Colunas: 31 campos
+
+3. AZURE FUNCTION (AUTOMAÇÃO)
+   - Resource Group: rg-fabric-sync
+   - Nome: fabric-sync-dre
+   - Região: Brazil South
+   - Timer: 08:00 AM BRT (11:00 UTC)
+   - Status: Código atualizado, aguardando deploy
+
+================================================================
+DADOS SINCRONIZADOS
+================================================================
+
+Período: 2026-01-01 até hoje
+Total: 108,672 registros
+Atualização: Diária (quando timer funcionar)
+
+Principais campos:
+- CHAVE (ID único)
+- FORNECEDOR_PADRAO
+- VALOR (numeric)
+- TAG1, TAG2, TAG3, TAG4, TAG_ORC
+- CONTA, CC
+- ANOMES
+- FILIAL, CIA
+- E mais 18 campos
+
+================================================================
+TROUBLESHOOTING RÁPIDO
+================================================================
+
+PROBLEMA: Sincronização não funciona
+SOLUÇÃO: python diagnostico_sync.py
+
+PROBLEMA: Preciso verificar quantidade no Supabase
+SOLUÇÃO: Ver SCRIPTS_UTEIS.txt #2
+
+PROBLEMA: Azure Function não roda automaticamente
+SOLUÇÃO: Verificar se Storage Account foi configurado
+         Ver PENDENCIA_TI_STORAGE_ACCOUNT.txt
+
+PROBLEMA: Erro de tipo (numeric, integer)
+SOLUÇÃO: SQL Function já está corrigida
+         Se recriar, ver adicionar_colunas_supabase.py
+
+================================================================
+CONTATOS
+================================================================
+
+Desenvolvedor: Edmilson Serafim
+Email: edmilson.serafim@raizeducacao.info
+
+TI Raiz Educação: [contato do TI]
+
+Suporte Azure: https://portal.azure.com
+Suporte Supabase: https://supabase.com/dashboard
+
+================================================================
+CHANGELOG
+================================================================
+
+[03/02/2026]
+- ✅ Problema de cache do PostgREST identificado
+- ✅ SQL Function insert_dre_batch criada
+- ✅ Tipos de dados corrigidos (numeric, integer)
+- ✅ Teste com 100 registros: sucesso
+- ✅ Sincronização completa: 108,672 registros
+- ✅ Código Azure Function atualizado
+- ✅ Documentação completa criada
+- ⏳ Deploy pendente
+- ⏳ Storage Account pendente (TI)
+
+[02/02/2026]
+- Azure Function criada
+- Service Principal configurado
+- Variáveis de ambiente configuradas
+- Timer definido (08:00 AM BRT)
+
+================================================================
+BACKUP E VERSIONAMENTO
+================================================================
+
+Código Azure Function:
+- Original: C:\Users\edmilson.serafim\azure_function\
+- Deploy: azure_function_deploy.zip (nesta pasta)
+
+Scripts Python:
+- Todos na pasta atual
+- Sempre fazer backup antes de modificar
+
+Documentação:
+- Toda nesta pasta
+- Manter atualizada após mudanças
+
+================================================================
+PRÓXIMA REVISÃO
+================================================================
+
+Agendar para: 04/02/2026
+
+Verificar:
+- [ ] Deploy foi feito?
+- [ ] Storage Account foi configurado?
+- [ ] Timer automático está funcionando?
+- [ ] Sincronização rodou automaticamente?
+- [ ] Logs estão ok?
+
+================================================================
+OBSERVAÇÕES IMPORTANTES
+================================================================
+
+⚠️ NUNCA COMMITAR CREDENCIAIS NO GIT
+   - Client Secret
+   - Supabase Key
+   - Tokens
+
+⚠️ FAZER BACKUP ANTES DE MUDANÇAS
+   - Código
+   - Configurações
+   - Dados
+
+✅ TESTAR EM AMBIENTE LOCAL PRIMEIRO
+   - Usar sync_via_function.py
+   - Validar resultado
+   - Só depois fazer deploy
+
+✅ MANTER DOCUMENTAÇÃO ATUALIZADA
+   - Após cada mudança
+   - Incluir data e autor
+   - Descrever o que foi feito
+
+================================================================
+RECURSOS EXTERNOS
+================================================================
+
+Azure Portal:
+https://portal.azure.com
+
+Supabase Dashboard:
+https://supabase.com/dashboard
+Projeto: vafmufhlompwsdrlhkfz
+
+Fabric (Microsoft):
+https://fabric.microsoft.com
+
+Azure Functions Docs:
+https://learn.microsoft.com/en-us/azure/azure-functions/
+
+Supabase Docs:
+https://supabase.com/docs
+
+================================================================
+FIM DO ÍNDICE
+================================================================
+
+Última atualização: 03/02/2026
+Próxima revisão: 04/02/2026
+
+Para dúvidas: edmilson.serafim@raizeducacao.info
+
+================================================================

@@ -1,0 +1,321 @@
+<?xml version="1.0"?>
+<AlteryxDocument yxmdVer="2025.1" RunE2="T">
+  <Nodes>
+    <Node ToolID="1">
+      <GuiSettings Plugin="AlteryxBasePluginsGui.DbFileInput.DbFileInput">
+        <Position x="150" y="210" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Passwords />
+          <File OutputFileName="" FileFormat="19" SearchSubDirs="False" RecordLimit="">G:\.shortcut-targets-by-id\0B-AonYj8pt_BQnFMSThWanJiYTA\3-Planejamento\01 - DRE\2025\00 - Fluxo Alteryx\00 - Log de Atualização\Banco Dia 24_09.yxdb</File>
+          <FormatSpecificOptions />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <DefaultAnnotationText>Banco Dia 24_09.yxdb</DefaultAnnotationText>
+          <Left value="False" />
+        </Annotation>
+        <MetaInfo connection="Output">
+          <RecordInfo>
+            <Field name="CHAVE" size="8000" source="Formula: &quot;R&quot;+[CHAVE]" type="V_WString" />
+            <Field name="CODLOTE" size="2147483647" source="Formula: IF [CODLOTE] = &quot;0&quot; THEN &quot;INTEGRADO&quot; ELSE &quot;Ñ INTEGRADO&quot; ENDIF" type="V_String" />
+            <Field name="CIA" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="FILIAL" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="INTEGRAAPLICACAO" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="IDPARTIDA" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="TICKET" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="FORNECEDOR_PADRAO" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="ANOMES" size="4000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Valor Banco" size="8000" source="Formula: TONUMBER(Replace([Valor Banco], &quot;,&quot;, &quot;.&quot;))" type="V_WString" />
+            <Field name="COMPLEMENTO" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Recorrente?" size="3" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Conta" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Tag1" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Tag2" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Tag3" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Tag4" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Tag_Orc" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Original?" size="8" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="R/O" size="4" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="CC" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="CODCOLIGADA" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="CODFILIAL" source="File: SELECT&#xA;    CONCAT(F.IDLANCAMENTO, F.IDPARTIDA) AS CHAVE,&#xA;    CODLOTE,&#xA;    FIL.CIA,&#xA;    FIL.FILIAL,&#xA;F.INTEGRAAPLICACAO,&#xA;    F.IDPARTIDA,&#xA;    F.FLUIG AS TICKET,&#xA;      CASE&#xA;        WHEN F.CODIGOFORNECEDOR = '' AND (COMPLEMENTO LIKE '%N/ MES%' OR COMPLEMENTO LIKE '%N/ MÊS%' OR COMPLEMENTO LIKE '%N/MÊS%') THEN COMPLEMENTO&#xA;        WHEN F.CODIGOFORNECEDOR = '' AND (COMPLEMENTO LIKE 'EV____ -%' OR COMPLEMENTO LIKE 'EN____ -%') THEN COMPLEMENTO&#xA;        WHEN F.CODIGOFORNECEDOR = '' THEN F.FORNECEDOR_TRATADO&#xA;WHEN FORN_TAG.[Fornecedor Novo] IS NOT NULL THEN FORN_TAG.[Fornecedor Novo]&#xA;ELSE F.NOMEFORNECEDOR&#xA;    END AS 'FORNECEDOR_PADRAO',&#xA;    FORMAT(F.DATA,'yyyyMM') AS 'ANOMES',&#xA;    F.VALOR,&#xA;    F.COMPLEMENTO,&#xA;'Sim' AS 'Recorrente?',&#xA;    CASE&#xA;       -- WHEN FORN_TAG.[Conta] IS NULL OR T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN F.CONTA&#xA;       WHEN T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN F.CONTA&#xA;      --  ELSE FORN_TAG.[Conta]&#xA;      ELSE F.CONTA&#xA;    END AS 'Conta',&#xA;        CASE&#xA;       -- WHEN FORN_TAG.[Conta] IS NULL OR T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.TAG1&#xA;       -- ELSE FORN_TAG.[Tag1]&#xA;       WHEN  T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.Tag1&#xA;        ELSE T.Tag1&#xA;    END AS 'Tag1',&#xA;        CASE&#xA;       -- WHEN FORN_TAG.[Conta] IS NULL OR T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.TAG2&#xA;       -- ELSE FORN_TAG.[Tag2]&#xA;             WHEN  T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.Tag2 &#xA;        ELSE T.Tag2 &#xA;    END AS 'Tag2',&#xA;        CASE&#xA;      --  WHEN FORN_TAG.[Conta] IS NULL OR T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.TAG3&#xA;      --  ELSE FORN_TAG.[Tag3]&#xA;&#xA;            WHEN  T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.Tag3 &#xA;        ELSE T.Tag3 &#xA;    END AS 'Tag3',&#xA;    CASE&#xA;       -- WHEN FORN_TAG.[Conta] IS NULL OR T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.TAG4&#xA;      --  ELSE FORN_TAG.[Tag4]&#xA;            WHEN  T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.TAG4&#xA;        ELSE T.TAG4&#xA;    END AS 'Tag4',&#xA;    CASE&#xA;      --  WHEN FORN_TAG.[Conta] IS NULL OR T.Tag1 NOT IN ('CUSTOS', 'DESPESAS') THEN T.TagOrc&#xA;      --  ELSE FORN_TAG.[Tag_Orc]&#xA;&#xA;            WHEN  T.TagOrc NOT IN ('CUSTOS', 'DESPESAS') THEN T.TagOrc&#xA;        ELSE T.TagOrc&#xA;    END AS 'Tag_Orc',&#xA;    'Original' AS 'Original?',&#xA;    'Real' AS 'R/O',&#xA;    F.CC,&#xA;    F.CODCOLIGADA,&#xA;    F.CODFILIAL,&#xA;    F.USUARIO,&#xA;    F.CONTA AS 'Conta_Original',&#xA;    T.Tag1 AS 'Tag1_Original',&#xA;    T.TAG4 AS 'Tag4_Original',&#xA;    T.TagOrc AS 'TagOrc_Original',&#xA;    F.INTEGRACHAVE_TRATADA,&#xA;    [STATUS LANC. FINANCEIRO],&#xA;    FORMAT(F.DATA,'yyyyMM') AS 'ANOMES_ORIGINAL'&#xA;FROM DRE F&#xA;LEFT JOIN Filial FIL ON FIL.CODCOLIGADA = F.CODCOLIGADA AND FIL.CODFILIAL = F.CODFILIAL&#xA;LEFT JOIN Tags T ON T.CODCONTA = F.CONTA&#xA;LEFT JOIN Fornecedor_Tags FORN_TAG ON TRIM(FORN_TAG.[Fornecedor Original]) = TRIM(F.NOMEFORNECEDOR)&#xA;&#xA;WHERE 1=1&#xA;AND F.DATA &gt;= '2025-01-01' AND F.DATA &lt;= GETDATE()&#xA;--AND ((F.CODCOLIGADA &gt;= 1 AND F.CODCOLIGADA &lt;= 17) OR F.CODCOLIGADA = 28)&#xA;--AND F.CODCOLIGADA IN (8)&#xA;--AND F.CODCOLIGADA = 25&#xA;--AND F.CODLOTE = 0  &#xA;AND T.Tag1 != 'N/A'  -- Adicionada cláusula para excluir linhas onde Tag1 é igual a 'N/A'&#xA;-- AND F.CHAVE = '29449422'&#xA;&#xA;&#xA;ORDER BY F.CODCOLIGADA, F.IDLANCAMENTO, F.IDPARTIDA" type="Int64" />
+            <Field name="USUARIO" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Conta_Original" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Tag1_Original" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="Tag4_Original" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="TagOrc_Original" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="INTEGRACHAVE_TRATADA" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="STATUS LANC. FINANCEIRO" size="8000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="ANOMES_ORIGINAL" size="4000" source="Formula: Uppercase([_CurrentField_])" type="V_WString" />
+            <Field name="NUM_MES" source="Formula: TONUMBER(Right([ANOMES], 2))" type="Double" />
+          </RecordInfo>
+        </MetaInfo>
+      </Properties>
+      <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxDbFileInput" />
+    </Node>
+    <Node ToolID="9">
+      <GuiSettings Plugin="AlteryxGuiToolkit.ToolContainer.ToolContainer">
+        <Position x="244" y="160" width="625" height="217" />
+      </GuiSettings>
+      <Properties>
+        <Configuration>
+          <Caption>CRIA CHAVE UNICA</Caption>
+          <Style TextColor="#314c4a" FillColor="#ecf2f2" BorderColor="#314c4a" Transparency="25" Margin="25" />
+          <Disabled value="False" />
+          <Folded value="False" />
+        </Configuration>
+        <Annotation DisplayMode="0">
+          <Name />
+          <AnnotationText>CRIA CHAVE UNICA</AnnotationText>
+          <DefaultAnnotationText />
+          <Left value="False" />
+        </Annotation>
+      </Properties>
+      <ChildNodes>
+        <Node ToolID="2">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.Formula.Formula">
+            <Position x="342" y="209" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <FormulaFields>
+                <FormulaField expression="IF [INTEGRACHAVE_TRATADA] =&quot;&quot; THEN [IDPARTIDA] &#xA;elseif IsNull([INTEGRACHAVE_TRATADA]) THEN [IDPARTIDA] &#xA;ELSE [INTEGRACHAVE_TRATADA] ENDIF" field="INTEGRACHAVE_TRATADA" size="8000" type="V_WString" enabled="true" />
+                <FormulaField expression="[CODCOLIGADA]+&quot;-&quot;+[INTEGRACHAVE_TRATADA]" field="Concat Coligada_Chave" size="1073741823" type="V_WString" enabled="true" />
+              </FormulaFields>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <AnnotationText>Cria chave unica</AnnotationText>
+              <DefaultAnnotationText>INTEGRACHAVE_TRATADA = IF [INTEGRACHAVE_TRATADA] ="" THEN [IDPARTIDA] 
+elseif Is...</DefaultAnnotationText>
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxFormula" />
+        </Node>
+        <Node ToolID="3">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.Sort.Sort">
+            <Position x="462" y="210" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <SortInfo locale="1046">
+                <Field field="Concat Coligada_Chave" order="Ascending" />
+                <Field field="IDPARTIDA" order="Ascending" />
+                <Field field="VALOR REALIZADO" order="Descending" />
+              </SortInfo>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <AnnotationText>Ordena tabela</AnnotationText>
+              <DefaultAnnotationText>Concat Coligada_Chave - Crescente
+IDPARTIDA - Crescente
+VALOR REALIZADO - Decrescente</DefaultAnnotationText>
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSort" />
+        </Node>
+        <Node ToolID="4">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.MultiRowFormula.MultiRowFormula">
+            <Position x="558" y="210" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <UpdateField value="False" />
+              <UpdateField_Name>CHAVE</UpdateField_Name>
+              <CreateField_Name>ID_Cont</CreateField_Name>
+              <CreateField_Type>Int64</CreateField_Type>
+              <CreateField_Size>8</CreateField_Size>
+              <OtherRows>Empty</OtherRows>
+              <NumRows value="1" />
+              <Expression>IF [Row-1:Concat Coligada_Chave] = [Concat Coligada_Chave] THEN 
+    [Row-1:ID_Cont] + 1
+ELSE 
+    1
+ENDIF</Expression>
+              <GroupByFields />
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <AnnotationText>Criar contador de ID</AnnotationText>
+              <DefaultAnnotationText>IF [Row-1:Concat Coligada_Chave] = [Concat Coligada_Chave] TH...</DefaultAnnotationText>
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxMultiRowFormula" />
+        </Node>
+        <Node ToolID="5">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.Formula.Formula">
+            <Position x="678" y="210" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <FormulaFields>
+                <FormulaField expression="[Concat Coligada_Chave] + &quot;-&quot; + ToString([ID_Cont])" field="Ação" size="1073741823" type="V_WString" enabled="true" />
+              </FormulaFields>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <AnnotationText>Ajusta chave unica + contador</AnnotationText>
+              <DefaultAnnotationText><![CDATA[Ação = [Concat Coligada_Chave] + "-" + ToString([ID_Cont])
+]]></DefaultAnnotationText>
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxFormula" />
+        </Node>
+        <Node ToolID="6">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.AlteryxSelect.AlteryxSelect">
+            <Position x="269" y="210" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <OrderChanged value="False" />
+              <CommaDecimal value="False" />
+              <SelectFields>
+                <SelectField field="Valor Banco" selected="True" rename="VALOR REALIZADO" type="Double" size="8" />
+                <SelectField field="Tag_Orc" selected="True" rename="TagOrc" />
+                <SelectField field="*Unknown" selected="True" />
+              </SelectFields>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxSelect" />
+        </Node>
+        <Node ToolID="7">
+          <GuiSettings Plugin="AlteryxBasePluginsGui.BrowseV2.BrowseV2">
+            <Position x="750" y="294" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <TempFile>
+              </TempFile>
+              <TempFileDataProfiling />
+              <Layout>
+                <ViewMode>Single</ViewMode>
+                <ViewSize value="100" />
+                <View1>
+                  <DefaultTab>Perfil</DefaultTab>
+                  <Hints>
+                    <Table />
+                  </Hints>
+                </View1>
+                <View2 />
+              </Layout>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxBasePluginsEngine.dll" EngineDllEntryPoint="AlteryxBrowseV2" />
+        </Node>
+        <Node ToolID="8">
+          <GuiSettings Plugin="AlteryxSpatialPluginsGui.Summarize.Summarize">
+            <Position x="786" y="210" />
+          </GuiSettings>
+          <Properties>
+            <Configuration>
+              <SummarizeFields>
+                <SummarizeField field="Ação" action="GroupBy" rename="Ação" />
+                <SummarizeField field="VALOR REALIZADO" action="Sum" rename="Valor banco" />
+              </SummarizeFields>
+            </Configuration>
+            <Annotation DisplayMode="0">
+              <Name />
+              <DefaultAnnotationText />
+              <Left value="False" />
+            </Annotation>
+          </Properties>
+          <EngineSettings EngineDll="AlteryxSpatialPluginsEngine.dll" EngineDllEntryPoint="AlteryxSummarize" />
+        </Node>
+      </ChildNodes>
+    </Node>
+  </Nodes>
+  <Connections>
+    <Connection>
+      <Origin ToolID="1" Connection="Output" />
+      <Destination ToolID="6" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="2" Connection="Output" />
+      <Destination ToolID="3" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="3" Connection="Output" />
+      <Destination ToolID="4" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="4" Connection="Output" />
+      <Destination ToolID="5" Connection="Input" />
+    </Connection>
+    <Connection Wireless="True">
+      <Origin ToolID="5" Connection="Output" />
+      <Destination ToolID="7" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="5" Connection="Output" />
+      <Destination ToolID="8" Connection="Input" />
+    </Connection>
+    <Connection>
+      <Origin ToolID="6" Connection="Output" />
+      <Destination ToolID="2" Connection="Input" />
+    </Connection>
+  </Connections>
+  <Properties>
+    <Memory default="True" />
+    <GlobalRecordLimit value="0" />
+    <TempFiles default="True" />
+    <Annotation on="True" includeToolName="False" />
+    <ConvErrorLimit value="10" />
+    <ConvErrorLimit_Stop value="False" />
+    <CancelOnError value="False" />
+    <DisableBrowse value="False" />
+    <EnablePerformanceProfiling value="False" />
+    <RunWithE2 value="True" />
+    <DefaultTZ value="Local" />
+    <PredictiveToolsCodePage value="1252" />
+    <DisableAllOutput value="False" />
+    <ShowAllMacroMessages value="False" />
+    <ShowConnectionStatusIsOn value="True" />
+    <ShowConnectionStatusOnlyWhenRunning value="True" />
+    <ZoomLevel value="0" />
+    <LayoutType>Horizontal</LayoutType>
+    <IsTemplate value="False" />
+    <MetaInfo>
+      <NameIsFileName value="True" />
+      <Name>Criar chave primaria</Name>
+      <Description />
+      <RootToolName />
+      <ToolVersion />
+      <ToolInDb value="False" />
+      <CategoryName />
+      <SearchTags />
+      <Author />
+      <Company />
+      <Copyright />
+      <DescriptionLink actual="" displayed="" />
+      <Example>
+        <Description />
+        <File />
+      </Example>
+      <WorkflowId value="f7326743-d3c6-4e60-b9aa-be69ce0072c2" />
+      <Telemetry>
+        <PreviousWorkflowId value="4ddb2750-4e59-401d-9e05-e6836890f34a" />
+        <OriginWorkflowId value="4ddb2750-4e59-401d-9e05-e6836890f34a" />
+      </Telemetry>
+      <PlatformWorkflowId value="" />
+    </MetaInfo>
+    <Events>
+      <Enabled value="True" />
+    </Events>
+  </Properties>
+</AlteryxDocument>

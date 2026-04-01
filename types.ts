@@ -84,7 +84,7 @@ export interface IAInsight {
   category: 'Driver Positivo' | 'Driver Negativo' | 'Ação Recomendada';
 }
 
-export type ViewType = 'dashboard' | 'dre' | 'forecasting' | 'manual_changes' | 'movements' | 'admin' | 'analysis' | 'soma_tags' | 'executive_dashboard' | 'holding_dashboard' | 'agent_team' | 'justificativas' | 'inbox';
+export type ViewType = 'dashboard' | 'dre' | 'forecasting' | 'manual_changes' | 'movements' | 'admin' | 'analysis' | 'soma_tags' | 'executive_dashboard' | 'holding_dashboard' | 'agent_team' | 'justificativas' | 'inbox' | 'ppt_teste';
 
 // Chart Types for AI-Generated Visualizations
 export type ChartType = 'bar' | 'line' | 'waterfall' | 'composed' | 'heatmap';

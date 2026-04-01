@@ -1,0 +1,158 @@
+================================================================
+GUIA RÁPIDO - SINCRONIZAÇÃO FABRIC → SUPABASE
+================================================================
+
+Data: 02/02/2026
+Status: ✅ OPERACIONAL
+
+================================================================
+INFORMAÇÕES ESSENCIAIS
+================================================================
+
+AZURE FUNCTION:
+Nome: fabric-sync-dre
+URL: https://fabric-sync-dre-crezcwh9bzaveya6.brazilsouth-01.azurewebsites.net
+Resource Group: rg-fabric-sync
+Região: Brazil South
+
+EXECUÇÃO AUTOMÁTICA:
+Horário: 08:00 AM (Horário de Brasília)
+Frequência: Diária
+Próxima execução: 03/02/2026 08:00
+
+DADOS:
+Origem: Microsoft Fabric (DRE)
+Destino: Supabase (dre_fabric)
+Volume: ~107,112 registros
+
+================================================================
+CREDENCIAIS IMPORTANTES
+================================================================
+
+SERVICE PRINCIPAL:
+Nome: fabric-supabase-sync
+Client ID: ae63bd51-263f-4bb7-aabd-c04c2d44d384
+Tenant ID: fc75490c-658e-48dc-ad30-401f80517efa
+Client Secret: OgU8Q~rVCDHsFjbUYCI7N5jlgC2bWZx-RDbTcdh1
+
+FABRIC:
+Server: brexl7eomxoerljqiapyaul67i-tscdkva6temu3gn4zp67tlafl4.datawarehouse.fabric.microsoft.com
+Database: DRE
+
+SUPABASE:
+URL: https://vafmufhlompwsdrlhkfz.supabase.co
+Tabela: dre_fabric
+
+================================================================
+COMO MONITORAR
+================================================================
+
+1. LOGS EM TEMPO REAL:
+   Azure Portal → fabric-sync-dre → Log stream
+
+2. HISTÓRICO DE EXECUÇÕES:
+   Azure Portal → fabric-sync-dre → Functions → FabricSyncTimer → Monitor
+
+3. VERIFICAR DADOS NO SUPABASE:
+   https://vafmufhlompwsdrlhkfz.supabase.co → Table Editor → dre_fabric
+
+================================================================
+COMANDOS ÚTEIS
+================================================================
+
+FAZER LOGIN NO AZURE:
+az login
+
+VERIFICAR STATUS DA FUNCTION:
+az functionapp show --resource-group rg-fabric-sync --name fabric-sync-dre --query "state" -o tsv
+
+LISTAR EXECUÇÕES RECENTES:
+Azure Portal → fabric-sync-dre → Functions → FabricSyncTimer → Monitor
+
+INVOCAR MANUALMENTE:
+Azure Portal → fabric-sync-dre → Functions → FabricSyncTimer → Code + Test → Test/Run
+
+FAZER NOVO DEPLOY:
+cd C:\Users\edmilson.serafim\azure_function
+# Criar ZIP
+python -c "import zipfile, os; z = zipfile.ZipFile('../deploy.zip', 'w'); ..."
+# Deploy
+az functionapp deployment source config-zip --resource-group rg-fabric-sync --name fabric-sync-dre --src ../deploy.zip
+
+================================================================
+PROBLEMAS COMUNS
+================================================================
+
+1. FUNÇÃO NÃO EXECUTOU:
+   - Verificar Monitor no Azure Portal
+   - Verificar se horário está correto (08:00 BRT = 11:00 UTC)
+   - Ver logs de erro no Log stream
+
+2. DADOS NÃO ATUALIZARAM:
+   - Verificar se função executou com sucesso
+   - Verificar variáveis de ambiente (Configuration)
+   - Testar conexão com Supabase
+
+3. ERRO DE AUTENTICAÇÃO:
+   - Verificar se Client Secret não expirou
+   - Verificar permissões do Service Principal no Fabric
+   - Renovar credenciais se necessário
+
+================================================================
+ARQUIVOS IMPORTANTES
+================================================================
+
+CÓDIGO DA FUNÇÃO:
+C:\Users\edmilson.serafim\azure_function\FabricSyncTimer\__init__.py
+
+CONFIGURAÇÃO DO TIMER:
+C:\Users\edmilson.serafim\azure_function\FabricSyncTimer\function.json
+
+DEPENDÊNCIAS:
+C:\Users\edmilson.serafim\azure_function\requirements.txt
+
+TESTE LOCAL:
+C:\Users\edmilson.serafim\teste_service_principal.py
+
+DOCUMENTAÇÃO COMPLETA:
+C:\Users\edmilson.serafim\OneDrive - Raiz Educação S A\Área de Trabalho\Ap proposta\DOCUMENTACAO_SYNC_FABRIC_SUPABASE.md
+
+================================================================
+CONTATOS
+================================================================
+
+Desenvolvedor: Edmilson Serafim
+Email: edmilson.serafim@raizeducacao.info
+
+TI Raiz Educação: [Adicionar contato]
+
+================================================================
+CUSTOS MENSAIS
+================================================================
+
+Azure Function (Consumption): R$ 0-10/mês
+Supabase: Conforme plano contratado
+Total Estimado: R$ 0-10/mês (Function dentro do free tier)
+
+================================================================
+PRÓXIMAS EXECUÇÕES
+================================================================
+
+03/02/2026 08:00 - Primeira execução automática
+04/02/2026 08:00 - Segunda execução
+05/02/2026 08:00 - Terceira execução
+... (diariamente)
+
+================================================================
+CHECKLIST DIÁRIO (OPCIONAL)
+================================================================
+
+[ ] Verificar se função executou (Monitor)
+[ ] Conferir número de registros no Supabase (~107k)
+[ ] Verificar se há erros nos logs
+[ ] Validar dados mais recentes (ANOMES atual)
+
+================================================================
+
+Última atualização: 02/02/2026
+Versão: 1.0

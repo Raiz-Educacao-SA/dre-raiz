@@ -84,7 +84,9 @@ BEGIN
     v_sql := v_sql || format(' AND date >= %L', p_month_from || '-01');
   END IF;
   IF p_month_to IS NOT NULL THEN
-    v_sql := v_sql || format(' AND date <= %L', p_month_to || '-31');
+    v_sql := v_sql || format(' AND date <= %L',
+      (date_trunc('month', (p_month_to || '-01')::date) + interval '1 month - 1 day')::date::text
+    );
   END IF;
 
   -- Filtros de data de lançamento (created_at)

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "proxy": "node proxy-server.cjs",
-    "backend": "node server.cjs",
+    "backend": "node scripts/server.cjs",
     "dev:full": "npm run backend & npm run dev",
     "build": "vite build",
     "preview": "vite preview",

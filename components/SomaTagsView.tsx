@@ -955,6 +955,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
       'Real':'Real','Orçado':'Orçado','A1':'A-1',
       'DeltaAbsOrcado':'Δ Orç','DeltaPercOrcado':'Δ% Orç',
       'DeltaAbsA1':'Δ A-1','DeltaPercA1':'Δ% A-1',
+      'MgReal':'Mg Real','MgOrcado':'Mg Orç','MgA1':'Mg A-1',
     };
 
     type CellDef = { v: any; bg: string; bold?: boolean; color?: string; align?: string; fmt?: string };
@@ -996,6 +997,10 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         ? { v: (real === 0) ? 'N/D' : '—', bg, bold, color: FNT.muted, align: 'center' }
         : { v: delta / Math.abs(base), bg, bold, color: delta < 0 ? FNT.neg : delta > 0 ? FNT.pos : FNT.neutral, align: 'center', fmt: '0.0%' };
     };
+    const mgD = (value: number, receita: number, bg: string, bold = false): CellDef =>
+      receita === 0
+        ? { v: '—', bg, bold, color: FNT.muted, align: 'center' }
+        : { v: value / Math.abs(receita), bg, bold, color: FNT.neutral, align: 'center', fmt: '0.0%' };
 
     const vDefs = (real: number, orcado: number, a1: number, bg: string, bold = false, whiteVals = false): CellDef[] => {
       const vc = whiteVals ? FNT.white : FNT.neutral;
@@ -1008,6 +1013,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           case 'DeltaPercOrcado': return pD(real, orcado, bg, bold);
           case 'DeltaAbsA1':      return dD(real - a1, a1, bg, bold);
           case 'DeltaPercA1':     return pD(real, a1, bg, bold);
+          case 'MgReal':          return mgD(real,   receitaLiquida.real,   bg, bold);
+          case 'MgOrcado':        return mgD(orcado, receitaLiquida.orcado, bg, bold);
+          case 'MgA1':            return mgD(a1,     receitaLiquida.a1,     bg, bold);
           default: return { v: '', bg };
         }
       });
@@ -1057,7 +1065,20 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     const sumMD = (byMonth: Record<string, MD>): MD =>
       Object.values(byMonth).reduce((a, m) => ({ real: a.real + m.real, orcado: a.orcado + m.orcado, a1: a.a1 + m.a1 }), { real: 0, orcado: 0, a1: 0 });
 
-    const vMDefs = (md: MD, bg: string, bold = false, whiteVals = false): CellDef[] => {
+    // Receita Líquida por mês (grupo 01.) para Mg% nas visões mensais
+    const monthlyRL: Record<string, MD> = {};
+    displayedMonthlyGroups
+      .filter(g => g.tag0.startsWith('01.'))
+      .forEach(g => {
+        for (const [month, md] of Object.entries(g.byMonth)) {
+          if (!monthlyRL[month]) monthlyRL[month] = { real: 0, orcado: 0, a1: 0 };
+          monthlyRL[month].real   += (md as MD).real;
+          monthlyRL[month].orcado += (md as MD).orcado;
+          monthlyRL[month].a1     += (md as MD).a1;
+        }
+      });
+
+    const vMDefs = (md: MD, bg: string, bold = false, whiteVals = false, rl?: MD): CellDef[] => {
       const vc = whiteVals ? FNT.white : FNT.neutral;
       return activeElements.map(el => {
         switch (el) {
@@ -1068,6 +1089,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
           case 'DeltaPercOrcado': return pD(md.real, md.orcado, bg, bold);
           case 'DeltaAbsA1':      return dD(md.real - md.a1, md.a1, bg, bold);
           case 'DeltaPercA1':     return pD(md.real, md.a1, bg, bold);
+          case 'MgReal':          return mgD(md.real,   rl?.real   ?? 0, bg, bold);
+          case 'MgOrcado':        return mgD(md.orcado, rl?.orcado ?? 0, bg, bold);
+          case 'MgA1':            return mgD(md.a1,     rl?.a1     ?? 0, bg, bold);
           default: return { v: '', bg };
         }
       });
@@ -1081,6 +1105,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
         activeElements.forEach(el => {
           monthsToShow.forEach(m => {
             const md = byMonth[m] || { real: 0, orcado: 0, a1: 0 };
+            const rl = monthlyRL[m] || receitaLiquida;
             switch (el) {
               case 'Real':            defs.push(nD(md.real,   bg, bold, vc)); break;
               case 'Orçado':          defs.push(nD(md.orcado, bg, bold, vc)); break;
@@ -1089,6 +1114,9 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
               case 'DeltaPercOrcado': defs.push(pD(md.real, md.orcado, bg, bold)); break;
               case 'DeltaAbsA1':      defs.push(dD(md.real - md.a1, md.a1, bg, bold)); break;
               case 'DeltaPercA1':     defs.push(pD(md.real, md.a1, bg, bold)); break;
+              case 'MgReal':          defs.push(mgD(md.real,   rl.real,   bg, bold)); break;
+              case 'MgOrcado':        defs.push(mgD(md.orcado, rl.orcado, bg, bold)); break;
+              case 'MgA1':            defs.push(mgD(md.a1,     rl.a1,     bg, bold)); break;
               default: defs.push({ v: '', bg });
             }
           });
@@ -1100,12 +1128,15 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
             case 'DeltaPercOrcado': defs.push(pD(tot.real, tot.orcado, bg, bold)); break;
             case 'DeltaAbsA1':      defs.push(dD(tot.real - tot.a1, tot.a1, bg, bold)); break;
             case 'DeltaPercA1':     defs.push(pD(tot.real, tot.a1, bg, bold)); break;
+            case 'MgReal':          defs.push(mgD(tot.real,   receitaLiquida.real,   bg, bold)); break;
+            case 'MgOrcado':        defs.push(mgD(tot.orcado, receitaLiquida.orcado, bg, bold)); break;
+            case 'MgA1':            defs.push(mgD(tot.a1,     receitaLiquida.a1,     bg, bold)); break;
             default: defs.push({ v: '', bg });
           }
         });
       } else {
-        monthsToShow.forEach(m => defs.push(...vMDefs(byMonth[m] || { real: 0, orcado: 0, a1: 0 }, bg, bold, whiteVals)));
-        defs.push(...vMDefs(tot, bg, bold, whiteVals));
+        monthsToShow.forEach(m => defs.push(...vMDefs(byMonth[m] || { real: 0, orcado: 0, a1: 0 }, bg, bold, whiteVals, monthlyRL[m] || receitaLiquida)));
+        defs.push(...vMDefs(tot, bg, bold, whiteVals, receitaLiquida));
       }
       return defs;
     };
@@ -1159,7 +1190,8 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
                     : viewMode === 'cenario'     ? nEl * (nMth + 1)
                     : nMth * nEl + nEl;
     for (let i = 3; i <= 2 + nDataCols; i++) {
-      ws.getColumn(i).width = viewMode !== 'consolidado' ? 11 : (activeElements[i - 3]?.includes('Perc') ? 9 : 16);
+      const elKey = activeElements[i - 3] ?? '';
+      ws.getColumn(i).width = viewMode !== 'consolidado' ? 11 : (elKey.includes('Perc') || elKey.startsWith('Mg') ? 9 : 16);
     }
 
     // Freeze panes
@@ -1177,7 +1209,7 @@ const SomaTagsView: React.FC<SomaTagsViewProps> = ({ onRegisterActions, onLoadin
     expandedTag01s, expandedDrillRows, drillDimensions, dimensionCache,
     hasTagFilter, margemData, ebitdaData, monthlyMargemData, monthlyEbitdaData,
     monthlyTotals, totals, lastIdx03, lastIdx04, lastIdx03M, lastIdx04M,
-    year, selectedMonths, monthsToShow, sortConfig,
+    year, selectedMonths, monthsToShow, sortConfig, receitaLiquida,
   ]);
 
   // Refresh forçado: invalida cache antes de buscar

@@ -1,0 +1,32 @@
+================================================================
+CONFIGURAÇÃO ALTERNATIVA - BATCH 250
+================================================================
+
+Se o timeout de 180s não funcionar devido a limitações do Supabase,
+use batch menor para garantir que cada batch termine em <60s:
+
+LINHA 31 do Sincronizacao_manual_banco.py:
+------------------------------------------
+ANTES: BATCH_SIZE = 500
+DEPOIS: BATCH_SIZE = 250
+
+ou
+
+DEPOIS: BATCH_SIZE = 100  (mais lento, mas praticamente 100% sucesso)
+
+
+EXECUÇÃO:
+---------
+Duplo clique: EXECUTAR_SYNC_MANUAL.bat
+
+TEMPO ESTIMADO:
+---------------
+BATCH 250: ~20-25 minutos
+BATCH 100: ~40-50 minutos
+
+TAXA DE SUCESSO ESPERADA:
+--------------------------
+BATCH 250: ~99.5-99.9%
+BATCH 100: ~99.9-100%
+
+================================================================

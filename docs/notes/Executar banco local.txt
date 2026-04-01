@@ -1,0 +1,2 @@
+ cd "C:\Users\edmilson.serafim\OneDrive - Raiz Educação S A\Área de Trabalho\Ap proposta"
+  python sync_via_function.py

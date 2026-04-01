@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Opções de Ícone — DRE Raiz 2.0</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f1f5f9; font-family: 'Segoe UI', sans-serif; padding: 40px 24px; }
+    h1 { text-align: center; color: #1e293b; font-size: 22px; margin-bottom: 6px; }
+    p.sub { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 36px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 24px; max-width: 1100px; margin: 0 auto; }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 28px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.07);
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all .2s;
+    }
+    .card:hover { border-color: #1B75BB; box-shadow: 0 6px 24px rgba(27,117,187,.18); transform: translateY(-2px); }
+    .card.selected { border-color: #1B75BB; background: #eff6ff; }
+
+    .num { font-size: 11px; font-weight: 800; color: #94a3b8; letter-spacing: 2px; text-transform: uppercase; }
+    .name { font-size: 14px; font-weight: 700; color: #1e293b; }
+    .desc { font-size: 11px; color: #64748b; text-align: center; line-height: 1.5; }
+
+    /* Tamanhos de preview */
+    .previews { display: flex; align-items: flex-end; gap: 12px; }
+    .preview-wrap { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .preview-wrap span { font-size: 9px; color: #94a3b8; }
+
+    svg { display: block; }
+
+    .btn-escolher {
+      margin-top: 4px;
+      padding: 6px 18px;
+      border-radius: 8px;
+      border: none;
+      background: #1B75BB;
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-escolher:hover { background: #155fa0; }
+    .card.selected .btn-escolher { background: #16a34a; }
+
+    #resultado {
+      max-width: 1100px;
+      margin: 32px auto 0;
+      padding: 20px 24px;
+      background: #1B75BB;
+      color: white;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      text-align: center;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Escolha o ícone do DRE Raiz 2.0</h1>
+<p class="sub">Clique em uma opção para selecionar. O ícone aparecerá no navegador (favicon) e na tela inicial do celular.</p>
+
+<div class="grid" id="grid"></div>
+<div id="resultado"></div>
+
+<script>
+const opcoes = [
+  {
+    num: 1, name: '√ Raiz', desc: 'Símbolo matemático de raiz quadrada. Joga com o nome da empresa.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="7" fill="#0f172a"/>
+      <text x="4" y="24" font-family="Georgia,serif" font-size="22" fill="white" font-weight="bold">√</text>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#0f172a"/>
+      <text x="8" y="48" font-family="Georgia,serif" font-size="44" fill="white" font-weight="bold">√</text>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#0f172a"/>
+      <text x="14" y="98" font-family="Georgia,serif" font-size="90" fill="white" font-weight="bold">√</text>
+    </svg>`
+  },
+  {
+    num: 2, name: 'R²', desc: 'Raiz 2.0 representado como R ao quadrado. Gradiente azul → verde.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g2a" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1B75BB"/><stop offset="100%" stop-color="#16a34a"/></linearGradient></defs>
+      <rect width="32" height="32" rx="7" fill="url(#g2a)"/>
+      <text x="4" y="23" font-family="Arial Black,sans-serif" font-size="18" fill="white" font-weight="900">R</text>
+      <text x="21" y="14" font-family="Arial,sans-serif" font-size="9" fill="white" font-weight="700">2</text>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g2b" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1B75BB"/><stop offset="100%" stop-color="#16a34a"/></linearGradient></defs>
+      <rect width="64" height="64" rx="14" fill="url(#g2b)"/>
+      <text x="7" y="46" font-family="Arial Black,sans-serif" font-size="36" fill="white" font-weight="900">R</text>
+      <text x="42" y="26" font-family="Arial,sans-serif" font-size="18" fill="white" font-weight="700">2</text>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g2c" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#1B75BB"/><stop offset="100%" stop-color="#16a34a"/></linearGradient></defs>
+      <rect width="128" height="128" rx="28" fill="url(#g2c)"/>
+      <text x="12" y="94" font-family="Arial Black,sans-serif" font-size="74" fill="white" font-weight="900">R</text>
+      <text x="84" y="50" font-family="Arial,sans-serif" font-size="36" fill="white" font-weight="700">2</text>
+    </svg>`
+  },
+  {
+    num: 3, name: 'Barras DRE', desc: '3 barras ascendentes como um gráfico de DRE. Fundo escuro.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="7" fill="#0f172a"/>
+      <rect x="4" y="18" width="6" height="10" rx="1.5" fill="#60a5fa"/>
+      <rect x="13" y="12" width="6" height="16" rx="1.5" fill="#34d399"/>
+      <rect x="22" y="5" width="6" height="23" rx="1.5" fill="#1B75BB"/>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#0f172a"/>
+      <rect x="8" y="36" width="12" height="20" rx="3" fill="#60a5fa"/>
+      <rect x="26" y="24" width="12" height="32" rx="3" fill="#34d399"/>
+      <rect x="44" y="10" width="12" height="46" rx="3" fill="#1B75BB"/>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#0f172a"/>
+      <rect x="14" y="72" width="26" height="42" rx="6" fill="#60a5fa"/>
+      <rect x="51" y="48" width="26" height="66" rx="6" fill="#34d399"/>
+      <rect x="88" y="18" width="26" height="96" rx="6" fill="#1B75BB"/>
+    </svg>`
+  },
+  {
+    num: 4, name: 'Árvore Raiz', desc: 'Silhueta de raiz de árvore — Raiz no nome, raiz no símbolo.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="7" fill="#fff" stroke="#e2e8f0" stroke-width="1"/>
+      <line x1="16" y1="4" x2="16" y2="18" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="16" y1="18" x2="7" y2="28" stroke="#16a34a" stroke-width="2" stroke-linecap="round"/>
+      <line x1="16" y1="18" x2="25" y2="28" stroke="#16a34a" stroke-width="2" stroke-linecap="round"/>
+      <line x1="16" y1="22" x2="10" y2="26" stroke="#16a34a" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="16" y1="22" x2="22" y2="26" stroke="#16a34a" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="11" y1="10" x2="16" y2="14" stroke="#16a34a" stroke-width="1.5" stroke-linecap="round"/>
+      <line x1="21" y1="10" x2="16" y2="14" stroke="#16a34a" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+      <line x1="32" y1="6" x2="32" y2="34" stroke="#16a34a" stroke-width="4" stroke-linecap="round"/>
+      <line x1="32" y1="34" x2="14" y2="56" stroke="#16a34a" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="32" y1="34" x2="50" y2="56" stroke="#16a34a" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="32" y1="44" x2="20" y2="54" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="32" y1="44" x2="44" y2="54" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="20" y1="18" x2="32" y2="26" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="44" y1="18" x2="32" y2="26" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="2"/>
+      <line x1="64" y1="10" x2="64" y2="68" stroke="#16a34a" stroke-width="8" stroke-linecap="round"/>
+      <line x1="64" y1="68" x2="28" y2="112" stroke="#16a34a" stroke-width="7" stroke-linecap="round"/>
+      <line x1="64" y1="68" x2="100" y2="112" stroke="#16a34a" stroke-width="7" stroke-linecap="round"/>
+      <line x1="64" y1="88" x2="40" y2="108" stroke="#16a34a" stroke-width="5" stroke-linecap="round"/>
+      <line x1="64" y1="88" x2="88" y2="108" stroke="#16a34a" stroke-width="5" stroke-linecap="round"/>
+      <line x1="38" y1="34" x2="64" y2="52" stroke="#16a34a" stroke-width="5" stroke-linecap="round"/>
+      <line x1="90" y1="34" x2="64" y2="52" stroke="#16a34a" stroke-width="5" stroke-linecap="round"/>
+    </svg>`
+  },
+  {
+    num: 5, name: 'DRE Bold', desc: 'Letras DRE em tipografia forte num bloco azul arredondado.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="7" fill="#1B75BB"/>
+      <text x="2" y="23" font-family="Arial Black,sans-serif" font-size="13" fill="white" font-weight="900" letter-spacing="-0.5">DRE</text>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#1B75BB"/>
+      <text x="4" y="46" font-family="Arial Black,sans-serif" font-size="26" fill="white" font-weight="900" letter-spacing="-1">DRE</text>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#1B75BB"/>
+      <text x="8" y="90" font-family="Arial Black,sans-serif" font-size="52" fill="white" font-weight="900" letter-spacing="-2">DRE</text>
+    </svg>`
+  },
+  {
+    num: 6, name: 'Hexágono R', desc: 'Letra R dentro de um hexágono. Visual corporativo e moderno.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="16,2 28,9 28,23 16,30 4,23 4,9" fill="#1e3a5f"/>
+      <text x="9" y="23" font-family="Arial Black,sans-serif" font-size="17" fill="white" font-weight="900">R</text>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="32,3 58,18 58,46 32,61 6,46 6,18" fill="#1e3a5f"/>
+      <text x="18" y="46" font-family="Arial Black,sans-serif" font-size="34" fill="white" font-weight="900">R</text>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="64,6 116,35 116,93 64,122 12,93 12,35" fill="#1e3a5f"/>
+      <text x="34" y="93" font-family="Arial Black,sans-serif" font-size="70" fill="white" font-weight="900">R</text>
+    </svg>`
+  },
+  {
+    num: 7, name: 'Seta Circular', desc: 'Seta ascendente dentro de círculo. Representa crescimento.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g7a" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#16a34a"/><stop offset="100%" stop-color="#4ade80"/></linearGradient></defs>
+      <circle cx="16" cy="16" r="14" fill="url(#g7a)"/>
+      <polyline points="8,20 16,10 24,20" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="16" y1="10" x2="16" y2="24" stroke="white" stroke-width="3" stroke-linecap="round"/>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g7b" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#16a34a"/><stop offset="100%" stop-color="#4ade80"/></linearGradient></defs>
+      <circle cx="32" cy="32" r="29" fill="url(#g7b)"/>
+      <polyline points="16,40 32,20 48,40" fill="none" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="32" y1="20" x2="32" y2="48" stroke="white" stroke-width="6" stroke-linecap="round"/>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="g7c" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#16a34a"/><stop offset="100%" stop-color="#4ade80"/></linearGradient></defs>
+      <circle cx="64" cy="64" r="58" fill="url(#g7c)"/>
+      <polyline points="30,80 64,38 98,80" fill="none" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="64" y1="38" x2="64" y2="96" stroke="white" stroke-width="12" stroke-linecap="round"/>
+    </svg>`
+  },
+  {
+    num: 8, name: 'Cifrão R$', desc: 'Símbolo R$ em design clean. Fundo escuro, destaque dourado.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="7" fill="#1c1917"/>
+      <text x="2" y="23" font-family="Arial Black,sans-serif" font-size="14" fill="#f59e0b" font-weight="900">R$</text>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#1c1917"/>
+      <text x="3" y="46" font-family="Arial Black,sans-serif" font-size="28" fill="#f59e0b" font-weight="900">R$</text>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#1c1917"/>
+      <text x="6" y="92" font-family="Arial Black,sans-serif" font-size="56" fill="#f59e0b" font-weight="900">R$</text>
+    </svg>`
+  },
+  {
+    num: 9, name: 'RZ Shield', desc: 'Iniciais RZ em forma de escudo. Corporativo e institucional.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <path d="M16 2 L28 7 L28 18 Q28 26 16 30 Q4 26 4 18 L4 7 Z" fill="#1B75BB"/>
+      <text x="7" y="22" font-family="Arial Black,sans-serif" font-size="11" fill="white" font-weight="900">RZ</text>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <path d="M32 4 L56 14 L56 36 Q56 52 32 60 Q8 52 8 36 L8 14 Z" fill="#1B75BB"/>
+      <text x="14" y="44" font-family="Arial Black,sans-serif" font-size="22" fill="white" font-weight="900">RZ</text>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <path d="M64 8 L112 28 L112 72 Q112 104 64 120 Q16 104 16 72 L16 28 Z" fill="#1B75BB"/>
+      <text x="26" y="88" font-family="Arial Black,sans-serif" font-size="44" fill="white" font-weight="900">RZ</text>
+    </svg>`
+  },
+  {
+    num: 10, name: 'Linha Tendência', desc: 'Linha de tendência ascendente — análise financeira em foco.',
+    svg32: `<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+      <rect width="32" height="32" rx="7" fill="#0f172a"/>
+      <polyline points="4,24 12,16 20,18 28,6" fill="none" stroke="#34d399" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="28" cy="6" r="2.5" fill="#34d399"/>
+    </svg>`,
+    svg64: `<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#0f172a"/>
+      <polyline points="8,48 24,32 40,36 56,12" fill="none" stroke="#34d399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="56" cy="12" r="5" fill="#34d399"/>
+    </svg>`,
+    svg128: `<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+      <rect width="128" height="128" rx="28" fill="#0f172a"/>
+      <polyline points="14,96 42,64 80,72 114,22" fill="none" stroke="#34d399" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="114" cy="22" r="10" fill="#34d399"/>
+    </svg>`
+  }
+];
+
+const grid = document.getElementById('grid');
+let selecionado = null;
+
+opcoes.forEach(op => {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.id = `card-${op.num}`;
+  card.innerHTML = `
+    <span class="num">Opção ${op.num}</span>
+    <div class="previews">
+      <div class="preview-wrap">${op.svg32}<span>favicon</span></div>
+      <div class="preview-wrap">${op.svg64}<span>64px</span></div>
+      <div class="preview-wrap">${op.svg128}<span>128px</span></div>
+    </div>
+    <span class="name">${op.name}</span>
+    <span class="desc">${op.desc}</span>
+    <button class="btn-escolher" onclick="escolher(${op.num}, event)">Escolher esta</button>
+  `;
+  grid.appendChild(card);
+});
+
+function escolher(num, e) {
+  e.stopPropagation();
+  if (selecionado) document.getElementById(`card-${selecionado}`)?.classList.remove('selected');
+  selecionado = num;
+  document.getElementById(`card-${num}`).classList.add('selected');
+  const op = opcoes.find(o => o.num === num);
+  const res = document.getElementById('resultado');
+  res.style.display = 'block';
+  res.innerHTML = `✅ Você escolheu a <strong>Opção ${num} — ${op.name}</strong>. Me diga aqui e implemento como favicon do app!`;
+  res.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+</script>
+</body>
+</html>

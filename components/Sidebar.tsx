@@ -13,6 +13,7 @@ import {
   FileText,
   TrendingUp,
   Inbox,
+  Presentation,
 } from 'lucide-react';
 import { ViewType } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -41,6 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setCurrentView, selected
     { id: 'movements',     label: 'Lançamentos',         icon: ReceiptText },
     { id: 'manual_changes',label: 'Aprovações',          icon: History, badge: pendingCount },
     ...(!hasFilialRestriction ? [{ id: 'analysis', label: 'Análise Financeira', icon: FileText }] : []),
+    { id: 'ppt_teste', label: 'PPT Teste', icon: Presentation },
     { id: 'inbox',          label: 'Solicitações',        icon: Inbox, badge: pendingInquiriesCount, badgeGreen: answeredInquiriesCount },
     ...(isAdmin ? [
       { id: 'dashboard',     label: 'Dashboard',          icon: LayoutDashboard },

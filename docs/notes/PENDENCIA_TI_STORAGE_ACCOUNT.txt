@@ -1,0 +1,139 @@
+================================================================
+PENDÊNCIA PARA O TI - STORAGE ACCOUNT PARA AZURE FUNCTION
+================================================================
+
+Data: 03/02/2026
+Prioridade: ALTA
+Impacto: Timer automático não funciona sem isso
+
+================================================================
+PROBLEMA
+================================================================
+
+A Azure Function "fabric-sync-dre" foi criada, mas o Timer Trigger
+não está funcionando automaticamente porque falta a configuração
+AzureWebJobsStorage, que requer um Storage Account.
+
+SEM ISSO: A função só roda manualmente
+COM ISSO: A função rodará automaticamente todos os dias às 08:00
+
+================================================================
+SOLUÇÃO - PASSO A PASSO PARA O TI
+================================================================
+
+OPÇÃO 1: VIA AZURE PORTAL (MAIS FÁCIL)
+---------------------------------------
+
+1. Acessar: https://portal.azure.com
+
+2. Criar Storage Account:
+   - Buscar: "Storage accounts"
+   - Clicar em: "+ Create"
+
+   Configurações:
+   - Subscription: [Subscription da empresa]
+   - Resource Group: rg-fabric-sync
+   - Storage account name: stfabricsync01 (ou qualquer nome único)
+   - Region: Brazil South
+   - Performance: Standard
+   - Redundancy: Locally-redundant storage (LRS)
+
+   - Clicar em: "Review + create" → "Create"
+   - Aguardar criação (1-2 minutos)
+
+3. Obter Connection String:
+   - Após criado, ir em: "Access keys"
+   - Copiar: "Connection string" (key1 ou key2)
+
+4. Configurar na Function App:
+   - Azure Portal → Buscar: "fabric-sync-dre"
+   - Menu lateral → "Configuration"
+   - Clicar em: "+ New application setting"
+
+   Adicionar:
+   - Name: AzureWebJobsStorage
+   - Value: [Colar a Connection String copiada]
+
+   - Clicar em: "OK"
+   - Clicar em: "Save" (no topo)
+   - Confirmar: "Continue"
+
+5. Reiniciar Function App (opcional, mas recomendado):
+   - Menu lateral → "Overview"
+   - Clicar em: "Restart"
+
+PRONTO! O timer deve começar a funcionar em alguns minutos.
+
+================================================================
+
+OPÇÃO 2: VIA AZURE CLI (PARA TI COM PERMISSÕES)
+------------------------------------------------
+
+# 1. Criar Storage Account
+az storage account create \
+  --name stfabricsync01 \
+  --resource-group rg-fabric-sync \
+  --location brazilsouth \
+  --sku Standard_LRS \
+  --kind StorageV2
+
+# 2. Obter Connection String
+CONNECTION_STRING=$(az storage account show-connection-string \
+  --name stfabricsync01 \
+  --resource-group rg-fabric-sync \
+  --query connectionString \
+  --output tsv)
+
+# 3. Configurar na Function App
+az functionapp config appsettings set \
+  --resource-group rg-fabric-sync \
+  --name fabric-sync-dre \
+  --settings "AzureWebJobsStorage=$CONNECTION_STRING"
+
+# 4. Reiniciar Function App
+az functionapp restart \
+  --resource-group rg-fabric-sync \
+  --name fabric-sync-dre
+
+================================================================
+VALIDAÇÃO
+================================================================
+
+Após configurar, validar se funcionou:
+
+1. Azure Portal → fabric-sync-dre → Configuration
+2. Verificar se "AzureWebJobsStorage" aparece na lista
+3. Valor deve começar com: "DefaultEndpointsProtocol=https..."
+
+Para testar o timer:
+- Aguardar até o dia seguinte às 08:00 AM
+- Ou ajustar o schedule temporariamente para testar mais cedo
+
+================================================================
+CUSTO
+================================================================
+
+Storage Account (Standard LRS):
+- ~R$ 1-2/mês
+- Uso: Armazenar estado dos timers (alguns KB)
+- Total: Praticamente gratuito
+
+================================================================
+CONTATOS
+================================================================
+
+Desenvolvedor: Edmilson Serafim
+Email: edmilson.serafim@raizeducacao.info
+
+Em caso de dúvidas ou problemas, me contatar.
+
+================================================================
+OBSERVAÇÕES
+================================================================
+
+- Sem o Storage Account, a Function App funciona APENAS manualmente
+- Com o Storage Account, o timer dispara automaticamente
+- Esta é uma configuração padrão do Azure Functions
+- Normalmente é criado automaticamente, mas falhou neste caso
+
+================================================================

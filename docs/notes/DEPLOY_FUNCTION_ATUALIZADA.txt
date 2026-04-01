@@ -1,0 +1,150 @@
+================================================================
+DEPLOY DA FUNÇÃO ATUALIZADA - AZURE FUNCTION
+================================================================
+
+Data: 03/02/2026
+Status: CÓDIGO ATUALIZADO E PRONTO PARA DEPLOY
+
+================================================================
+O QUE FOI CORRIGIDO
+================================================================
+
+✅ PROBLEMA RESOLVIDO: Cache do PostgREST não reconhecia colunas
+✅ SOLUÇÃO: Usar SQL Function que bypassa o cache
+✅ RESULTADO: 108,672 registros sincronizados com SUCESSO
+
+Mudança no código:
+- Antes: Usava REST API direta (sofria com cache)
+- Agora: Usa RPC/SQL Function insert_dre_batch (bypassa cache)
+
+================================================================
+ARQUIVOS PRONTOS PARA DEPLOY
+================================================================
+
+Arquivo ZIP criado:
+C:\Users\edmilson.serafim\azure_function_deploy.zip
+
+Este ZIP contém:
+- Código atualizado com novo método de inserção
+- Todas as dependências necessárias
+- Configurações corretas
+
+================================================================
+OPÇÃO 1: DEPLOY VIA AZURE PORTAL (RECOMENDADO)
+================================================================
+
+PASSO 1: Acessar o Portal
+1. Acesse: https://portal.azure.com
+2. Busque: "fabric-sync-dre"
+3. Clique na Function App
+
+PASSO 2: Fazer Upload do ZIP
+1. Menu lateral → "Deployment Center"
+2. Em "Manual deployment" → Clique em "FTPS credentials"
+3. Copie as credenciais (Username e Password)
+
+4. Volte para "Overview"
+5. Clique em "Get publish profile" (botão no topo)
+6. Salve o arquivo .PublishSettings
+
+PASSO 3: Fazer Deploy via KUDU
+1. Acesse: https://fabric-sync-dre-crezcwh9bzaveya6.scm.brazilsouth-01.azurewebsites.net
+2. Faça login com as credenciais do Azure
+3. Menu superior → "Tools" → "Zip Push Deploy"
+4. Arraste o arquivo: C:\Users\edmilson.serafim\azure_function_deploy.zip
+5. Aguarde o upload e deploy (1-2 minutos)
+6. Verá mensagem: "Deployment successful"
+
+PASSO 4: Reiniciar a Function
+1. Volte ao Portal do Azure
+2. Function App → "Overview"
+3. Clique em "Restart"
+4. Aguarde 30 segundos
+
+================================================================
+OPÇÃO 2: DEPLOY VIA VS CODE (SE TIVER EXTENSÃO)
+================================================================
+
+1. Abra VS Code
+2. Instale extensão: "Azure Functions" (se não tiver)
+3. Clique no ícone do Azure na barra lateral
+4. Faça login na sua conta Azure
+5. Localize: fabric-sync-dre
+6. Clique com botão direito → "Deploy to Function App"
+7. Selecione a pasta: C:\Users\edmilson.serafim\azure_function
+8. Confirme o deploy
+
+================================================================
+OPÇÃO 3: DEPLOY VIA AZURE CLI (PRECISA INSTALAR)
+================================================================
+
+Se o Azure CLI estiver instalado:
+
+cd C:\Users\edmilson.serafim
+
+az functionapp deployment source config-zip \
+  --resource-group rg-fabric-sync \
+  --name fabric-sync-dre \
+  --src azure_function_deploy.zip
+
+az functionapp restart \
+  --resource-group rg-fabric-sync \
+  --name fabric-sync-dre
+
+================================================================
+VALIDAÇÃO APÓS DEPLOY
+================================================================
+
+1. Verificar se deploy foi bem-sucedido:
+   Azure Portal → fabric-sync-dre → Deployment Center
+
+2. Verificar logs:
+   Azure Portal → fabric-sync-dre → Log stream
+
+3. Testar manualmente:
+   Azure Portal → fabric-sync-dre → Functions → FabricSyncTimer
+   → "Code + Test" → "Test/Run" → "Run"
+
+4. Verificar resultado no Supabase:
+   - Deve ter 108,672 registros
+   - Dados atualizados
+
+================================================================
+PRÓXIMOS PASSOS
+================================================================
+
+IMPORTANTE: AINDA FALTA O STORAGE ACCOUNT!
+
+Mesmo com o código atualizado, a função NÃO VAI RODAR AUTOMATICAMENTE
+até que o TI configure o Storage Account (AzureWebJobsStorage).
+
+Referência: C:\Users\edmilson.serafim\OneDrive - Raiz Educação S A\Área de Trabalho\Ap proposta\PENDENCIA_TI_STORAGE_ACCOUNT.txt
+
+Enquanto isso não for feito:
+✅ Função funciona manualmente (você pode executar)
+❌ Função NÃO funciona automaticamente (timer não dispara)
+
+================================================================
+RESUMO DO QUE FOI FEITO HOJE
+================================================================
+
+1. ✅ Descobrimos que faltavam 1,560 registros (na verdade eram todos)
+2. ✅ Identificamos que o problema era cache do PostgREST
+3. ✅ Criamos SQL Function insert_dre_batch no Supabase
+4. ✅ Ajustamos tipos de dados (numeric, integer)
+5. ✅ Testamos com 100 registros: SUCESSO
+6. ✅ Sincronizamos todos os 108,672 registros: SUCESSO
+7. ✅ Atualizamos código da Azure Function
+8. ⏳ PENDENTE: Deploy da função atualizada
+9. ⏳ PENDENTE: TI configurar Storage Account para timer automático
+
+================================================================
+CONTATO
+================================================================
+
+Desenvolvedor: Edmilson Serafim
+Email: edmilson.serafim@raizeducacao.info
+
+Em caso de dúvidas sobre o deploy, me contatar.
+
+================================================================
