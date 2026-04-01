@@ -56,10 +56,11 @@ const AdminPanel: React.FC = () => {
   const [importMessage, setImportMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
   // Estado para controle de abas
-  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'pdd' | 'tributos' | 'rateio' | 'depara' | 'smtp' | 'cronograma' | 'override' | 'solicitacoes' | 'conta_contabil'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'users' | 'recorrencia' | 'calculos' | 'depara' | 'smtp' | 'cronograma' | 'override' | 'solicitacoes' | 'conta_contabil'>('import');
   const [dadosSubTab, setDadosSubTab] = useState<'importar' | 'exportar'>('importar');
   const [usersSubTab, setUsersSubTab] = useState<'cadastro' | 'engajamento'>('cadastro');
   const [contaContabilSubTab, setContaContabilSubTab] = useState<'depara_conta' | 'inativar_conta'>('depara_conta');
+  const [calculosSubTab, setCalculosSubTab] = useState<'pdd' | 'tributos' | 'rateio'>('pdd');
 
   // Estados para aba Cronograma
   const [cronogramaItems, setCronogramaItems] = useState<supabaseService.CronogramaItem[]>([]);
@@ -259,22 +260,24 @@ const AdminPanel: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'pdd') {
-      if (pddData.length === 0) loadPddData();
-      if (pddAllTags.length === 0) loadPddContas();
+    if (activeTab === 'calculos') {
+      if (calculosSubTab === 'pdd') {
+        if (pddData.length === 0) loadPddData();
+        if (pddAllTags.length === 0) loadPddContas();
+      }
+      if (calculosSubTab === 'tributos') {
+        if (tribData.length === 0) loadAllTributos();
+        loadTributosPendentes();
+      }
+      if (calculosSubTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
     }
-    if (activeTab === 'tributos') {
-      if (tribData.length === 0) loadAllTributos();
-      loadTributosPendentes();
-    }
-    if (activeTab === 'rateio' && rateioLog.length === 0) loadRateioLog();
     if (activeTab === 'depara' && deparaData.length === 0) loadDeparaData();
     if (activeTab === 'conta_contabil' && ccDeparaData.length === 0) loadCcDeparaData();
     if (activeTab === 'conta_contabil' && ccInativaData.length === 0) loadCcInativaData();
     if (activeTab === 'smtp' && !smtpConfigured && !smtpLoading) loadSmtpConfig();
     if (activeTab === 'cronograma') loadCronogramaData();
     if (activeTab === 'override' && overrideData.length === 0) loadOverrideData();
-  }, [activeTab]);
+  }, [activeTab, calculosSubTab]);
 
   // Realtime: sincroniza share_pdd e pdd_contas com banco
   useEffect(() => {
@@ -2343,51 +2346,19 @@ const AdminPanel: React.FC = () => {
           )}
         </button>
         <button
-          onClick={() => setActiveTab('pdd')}
+          onClick={() => setActiveTab('calculos')}
           className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
-            activeTab === 'pdd'
-              ? 'text-rose-700 bg-rose-50'
+            activeTab === 'calculos'
+              ? 'text-violet-700 bg-violet-50'
               : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
           }`}
         >
           <div className="flex items-center gap-1.5">
             <Calculator size={14} />
-            Cálculo PDD
+            Cálculos Manuais
           </div>
-          {activeTab === 'pdd' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-600 rounded-t"></div>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('tributos')}
-          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
-            activeTab === 'tributos'
-              ? 'text-amber-700 bg-amber-50'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          <div className="flex items-center gap-1.5">
-            <Percent size={14} />
-            Tributos
-          </div>
-          {activeTab === 'tributos' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-600 rounded-t"></div>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('rateio')}
-          className={`px-4 py-2 font-bold text-xs uppercase transition-all relative ${
-            activeTab === 'rateio'
-              ? 'text-teal-700 bg-teal-50'
-              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-          }`}
-        >
-          <div className="flex items-center gap-1.5">
-            <Calculator size={14} />
-            Rateio Raiz
-          </div>
-          {activeTab === 'rateio' && (
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-teal-600 rounded-t"></div>
+          {activeTab === 'calculos' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-600 rounded-t"></div>
           )}
         </button>
         <button
@@ -3637,9 +3608,64 @@ const AdminPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Aba: Cálculo PDD */}
-      {activeTab === 'pdd' && (
-        <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-4 shadow-sm">
+      {/* Aba: Cálculos Manuais */}
+      {activeTab === 'calculos' && (
+        <div>
+          {/* Sub-abas (orelhas) */}
+          <div className="flex gap-0 mb-4 border-b-2 border-violet-200">
+            <button
+              onClick={() => setCalculosSubTab('pdd')}
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
+                calculosSubTab === 'pdd'
+                  ? 'text-rose-700 bg-rose-50 border border-b-0 border-rose-200'
+                  : 'text-gray-500 hover:text-rose-600 hover:bg-rose-50/50'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Calculator size={12} />
+                Cálculo PDD
+              </div>
+              {calculosSubTab === 'pdd' && (
+                <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-rose-50"></div>
+              )}
+            </button>
+            <button
+              onClick={() => setCalculosSubTab('tributos')}
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
+                calculosSubTab === 'tributos'
+                  ? 'text-amber-700 bg-amber-50 border border-b-0 border-amber-200'
+                  : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50/50'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Percent size={12} />
+                Tributos
+              </div>
+              {calculosSubTab === 'tributos' && (
+                <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-amber-50"></div>
+              )}
+            </button>
+            <button
+              onClick={() => setCalculosSubTab('rateio')}
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
+                calculosSubTab === 'rateio'
+                  ? 'text-teal-700 bg-teal-50 border border-b-0 border-teal-200'
+                  : 'text-gray-500 hover:text-teal-600 hover:bg-teal-50/50'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <Calculator size={12} />
+                Rateio Raiz
+              </div>
+              {calculosSubTab === 'rateio' && (
+                <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-teal-50"></div>
+              )}
+            </button>
+          </div>
+
+          {/* Sub-aba: Cálculo PDD */}
+          {calculosSubTab === 'pdd' && (
+            <div className="bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 rounded-xl p-4 shadow-sm">
           {/* Header */}
           <div className="flex items-center gap-3 mb-4">
             <div className="bg-rose-100 p-2 rounded-xl">
@@ -3913,9 +3939,9 @@ const AdminPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Aba: Cálculo Tributos */}
-      {activeTab === 'tributos' && (
-        <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+          {/* Sub-aba: Cálculo Tributos */}
+          {calculosSubTab === 'tributos' && (
+            <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-xl p-4 shadow-sm">
           {/* Header */}
           <div className="flex items-center gap-3 mb-4">
             <div className="bg-amber-100 p-2 rounded-xl">
@@ -4360,9 +4386,9 @@ const AdminPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Aba: Rateio Raiz */}
-      {activeTab === 'rateio' && (
-        <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-xl p-4 shadow-sm">
+          {/* Sub-aba: Rateio Raiz */}
+          {calculosSubTab === 'rateio' && (
+            <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 rounded-xl p-4 shadow-sm">
           {/* Header */}
           <div className="flex items-center gap-3 mb-4">
             <div className="bg-teal-100 p-2 rounded-xl">
@@ -4862,6 +4888,8 @@ const AdminPanel: React.FC = () => {
               );
             })()}
           </div>
+        </div>
+          )}
         </div>
       )}
 
