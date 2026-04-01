@@ -216,6 +216,7 @@ const AdminPanel: React.FC = () => {
   const [ccDeparaNewDescricaoPara, setCcDeparaNewDescricaoPara] = useState('');
   const [ccDeparaAdding, setCcDeparaAdding] = useState(false);
   const [ccDeparaMessage, setCcDeparaMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [ccDeparaNormalizing, setCcDeparaNormalizing] = useState(false);
   const [ccDeparaFile, setCcDeparaFile] = useState<File | null>(null);
   const [ccDeparaImportPreview, setCcDeparaImportPreview] = useState<{conta_de: string; descricao_de: string; conta_para: string; descricao_para: string}[]>([]);
   const [ccDeparaImporting, setCcDeparaImporting] = useState(false);
@@ -805,6 +806,28 @@ const AdminPanel: React.FC = () => {
     setCcDeparaFile(null);
     setCcDeparaImportPreview([]);
     loadCcDeparaData();
+  };
+
+  const handleNormalizarContaContabil = async () => {
+    if (!confirm('Executar normalização de Conta Contábil agora?\nIsso atualizará o campo conta_contabil em transactions, transactions_orcado, transactions_ano_anterior e transactions_manual conforme o De-Para cadastrado.')) return;
+    setCcDeparaNormalizing(true);
+    const result = await supabaseService.runNormalizarContaContabil();
+    if (result.ok) {
+      const d = result.data;
+      const real = d?.real ?? 0;
+      const orcado = d?.orcado ?? 0;
+      const ant = d?.ano_anterior ?? 0;
+      const manual = d?.manual ?? 0;
+      const total = d?.total ?? 0;
+      setCcDeparaMessage({
+        type: 'success',
+        text: `Normalização concluída! ${total} registros — Real: ${real} | Orçado: ${orcado} | Ano Anterior: ${ant} | Manual: ${manual}`,
+      });
+    } else {
+      setCcDeparaMessage({ type: 'error', text: result.error || 'Erro ao normalizar.' });
+    }
+    setCcDeparaNormalizing(false);
+    setTimeout(() => setCcDeparaMessage(null), 6000);
   };
 
   const handleCcDeparaExport = () => {
@@ -5982,6 +6005,15 @@ const AdminPanel: React.FC = () => {
                 )}
                 <button onClick={handleCcDeparaExport} disabled={ccDeparaData.length === 0} className="flex items-center gap-1 px-2 py-1 bg-white border border-emerald-300 text-emerald-700 text-[10px] font-bold rounded hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                   <Download size={11} />Exportar
+                </button>
+                <button
+                  onClick={handleNormalizarContaContabil}
+                  disabled={ccDeparaNormalizing}
+                  className="flex items-center gap-1 px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                  title="Aplica o De-Para em todas as tabelas de transações"
+                >
+                  <Play size={10} />
+                  {ccDeparaNormalizing ? 'Normalizando...' : 'Executar Agora'}
                 </button>
               </div>
 

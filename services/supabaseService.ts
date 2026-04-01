@@ -2857,6 +2857,18 @@ export const upsertDeparaContaContabilBatch = async (
   return { inserted: data?.length || 0 };
 };
 
+/** Executa a RPC normalizar_conta_contabil() — atualiza conta_contabil
+ *  em transactions, transactions_orcado, transactions_ano_anterior e
+ *  transactions_manual conforme mapeamentos em depara_conta_contabil. */
+export const runNormalizarContaContabil = async (): Promise<{ ok: boolean; data?: any; error?: string }> => {
+  const { data, error } = await supabase.rpc('normalizar_conta_contabil');
+  if (error) {
+    console.error('Erro ao normalizar conta_contabil:', error);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, data };
+};
+
 // ============================================
 // Contas Inativadas
 // ============================================
