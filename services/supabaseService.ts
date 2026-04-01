@@ -62,7 +62,7 @@ const transactionToDb = (t: Transaction): DatabaseTransaction => {
   };
 
   // Adicionar campos opcionais apenas se existirem
-  if (t.category) dbTransaction.category = t.category;  // Reservado para futuro
+  dbTransaction.category = t.category ?? '';  // NOT NULL no banco — fallback para string vazia
   if (t.marca) dbTransaction.marca = t.marca;
   // tag0 NÃO existe na tabela transactions (resolvido via tag0_map JOIN)
   if (t.tag01) dbTransaction.tag01 = t.tag01;
