@@ -2463,28 +2463,34 @@ const AdminPanel: React.FC = () => {
       {activeTab === 'import' && (
         <>
         {/* Sub-abas: Importar / Exportar */}
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-0 mb-4 border-b-2 border-green-200">
           <button
             onClick={() => setDadosSubTab('importar')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+            className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
               dadosSubTab === 'importar'
-                ? 'bg-green-600 text-white shadow'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'text-green-700 bg-green-50 border border-b-0 border-green-200'
+                : 'text-gray-500 hover:text-green-600 hover:bg-green-50/50'
             }`}
           >
-            <Upload size={14} />
-            Importar
+            <div className="flex items-center gap-1.5">
+              <Upload size={12} />
+              Importar
+            </div>
+            {dadosSubTab === 'importar' && <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-green-50"></div>}
           </button>
           <button
             onClick={() => setDadosSubTab('exportar')}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+            className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
               dadosSubTab === 'exportar'
-                ? 'bg-blue-600 text-white shadow'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                ? 'text-blue-700 bg-blue-50 border border-b-0 border-blue-200'
+                : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50/50'
             }`}
           >
-            <Download size={14} />
-            Exportar
+            <div className="flex items-center gap-1.5">
+              <Download size={12} />
+              Exportar
+            </div>
+            {dadosSubTab === 'exportar' && <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-blue-50"></div>}
           </button>
         </div>
 
@@ -2877,28 +2883,34 @@ const AdminPanel: React.FC = () => {
       {activeTab === 'users' && (
         <>
       {/* Sub-abas: Cadastro / Engajamento */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-0 mb-4 border-b-2 border-purple-200">
         <button
           onClick={() => setUsersSubTab('cadastro')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+          className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
             usersSubTab === 'cadastro'
-              ? 'bg-purple-600 text-white shadow'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              ? 'text-purple-700 bg-purple-50 border border-b-0 border-purple-200'
+              : 'text-gray-500 hover:text-purple-600 hover:bg-purple-50/50'
           }`}
         >
-          <Users size={14} />
-          Cadastro
+          <div className="flex items-center gap-1.5">
+            <Users size={12} />
+            Cadastro
+          </div>
+          {usersSubTab === 'cadastro' && <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-purple-50"></div>}
         </button>
         <button
           onClick={() => setUsersSubTab('engajamento')}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-xs uppercase transition-all ${
+          className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
             usersSubTab === 'engajamento'
-              ? 'bg-blue-600 text-white shadow'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              ? 'text-blue-700 bg-blue-50 border border-b-0 border-blue-200'
+              : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50/50'
           }`}
         >
-          <Trophy size={14} />
-          Engajamento
+          <div className="flex items-center gap-1.5">
+            <Trophy size={12} />
+            Engajamento
+          </div>
+          {usersSubTab === 'engajamento' && <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-blue-50"></div>}
         </button>
       </div>
 
@@ -5907,8 +5919,8 @@ const AdminPanel: React.FC = () => {
       {activeTab === 'conta_contabil' && (
         <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-xl p-3 shadow">
 
-          {/* Header + sub-abas em linha única */}
-          <div className="flex items-center gap-2 mb-2">
+          {/* Header */}
+          <div className="flex items-center gap-2 mb-3">
             <div className="bg-emerald-100 p-1.5 rounded-lg shrink-0">
               <Hash className="text-emerald-600" size={16} />
             </div>
@@ -5916,27 +5928,37 @@ const AdminPanel: React.FC = () => {
               <h2 className="text-sm font-black text-emerald-900 leading-none">Conta Contábil</h2>
               <p className="text-[10px] text-emerald-600">De-Para e inativação de contas contábeis</p>
             </div>
+          </div>
+
+          {/* Sub-abas: De-Para / Inativar */}
+          <div className="flex gap-0 mb-3 border-b-2 border-emerald-200">
             <button
               onClick={() => setContaContabilSubTab('depara_conta')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-lg font-bold text-[10px] uppercase transition-all shrink-0 ${
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
                 contaContabilSubTab === 'depara_conta'
-                  ? 'bg-emerald-600 text-white shadow'
-                  : 'bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                  ? 'text-emerald-700 bg-emerald-50 border border-b-0 border-emerald-200'
+                  : 'text-gray-500 hover:text-emerald-600 hover:bg-emerald-50/50'
               }`}
             >
-              <ArrowRightLeft size={11} />
-              De-Para Conta Contábil
+              <div className="flex items-center gap-1.5">
+                <ArrowRightLeft size={12} />
+                De-Para Conta Contábil
+              </div>
+              {contaContabilSubTab === 'depara_conta' && <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-emerald-50"></div>}
             </button>
             <button
               onClick={() => setContaContabilSubTab('inativar_conta')}
-              className={`flex items-center gap-1 px-3 py-1 rounded-lg font-bold text-[10px] uppercase transition-all shrink-0 ${
+              className={`px-4 py-2 text-xs font-bold uppercase transition-all relative rounded-t-lg ${
                 contaContabilSubTab === 'inativar_conta'
-                  ? 'bg-red-600 text-white shadow'
-                  : 'bg-white border border-red-200 text-red-700 hover:bg-red-50'
+                  ? 'text-red-700 bg-red-50 border border-b-0 border-red-200'
+                  : 'text-gray-500 hover:text-red-600 hover:bg-red-50/50'
               }`}
             >
-              <X size={11} />
-              Inativar Conta Contábil
+              <div className="flex items-center gap-1.5">
+                <X size={12} />
+                Inativar Conta Contábil
+              </div>
+              {contaContabilSubTab === 'inativar_conta' && <div className="absolute bottom-[-2px] left-0 right-0 h-0.5 bg-red-50"></div>}
             </button>
           </div>
 
