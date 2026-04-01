@@ -26,7 +26,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Transaction, TransactionType, TransactionStatus, ManualChange, PaginationParams, ContaContabilOption } from '../types';
 import { BRANCHES, ALL_CATEGORIES, CATEGORIES } from '../constants';
-import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0, getManualChangesByTransactionId } from '../services/supabaseService';
+import { getFilteredTransactions, invalidateTxPageCache, TransactionFilters, getFiliais, FilialOption, getContaContabilOptions, getContasInativadas, getTag0Map, getTag0Options, getTransactionFilterOptions, getTag03OptionsForTag01s, getTag02OptionsForTag01s, getTag03OptionsForTag02s, resolveTag0, getManualChangesByTransactionId } from '../services/supabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import ContaContabilSelector from './ContaContabilSelector';
 import { toast } from 'sonner';
@@ -2124,8 +2124,12 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         <button
                           type="button"
                           onClick={async () => {
-                            const data = await getContaContabilOptions();
-                            setContaContabilData(data);
+                            const [data, inativas] = await Promise.all([
+                              getContaContabilOptions(),
+                              getContasInativadas(),
+                            ]);
+                            const inativasSet = new Set(inativas.map(i => i.conta));
+                            setContaContabilData(data.filter(c => !inativasSet.has(c.cod_conta)));
                             setContaSelectorOpen(true);
                           }}
                           className="px-3 py-2 bg-[#F44C00] text-white text-[9px] font-black uppercase whitespace-nowrap"
