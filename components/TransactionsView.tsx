@@ -512,7 +512,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       tag03s: tag3Options,
       categories: getOptions('category'),
       recurrings: ['Sim', 'Não'],
-      statuses: ['Normal', 'Pendente', 'Ajustado', 'Rateado', 'Excluído', 'Manual']
+      statuses: ['Normal', 'Pendente', 'Ajustado', 'Rateado', 'Excluído', 'Manual', 'Calculado']
     };
   }, [filterOptions.marcas, filteredFilialLabels, tag0Options, tag1Options, tag2Options, tag3Options, transactions]);
 
@@ -1962,6 +1962,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                               t.status === 'Rateado' ? 'bg-purple-50 text-purple-600 border-purple-200' :
                               t.status === 'Excluído' ? 'bg-red-50 text-red-600 border-red-200' :
                               t.status === 'Manual' ? 'bg-teal-50 text-teal-600 border-teal-200' :
+                              t.status === 'Calculado' ? 'bg-green-50 text-green-600 border-green-200' :
                               'bg-gray-50 text-gray-400 border-gray-200'
                             }`}>
                               {t.status}

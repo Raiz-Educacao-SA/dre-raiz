@@ -1,6 +1,6 @@
 
 export type TransactionType = 'REVENUE' | 'FIXED_COST' | 'VARIABLE_COST' | 'SGA' | 'RATEIO';
-export type TransactionStatus = 'Normal' | 'Pendente' | 'Ajustado' | 'Rateado' | 'Excluído' | 'Manual';
+export type TransactionStatus = 'Normal' | 'Pendente' | 'Ajustado' | 'Rateado' | 'Excluído' | 'Manual' | 'Calculado';
 
 export interface User {
   name: string;
