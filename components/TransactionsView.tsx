@@ -219,6 +219,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
         tag03Options: tagFilters.tag03Options,
       });
       setContaContabilOptions(contaOpts.map(o => o.cod_conta));
+      setContaContabilData(contaOpts);
 
     });
   }, []);
@@ -2426,7 +2427,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                       )}
                     </div>
                     <F label="Chave ID" value={t.chave_id || '-'} mono copyable />
-                    <F label="Conta" value={t.conta_contabil} mono accent copyable />
+                    <F label="Conta" value={(() => { const c = contaContabilData.find(x => x.cod_conta === t.conta_contabil); return c?.nome_nat_orc ? `${t.conta_contabil} - ${c.nome_nat_orc}` : t.conta_contabil; })()} mono accent copyable />
                     <F label="Vendor" value={t.vendor || '-'} />
                     <F label="Recorrência" value={(t.recurring || 'Sim') === 'Sim' ? 'Recorrente' : 'Único'} />
 
@@ -2472,7 +2473,10 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                               justification = parsed.justification || '';
                             } else {
                               justification = parsed.justification || '';
-                              if (parsed.category) changeRows.push({ label: 'Conta', from: orig?.conta_contabil || orig?.category || '-', to: parsed.category });
+                              if (parsed.category) {
+                                const fmtConta = (cod: string) => { const c = contaContabilData.find(x => x.cod_conta === cod); return c?.nome_nat_orc ? `${cod} - ${c.nome_nat_orc}` : cod; };
+                                changeRows.push({ label: 'Conta', from: fmtConta(orig?.conta_contabil || orig?.category || '-'), to: fmtConta(parsed.category) });
+                              }
                               if (parsed.filial) changeRows.push({ label: 'Filial', from: orig?.filial || '-', to: parsed.filial });
                               if (parsed.date) changeRows.push({ label: 'Data', from: formatDateToMMAAAA(orig?.date) || '-', to: formatDateToMMAAAA(parsed.date) });
                               if (parsed.marca) changeRows.push({ label: 'Marca', from: orig?.marca || '-', to: parsed.marca });
