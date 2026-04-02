@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Calendar, Clock, Users, CheckSquare } from 'lucide-react';
+import { X, Calendar, Clock, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-react';
 import * as supabaseService from '../services/supabaseService';
 import type { CronogramaItem } from '../services/supabaseService';
 
@@ -40,41 +40,57 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
   const currentYear = now.getFullYear();
   const today = now.getDate();
 
+  // Mês/ano sendo visualizado (começa no atual)
+  const [viewMonth, setViewMonth] = useState(currentMonth);
+  const [viewYear, setViewYear] = useState(currentYear);
+
+  const isCurrentMonth = viewMonth === currentMonth && viewYear === currentYear;
+
+  const goToPrevMonth = () => {
+    setViewMonth(m => {
+      if (m === 1) { setViewYear(y => y - 1); return 12; }
+      return m - 1;
+    });
+  };
+
+  const goToNextMonth = () => {
+    setViewMonth(m => {
+      if (m === 12) { setViewYear(y => y + 1); return 1; }
+      return m + 1;
+    });
+  };
+
   useEffect(() => {
-    supabaseService.getCronogramaItems(currentMonth, currentYear)
+    setLoading(true);
+    setItems([]);
+    supabaseService.getCronogramaItems(viewMonth, viewYear)
       .then(data => {
-        if (data.length === 0) { onClose(); return; }
+        // Fecha automaticamente apenas se for o mês atual sem dados
+        if (data.length === 0 && isCurrentMonth) { onClose(); return; }
         setItems(data);
       })
-      .catch(() => onClose())
+      .catch(() => { if (isCurrentMonth) onClose(); })
       .finally(() => setLoading(false));
-  }, [currentMonth, currentYear, onClose]);
+  }, [viewMonth, viewYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tasks = useMemo(() => items.filter(i => i.item_type === 'task'), [items]);
   const meetings = useMemo(() => items.filter(i => i.item_type === 'meeting'), [items]);
 
-  // Próxima entrega: a task cujo último dia >= hoje, com menor primeiro dia >= hoje
-  // Se nenhuma entrega futura, pega a última do mês (ciclo visual)
+  // Próxima entrega: só aplica quando visualizando o mês atual
   const nextDeliveryId = useMemo(() => {
-    // Filtra tasks com data numérica (não "Diário")
+    if (!isCurrentMonth) return null;
     const dated = tasks
       .map(t => ({ id: t.id, first: getFirstDay(t.date_label), last: getLastDay(t.date_label) }))
       .filter((d): d is { id: string; first: number; last: number } => d.first !== null && d.last !== null);
 
     if (dated.length === 0) return null;
-
-    // Entregas cujo último dia ainda não passou (last >= today)
     const upcoming = dated.filter(d => d.last >= today);
-
     if (upcoming.length > 0) {
-      // Pega a mais próxima (menor first day)
       upcoming.sort((a, b) => a.first - b.first);
       return upcoming[0].id;
     }
-
-    // Todas já passaram — não pulsar nenhuma (mês acabando)
     return null;
-  }, [tasks, today]);
+  }, [tasks, today, isCurrentMonth]);
 
   // Unique areas for legend
   const areas = useMemo(() => {
@@ -120,13 +136,13 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
 
   // Mini calendar grid
   const calendarDays = useMemo(() => {
-    const firstDay = new Date(currentYear, currentMonth - 1, 1).getDay();
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+    const firstDay = new Date(viewYear, viewMonth - 1, 1).getDay();
+    const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
     const cells: (number | null)[] = [];
     for (let i = 0; i < firstDay; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) cells.push(d);
     return cells;
-  }, [currentMonth, currentYear]);
+  }, [viewMonth, viewYear]);
 
   // Tooltip por dia — textos reais das entregas/reuniões
   const dayTooltipMap = useMemo(() => {
@@ -165,8 +181,27 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
     onClose();
   };
 
-  if (loading) return null;
-  if (items.length === 0) return null;
+  if (loading) return (
+    <>
+    <style>{`@keyframes cronogramaPulse { 0%, 100% { background-color: transparent; } 50% { background-color: rgba(249, 115, 22, 0.12); } } .cronograma-pulse-orange { animation: cronogramaPulse 1.8s ease-in-out infinite; }`}</style>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col">
+        <div className="bg-[#1B75BB] px-4 py-2 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2"><Calendar className="text-white/80" size={16} /><h2 className="text-white font-black text-sm tracking-wide">CRONOGRAMA FINANCEIRO</h2></div>
+          <div className="flex items-center gap-1">
+            <button onClick={goToPrevMonth} className="text-white/70 hover:text-white transition-colors p-0.5 rounded hover:bg-white/10"><ChevronLeft size={16} /></button>
+            <span className="text-white font-bold text-xs min-w-[110px] text-center">{MONTH_NAMES[viewMonth - 1].toUpperCase()} / {viewYear}{isCurrentMonth && <span className="ml-1 text-white/60 font-normal text-[10px]">(atual)</span>}</span>
+            <button onClick={goToNextMonth} className="text-white/70 hover:text-white transition-colors p-0.5 rounded hover:bg-white/10"><ChevronRight size={16} /></button>
+          </div>
+          <button onClick={handleClose} className="text-white/70 hover:text-white transition-colors p-0.5 rounded hover:bg-white/10"><X size={18} /></button>
+        </div>
+        <div className="p-8 flex items-center justify-center text-gray-400 text-sm">Carregando...</div>
+      </div>
+    </div>
+    </>
+  );
+
+  const isEmpty = items.length === 0;
 
   return (
     <>
@@ -204,7 +239,19 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
         <div className="bg-[#1B75BB] px-4 py-2 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <Calendar className="text-white/80" size={16} />
-            <h2 className="text-white font-black text-sm tracking-wide">CRONOGRAMA FINANCEIRO — {MONTH_NAMES[currentMonth - 1].toUpperCase()} / {currentYear}</h2>
+            <h2 className="text-white font-black text-sm tracking-wide">CRONOGRAMA FINANCEIRO</h2>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={goToPrevMonth} className="text-white/70 hover:text-white transition-colors p-0.5 rounded hover:bg-white/10" title="Mês anterior">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-white font-bold text-xs min-w-[110px] text-center">
+              {MONTH_NAMES[viewMonth - 1].toUpperCase()} / {viewYear}
+              {isCurrentMonth && <span className="ml-1 text-white/60 font-normal text-[10px]">(atual)</span>}
+            </span>
+            <button onClick={goToNextMonth} className="text-white/70 hover:text-white transition-colors p-0.5 rounded hover:bg-white/10" title="Próximo mês">
+              <ChevronRight size={16} />
+            </button>
           </div>
           <button onClick={handleClose} className="text-white/70 hover:text-white transition-colors p-0.5 rounded hover:bg-white/10">
             <X size={18} />
@@ -213,6 +260,12 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
 
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 p-3 space-y-3">
+          {isEmpty ? (
+            <div className="py-10 flex flex-col items-center gap-2 text-gray-400">
+              <Calendar size={32} className="opacity-30" />
+              <p className="text-sm">Nenhum cronograma cadastrado para {MONTH_NAMES[viewMonth - 1]} / {viewYear}.</p>
+            </div>
+          ) : <>
           {/* Mini calendar + Legend side by side */}
           <div className="flex gap-4 flex-wrap">
             {/* Mini calendar com marcadores */}
@@ -223,7 +276,7 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
                 ))}
                 {calendarDays.map((day, i) => {
                   const dayItems = day ? dayItemsMap.get(day) : undefined;
-                  const isToday = day === today;
+                  const isToday = isCurrentMonth && day === today;
                   const hasNext = dayItems?.some(d => d.isNext);
                   const uniqueColors = dayItems ? [...new Set(dayItems.map(d => d.color))] : [];
                   const tooltipLines = day ? dayTooltipMap.get(day) : undefined;
@@ -348,6 +401,7 @@ const CronogramaPopup: React.FC<CronogramaPopupProps> = ({ onClose }) => {
               </div>
             </div>
           )}
+          </>}
         </div>
 
         {/* Footer */}
