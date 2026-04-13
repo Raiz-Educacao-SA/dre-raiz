@@ -1225,7 +1225,13 @@ const TABLE_COLUMN_MAP: Record<string, Record<string, string>> = {
     amount: 'valor',
     nome_filial: 'nome_filial', // pode não existir
   },
+  tributos_log: {
+    nome_filial: 'filial', // tributos_log usa 'filial', não 'nome_filial'
+  },
 };
+
+// Tabelas que usam coluna de período no formato YYYY-MM (TEXT), não datas completas
+const TABLE_YEARMONTH_FORMAT = new Set(['tributos_log']);
 
 // Coluna de data para cada tabela
 const TABLE_DATE_COL: Record<string, string> = {
@@ -1233,9 +1239,10 @@ const TABLE_DATE_COL: Record<string, string> = {
   transactions_orcado: 'date',
   transactions_ano_anterior: 'date',
   dre_fabric: 'data',
+  tributos_log: 'year_month',
 };
 
-export type ExportableTable = 'transactions' | 'transactions_orcado' | 'transactions_ano_anterior' | 'dre_fabric';
+export type ExportableTable = 'transactions' | 'transactions_orcado' | 'transactions_ano_anterior' | 'dre_fabric' | 'tributos_log';
 
 export interface ExportTableFilters {
   year: string;
@@ -1255,13 +1262,23 @@ export const exportTableData = async (
 ): Promise<Record<string, unknown>[]> => {
   const colMap = TABLE_COLUMN_MAP[tableName] || {};
   const dateCol = TABLE_DATE_COL[tableName] || 'date';
+  const isYearMonth = TABLE_YEARMONTH_FORMAT.has(tableName);
 
   // Calcular range de datas
   const monthsArr = filters.months?.length ? [...filters.months].sort() : [];
-  const monthFrom = monthsArr.length > 0 ? `${filters.year}-${monthsArr[0]}-01` : `${filters.year}-01-01`;
+
+  // Para tabelas YYYY-MM: comparar como texto 'YYYY-MM'
+  // Para tabelas com date completa: comparar como 'YYYY-MM-DD'
+  const monthFrom = isYearMonth
+    ? `${filters.year}-${monthsArr.length > 0 ? monthsArr[0] : '01'}`
+    : (monthsArr.length > 0 ? `${filters.year}-${monthsArr[0]}-01` : `${filters.year}-01-01`);
   const lastMonth = monthsArr.length > 0 ? monthsArr[monthsArr.length - 1] : '12';
-  const lastDay = new Date(parseInt(filters.year), parseInt(lastMonth), 0).getDate();
-  const monthTo = `${filters.year}-${lastMonth}-${String(lastDay).padStart(2, '0')}`;
+  const monthTo = isYearMonth
+    ? `${filters.year}-${lastMonth}`
+    : (() => {
+        const lastDay = new Date(parseInt(filters.year), parseInt(lastMonth), 0).getDate();
+        return `${filters.year}-${lastMonth}-${String(lastDay).padStart(2, '0')}`;
+      })();
 
   const allRows: Record<string, unknown>[] = [];
   let page = 0;
@@ -1284,9 +1301,12 @@ export const exportTableData = async (
 
     if (filters.marcas?.length)  query = query.in(marcaCol, filters.marcas);
     if (filters.filiais?.length) query = query.in(filialCol, filters.filiais);
-    if (filters.tags01?.length)  query = query.in(tag01Col, filters.tags01);
-    if (filters.tags02?.length)  query = query.in(tag02Col, filters.tags02);
-    if (filters.tags03?.length)  query = query.in(tag03Col, filters.tags03);
+    // tributos_log não tem tag01/02/03 — ignorar esses filtros
+    if (!isYearMonth) {
+      if (filters.tags01?.length) query = query.in(tag01Col, filters.tags01);
+      if (filters.tags02?.length) query = query.in(tag02Col, filters.tags02);
+      if (filters.tags03?.length) query = query.in(tag03Col, filters.tags03);
+    }
 
     const { data, error } = await query;
     if (error) throw new Error(`Erro ao buscar ${tableName}: ${error.message}`);

@@ -1515,6 +1515,7 @@ const AdminPanel: React.FC = () => {
     transactions_orcado: 'Orçado',
     transactions_ano_anterior: 'Ano Anterior (A-1)',
     dre_fabric: 'DRE Fabric',
+    tributos_log: 'Tributos Log',
   };
 
   const handleExportBanco = async (format: 'xlsx' | 'csv') => {
@@ -2800,6 +2801,7 @@ const AdminPanel: React.FC = () => {
                 { value: 'transactions_orcado', label: 'Orçado', color: 'purple' },
                 { value: 'transactions_ano_anterior', label: 'Ano Anterior (A-1)', color: 'orange' },
                 { value: 'dre_fabric', label: 'DRE Fabric', color: 'blue' },
+                { value: 'tributos_log', label: 'Tributos Log', color: 'green' },
               ] as const
             ).map(opt => (
               <button
@@ -2809,6 +2811,7 @@ const AdminPanel: React.FC = () => {
                   bancoTable === opt.value
                     ? opt.color === 'blue'   ? 'bg-blue-600 text-white border-blue-600 shadow' :
                       opt.color === 'purple' ? 'bg-purple-600 text-white border-purple-600 shadow' :
+                      opt.color === 'green'  ? 'bg-emerald-600 text-white border-emerald-600 shadow' :
                                                'bg-orange-500 text-white border-orange-500 shadow'
                     : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                 }`}
@@ -2882,7 +2885,8 @@ const AdminPanel: React.FC = () => {
             {/* Separador */}
             <div className="h-5 w-px bg-blue-200 shrink-0" />
 
-            {/* Tag01 */}
+            {/* Tag01/02/03 — ocultos para tabelas sem hierarquia de tags */}
+            {bancoTable !== 'tributos_log' && (<>
             <MultiSelectFilter
               compact
               label="Tag01"
@@ -2893,7 +2897,6 @@ const AdminPanel: React.FC = () => {
               colorScheme="purple"
             />
 
-            {/* Tag02 */}
             {bancoTag02Options.length > 0 && (
               <MultiSelectFilter
                 compact
@@ -2906,7 +2909,6 @@ const AdminPanel: React.FC = () => {
               />
             )}
 
-            {/* Tag03 */}
             {bancoTag03Options.length > 0 && (
               <MultiSelectFilter
                 compact
@@ -2918,6 +2920,7 @@ const AdminPanel: React.FC = () => {
                 colorScheme="blue"
               />
             )}
+            </>)}
           </div>
 
           {/* Resumo dos filtros ativos (badges) */}
