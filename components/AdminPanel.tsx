@@ -1514,6 +1514,7 @@ const AdminPanel: React.FC = () => {
     transactions: 'Transações (Real)',
     transactions_orcado: 'Orçado',
     transactions_ano_anterior: 'Ano Anterior (A-1)',
+    transactions_manual: 'Manual',
     dre_fabric: 'DRE Fabric',
     tributos_log: 'Tributos Log',
   };
@@ -2800,6 +2801,7 @@ const AdminPanel: React.FC = () => {
                 { value: 'transactions', label: 'Transações (Real)', color: 'blue' },
                 { value: 'transactions_orcado', label: 'Orçado', color: 'purple' },
                 { value: 'transactions_ano_anterior', label: 'Ano Anterior (A-1)', color: 'orange' },
+                { value: 'transactions_manual', label: 'Manual', color: 'blue' },
                 { value: 'dre_fabric', label: 'DRE Fabric', color: 'blue' },
                 { value: 'tributos_log', label: 'Tributos Log', color: 'green' },
               ] as const

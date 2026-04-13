@@ -1238,11 +1238,12 @@ const TABLE_DATE_COL: Record<string, string> = {
   transactions: 'date',
   transactions_orcado: 'date',
   transactions_ano_anterior: 'date',
+  transactions_manual: 'date',
   dre_fabric: 'data',
   tributos_log: 'year_month',
 };
 
-export type ExportableTable = 'transactions' | 'transactions_orcado' | 'transactions_ano_anterior' | 'dre_fabric' | 'tributos_log';
+export type ExportableTable = 'transactions' | 'transactions_orcado' | 'transactions_ano_anterior' | 'dre_fabric' | 'tributos_log' | 'transactions_manual';
 
 export interface ExportTableFilters {
   year: string;
