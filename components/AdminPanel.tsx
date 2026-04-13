@@ -2083,6 +2083,42 @@ const AdminPanel: React.FC = () => {
     showImportMessage('success', 'Modelo baixado com sucesso!');
   };
 
+  // Converte data do Excel para YYYY-MM-DD
+  // Aceita: serial numérico (ex: 46054), YYYY-MM-DD, DD/MM/YYYY, YYYY-MM
+  const parseImportDate = (value: any): { date: string; warning: string | null; error: string | null } => {
+    if (value === null || value === undefined || value === '') {
+      return { date: '', warning: null, error: 'campo "Data" está vazio' };
+    }
+    const raw = String(value).trim();
+    // Serial numérico do Excel (ex: 46054)
+    if (/^\d{4,6}$/.test(raw)) {
+      const serial = parseInt(raw, 10);
+      if (serial > 30000 && serial < 80000) {
+        const d = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+        const iso = d.toISOString().split('T')[0];
+        return { date: iso, warning: `campo "Data" continha serial Excel (${serial}) — convertido para ${iso}`, error: null };
+      }
+      return { date: '', warning: null, error: `campo "Data" contém número inválido "${raw}". Use o formato YYYY-MM-DD` };
+    }
+    // YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) return { date: raw, warning: null, error: null };
+      return { date: '', warning: null, error: `campo "Data" com valor inválido "${raw}"` };
+    }
+    // YYYY-MM (sem dia — assume dia 01)
+    if (/^\d{4}-\d{2}$/.test(raw)) {
+      return { date: `${raw}-01`, warning: null, error: null };
+    }
+    // DD/MM/YYYY
+    const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (dmy) {
+      const iso = `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+      if (!isNaN(new Date(iso).getTime())) return { date: iso, warning: null, error: null };
+    }
+    return { date: '', warning: null, error: `campo "Data" com formato não reconhecido "${raw}". Use YYYY-MM-DD` };
+  };
+
   // Ler arquivo Excel/CSV
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2123,18 +2159,34 @@ const AdminPanel: React.FC = () => {
           return;
         }
 
-        // Mapear colunas do Excel para Transaction
+        // Mapear colunas do Excel para Transaction, validando campos críticos
         const batchTs = Date.now();
+        const validationErrors: string[] = [];
+        const validationWarnings: string[] = [];
+
         const mappedData = data.map((row: any, index: number) => {
-          const dt = row['Data'] || row['date'] || new Date().toISOString().split('T')[0];
+          const rowNum = index + 1;
+          const rawDate = row['Data'] || row['date'];
+          const { date: parsedDate, warning: dateWarning, error: dateError } = parseImportDate(rawDate);
+          if (dateError) validationErrors.push(`Linha ${rowNum}: ${dateError}`);
+          else if (dateWarning) validationWarnings.push(`Linha ${rowNum}: ${dateWarning}`);
+
+          const rawAmount = row['Valor'] || row['Amount'] || row['amount'];
+          const amount = parseFloat(String(rawAmount ?? '').replace(',', '.'));
+          if (rawAmount === undefined || rawAmount === '' || isNaN(amount)) {
+            validationErrors.push(`Linha ${rowNum}: campo "Valor" inválido ("${rawAmount ?? ''}"). Deve ser um número.`);
+          }
+
           const marca = row['Marca'] || row['Brand'] || row['marca'] || '';
+          if (!marca) validationErrors.push(`Linha ${rowNum}: campo "Marca" está vazio.`);
+
           const filial = row['Unidade'] || row['Filial'] || row['Branch'] || row['filial'] || '';
-          const yearMonth = String(dt).substring(0, 7); // YYYY-MM
+          const yearMonth = parsedDate ? parsedDate.substring(0, 7) : 'INVALID';
           return {
             id: `MAN-${batchTs}-${index}`,
-            chave_id: `MAN_${yearMonth}_${marca}_${filial}_${String(index + 1).padStart(4, '0')}`,
+            chave_id: `MAN_${yearMonth}_${marca}_${filial}_${String(rowNum).padStart(4, '0')}`,
             scenario: 'Real',
-            date: dt,
+            date: parsedDate,
             conta_contabil: row['Conta Contábil'] || row['Conta Contabil'] || row['conta_contabil'] || row['Conta'] || '',
             tag01: row['C.Custo'] || row['C Custo'] || row['tag01'] || '',
             tag02: row['Segmento'] || row['Segment'] || row['tag02'] || '',
@@ -2145,15 +2197,30 @@ const AdminPanel: React.FC = () => {
             vendor: row['Fornecedor'] || row['Vendor'] || row['vendor'] || '',
             nat_orc: row['Nat Orc'] || row['nat_orc'] || row['Natureza'] || '',
             description: row['Descrição'] || row['Descricao'] || row['Description'] || row['description'] || '',
-            amount: parseFloat(String(row['Valor'] || row['Amount'] || row['amount'] || 0).replace(',', '.')),
+            amount: isNaN(amount) ? 0 : amount,
             recurring: row['Recorrente'] || row['Recurring'] || row['recurring'] || 'Sim',
             status: 'Manual',
             type: row['Tipo'] || row['Type'] || row['type'] || 'FIXED_COST'
           };
         });
 
+        if (validationErrors.length > 0) {
+          const preview = validationErrors.slice(0, 5).join('\n');
+          const extra = validationErrors.length > 5 ? `\n... e mais ${validationErrors.length - 5} erro(s).` : '';
+          showImportMessage('error', `❌ ${validationErrors.length} erro(s) encontrado(s). Corrija antes de importar:\n${preview}${extra}`);
+          setImportPreview([]);
+          return;
+        }
+
+        if (validationWarnings.length > 0) {
+          const preview = validationWarnings.slice(0, 3).join('\n');
+          const extra = validationWarnings.length > 3 ? `\n... e mais ${validationWarnings.length - 3} aviso(s).` : '';
+          showImportMessage('info', `⚠️ ${validationWarnings.length} aviso(s) — datas convertidas automaticamente:\n${preview}${extra}\n\n${mappedData.length} registros prontos. Revise e clique em "Importar".`);
+        } else {
+          showImportMessage('info', `${mappedData.length} registros carregados. Revise e clique em "Importar".`);
+        }
+
         setImportPreview(mappedData);
-        showImportMessage('info', `${mappedData.length} registros carregados. Revise e clique em "Importar".`);
       } catch (error) {
         console.error('Erro ao ler arquivo:', error);
         showImportMessage('error', 'Erro ao ler arquivo. Verifique o formato.');
@@ -2546,7 +2613,7 @@ const AdminPanel: React.FC = () => {
             {importMessage.type === 'success' ? <CheckCircle size={14} /> :
              importMessage.type === 'error' ? <AlertTriangle size={14} /> :
              <FileSpreadsheet size={14} />}
-            <span className="font-bold text-xs">{importMessage.text}</span>
+            <span className="font-bold text-xs whitespace-pre-wrap">{importMessage.text}</span>
           </div>
         )}
 
