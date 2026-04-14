@@ -1,14 +1,26 @@
 -- ══════════════════════════════════════════════════════════════════════
--- RATEIO_RAIZ_REAL_V3.sql
--- Rateio ADM — com override_contabil + transactions_manual
+-- RATEIO_RAIZ_REAL_V4.sql
+-- Rateio ADM — distribuição dos custos corporativos da RZ para as filiais
 --
--- Mudanças vs V2:
---   - CTE rz_ebitda: UNION ALL transactions + transactions_manual,
---     com NOT EXISTS override_contabil no bloco transactions
---   - CTE receita_por_filial: idem
---   - Padrão idêntico ao calcular_tributos()
+-- Regras de negócio:
+--   1. EBITDA RZ  = custos da holding (tag0: 02, 03, 04), apenas recorrentes,
+--                  com suporte a override_contabil e transactions_manual
+--   2. Receita base = receita (tag0: 01.%) das filiais, excluindo:
+--                    - marcas RZ, SE e GOV
+--                    - tag01 Tributos e Devoluções & Cancelamentos
+--                    - transações com override_contabil ativo
+--   3. Share %    = receita_filial / receita_total_mês
+--   4. Rateado    = ebitda_rz × share_pct
 --
--- Versão: 3.0 — 13/03/2026
+-- Estratégia de persistência:
+--   DELETE + INSERT (não UPSERT) — garante recálculo limpo quando receita
+--   é ajustada ou removida (ex: batido, transactions_manual). UPSERT deixaria
+--   registros órfãos corrompendo share_pct e o total rateado.
+--
+-- Versão: 4.0 — 14/04/2026
+-- Mudanças vs V3:
+--   - Excluir marcas SE e GOV da base de receita (além de RZ)
+--   - Substituir UPSERT por DELETE + INSERT para recálculo sempre limpo
 -- ══════════════════════════════════════════════════════════════════════
 
 DROP FUNCTION IF EXISTS calcular_rateio_raiz_real();
@@ -26,18 +38,41 @@ DECLARE
 BEGIN
   SET LOCAL row_security = off;
 
+  -- ── LIMPEZA: deletar rateios dos meses que serão recalculados ────────────
+  -- Escopo restrito aos meses que têm custos RZ na base.
+  -- Garante que ajustes de receita sejam sempre refletidos corretamente.
+  DELETE FROM transactions
+  WHERE chave_id LIKE 'RATEIO_RAIZ_REAL_%'
+    AND LEFT(date::text, 7) IN (
+      SELECT DISTINCT LEFT(date::text, 7)
+      FROM transactions
+      WHERE marca = 'RZ'
+        AND (tag0 LIKE '02.%' OR tag0 LIKE '03.%' OR tag0 LIKE '04.%')
+        AND COALESCE(scenario, 'Real') IN ('Real', 'Original')
+    );
+
+  DELETE FROM rateio_raiz_log
+  WHERE year_month IN (
+    SELECT DISTINCT LEFT(date::text, 7)
+    FROM transactions
+    WHERE marca = 'RZ'
+      AND (tag0 LIKE '02.%' OR tag0 LIKE '03.%' OR tag0 LIKE '04.%')
+      AND COALESCE(scenario, 'Real') IN ('Real', 'Original')
+  );
+  -- ─────────────────────────────────────────────────────────────────────────
+
   WITH
-  -- 1. EBITDA da RZ por mês (custos da holding: 02, 03, 04)
-  --    transactions (com override_contabil) + transactions_manual
+  -- ── 1. EBITDA da RZ por mês ───────────────────────────────────────────────
+  -- Custos da holding (02, 03, 04), apenas recorrentes.
+  -- transactions respeita override_contabil; transactions_manual sempre incluído.
   rz_ebitda AS (
-    -- transactions: excluir tag01 com override ativo
     SELECT
       LEFT(t.date::text, 7) AS ym,
       SUM(t.amount)         AS ebitda_rz
     FROM transactions t
     WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND t.marca = 'RZ'
-      AND (t.tag0 LIKE '01.%' OR t.tag0 LIKE '02.%' OR t.tag0 LIKE '03.%' OR t.tag0 LIKE '04.%')
+      AND (t.tag0 LIKE '02.%' OR t.tag0 LIKE '03.%' OR t.tag0 LIKE '04.%')
       AND COALESCE(t.recurring, 'Sim') = 'Sim'
       AND NOT EXISTS (
         SELECT 1 FROM override_contabil oc
@@ -52,28 +87,25 @@ BEGIN
 
     UNION ALL
 
-    -- transactions_manual: sempre incluso (é o override)
     SELECT
       LEFT(t.date::text, 7) AS ym,
       SUM(t.amount)         AS ebitda_rz
     FROM transactions_manual t
     WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND t.marca = 'RZ'
-      AND (t.tag0 LIKE '01.%' OR t.tag0 LIKE '02.%' OR t.tag0 LIKE '03.%' OR t.tag0 LIKE '04.%')
+      AND (t.tag0 LIKE '02.%' OR t.tag0 LIKE '03.%' OR t.tag0 LIKE '04.%')
       AND COALESCE(t.recurring, 'Sim') = 'Sim'
     GROUP BY 1
   ),
-  -- Consolidar EBITDA RZ (soma transactions + manual)
   rz_ebitda_total AS (
     SELECT ym, SUM(ebitda_rz) AS ebitda_rz
     FROM rz_ebitda
     GROUP BY ym
   ),
 
-  -- 2. Receita bruta por filial por mês
-  --    transactions (com override_contabil) + transactions_manual
+  -- ── 2. Receita bruta por filial por mês ──────────────────────────────────
+  -- Excluir: marcas RZ / SE / GOV, tributos, devoluções e overrides ativos.
   receita_base AS (
-    -- transactions: excluir tag01 com override ativo
     SELECT
       LEFT(t.date::text, 7) AS ym,
       t.filial,
@@ -83,7 +115,7 @@ BEGIN
     FROM transactions t
     WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND t.filial IS NOT NULL
-      AND (t.marca IS NULL OR t.marca <> 'RZ')
+      AND (t.marca IS NULL OR t.marca NOT IN ('RZ', 'SE', 'GOV'))
       AND t.tag0 LIKE '01.%'
       AND LOWER(TRIM(t.tag01)) NOT IN (
             'tributos',
@@ -102,7 +134,6 @@ BEGIN
 
     UNION ALL
 
-    -- transactions_manual: sempre incluso
     SELECT
       LEFT(t.date::text, 7) AS ym,
       t.filial,
@@ -112,7 +143,7 @@ BEGIN
     FROM transactions_manual t
     WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND t.filial IS NOT NULL
-      AND (t.marca IS NULL OR t.marca <> 'RZ')
+      AND (t.marca IS NULL OR t.marca NOT IN ('RZ', 'SE', 'GOV'))
       AND t.tag0 LIKE '01.%'
       AND LOWER(TRIM(t.tag01)) NOT IN (
             'tributos',
@@ -124,22 +155,22 @@ BEGIN
     SELECT
       ym,
       filial,
-      COALESCE(MAX(nome_filial), MAX(filial))        AS nome_filial,
-      MAX(CASE WHEN marca <> 'RZ' THEN marca END)    AS marca,
-      SUM(amount)                                     AS receita_bruta
+      COALESCE(MAX(nome_filial), MAX(filial))                        AS nome_filial,
+      MAX(CASE WHEN marca NOT IN ('RZ','SE','GOV') THEN marca END)   AS marca,
+      SUM(amount)                                                     AS receita_bruta
     FROM receita_base
     GROUP BY ym, filial
     HAVING SUM(amount) > 0
   ),
 
-  -- 3. Receita total consolidada por mês
+  -- ── 3. Receita total consolidada por mês ─────────────────────────────────
   receita_total_mes AS (
     SELECT ym, SUM(receita_bruta) AS receita_total
     FROM receita_por_filial
     GROUP BY ym
   ),
 
-  -- 4. Rateio: share e valor por filial
+  -- ── 4. Cálculo do share e valor rateado por filial ───────────────────────
   rateio AS (
     SELECT
       rpf.ym,
@@ -156,7 +187,7 @@ BEGIN
     JOIN rz_ebitda_total    rz  ON rz.ym  = rpf.ym
   )
 
-  -- 5. UPSERT no log de auditoria
+  -- ── 5. INSERT no log de auditoria ─────────────────────────────────────────
   INSERT INTO rateio_raiz_log
     (year_month, calculated_at, rz_ebitda,
      filial, nome_filial, marca,
@@ -165,18 +196,9 @@ BEGIN
     r.ym, v_ts, r.ebitda_rz,
     r.filial, r.nome_filial, r.marca,
     r.receita_bruta, r.receita_total, r.share_pct, r.valor_rateado
-  FROM rateio r
-  ON CONFLICT (year_month, filial) DO UPDATE SET
-    calculated_at = v_ts,
-    rz_ebitda     = EXCLUDED.rz_ebitda,
-    nome_filial   = EXCLUDED.nome_filial,
-    marca         = EXCLUDED.marca,
-    receita_bruta = EXCLUDED.receita_bruta,
-    receita_total = EXCLUDED.receita_total,
-    share_pct     = EXCLUDED.share_pct,
-    valor_rateado = EXCLUDED.valor_rateado;
+  FROM rateio r;
 
-  -- 6. UPSERT em transactions
+  -- ── 6. INSERT em transactions ─────────────────────────────────────────────
   INSERT INTO transactions (
     id, date, description, category, conta_contabil,
     amount, type, scenario, status,
@@ -205,14 +227,9 @@ BEGIN
     'Sim',
     'RATEIO_RAIZ_REAL_' || l.year_month || '_' || l.filial
   FROM rateio_raiz_log l
-  WHERE l.calculated_at = v_ts
-  ON CONFLICT (chave_id) DO UPDATE SET
-    amount      = EXCLUDED.amount,
-    nome_filial = EXCLUDED.nome_filial,
-    marca       = EXCLUDED.marca,
-    updated_at  = NOW();
+  WHERE l.calculated_at = v_ts;
 
-  -- Retorno: resumo por mês
+  -- ── Retorno: resumo por mês ───────────────────────────────────────────────
   RETURN QUERY
   SELECT
     l.year_month,
@@ -226,5 +243,5 @@ BEGIN
 END;
 $$;
 
--- Executar e conferir
+-- Executar e conferir resultado por mês
 SELECT * FROM calcular_rateio_raiz_real();
