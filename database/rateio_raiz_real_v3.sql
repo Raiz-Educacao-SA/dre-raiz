@@ -8,7 +8,13 @@
 --   - CTE receita_por_filial: idem
 --   - Padrão idêntico ao calcular_tributos()
 --
--- Versão: 3.0 — 13/03/2026
+-- Versão: 3.2 — 14/04/2026
+-- Mudanças vs 3.1:
+--   - receita_base: excluir marcas SE e GOV da base de receita (além de RZ)
+-- Mudanças vs 3.0:
+--   - Substituir UPSERT por DELETE + INSERT limpo
+--     Motivo: UPSERT deixa registros órfãos quando receita é ajustada/removida,
+--     corrompendo share_pct (soma > 100%) e valor_rateado total
 -- ══════════════════════════════════════════════════════════════════════
 
 DROP FUNCTION IF EXISTS calcular_rateio_raiz_real();
@@ -25,6 +31,32 @@ DECLARE
   v_ts TIMESTAMPTZ := NOW();
 BEGIN
   SET LOCAL row_security = off;
+
+  -- ── LIMPEZA: deletar rateios existentes antes de recalcular ──────────────
+  -- Necessário para garantir que ajustes de receita (ex: batido, transactions_manual)
+  -- sejam refletidos corretamente. UPSERT deixaria registros órfãos quando uma filial
+  -- perde receita, corrompendo share_pct e valor_rateado total.
+  --
+  -- Escopo: apenas meses que têm custos RZ na base (os que serão recalculados)
+  DELETE FROM transactions
+  WHERE chave_id LIKE 'RATEIO_RAIZ_REAL_%'
+    AND LEFT(date::text, 7) IN (
+      SELECT DISTINCT LEFT(date::text, 7)
+      FROM transactions
+      WHERE marca = 'RZ'
+        AND (tag0 LIKE '02.%' OR tag0 LIKE '03.%' OR tag0 LIKE '04.%')
+        AND COALESCE(scenario, 'Real') IN ('Real', 'Original')
+    );
+
+  DELETE FROM rateio_raiz_log
+  WHERE year_month IN (
+    SELECT DISTINCT LEFT(date::text, 7)
+    FROM transactions
+    WHERE marca = 'RZ'
+      AND (tag0 LIKE '02.%' OR tag0 LIKE '03.%' OR tag0 LIKE '04.%')
+      AND COALESCE(scenario, 'Real') IN ('Real', 'Original')
+  );
+  -- ─────────────────────────────────────────────────────────────────────────
 
   WITH
   -- 1. EBITDA da RZ por mês (custos da holding: 02, 03, 04)
@@ -83,7 +115,7 @@ BEGIN
     FROM transactions t
     WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND t.filial IS NOT NULL
-      AND (t.marca IS NULL OR t.marca <> 'RZ')
+      AND (t.marca IS NULL OR t.marca NOT IN ('RZ', 'SE', 'GOV'))
       AND t.tag0 LIKE '01.%'
       AND LOWER(TRIM(t.tag01)) NOT IN (
             'tributos',
@@ -112,7 +144,7 @@ BEGIN
     FROM transactions_manual t
     WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
       AND t.filial IS NOT NULL
-      AND (t.marca IS NULL OR t.marca <> 'RZ')
+      AND (t.marca IS NULL OR t.marca NOT IN ('RZ', 'SE', 'GOV'))
       AND t.tag0 LIKE '01.%'
       AND LOWER(TRIM(t.tag01)) NOT IN (
             'tributos',
@@ -156,7 +188,7 @@ BEGIN
     JOIN rz_ebitda_total    rz  ON rz.ym  = rpf.ym
   )
 
-  -- 5. UPSERT no log de auditoria
+  -- 5. INSERT no log de auditoria (DELETE foi feito antes — sem conflitos)
   INSERT INTO rateio_raiz_log
     (year_month, calculated_at, rz_ebitda,
      filial, nome_filial, marca,
@@ -165,18 +197,9 @@ BEGIN
     r.ym, v_ts, r.ebitda_rz,
     r.filial, r.nome_filial, r.marca,
     r.receita_bruta, r.receita_total, r.share_pct, r.valor_rateado
-  FROM rateio r
-  ON CONFLICT (year_month, filial) DO UPDATE SET
-    calculated_at = v_ts,
-    rz_ebitda     = EXCLUDED.rz_ebitda,
-    nome_filial   = EXCLUDED.nome_filial,
-    marca         = EXCLUDED.marca,
-    receita_bruta = EXCLUDED.receita_bruta,
-    receita_total = EXCLUDED.receita_total,
-    share_pct     = EXCLUDED.share_pct,
-    valor_rateado = EXCLUDED.valor_rateado;
+  FROM rateio r;
 
-  -- 6. UPSERT em transactions
+  -- 6. INSERT em transactions (DELETE foi feito antes — sem conflitos)
   INSERT INTO transactions (
     id, date, description, category, conta_contabil,
     amount, type, scenario, status,
@@ -205,12 +228,7 @@ BEGIN
     'Sim',
     'RATEIO_RAIZ_REAL_' || l.year_month || '_' || l.filial
   FROM rateio_raiz_log l
-  WHERE l.calculated_at = v_ts
-  ON CONFLICT (chave_id) DO UPDATE SET
-    amount      = EXCLUDED.amount,
-    nome_filial = EXCLUDED.nome_filial,
-    marca       = EXCLUDED.marca,
-    updated_at  = NOW();
+  WHERE l.calculated_at = v_ts;
 
   -- Retorno: resumo por mês
   RETURN QUERY
