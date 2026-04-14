@@ -9,8 +9,12 @@
 --                    - marcas RZ, SE e GOV
 --                    - tag01 Tributos e Devoluções & Cancelamentos
 --                    - transações com override_contabil ativo
---   3. Share %    = receita_filial / receita_total_mês
+--   3. Share %    = receita_filial_marca / receita_total_mês
 --   4. Rateado    = ebitda_rz × share_pct
+--
+-- Granularidade: por (filial + marca) — cada escola recebe seu próprio rateio.
+--   Uma filial com múltiplas marcas (ex: BOT/CGS e BOT/SP) gera entradas
+--   separadas, com share proporcional à receita de cada escola.
 --
 -- Estratégia de persistência:
 --   DELETE + INSERT (não UPSERT) — garante recálculo limpo quando receita
@@ -19,10 +23,17 @@
 --
 -- Versão: 4.0 — 14/04/2026
 -- Mudanças vs V3:
+--   - Granularidade alterada de (filial) para (filial + marca)
 --   - Excluir marcas SE e GOV da base de receita (além de RZ)
 --   - Substituir UPSERT por DELETE + INSERT para recálculo sempre limpo
 --   - Todos os filtros de texto com LOWER/UPPER (case-insensitive)
 -- ══════════════════════════════════════════════════════════════════════
+
+-- ── Atualizar constraint do rateio_raiz_log para granularidade filial+marca ──
+ALTER TABLE rateio_raiz_log DROP CONSTRAINT IF EXISTS rateio_raiz_log_unico;
+ALTER TABLE rateio_raiz_log ADD CONSTRAINT rateio_raiz_log_unico
+  UNIQUE (year_month, filial, marca);
+-- ─────────────────────────────────────────────────────────────────────────────
 
 DROP FUNCTION IF EXISTS calcular_rateio_raiz_real();
 
@@ -104,7 +115,8 @@ BEGIN
     GROUP BY ym
   ),
 
-  -- ── 2. Receita bruta por filial por mês ──────────────────────────────────
+  -- ── 2. Receita bruta por (filial + marca) por mês ────────────────────────
+  -- Granularidade: cada escola (filial+marca) recebe seu próprio share.
   -- Excluir: marcas RZ / SE / GOV, tributos, devoluções e overrides ativos.
   receita_base AS (
     SELECT
@@ -156,28 +168,29 @@ BEGIN
     SELECT
       ym,
       filial,
-      COALESCE(MAX(nome_filial), MAX(filial))                            AS nome_filial,
-      MAX(CASE WHEN UPPER(marca) NOT IN ('RZ','SE','GOV') THEN marca END) AS marca,
-      SUM(amount)                                                         AS receita_bruta
+      marca,
+      COALESCE(MAX(nome_filial), MAX(filial)) AS nome_filial,
+      SUM(amount)                             AS receita_bruta
     FROM receita_base
-    GROUP BY ym, filial
+    GROUP BY ym, filial, marca
     HAVING SUM(amount) > 0
   ),
 
-  -- ── 3. Receita total consolidada por mês ─────────────────────────────────
+  -- ── 3. Receita total consolidada por mês (denominador do share) ──────────
+  -- Soma de TODAS as filiais+marcas do mês — base de 100% do rateio.
   receita_total_mes AS (
     SELECT ym, SUM(receita_bruta) AS receita_total
     FROM receita_por_filial
     GROUP BY ym
   ),
 
-  -- ── 4. Cálculo do share e valor rateado por filial ───────────────────────
+  -- ── 4. Cálculo do share e valor rateado por (filial + marca) ─────────────
   rateio AS (
     SELECT
       rpf.ym,
       rpf.filial,
-      rpf.nome_filial,
       rpf.marca,
+      rpf.nome_filial,
       rz.ebitda_rz,
       rpf.receita_bruta,
       rtm.receita_total,
@@ -200,6 +213,7 @@ BEGIN
   FROM rateio r;
 
   -- ── 6. INSERT em transactions ─────────────────────────────────────────────
+  -- chave_id inclui marca para garantir unicidade por (filial + marca)
   INSERT INTO transactions (
     id, date, description, category, conta_contabil,
     amount, type, scenario, status,
@@ -226,7 +240,7 @@ BEGIN
     'Rateio Despesas Intercompany',
     'RZ Educação — CSC',
     'Sim',
-    'RATEIO_RAIZ_REAL_' || l.year_month || '_' || l.filial
+    'RATEIO_RAIZ_REAL_' || l.year_month || '_' || l.filial || '_' || COALESCE(UPPER(l.marca), 'SEMARCA')
   FROM rateio_raiz_log l
   WHERE l.calculated_at = v_ts;
 
