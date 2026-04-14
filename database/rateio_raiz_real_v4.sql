@@ -21,6 +21,7 @@
 -- Mudanças vs V3:
 --   - Excluir marcas SE e GOV da base de receita (além de RZ)
 --   - Substituir UPSERT por DELETE + INSERT para recálculo sempre limpo
+--   - Todos os filtros de texto com LOWER/UPPER (case-insensitive)
 -- ══════════════════════════════════════════════════════════════════════
 
 DROP FUNCTION IF EXISTS calcular_rateio_raiz_real();
@@ -46,18 +47,18 @@ BEGIN
     AND LEFT(date::text, 7) IN (
       SELECT DISTINCT LEFT(date::text, 7)
       FROM transactions
-      WHERE marca = 'RZ'
+      WHERE UPPER(marca) = 'RZ'
         AND (tag0 LIKE '02.%' OR tag0 LIKE '03.%' OR tag0 LIKE '04.%')
-        AND COALESCE(scenario, 'Real') IN ('Real', 'Original')
+        AND LOWER(COALESCE(scenario, 'real')) IN ('real', 'original')
     );
 
   DELETE FROM rateio_raiz_log
   WHERE year_month IN (
     SELECT DISTINCT LEFT(date::text, 7)
     FROM transactions
-    WHERE marca = 'RZ'
+    WHERE UPPER(marca) = 'RZ'
       AND (tag0 LIKE '02.%' OR tag0 LIKE '03.%' OR tag0 LIKE '04.%')
-      AND COALESCE(scenario, 'Real') IN ('Real', 'Original')
+      AND LOWER(COALESCE(scenario, 'real')) IN ('real', 'original')
   );
   -- ─────────────────────────────────────────────────────────────────────────
 
@@ -70,15 +71,15 @@ BEGIN
       LEFT(t.date::text, 7) AS ym,
       SUM(t.amount)         AS ebitda_rz
     FROM transactions t
-    WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
-      AND t.marca = 'RZ'
+    WHERE LOWER(COALESCE(t.scenario, 'real')) IN ('real', 'original')
+      AND UPPER(t.marca) = 'RZ'
       AND (t.tag0 LIKE '02.%' OR t.tag0 LIKE '03.%' OR t.tag0 LIKE '04.%')
-      AND COALESCE(t.recurring, 'Sim') = 'Sim'
+      AND LOWER(COALESCE(t.recurring, 'sim')) = 'sim'
       AND NOT EXISTS (
         SELECT 1 FROM override_contabil oc
         WHERE oc.ativo = true
           AND oc.tag01 = COALESCE(t.tag01, 'Sem Subclassificação')
-          AND (oc.marca  IS NULL OR oc.marca  = t.marca)
+          AND (oc.marca  IS NULL OR UPPER(oc.marca)  = UPPER(t.marca))
           AND (oc.filial IS NULL OR oc.filial = t.nome_filial)
           AND (oc.mes_de  IS NULL OR LEFT(t.date::text, 7) >= oc.mes_de)
           AND (oc.mes_ate IS NULL OR LEFT(t.date::text, 7) <= oc.mes_ate)
@@ -91,10 +92,10 @@ BEGIN
       LEFT(t.date::text, 7) AS ym,
       SUM(t.amount)         AS ebitda_rz
     FROM transactions_manual t
-    WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
-      AND t.marca = 'RZ'
+    WHERE LOWER(COALESCE(t.scenario, 'real')) IN ('real', 'original')
+      AND UPPER(t.marca) = 'RZ'
       AND (t.tag0 LIKE '02.%' OR t.tag0 LIKE '03.%' OR t.tag0 LIKE '04.%')
-      AND COALESCE(t.recurring, 'Sim') = 'Sim'
+      AND LOWER(COALESCE(t.recurring, 'sim')) = 'sim'
     GROUP BY 1
   ),
   rz_ebitda_total AS (
@@ -113,9 +114,9 @@ BEGIN
       t.marca,
       t.amount
     FROM transactions t
-    WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
+    WHERE LOWER(COALESCE(t.scenario, 'real')) IN ('real', 'original')
       AND t.filial IS NOT NULL
-      AND (t.marca IS NULL OR t.marca NOT IN ('RZ', 'SE', 'GOV'))
+      AND (t.marca IS NULL OR UPPER(t.marca) NOT IN ('RZ', 'SE', 'GOV'))
       AND t.tag0 LIKE '01.%'
       AND LOWER(TRIM(t.tag01)) NOT IN (
             'tributos',
@@ -126,7 +127,7 @@ BEGIN
         SELECT 1 FROM override_contabil oc
         WHERE oc.ativo = true
           AND oc.tag01 = COALESCE(t.tag01, 'Sem Subclassificação')
-          AND (oc.marca  IS NULL OR oc.marca  = t.marca)
+          AND (oc.marca  IS NULL OR UPPER(oc.marca)  = UPPER(t.marca))
           AND (oc.filial IS NULL OR oc.filial = t.nome_filial)
           AND (oc.mes_de  IS NULL OR LEFT(t.date::text, 7) >= oc.mes_de)
           AND (oc.mes_ate IS NULL OR LEFT(t.date::text, 7) <= oc.mes_ate)
@@ -141,9 +142,9 @@ BEGIN
       t.marca,
       t.amount
     FROM transactions_manual t
-    WHERE COALESCE(t.scenario, 'Real') IN ('Real', 'Original')
+    WHERE LOWER(COALESCE(t.scenario, 'real')) IN ('real', 'original')
       AND t.filial IS NOT NULL
-      AND (t.marca IS NULL OR t.marca NOT IN ('RZ', 'SE', 'GOV'))
+      AND (t.marca IS NULL OR UPPER(t.marca) NOT IN ('RZ', 'SE', 'GOV'))
       AND t.tag0 LIKE '01.%'
       AND LOWER(TRIM(t.tag01)) NOT IN (
             'tributos',
@@ -155,9 +156,9 @@ BEGIN
     SELECT
       ym,
       filial,
-      COALESCE(MAX(nome_filial), MAX(filial))                        AS nome_filial,
-      MAX(CASE WHEN marca NOT IN ('RZ','SE','GOV') THEN marca END)   AS marca,
-      SUM(amount)                                                     AS receita_bruta
+      COALESCE(MAX(nome_filial), MAX(filial))                            AS nome_filial,
+      MAX(CASE WHEN UPPER(marca) NOT IN ('RZ','SE','GOV') THEN marca END) AS marca,
+      SUM(amount)                                                         AS receita_bruta
     FROM receita_base
     GROUP BY ym, filial
     HAVING SUM(amount) > 0
