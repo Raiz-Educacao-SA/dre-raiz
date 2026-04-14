@@ -1517,6 +1517,7 @@ const AdminPanel: React.FC = () => {
     transactions_manual: 'Manual',
     dre_fabric: 'DRE Fabric',
     tributos_log: 'Tributos Log',
+    rateio_raiz_log: 'Rateio Raiz Log',
   };
 
   const handleExportBanco = async (format: 'xlsx' | 'csv') => {
@@ -2804,6 +2805,7 @@ const AdminPanel: React.FC = () => {
                 { value: 'transactions_manual', label: 'Manual', color: 'blue' },
                 { value: 'dre_fabric', label: 'DRE Fabric', color: 'blue' },
                 { value: 'tributos_log', label: 'Tributos Log', color: 'green' },
+                { value: 'rateio_raiz_log', label: 'Rateio Raiz Log', color: 'purple' },
               ] as const
             ).map(opt => (
               <button
@@ -2888,7 +2890,7 @@ const AdminPanel: React.FC = () => {
             <div className="h-5 w-px bg-blue-200 shrink-0" />
 
             {/* Tag01/02/03 — ocultos para tabelas sem hierarquia de tags */}
-            {bancoTable !== 'tributos_log' && (<>
+            {bancoTable !== 'tributos_log' && bancoTable !== 'rateio_raiz_log' && (<>
             <MultiSelectFilter
               compact
               label="Tag01"

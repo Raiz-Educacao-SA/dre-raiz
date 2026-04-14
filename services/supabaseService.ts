@@ -1228,10 +1228,13 @@ const TABLE_COLUMN_MAP: Record<string, Record<string, string>> = {
   tributos_log: {
     nome_filial: 'filial', // tributos_log usa 'filial', não 'nome_filial'
   },
+  rateio_raiz_log: {
+    nome_filial: 'filial', // rateio_raiz_log usa 'filial', não 'nome_filial'
+  },
 };
 
 // Tabelas que usam coluna de período no formato YYYY-MM (TEXT), não datas completas
-const TABLE_YEARMONTH_FORMAT = new Set(['tributos_log']);
+const TABLE_YEARMONTH_FORMAT = new Set(['tributos_log', 'rateio_raiz_log']);
 
 // Coluna de data para cada tabela
 const TABLE_DATE_COL: Record<string, string> = {
@@ -1241,9 +1244,10 @@ const TABLE_DATE_COL: Record<string, string> = {
   transactions_manual: 'date',
   dre_fabric: 'data',
   tributos_log: 'year_month',
+  rateio_raiz_log: 'year_month',
 };
 
-export type ExportableTable = 'transactions' | 'transactions_orcado' | 'transactions_ano_anterior' | 'dre_fabric' | 'tributos_log' | 'transactions_manual';
+export type ExportableTable = 'transactions' | 'transactions_orcado' | 'transactions_ano_anterior' | 'dre_fabric' | 'tributos_log' | 'transactions_manual' | 'rateio_raiz_log';
 
 export interface ExportTableFilters {
   year: string;
