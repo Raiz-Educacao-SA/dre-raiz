@@ -18,6 +18,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  authError: string | null;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   isAdmin: boolean;
@@ -42,6 +43,7 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -151,22 +153,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           role: newUser.role as 'admin' | 'manager' | 'viewer' | 'pending'
         };
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao buscar dados do usuário:', error);
-      return null;
+      // Surface the Supabase error code so the caller can set a visible message
+      throw error;
     }
   };
 
   // Monitorar mudanças de autenticação do Firebase
   // Função para renovar sessão Supabase a partir do Firebase token
   const refreshSupabaseSession = async (firebaseUser: FirebaseUser) => {
-    try {
-      const idToken = await firebaseUser.getIdToken(true); // force refresh
-      await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
-      console.log('🔄 Sessão Supabase renovada');
-    } catch (err) {
-      console.warn('⚠️ Supabase signInWithIdToken falhou:', err);
-    }
+    const idToken = await firebaseUser.getIdToken(true); // force refresh
+    const { error } = await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
+    if (error) throw error; // Supabase SDK retorna { error } em vez de lançar exceção
+    console.log('🔄 Sessão Supabase renovada');
   };
 
   useEffect(() => {
@@ -182,14 +182,36 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         try { localStorage.removeItem('transactionsOperationQueue'); } catch {}
 
         // Restaura sessão Supabase para que RLS funcione (ex: reload de página)
-        await refreshSupabaseSession(firebaseUser);
+        try {
+          await refreshSupabaseSession(firebaseUser);
+        } catch (err: any) {
+          const isNetwork = err?.message?.toLowerCase().includes('fetch') || err?.name === 'TypeError';
+          const msg = isNetwork
+            ? 'Não foi possível conectar ao servidor de autenticação. Verifique sua conexão com a internet e tente novamente.'
+            : `Erro ao autenticar com o banco de dados: ${err?.message || err}`;
+          setAuthError(msg);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
 
-        const userData = await fetchUserData(firebaseUser);
+        let userData: User | null = null;
+        try {
+          userData = await fetchUserData(firebaseUser);
+        } catch (err: any) {
+          console.error('❌ fetchUserData falhou:', err);
+          const msg = err?.message || 'Erro ao carregar dados do usuário no banco.';
+          setAuthError(`Erro de autenticação: ${msg}. Verifique as permissões do banco (RLS) ou tente novamente.`);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+        setAuthError(null);
         setUser(userData);
 
         // Iniciar sessao de engajamento (fire-and-forget, nao bloqueia login)
         if (userData && userData.role !== 'pending') {
-          supabaseService.getUserByEmail(userData.email).then(dbUser => {
+          supabaseService.getUserByEmail(userData.email).catch(() => null).then(dbUser => {
             if (!dbUser) return;
             supabaseService.createSession(dbUser.id, userData.email).then(sid => {
               sessionIdRef.current = sid;
@@ -206,7 +228,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         // Renovar token Supabase a cada 45 min (Firebase token expira em 60 min)
         refreshIntervalRef.current = setInterval(() => {
-          refreshSupabaseSession(firebaseUser);
+          refreshSupabaseSession(firebaseUser).catch(err => {
+            console.warn('⚠️ Renovação automática de sessão falhou:', err);
+          });
         }, 45 * 60 * 1000);
       } else {
         // Encerrar sessao se havia uma ativa
@@ -257,39 +281,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signInWithGoogle = async () => {
     try {
       setLoading(true);
+      setAuthError(null);
       console.log('🔐 Iniciando login com Google...');
       const result = await signInWithPopup(auth, googleProvider);
       console.log('✅ Login Google bem-sucedido:', result.user.email);
-      // Assinar na sessão Supabase para que RLS funcione com auth.email()
-      try {
-        const idToken = await result.user.getIdToken();
-        await supabase.auth.signInWithIdToken({ provider: 'firebase', token: idToken });
-        console.log('✅ Sessão Supabase estabelecida');
-      } catch (err) {
-        console.warn('⚠️ Supabase signInWithIdToken falhou:', err);
-      }
-      const userData = await fetchUserData(result.user);
-      console.log('✅ Dados do usuário carregados:', userData);
-      setUser(userData);
+      // Supabase session é estabelecida pelo onAuthStateChanged que dispara automaticamente
+      // após signInWithPopup — não duplicar fetchUserData aqui.
     } catch (error: any) {
       console.error('❌ Erro completo ao fazer login:', error);
       console.error('Código do erro:', error.code);
       console.error('Mensagem do erro:', error.message);
 
       if (error.code === 'auth/popup-closed-by-user') {
-        alert('Login cancelado. Tente novamente.');
+        setLoading(false);
+        return; // não exibir erro — usuário fechou voluntariamente
       } else if (error.code === 'auth/network-request-failed') {
-        alert('Erro de conexão. Verifique sua internet e tente novamente.');
-      } else if (error.code === 'auth/configuration-not-found' || error.message.includes('auth/invalid-api-key')) {
-        alert('⚠️ Firebase não configurado!\n\nPara habilitar o login com Google, configure o Firebase:\n\n1. Acesse: https://console.firebase.google.com\n2. Crie/selecione projeto\n3. Ative Authentication > Google\n4. Configure as credenciais no arquivo .env');
+        setAuthError('Erro de conexão. Verifique sua internet e tente novamente.');
+      } else if (error.code === 'auth/configuration-not-found' || error.message?.includes('auth/invalid-api-key')) {
+        setAuthError('Firebase não configurado corretamente. Verifique as variáveis de ambiente.');
         console.error('🔴 FIREBASE NÃO CONFIGURADO - Siga as instruções em INSTRUCOES-FIREBASE.md');
       } else {
-        alert(`Erro ao fazer login: ${error.message}\n\nVerifique o console para mais detalhes.`);
+        setAuthError(`Erro ao fazer login: ${error.message}`);
       }
-      throw error;
-    } finally {
       setLoading(false);
     }
+    // Não há finally com setLoading(false) aqui — o onAuthStateChanged é quem resolve
+    // loading ao receber o usuário (ou falhar).
   };
 
   const signOut = async () => {
@@ -334,6 +351,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     loading,
+    authError,
     signInWithGoogle,
     signOut,
     isAdmin: user?.role === 'admin',

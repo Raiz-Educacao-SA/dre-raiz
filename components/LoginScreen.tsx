@@ -1,9 +1,9 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Chrome, Loader2 } from 'lucide-react';
+import { Chrome, Loader2, AlertCircle } from 'lucide-react';
 
 const LoginScreen: React.FC = () => {
-  const { signInWithGoogle, loading } = useAuth();
+  const { signInWithGoogle, loading, authError } = useAuth();
 
   const handleGoogleLogin = async () => {
     try {
@@ -25,6 +25,13 @@ const LoginScreen: React.FC = () => {
           <h1 className="text-2xl md:text-3xl font-black text-gray-900 mb-2">DRE RAIZ</h1>
           <p className="text-sm text-gray-500 font-medium">Demonstrativo de Resultados</p>
         </div>
+
+        {authError && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-sm text-red-700">
+            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+            <span>{authError}</span>
+          </div>
+        )}
 
         <div className="space-y-4">
           <button

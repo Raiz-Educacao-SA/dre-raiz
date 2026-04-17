@@ -1932,8 +1932,12 @@ export const getUserByEmail = async (email: string) => {
     .single();
 
   if (error) {
+    // PGRST116 = "The result contains 0 rows" — user truly doesn't exist
+    if (error.code === 'PGRST116') return null;
+    // Any other error (RLS, network, auth) — throw so the caller doesn't
+    // incorrectly try to INSERT an existing user and get a unique-constraint crash
     console.error('Error fetching user by email:', error);
-    return null;
+    throw error;
   }
 
   return data;
