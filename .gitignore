@@ -31,3 +31,6 @@ dist-ssr
 
 .vercel
 registros_com_erro_*.json
+
+.vercel
+tests/screenshots/
