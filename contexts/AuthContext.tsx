@@ -186,13 +186,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           await refreshSupabaseSession(firebaseUser);
         } catch (err: any) {
           const isNetwork = err?.message?.toLowerCase().includes('fetch') || err?.name === 'TypeError';
-          const msg = isNetwork
-            ? 'Não foi possível conectar ao servidor de autenticação. Verifique sua conexão com a internet e tente novamente.'
-            : `Erro ao autenticar com o banco de dados: ${err?.message || err}`;
-          setAuthError(msg);
-          setUser(null);
-          setLoading(false);
-          return;
+          if (isNetwork) {
+            // Falha de rede — Supabase inacessível, não tem como prosseguir
+            setAuthError('Não foi possível conectar ao servidor de autenticação. Verifique sua conexão com a internet e tente novamente.');
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+          // OIDC não configurado ou outro erro não-crítico:
+          // continua sem sessão Supabase — o banco funciona via policies abertas (USING true)
+          console.warn('⚠️ Supabase session não estabelecida (OIDC):', err?.message);
         }
 
         let userData: User | null = null;
